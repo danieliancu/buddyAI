@@ -1,0 +1,55 @@
+{
+  "stt": {
+    "default": { "provider": "openai_stt", "model": "gpt-live-transcribe" },
+    "by_language": {}
+  },
+  "llm": {
+    "default_model": "gpt-6-luna",
+    "models": [
+      { "id": "gpt-6-luna", "provider": "openai", "label": "GPT-6 Luna (rapid, ieftin)" },
+      { "id": "gpt-6-sol", "provider": "openai", "label": "GPT-6 Sol (calitate mai bună)" }
+    ],
+    "params": { "reasoning_effort": "none" }
+  },
+  "tts": {
+    "by_language": {
+      "en": {
+        "provider": "openai_tts",
+        "model": "gpt-4o-mini-tts",
+        "voices": ["marin", "cedar", "coral", "nova", "alloy", "ash", "sage", "verse"],
+        "default_voice": "marin",
+        "instructions": "Speak in a warm, friendly and natural tone, at a relaxed conversational pace."
+      },
+      "ro": {
+        "provider": "openai_tts",
+        "model": "gpt-4o-mini-tts",
+        "voices": ["marin", "cedar", "coral", "nova", "alloy", "ash", "sage", "verse"],
+        "default_voice": "marin",
+        "instructions": "Vorbește în limba română, cu accent și intonație de vorbitor nativ, cald și natural, într-un ritm relaxat de conversație."
+      }
+    }
+  },
+  "audio": {
+    "downlink_rate_preferred": 24000,
+    "opus_uplink_bitrate": 24000,
+    "opus_downlink_bitrate": 32000
+  },
+  "chunker": {
+    "min_chars": 12,
+    "first_chunk_min_chars": 4,
+    "soft_max_chars": 60,
+    "hard_max_chars": 80,
+    "idle_flush_ms": 300,
+    "idle_min_chars": 20,
+    "abbreviations": {
+      "en": ["mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "etc", "e.g", "i.e", "approx", "no", "fig", "inc", "ltd", "co"],
+      "ro": ["dl", "dna", "dra", "dr", "prof", "ing", "nr", "str", "ex", "etc", "pag", "art", "bd", "jud", "sec", "min", "aprox", "resp", "tel", "lb"]
+    }
+  },
+  "pricing_defaults": [
+    { "provider": "openai_stt", "model": "gpt-live-transcribe", "unit": "audio_second", "price_usd": 0.00028333, "note": "$0.017 per minute (OpenAI, Sep 2026). Verify." },
+    { "provider": "openai", "model": "gpt-6-luna", "unit": "input_token", "price_usd": 0.0000001, "note": "$0.10 / 1M input tokens (OpenAI, Sep 2026). Verify." },
+    { "provider": "openai", "model": "gpt-6-luna", "unit": "output_token", "price_usd": 0.0000005, "note": "$0.50 / 1M output tokens (OpenAI, Sep 2026). Verify." },
+    { "provider": "openai_tts", "model": "gpt-4o-mini-tts", "unit": "character", "price_usd": 0.0000167, "note": "Estimate: ~$0.015 per audio minute ≈ 900 characters. Verify." }
+  ]
+}

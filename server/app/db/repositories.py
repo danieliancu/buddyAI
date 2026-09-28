@@ -1,0 +1,345 @@
+"""Repository layer: all DB access for business logic goes through here (portable SQLAlchemy only)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any, Sequence
+
+from sqlalchemy import func
+from sqlmodel import Session, col, select
+
+from app.db.models import (
+    AdminUser,
+    Conversation,
+    Device,
+    DeviceSettingsRow,
+    FirmwareRelease,
+    Persona,
+    PricingRule,
+    Turn,
+    UsageRecord,
+    utcnow,
+)
+from app.device_settings import DeviceSettings, merge
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    # SQLite returns naive datetimes; treat them as UTC.
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+class AdminRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def count(self) -> int:
+        return self.s.exec(select(func.count()).select_from(AdminUser)).one()
+
+    def get(self, username: str) -> AdminUser | None:
+        return self.s.exec(select(AdminUser).where(AdminUser.username == username)).first()
+
+    def create(self, username: str, password_hash: str) -> AdminUser:
+        user = AdminUser(username=username, password_hash=password_hash)
+        self.s.add(user)
+        self.s.commit()
+        self.s.refresh(user)
+        return user
+
+
+class DeviceRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def get(self, device_id: str) -> Device | None:
+        return self.s.get(Device, device_id)
+
+    def by_token_hash(self, token_hash: str) -> Device | None:
+        return self.s.exec(
+            select(Device).where(Device.token_hash == token_hash, col(Device.revoked_at).is_(None))
+        ).first()
+
+    def list(self) -> Sequence[Device]:
+        return self.s.exec(select(Device).where(col(Device.token_hash).is_not(None))).all()
+
+    def pair(self, device_id: str, token_hash: str, name: str, hw_model: str, fw: str) -> Device:
+        dev = self.get(device_id) or Device(id=device_id)
+        dev.name = name or dev.name
+        dev.hw_model = hw_model
+        dev.fw_version = fw
+        dev.token_hash = token_hash
+        dev.paired_at = utcnow()
+        dev.revoked_at = None
+        self.s.add(dev)
+        self.s.commit()
+        self.s.refresh(dev)
+        return dev
+
+    def revoke(self, device_id: str) -> Device | None:
+        dev = self.get(device_id)
+        if dev:
+            dev.revoked_at = utcnow()
+            dev.token_hash = None
+            self.s.add(dev)
+            self.s.commit()
+        return dev
+
+    def touch(self, device_id: str, **fields: Any) -> None:
+        dev = self.get(device_id)
+        if not dev:
+            return
+        for k, v in fields.items():
+            setattr(dev, k, v)
+        dev.last_seen_at = utcnow()
+        self.s.add(dev)
+        self.s.commit()
+
+    def rename(self, device_id: str, name: str) -> Device | None:
+        dev = self.get(device_id)
+        if dev:
+            dev.name = name
+            self.s.add(dev)
+            self.s.commit()
+            self.s.refresh(dev)
+        return dev
+
+
+class SettingsRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def get(self, device_id: str) -> tuple[DeviceSettings, int]:
+        row = self.s.get(DeviceSettingsRow, device_id)
+        if row is None:
+            return DeviceSettings(), 0
+        return DeviceSettings.model_validate(row.data), row.version
+
+    def ensure(self, device_id: str) -> tuple[DeviceSettings, int]:
+        row = self.s.get(DeviceSettingsRow, device_id)
+        if row is None:
+            settings = DeviceSettings()
+            row = DeviceSettingsRow(device_id=device_id, version=1, data=settings.model_dump())
+            self.s.add(row)
+            self.s.commit()
+        return DeviceSettings.model_validate(row.data), row.version
+
+    def update(self, device_id: str, changes: dict[str, Any]) -> tuple[DeviceSettings, int]:
+        current, _ = self.ensure(device_id)
+        new = merge(current, changes)
+        row = self.s.get(DeviceSettingsRow, device_id)
+        assert row is not None
+        row.data = new.model_dump()
+        row.version += 1
+        row.updated_at = utcnow()
+        self.s.add(row)
+        self.s.commit()
+        return new, row.version
+
+
+class PersonaRepo:
+    DEFAULTS = [
+        (
+            "Buddy",
+            "You are Buddy, a warm, concise and helpful voice assistant living in a smartwatch.",
+        ),
+        (
+            "Coach",
+            "You are an energetic personal coach. Motivate the user and give practical, short advice.",
+        ),
+    ]
+
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def seed(self) -> None:
+        if self.s.exec(select(func.count()).select_from(Persona)).one():
+            return
+        for i, (name, prompt) in enumerate(self.DEFAULTS):
+            self.s.add(Persona(name=name, system_prompt=prompt, is_default=(i == 0)))
+        self.s.commit()
+
+    def list(self) -> Sequence[Persona]:
+        return self.s.exec(select(Persona).order_by(Persona.id)).all()
+
+    def get(self, persona_id: int | None) -> Persona | None:
+        if persona_id is not None:
+            p = self.s.get(Persona, persona_id)
+            if p:
+                return p
+        return self.s.exec(select(Persona).where(Persona.is_default == True)).first()  # noqa: E712
+
+    def upsert(self, persona_id: int | None, name: str, prompt: str, is_default: bool) -> Persona:
+        p = self.s.get(Persona, persona_id) if persona_id else None
+        p = p or Persona(name=name, system_prompt=prompt)
+        p.name, p.system_prompt = name, prompt
+        if is_default:
+            for other in self.list():
+                if other.is_default and other.id != p.id:
+                    other.is_default = False
+                    self.s.add(other)
+        p.is_default = is_default
+        self.s.add(p)
+        self.s.commit()
+        self.s.refresh(p)
+        return p
+
+    def delete(self, persona_id: int) -> bool:
+        p = self.s.get(Persona, persona_id)
+        if not p or p.is_default:
+            return False
+        self.s.delete(p)
+        self.s.commit()
+        return True
+
+
+class ConversationRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def current(self, device_id: str, idle_minutes: int) -> Conversation:
+        conv = self.s.exec(
+            select(Conversation)
+            .where(Conversation.device_id == device_id)
+            .order_by(col(Conversation.last_activity_at).desc())
+        ).first()
+        now = utcnow()
+        if conv is None or (now - _aware(conv.last_activity_at)) > timedelta(minutes=idle_minutes):
+            conv = Conversation(device_id=device_id)
+        conv.last_activity_at = now
+        self.s.add(conv)
+        self.s.commit()
+        self.s.refresh(conv)
+        return conv
+
+    def history(self, conversation_id: int, limit_turns: int) -> list[Turn]:
+        if limit_turns <= 0:
+            return []
+        rows = self.s.exec(
+            select(Turn)
+            .where(Turn.conversation_id == conversation_id, Turn.status == "completed")
+            .order_by(col(Turn.id).desc())
+            .limit(limit_turns)
+        ).all()
+        return list(reversed(rows))
+
+    def list_for_device(self, device_id: str, limit: int = 50) -> Sequence[Conversation]:
+        return self.s.exec(
+            select(Conversation)
+            .where(Conversation.device_id == device_id)
+            .order_by(col(Conversation.last_activity_at).desc())
+            .limit(limit)
+        ).all()
+
+    def turns(self, conversation_id: int) -> Sequence[Turn]:
+        return self.s.exec(
+            select(Turn).where(Turn.conversation_id == conversation_id).order_by(Turn.id)
+        ).all()
+
+    def delete_device_history(self, device_id: str) -> int:
+        turns = self.s.exec(select(Turn).where(Turn.device_id == device_id)).all()
+        for usage in self.s.exec(
+            select(UsageRecord).where(col(UsageRecord.turn_id).in_([t.id for t in turns]))
+        ).all():
+            usage.turn_id = None  # keep usage for billing, drop the link to content
+            self.s.add(usage)
+        for t in turns:
+            self.s.delete(t)
+        for c in self.s.exec(select(Conversation).where(Conversation.device_id == device_id)).all():
+            self.s.delete(c)
+        self.s.commit()
+        return len(turns)
+
+
+class TurnRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def create(self, **fields: Any) -> Turn:
+        t = Turn(**fields)
+        self.s.add(t)
+        self.s.commit()
+        self.s.refresh(t)
+        return t
+
+    def update(self, turn_db_id: int, **fields: Any) -> None:
+        t = self.s.get(Turn, turn_db_id)
+        if not t:
+            return
+        for k, v in fields.items():
+            setattr(t, k, v)
+        self.s.add(t)
+        self.s.commit()
+
+    def recent(self, since: datetime, device_id: str | None = None) -> Sequence[Turn]:
+        q = select(Turn).where(Turn.created_at >= since)
+        if device_id:
+            q = q.where(Turn.device_id == device_id)
+        return self.s.exec(q.order_by(Turn.id)).all()
+
+
+class UsageRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def add_many(self, records: list[UsageRecord]) -> None:
+        self.s.add_all(records)
+        self.s.commit()
+
+    def since(self, since: datetime, device_id: str | None = None) -> Sequence[UsageRecord]:
+        q = select(UsageRecord).where(UsageRecord.created_at >= since)
+        if device_id:
+            q = q.where(UsageRecord.device_id == device_id)
+        return self.s.exec(q).all()
+
+
+class PricingRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def seed(self, defaults: list[dict[str, Any]]) -> None:
+        existing = {(r.provider, r.model, r.unit) for r in self.list()}
+        for d in defaults:
+            if (d["provider"], d["model"], d["unit"]) not in existing:
+                self.s.add(
+                    PricingRule(
+                        provider=d["provider"],
+                        model=d["model"],
+                        unit=d["unit"],
+                        price_usd=d["price_usd"],
+                        note=d.get("note", ""),
+                    )
+                )
+        self.s.commit()
+
+    def list(self) -> Sequence[PricingRule]:
+        return self.s.exec(select(PricingRule).order_by(PricingRule.provider, PricingRule.model)).all()
+
+    def update(self, rule_id: int, price_usd: float, note: str | None) -> PricingRule | None:
+        r = self.s.get(PricingRule, rule_id)
+        if r:
+            r.price_usd = price_usd
+            if note is not None:
+                r.note = note
+            r.updated_at = utcnow()
+            self.s.add(r)
+            self.s.commit()
+            self.s.refresh(r)
+        return r
+
+
+class FirmwareRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def add(self, rel: FirmwareRelease) -> FirmwareRelease:
+        self.s.add(rel)
+        self.s.commit()
+        self.s.refresh(rel)
+        return rel
+
+    def list(self) -> Sequence[FirmwareRelease]:
+        return self.s.exec(select(FirmwareRelease).order_by(col(FirmwareRelease.id).desc())).all()
+
+    def get(self, rel_id: int) -> FirmwareRelease | None:
+        return self.s.get(FirmwareRelease, rel_id)

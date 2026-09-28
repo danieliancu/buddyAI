@@ -1,0 +1,11 @@
+# BuddyAI partition table - 32 MB flash (ESP32-S3R8 + GD25Q256)
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x9000,    0x10000,
+# Reserved for NVS encryption keys (M5 - enabled together with flash encryption)
+nvs_keys,   data, nvs_keys, 0x19000,   0x1000,    encrypted
+otadata,    data, ota,      0x1A000,   0x2000,
+phy_init,   data, phy,      0x1C000,   0x1000,
+ota_0,      app,  ota_0,    0x20000,   6M,
+ota_1,      app,  ota_1,    0x620000,  6M,
+# Assets (fonts, images, sounds) - not mounted yet
+assets,     data, spiffs,   0xC20000,  0x13E0000,

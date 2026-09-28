@@ -1,0 +1,9 @@
+{
+  "steps": [
+    { "do": "ask", "wav": "../samples/ro_1.wav", "lang": "ro" },
+    { "do": "ask", "wav": "../samples/en_1.wav", "lang": "en" },
+    { "do": "abort_test", "wav": "../samples/en_2.wav", "lang": "en", "abort_after_ms": 300 },
+    { "do": "reconnect", "wav": "../samples/en_3.wav", "lang": "en" },
+    { "do": "bench", "wav_dir": "../samples", "lang": "en", "repeat": 2 }
+  ]
+}

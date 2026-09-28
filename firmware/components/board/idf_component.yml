@@ -1,0 +1,15 @@
+## Board support: display (CO5300 QSPI AMOLED), touch (FT3168, FT5x06 family),
+## audio codecs (ES8311 DAC + ES7210 ADC), LVGL port.
+dependencies:
+  idf: ">=5.4"
+  lvgl/lvgl:
+    version: "~9.5.0"
+    public: true
+  espressif/esp_lvgl_port:
+    version: "^2.6.0"
+    public: true
+  espressif/esp_lcd_co5300: "^2.2.0"
+  espressif/esp_lcd_touch_ft5x06: "^1.0.7"
+  espressif/esp_codec_dev:
+    version: "~1.5.0"
+    public: true

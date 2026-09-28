@@ -1,0 +1,4 @@
+## IDF Component Manager manifest (main). Third-party dependencies are declared
+## per component (components/*/idf_component.yml).
+dependencies:
+  idf: ">=5.4"

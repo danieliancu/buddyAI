@@ -1,0 +1,19 @@
+alembic==1.20.0
+av==18.1.0
+bcrypt==5.0.0
+fastapi==0.141.1
+httpx==0.28.1
+itsdangerous==2.2.0
+numpy==2.4.6
+openai==3.19.2
+pydantic-settings==2.15.0
+onnxruntime==1.30.0
+python-multipart==0.0.32
+sqlmodel==0.0.47
+tzdata==2026.4
+uvicorn[standard]==0.54.0
+websockets==17.1
+zeroconf==0.151.3
+# dev
+pytest==9.1.1
+pytest-asyncio==1.4.0

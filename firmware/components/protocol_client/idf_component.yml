@@ -1,0 +1,4 @@
+## WebSocket client (ws:// and wss:// with the ESP x509 certificate bundle)
+dependencies:
+  idf: ">=5.4"
+  espressif/esp_websocket_client: "^1.5.0"

@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/* Design tokens: dark-first, light via prefers-color-scheme. */
+:root {
+  --bg: #0b0f17;
+  --surface: #121826;
+  --surface-2: #1a2233;
+  --border: #263049;
+  --fg: #e6eaf2;
+  --muted: #8b95ab;
+  --accent: #4f8cff;
+  --accent-fg: #ffffff;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --ok-bg: rgba(52, 211, 153, 0.12);
+  --warn-bg: rgba(251, 191, 36, 0.12);
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --accent-bg: rgba(79, 140, 255, 0.14);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --border: #d9dee8;
+    --fg: #111827;
+    --muted: #5b6477;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --ok: #059669;
+    --warn: #b45309;
+    --danger: #dc2626;
+    --ok-bg: rgba(5, 150, 105, 0.1);
+    --warn-bg: rgba(180, 83, 9, 0.1);
+    --danger-bg: rgba(220, 38, 38, 0.08);
+    --accent-bg: rgba(37, 99, 235, 0.1);
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-bg: var(--accent-bg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+input[type="color"]::-moz-color-swatch {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

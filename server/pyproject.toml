@@ -1,0 +1,30 @@
+[project]
+name = "buddyai-server"
+version = "0.1.0"
+description = "BuddyAI local server: device gateway, voice pipeline, web API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlmodel>=0.0.22",
+    "alembic>=1.13",
+    "pydantic-settings>=2.4",
+    "bcrypt>=4.2",
+    "itsdangerous>=2.2",
+    "python-multipart>=0.0.9",
+    "zeroconf>=0.132",
+    "httpx>=0.27",
+    "websockets>=13",
+    "openai>=1.50",
+    "av>=13",
+    "numpy>=1.26",
+    "onnxruntime>=1.17",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

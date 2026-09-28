@@ -1,0 +1,22 @@
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Local data & secrets (DB, provider keys, tokens)
+server/data/
+server/out/
+.env
+# Web
+web/node_modules/
+web/dist/
+site/node_modules/
+site/dist/
+# Firmware build output
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+# OS / editor
+.DS_Store
+Thumbs.db

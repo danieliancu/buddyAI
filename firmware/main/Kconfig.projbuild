@@ -1,0 +1,28 @@
+menu "BuddyAI"
+
+    config BUDDYAI_DEFAULT_SERVER_URL
+        string "Default server URL (development)"
+        default ""
+        help
+            WebSocket URL used when no server_url was configured through the
+            SoftAP portal, e.g. ws://192.168.1.10:8765/ws/device.
+            Leave empty for production builds (server comes from provisioning,
+            last-known server or mDNS discovery).
+
+    config BUDDYAI_HW_MODEL
+        string "Hardware model string sent in hello"
+        default "waveshare-esp32-s3-touch-amoled-2.06"
+
+    config BUDDYAI_MDNS_DISCOVERY
+        bool "Enable mDNS _buddyai._tcp discovery"
+        default y
+        help
+            Optional convenience discovery for LAN development. The firmware
+            works fully without it.
+
+    config BUDDYAI_LOW_BATTERY_PCT
+        int "Low battery warning threshold (%)"
+        range 1 30
+        default 5
+
+endmenu
