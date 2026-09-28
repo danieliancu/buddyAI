@@ -24,9 +24,52 @@ class AdminUser(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class Account(SQLModel, table=True):
+    """A customer: one person who owns one or more watches."""
+
+    __tablename__ = "accounts"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True, max_length=254)  # stored lower-case
+    password_hash: Optional[str] = None  # None until set (e.g. account created at checkout)
+    name: str = Field(default="", max_length=120)
+    country: Optional[str] = Field(default=None, max_length=2)  # ISO 3166-1 alpha-2
+    email_verified_at: Optional[datetime] = None
+    status: str = Field(default="active", max_length=16)  # active | suspended | deleted
+    session_version: int = 1  # bump to log out every session (password change/reset)
+    created_at: datetime = Field(default_factory=utcnow)
+    last_login_at: Optional[datetime] = None
+
+
+class AuthToken(SQLModel, table=True):
+    """One-time tokens sent by email (verify address, reset/set password). Only the hash is stored."""
+
+    __tablename__ = "auth_tokens"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    purpose: str = Field(max_length=16)  # verify_email | reset_password
+    token_hash: str = Field(index=True, max_length=64)
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AuditLog(SQLModel, table=True):
+    """Operator actions on customer data (GDPR accountability)."""
+
+    __tablename__ = "audit_log"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor: str = Field(max_length=80)  # operator username, "account:<id>" or "system"
+    action: str = Field(max_length=64)
+    account_id: Optional[int] = Field(default=None, index=True)
+    device_id: Optional[str] = Field(default=None, max_length=64)
+    detail: str = ""
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class Device(SQLModel, table=True):
     __tablename__ = "devices"
     id: str = Field(primary_key=True, max_length=64)  # device_id reported by the watch
+    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)
     name: str = Field(default="BuddyAI Watch", max_length=80)
     hw_model: str = Field(default="", max_length=64)
     fw_version: str = Field(default="", max_length=32)
@@ -51,6 +94,7 @@ class DeviceSettingsRow(SQLModel, table=True):
 class Persona(SQLModel, table=True):
     __tablename__ = "personas"
     id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)  # None = system
     name: str = Field(max_length=80)
     system_prompt: str
     is_default: bool = False
@@ -69,6 +113,7 @@ class Turn(SQLModel, table=True):
     __tablename__ = "turns"
     id: Optional[int] = Field(default=None, primary_key=True)
     device_id: str = Field(foreign_key="devices.id", index=True, max_length=64)
+    account_id: Optional[int] = Field(default=None, index=True)  # owner at the time of the turn
     conversation_id: Optional[int] = Field(default=None, foreign_key="conversations.id", index=True)
     session_id: str = Field(max_length=64)
     turn_no: int
@@ -95,6 +140,7 @@ class UsageRecord(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     turn_id: Optional[int] = Field(default=None, foreign_key="turns.id", index=True)
     device_id: str = Field(index=True, max_length=64)
+    account_id: Optional[int] = Field(default=None, index=True)  # who is billed
     kind: str = Field(max_length=16)  # stt | llm | tts
     provider: str = Field(max_length=32)
     model: str = Field(max_length=64)

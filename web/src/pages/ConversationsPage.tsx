@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router";
 import { MessagesSquare, Timer, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useLive } from "../live";
-import { fmtDateTime, fmtTime, LANG_LABEL } from "../format";
+import { fmtDateTime, fmtTime, langName, langNative } from "../format";
+import { useLanguages } from "../languages";
 import { DevicePicker, TurnStatusBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, PageHeader, Spinner, cx, useAsync } from "../components/ui";
 
@@ -12,6 +13,7 @@ export default function ConversationsPage() {
   const devices = useAsync(api.devices.list, []);
   const deviceId = params.get("device") ?? "";
   const [confirm, setConfirm] = useState(false);
+  const langs = useLanguages();
 
   // Default to the first device.
   useEffect(() => {
@@ -92,7 +94,11 @@ export default function ConversationsPage() {
                   )}
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
                     <span>{fmtTime(t.created_at)}</span>
-                    <Badge>{LANG_LABEL[t.language] ?? t.language}</Badge>
+                    {t.language !== "auto" && (
+                      <span title={langName(t.language, langs)}>
+                        <Badge>{langNative(t.language, langs)}</Badge>
+                      </span>
+                    )}
                     <TurnStatusBadge status={t.status} />
                     {t.ttfa_ms != null && (
                       <span className="inline-flex items-center gap-1" title="Time to first audio">

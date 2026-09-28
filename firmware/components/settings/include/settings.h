@@ -24,6 +24,9 @@ extern "C" {
 #define SETTINGS_URL_MAX        192
 #define SETTINGS_TOKEN_MAX      128
 #define SETTINGS_TZ_MAX         64
+#define SETTINGS_LANG_MAX       8       /* "auto" or an ISO 639-1 code (up to 7 chars, [a-z-]) */
+#define SETTINGS_QUICK_LANG_MAX 3       /* entries in quick_languages */
+#define SETTINGS_LANG_LABEL_MAX 25      /* label, UTF-8, up to 24 bytes + NUL */
 
 typedef struct {
     char     preset[16];
@@ -33,9 +36,22 @@ typedef struct {
     uint32_t text;
 } settings_theme_t;
 
+/* One option of the quick-settings language control. */
+typedef struct {
+    char code[SETTINGS_LANG_MAX];         /* "auto" | "en" | "de" ... */
+    char label[SETTINGS_LANG_LABEL_MAX];  /* "Auto" | "English" | "Deutsch" ... (renderable text) */
+} settings_quick_lang_t;
+
 /* Device-facing settings (PROTOCOL.md section 5). */
 typedef struct {
-    char             language[4];       /* "en" (default) | "ro" - date names, STT/TTS language */
+    /* "auto" (default: the server detects the spoken language) or an ISO 639-1
+     * code ("en", "ro", "de", ...). Sent in listen_start; also picks the date
+     * language (see ui_i18n.c). All other UI text is English. */
+    char             language[SETTINGS_LANG_MAX];
+    /* Options offered by the quick-settings language control (from the
+     * server; default Auto + English). */
+    settings_quick_lang_t quick_languages[SETTINGS_QUICK_LANG_MAX];
+    uint8_t          quick_language_count;
     uint8_t          volume;            /* 0..100 */
     uint8_t          brightness;        /* 0..100 */
     uint16_t         screen_timeout_s;

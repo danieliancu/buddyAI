@@ -33,11 +33,14 @@ class ProviderPricingConfig:
         price = self.prices.get(PriceKey(provider, model, unit))
         return None if price is None else round(price * quantity, 8)
 
-    def records(self, items: list[UsageItem], device_id: str, turn_db_id: int | None) -> list[UsageRecord]:
+    def records(
+        self, items: list[UsageItem], device_id: str, turn_db_id: int | None, account_id: int | None = None
+    ) -> list[UsageRecord]:
         return [
             UsageRecord(
                 turn_id=turn_db_id,
                 device_id=device_id,
+                account_id=account_id,
                 kind=i.kind,
                 provider=i.provider,
                 model=i.model,

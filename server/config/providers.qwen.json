@@ -1,28 +1,63 @@
 {
+  "supported_languages": [
+    "zh",
+    "en",
+    "de",
+    "it",
+    "pt",
+    "es",
+    "ja",
+    "ko",
+    "fr",
+    "ru",
+    "ro"
+  ],
   "stt": {
-    "default": { "provider": "qwen_asr", "model": "qwen-audio-3.1-asr-flash-streaming" },
+    "default": {
+      "provider": "qwen_asr",
+      "model": "qwen-audio-3.1-asr-flash-streaming"
+    },
     "by_language": {}
   },
   "llm": {
     "default_model": "qwen-flash",
     "models": [
-      { "id": "qwen-flash", "provider": "qwen", "label": "Qwen Flash (rapid, ieftin)" },
-      { "id": "qwen-plus", "provider": "qwen", "label": "Qwen Plus (calitate mai bună)" }
+      {
+        "id": "qwen-flash",
+        "provider": "qwen",
+        "label": "Qwen Flash (fast, low cost)"
+      },
+      {
+        "id": "qwen-plus",
+        "provider": "qwen",
+        "label": "Qwen Plus (higher quality)"
+      }
     ],
-    "params": { "temperature": 0.7, "enable_thinking": false }
+    "params": {
+      "temperature": 0.7,
+      "enable_thinking": false
+    }
   },
   "tts": {
+    "default": {
+      "provider": "qwen_tts",
+      "model": "qwen3-tts-flash-realtime",
+      "voices": [
+        "Cherry",
+        "Ethan",
+        "Serena",
+        "Chelsie"
+      ],
+      "default_voice": "Cherry"
+    },
     "by_language": {
-      "en": {
-        "provider": "qwen_tts",
-        "model": "qwen3-tts-flash-realtime",
-        "voices": ["Cherry", "Ethan", "Serena", "Chelsie"],
-        "default_voice": "Cherry"
-      },
       "ro": {
         "provider": "azure_tts",
         "model": "azure-neural",
-        "voices": ["ro-RO-AlinaNeural", "ro-RO-EmilNeural"],
+        "voices": [
+          "ro-RO-AlinaNeural",
+          "ro-RO-EmilNeural"
+        ],
         "default_voice": "ro-RO-AlinaNeural"
       }
     }
@@ -38,19 +73,57 @@
     "soft_max_chars": 60,
     "hard_max_chars": 80,
     "idle_flush_ms": 300,
-    "idle_min_chars": 20,
-    "abbreviations": {
-      "en": ["mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "etc", "e.g", "i.e", "approx", "no", "fig", "inc", "ltd", "co"],
-      "ro": ["dl", "dna", "dra", "dr", "prof", "ing", "nr", "str", "ex", "etc", "pag", "art", "bd", "jud", "sec", "min", "aprox", "resp", "tel", "lb"]
-    }
+    "idle_min_chars": 20
   },
   "pricing_defaults": [
-    { "provider": "qwen_asr", "model": "qwen-audio-3.1-asr-flash-streaming", "unit": "audio_second", "price_usd": 0.0000233, "note": "Estimate from $0.93/1M input tokens (Singapore) at ~25 audio tokens/s. Verify in Model Studio console." },
-    { "provider": "qwen", "model": "qwen-flash", "unit": "input_token", "price_usd": 0.00000015, "note": "Model Studio Singapore, Sep 2026. Verify." },
-    { "provider": "qwen", "model": "qwen-flash", "unit": "output_token", "price_usd": 0.00000047, "note": "Model Studio Singapore, Sep 2026. Verify." },
-    { "provider": "qwen", "model": "qwen-plus", "unit": "input_token", "price_usd": 0.0000004, "note": "Model Studio Singapore, Sep 2026. Verify." },
-    { "provider": "qwen", "model": "qwen-plus", "unit": "output_token", "price_usd": 0.0000016, "note": "Model Studio Singapore, Sep 2026. Verify." },
-    { "provider": "qwen_tts", "model": "qwen3-tts-flash-realtime", "unit": "character", "price_usd": 0.000013, "note": "Placeholder estimate. Verify in Model Studio console." },
-    { "provider": "azure_tts", "model": "azure-neural", "unit": "character", "price_usd": 0.000015, "note": "Azure Neural TTS pay-as-you-go ($15/1M chars); first 0.5M chars/month free on F0." }
+    {
+      "provider": "qwen_asr",
+      "model": "qwen-audio-3.1-asr-flash-streaming",
+      "unit": "audio_second",
+      "price_usd": 2.33e-05,
+      "note": "Estimate from $0.93/1M input tokens (Singapore) at ~25 audio tokens/s. Verify in Model Studio console."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-flash",
+      "unit": "input_token",
+      "price_usd": 1.5e-07,
+      "note": "Model Studio Singapore, Sep 2026. Verify."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-flash",
+      "unit": "output_token",
+      "price_usd": 4.7e-07,
+      "note": "Model Studio Singapore, Sep 2026. Verify."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-plus",
+      "unit": "input_token",
+      "price_usd": 4e-07,
+      "note": "Model Studio Singapore, Sep 2026. Verify."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-plus",
+      "unit": "output_token",
+      "price_usd": 1.6e-06,
+      "note": "Model Studio Singapore, Sep 2026. Verify."
+    },
+    {
+      "provider": "qwen_tts",
+      "model": "qwen3-tts-flash-realtime",
+      "unit": "character",
+      "price_usd": 1.3e-05,
+      "note": "Placeholder estimate. Verify in Model Studio console."
+    },
+    {
+      "provider": "azure_tts",
+      "model": "azure-neural",
+      "unit": "character",
+      "price_usd": 1.5e-05,
+      "note": "Azure Neural TTS pay-as-you-go ($15/1M chars); first 0.5M chars/month free on F0."
+    }
   ]
 }

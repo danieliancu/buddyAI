@@ -37,30 +37,49 @@ class DeviceHub:
         self.pairing_ttl_s = pairing_ttl_s
         self.connections: dict[str, "DeviceConnection"] = {}
         self.pending: dict[str, PendingPairing] = {}
-        self._listeners: set[asyncio.Queue] = set()
+        # Live-event subscribers: queue -> account filter (None = operator, sees everything)
+        self._listeners: dict[asyncio.Queue, int | None] = {}
+        self.owners: dict[str, int | None] = {}  # device_id -> account_id (for event filtering)
 
     # --- live events (web UI) --------------------------------------------------------
 
-    def subscribe(self) -> asyncio.Queue:
+    def subscribe(self, account_id: int | None = None) -> asyncio.Queue:
+        """account_id=None: operator (all events); otherwise only that account's watches."""
         q: asyncio.Queue = asyncio.Queue(maxsize=200)
-        self._listeners.add(q)
+        self._listeners[q] = account_id
         return q
 
     def unsubscribe(self, q: asyncio.Queue) -> None:
-        self._listeners.discard(q)
+        self._listeners.pop(q, None)
 
     def publish(self, event: dict[str, Any]) -> None:
         event.setdefault("at", int(time.time() * 1000))
-        for q in list(self._listeners):
+        owner = self._owner_of(event.get("device_id"))
+        for q, account_id in list(self._listeners.items()):
+            if account_id is not None and account_id != owner:
+                continue
             if q.full():
                 continue  # slow browser tab: drop instead of blocking the device path
             q.put_nowait(event)
+
+    def _owner_of(self, device_id: str | None) -> int | None:
+        if not device_id:
+            return None
+        if device_id not in self.owners:
+            with session_scope() as db:
+                dev = DeviceRepo(db).get(device_id)
+                self.owners[device_id] = dev.account_id if dev else None
+        return self.owners[device_id]
+
+    def forget_owner(self, device_id: str) -> None:
+        self.owners.pop(device_id, None)
 
     # --- connections ------------------------------------------------------------------
 
     async def register(self, conn: "DeviceConnection") -> None:
         old = self.connections.get(conn.device_id)
         self.connections[conn.device_id] = conn
+        self.owners[conn.device_id] = conn.account_id
         if old and old is not conn:
             await old.close(code=4000, reason="replaced by a newer connection")
         self.publish({"type": "device_online", "device_id": conn.device_id})
@@ -103,17 +122,18 @@ class DeviceHub:
             if p.expires_at < now:
                 del self.pending[code]
 
-    async def pair(self, code: str, name: str) -> str:
-        """Accept a pairing code entered by the admin. Returns the device_id."""
+    async def pair(self, code: str, name: str, account_id: int | None = None) -> str:
+        """Accept a pairing code (entered by the owner or the operator). Returns the device_id."""
         self._expire()
         p = self.pending.pop(code, None)
         if p is None:
             raise PairingError("invalid or expired code")
         token = new_device_token()
         with session_scope() as db:
-            DeviceRepo(db).pair(p.device_id, hash_device_token(token), name, p.hw_model, p.fw_version)
+            DeviceRepo(db).pair(p.device_id, hash_device_token(token), name, p.hw_model, p.fw_version, account_id)
             SettingsRepo(db).ensure(p.device_id)
         await p.conn.send_json("paired", device_token=token)
+        self.owners[p.device_id] = account_id
         self.publish({"type": "device_paired", "device_id": p.device_id})
         return p.device_id
 
@@ -133,6 +153,12 @@ class DeviceHub:
         if conn:
             await conn.send_json("error", code="unauthorized", message="device revoked")
             await conn.close(code=4001, reason="revoked")
+
+    async def disconnect(self, device_id: str, reason: str) -> None:
+        """Close the session without invalidating the token (the watch reconnects)."""
+        conn = self.connections.get(device_id)
+        if conn:
+            await conn.close(code=4002, reason=reason)
 
     async def offer_ota(self, device_id: str, offer: dict[str, Any]) -> bool:
         conn = self.connections.get(device_id)

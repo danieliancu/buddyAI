@@ -25,7 +25,11 @@ ui_callbacks_t   g_ui_cb;
 #define DIM_BRIGHTNESS      8       /* % while dimmed */
 #define OFF_AFTER_DIM_MS    60000   /* panel off this long after dimming */
 #define CAPTION_MAX         600
-#define CAPTION_SHOW        110     /* ~3 lines at 20 px on 360 px */
+#define CAPTION_SHOW        110     /* code points, ~3 lines at 20 px on 350 px */
+#define CAPTION_W           350
+#define CAPTION_H           78
+#define CAPTION_LINE_SPACE  (-3)    /* Noto Sans 20 px: 28 px line -> 25 px pitch, 3 lines fit */
+#define DATE_MAX_W          380     /* longer dates drop the weekday */
 
 typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_state_t;
 
@@ -58,6 +62,8 @@ static int           s_shift_idx;
 static int           s_level_smooth;
 static uint32_t      s_anim_phase;
 static char          s_caption[CAPTION_MAX];
+static char          s_caption_view[CAPTION_MAX];  /* sanitized copy handed to the label */
+static bool          s_caption_visible;
 static char          s_hint[64];
 static int           s_batt = -1;
 static bool          s_charging;
@@ -151,8 +157,15 @@ static void update_clock(bool force)
         snprintf(buf, sizeof(buf), "%d:%02d", h == 0 ? 12 : h, tm.tm_min);
     }
     lv_label_set_text(s_lbl_time, buf);
-    /* "Luni, 28 Septembrie" / "Monday, 28 September" */
-    lv_label_set_text_fmt(s_lbl_date, "%s, %d %s", ui_weekday(tm.tm_wday), tm.tm_mday, ui_month(tm.tm_mon));
+    /* "Monday, 28 September" / "Montag, 28. September"; drop the weekday if too wide. */
+    char date[64];
+    ui_format_date(date, sizeof(date), tm.tm_wday, tm.tm_mday, tm.tm_mon, true);
+    lv_point_t sz;
+    lv_text_get_size(&sz, date, &buddy_font_28, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    if (sz.x > DATE_MAX_W) {
+        ui_format_date(date, sizeof(date), tm.tm_wday, tm.tm_mday, tm.tm_mon, false);
+    }
+    lv_label_set_text(s_lbl_date, date);
 
     /* Pixel shift once per minute. */
     s_shift_idx = (s_shift_idx + 1) % (int)(sizeof(s_shift) / sizeof(s_shift[0]));
@@ -199,31 +212,136 @@ static void update_status(void)
 static void update_hint(void)
 {
     const char *txt = s_hint;
-    if (!txt[0] && s_conv == UI_CONV_LISTENING && !s_caption[0]) {
+    if (!txt[0] && s_conv == UI_CONV_LISTENING && !s_caption_visible) {
         txt = ui_str(STR_LISTENING);
-    } else if (!txt[0] && s_conv == UI_CONV_THINKING && !s_caption[0]) {
+    } else if (!txt[0] && s_conv == UI_CONV_THINKING && !s_caption_visible) {
         txt = ui_str(STR_THINKING);
     }
     lv_label_set_text(s_lbl_hint, txt);
 }
 
+/* Decode one UTF-8 code point and advance *p. Malformed input -> U+FFFD. */
+static uint32_t utf8_next(const char **p)
+{
+    const unsigned char *s = (const unsigned char *)*p;
+    uint32_t c = s[0];
+    int n;
+    if (c < 0x80) {
+        n = 0;
+    } else if ((c & 0xE0) == 0xC0) {
+        c &= 0x1F;
+        n = 1;
+    } else if ((c & 0xF0) == 0xE0) {
+        c &= 0x0F;
+        n = 2;
+    } else if ((c & 0xF8) == 0xF0) {
+        c &= 0x07;
+        n = 3;
+    } else {
+        *p += 1;
+        return 0xFFFD;
+    }
+    for (int i = 1; i <= n; i++) {
+        if ((s[i] & 0xC0) != 0x80) {
+            *p += i;
+            return 0xFFFD;
+        }
+        c = (c << 6) | (s[i] & 0x3F);
+    }
+    *p += n + 1;
+    return c;
+}
+
+/* Spaces other than ' ' / '\n' / NBSP: shown as a plain space. */
+static bool is_other_space(uint32_t c)
+{
+    return c == '\t' || (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 ||
+           c == 0x202F || c == 0x205F || c == 0x3000;
+}
+
+/* Control / zero-width / format characters: dropped from the caption. */
+static bool is_invisible(uint32_t c)
+{
+    return (c < 0x20 && c != '\n') || (c >= 0x7F && c < 0xA0) || (c >= 0x200B && c <= 0x200F) ||
+           (c >= 0x2060 && c <= 0x2064) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0xFEFF;
+}
+
+/* Copy s_caption into s_caption_view (spaces normalized, invisible characters
+ * dropped). Returns false if the caption font lacks a glyph for any visible
+ * character (e.g. CJK, Arabic, emoji) - the caption is then hidden instead of
+ * showing boxes. */
+static bool caption_sanitize(const lv_font_t *font)
+{
+    const char *in = s_caption;
+    char *out = s_caption_view;
+    while (*in) {
+        const char *start = in;
+        uint32_t c = utf8_next(&in);
+        if (is_other_space(c)) {
+            *out++ = ' ';
+            continue;
+        }
+        if (is_invisible(c)) {
+            continue;
+        }
+        if (c != ' ' && c != '\n') {
+            lv_font_glyph_dsc_t g;
+            if (!lv_font_get_glyph_dsc(font, &g, c, 0) || g.is_placeholder) {
+                s_caption_view[0] = '\0';
+                return false;
+            }
+        }
+        memcpy(out, start, (size_t)(in - start));
+        out += in - start;
+    }
+    *out = '\0';
+    return true;
+}
+
 static void show_caption(void)
 {
-    size_t len = strlen(s_caption);
-    if (len <= CAPTION_SHOW) {
-        lv_label_set_text(s_lbl_caption, s_caption);
-    } else {
-        /* Show the tail, starting at a word boundary (UTF-8 safe). */
-        const char *p = s_caption + len - CAPTION_SHOW;
-        while (*p && (((unsigned char)*p & 0xC0) == 0x80)) {
-            p++;
+    static char tail[CAPTION_SHOW * 4 + 8];
+    const lv_font_t *font = &buddy_font_20;
+
+    s_caption_visible = caption_sanitize(font) && s_caption_view[0];
+    if (!s_caption_visible) {
+        lv_label_set_text(s_lbl_caption, "");
+        lv_obj_add_flag(s_lbl_caption, LV_OBJ_FLAG_HIDDEN);
+        update_hint();
+        return;
+    }
+    lv_obj_remove_flag(s_lbl_caption, LV_OBJ_FLAG_HIDDEN);
+
+    /* Show the tail: the last CAPTION_SHOW code points (UTF-8 safe), starting
+     * at a word boundary, trimmed further until it fits the caption box. */
+    const char *view = s_caption_view;
+    const char *p = view + strlen(view);
+    int cps = 0;
+    while (p > view && cps < CAPTION_SHOW) {
+        p--;
+        if (((unsigned char)*p & 0xC0) != 0x80) {
+            cps++;
         }
+    }
+    bool cut = p > view;
+    if (cut) {
         const char *sp = strchr(p, ' ');
         if (sp && sp - p < 20) {
             p = sp + 1;
         }
-        lv_label_set_text_fmt(s_lbl_caption, "…%s", p);
     }
+    for (;;) {
+        snprintf(tail, sizeof(tail), "%s%s", cut ? "…" : "", p);
+        lv_point_t sz;
+        lv_text_get_size(&sz, tail, font, 0, CAPTION_LINE_SPACE, CAPTION_W, LV_TEXT_FLAG_NONE);
+        const char *sp = strchr(p, ' ');
+        if (sz.y <= CAPTION_H || !sp || !sp[1]) {
+            break;
+        }
+        p = sp + 1;         /* drop the first word and measure again */
+        cut = true;
+    }
+    lv_label_set_text(s_lbl_caption, tail);
     update_hint();
 }
 
@@ -411,7 +529,7 @@ static void build_watchface(void)
     s_lbl_date = lv_label_create(s_content);
     lv_obj_set_style_text_font(s_lbl_date, &buddy_font_28, 0);
     lv_label_set_text(s_lbl_date, "");
-    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 150);
+    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 146);  /* Noto Sans: taller line box, same baseline */
 
     /* Hint line (connection state, listening / thinking) */
     s_lbl_hint = lv_label_create(s_content);
@@ -421,8 +539,9 @@ static void build_watchface(void)
 
     /* Caption (transcript / reply) */
     s_lbl_caption = lv_label_create(s_content);
-    lv_obj_set_width(s_lbl_caption, 350);
-    lv_obj_set_height(s_lbl_caption, 78);
+    lv_obj_set_width(s_lbl_caption, CAPTION_W);
+    lv_obj_set_height(s_lbl_caption, CAPTION_H);
+    lv_obj_set_style_text_line_space(s_lbl_caption, CAPTION_LINE_SPACE, 0);
     lv_label_set_long_mode(s_lbl_caption, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(s_lbl_caption, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_lbl_caption, "");
@@ -533,7 +652,6 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
 void ui_apply_settings(const buddy_settings_t *s)
 {
     LOCK();
-    bool lang_changed = strcmp(g_ui_settings.language, s->language) != 0;
     g_ui_settings = *s;
     ui_i18n_set_language(s->language);
     g_ui_theme.accent = hex(s->theme.accent);
@@ -549,7 +667,15 @@ void ui_apply_settings(const buddy_settings_t *s)
     if (s_power == POWER_ON) {
         board_display_set_brightness(s->brightness);
     }
-    (void)lang_changed;
+    UNLOCK();
+}
+
+void ui_set_reply_language(const char *lang)
+{
+    LOCK();
+    if (ui_i18n_set_reply_language(lang)) {
+        update_clock(true);
+    }
     UNLOCK();
 }
 

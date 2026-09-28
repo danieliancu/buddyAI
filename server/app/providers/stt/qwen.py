@@ -76,9 +76,9 @@ class _QwenSTTSession(STTSession):
                         "parameters": {
                             "format": "pcm",
                             "sample_rate": self.rate,
-                            "language_hints": [self.language],
                             # Our own VAD decides end of utterance; keep ASR sentence splitting lenient.
                             "max_sentence_silence": 1300,
+                            **({"language_hints": [self.language]} if self.language not in ("", "auto") else {}),
                         },
                         "input": {},
                     },

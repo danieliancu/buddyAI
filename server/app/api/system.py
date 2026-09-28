@@ -8,6 +8,7 @@ import socket
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from app import languages
 from app.config import get_settings
 from app.device_settings import DeviceSettings
 from app.providers.base import ProviderError
@@ -67,7 +68,7 @@ def set_keys(body: KeysBody, request: Request) -> dict:
 
 @router.post("/test/{target}")
 async def test_provider(target: str, request: Request) -> dict:
-    """target: llm | tts_ro | tts_en | stt"""
+    """target: llm | stt | tts_<language code> (e.g. tts_en, tts_ro, tts_de)"""
     router_ = request.app.state.router
     settings = DeviceSettings()
     try:
@@ -78,22 +79,22 @@ async def test_provider(target: str, request: Request) -> dict:
             async for chunk in llm.stream(req):
                 text += chunk.delta
             return {"ok": True, "detail": f"{model}: {text.strip()[:40]}"}
-        if target in ("tts_ro", "tts_en"):
+        if target.startswith("tts_") and target[4:] in languages.supported_codes():
             from app.providers.tts.base import TTSRequest
 
-            lang = target[-2:]
+            lang = target[4:]
             sel = router_.tts(lang, settings)
 
             async def one():
-                yield "Test." if lang == "en" else "Test reușit."
+                yield languages.sample_sentence(lang)
 
             n = 0
             async for pcm in sel.provider.stream(one(), TTSRequest(sel.voice, lang)):
                 n += len(pcm.pcm)
             return {"ok": n > 0, "detail": f"{sel.provider.name}/{sel.voice}: {n / 48000:.2f}s audio"}
         if target == "stt":
-            stt = router_.stt("ro")
-            session = await stt.start("ro", 16000, None)
+            stt = router_.stt("auto")
+            session = await stt.start("auto", 16000, None)
             try:
                 await session.send(b"\x00\x00" * 16000)
                 text = await asyncio.wait_for(session.finish(), 10)

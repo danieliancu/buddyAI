@@ -38,11 +38,34 @@ export interface Theme {
   text: string;
 }
 
-export type Language = "ro" | "en";
+/** A language code from options.languages (e.g. "en", "de", "zh"). */
+export type Language = string;
+/** Device language: "auto" (reply in the language the user speaks) or a language code. */
+export type DeviceLanguage = "auto" | Language;
+
+export interface LanguageInfo {
+  code: Language;
+  /** English name, e.g. "German". */
+  name: string;
+  /** Name in the language itself, e.g. "Deutsch". */
+  native_name: string;
+  /** Writing system: "latin", "cyrillic", "greek", "arabic", "hebrew", "han", ... */
+  script: string;
+  rtl: boolean;
+  /** Whether the watch can display text in this script. */
+  captions: boolean;
+}
+
+export interface TtsVoices {
+  voices: string[];
+  default_voice: string;
+}
 export type VadSensitivity = "low" | "medium" | "high";
 
 export interface DeviceSettings {
-  language: Language;
+  language: DeviceLanguage;
+  /** The owner's main language, offered on the watch's quick-settings toggle next to Auto/English. */
+  preferred_language: Language | null;
   volume: number;
   brightness: number;
   screen_timeout_s: number;
@@ -53,8 +76,10 @@ export interface DeviceSettings {
   persona_id: number | null;
   custom_instructions: string;
   llm_model: string | null;
-  tts_voice_ro: string | null;
-  tts_voice_en: string | null;
+  /** null = the profile's default voice. */
+  tts_voice: string | null;
+  /** Optional per-language voice, e.g. {"ro": "cedar"}. */
+  tts_voice_overrides: Record<Language, string>;
   speech_rate: number;
   vad_sensitivity: VadSensitivity;
   max_reply_chars: number;
@@ -70,9 +95,11 @@ export interface SettingsResponse {
 
 export interface Options {
   llm_models: { id: string; provider: string; label: string }[];
-  tts: Record<string, { voices: string[]; default_voice: string }>;
+  /** by_language only lists overrides (languages whose voices differ from the default set). */
+  tts: TtsVoices & { by_language: Record<Language, TtsVoices> };
   theme_presets: Record<string, Omit<Theme, "preset">>;
-  languages: { id: Language; label: string }[];
+  /** Sorted by English name. */
+  languages: LanguageInfo[];
   vad_sensitivity: VadSensitivity[];
 }
 
@@ -193,7 +220,8 @@ export interface SystemInfo {
   keys: Partial<Record<KeyName, string>>;
 }
 
-export type TestTarget = "llm" | "stt" | "tts_ro" | "tts_en";
+/** "tts_<code>" speaks a test phrase in that language (any supported code). */
+export type TestTarget = "llm" | "stt" | `tts_${string}`;
 
 export interface TestResult {
   ok: boolean;
@@ -272,6 +300,25 @@ interface RequestOpts {
   no401?: boolean;
 }
 
+async function errorFromResponse(res: Response): Promise<ApiError> {
+  let detail: unknown = res.statusText;
+  try {
+    const text = await res.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        detail = data && typeof data === "object" && "detail" in data ? data.detail : data;
+      } catch {
+        detail = text;
+      }
+    }
+  } catch {
+    /* keep statusText */
+  }
+  if (res.status === 401) notifyUnauthorized();
+  return new ApiError(res.status, detail);
+}
+
 async function request<T>(method: string, path: string, body?: unknown, opts: RequestOpts = {}): Promise<T> {
   const init: RequestInit = { method, credentials: "same-origin", headers: {} };
   if (body instanceof FormData) {
@@ -343,6 +390,22 @@ export const api = {
     ota: (id: string, releaseId: number) => post<OtaOffer>(`/api/devices/${enc(id)}/ota`, { release_id: releaseId }),
   },
   options: () => get<Options>("/api/options"),
+  /** A short sample sentence spoken with `voice` in `language` (audio/wav). May take a few seconds. */
+  voiceSample: async (voice: string, language: Language): Promise<Blob> => {
+    let res: Response;
+    try {
+      res = await fetch("/api/voice-sample", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice, language }),
+      });
+    } catch {
+      throw new ApiError(0, "Server not reachable");
+    }
+    if (!res.ok) throw await errorFromResponse(res);
+    return res.blob();
+  },
   personas: {
     list: () => get<Persona[]>("/api/personas"),
     create: (p: PersonaInput) => post<Persona>("/api/personas", p),

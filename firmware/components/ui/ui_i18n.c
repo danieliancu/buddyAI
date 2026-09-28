@@ -1,15 +1,19 @@
 /*
  * BuddyAI - UI strings
  *
- * All on-screen UI text is English. Only the date (weekday / month names)
- * follows the device language setting (en default, ro optional); Romanian
- * uses the correct comma-below letters ș ț (U+0219 / U+021B). The fonts keep
- * Romanian diacritics because reply captions may be Romanian.
+ * All on-screen UI text is English. Only the date line (weekday / month
+ * names) is localized, for the languages that have a table below:
+ *  - language setting = a code with a table -> that language;
+ *  - language setting = "auto" -> the language of the last reply
+ *    (stt_result.language / tts_start.language) if it has a table;
+ *  - otherwise English.
+ * Style: the weekday starts the line and is capitalized; month names follow
+ * each language's running-text convention (capitalized in en/de, lowercase
+ * elsewhere). Romanian uses the comma-below letters ș ț (U+0219 / U+021B).
  */
+#include <stdio.h>
 #include <string.h>
 #include "ui_priv.h"
-
-static bool s_ro = false;
 
 static const char *const s_en[STR__COUNT] = {
     [STR_SETTINGS]        = "Settings",
@@ -50,29 +54,113 @@ static const char *const s_en[STR__COUNT] = {
     [STR_TAP_TO_TALK]     = "Tap to talk",
 };
 
-static const char *const s_wday_en[7] = {
-    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
-};
-static const char *const s_wday_ro[7] = {
-    "Duminică", "Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă",
-};
-static const char *const s_mon_en[12] = {
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-};
-static const char *const s_mon_ro[12] = {
-    "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
-    "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie",
+typedef struct {
+    const char *code;
+    const char *wday[7];        /* 0 = Sunday */
+    const char *mon[12];        /* 0 = January */
+    const char *after_wday;     /* between weekday and day number */
+    const char *after_day;      /* between day number and month */
+} date_lang_t;
+
+static const date_lang_t s_date_langs[] = {
+    { "en",
+      { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" },
+      { "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December" },
+      ", ", " " },                                  /* Monday, 28 September */
+    { "ro",
+      { "Duminică", "Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă" },
+      { "ianuarie", "februarie", "martie", "aprilie", "mai", "iunie",
+        "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie" },
+      ", ", " " },                                  /* Luni, 28 septembrie */
+    { "de",
+      { "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag" },
+      { "Januar", "Februar", "März", "April", "Mai", "Juni",
+        "Juli", "August", "September", "Oktober", "November", "Dezember" },
+      ", ", ". " },                                 /* Montag, 28. September */
+    { "fr",
+      { "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi" },
+      { "janvier", "février", "mars", "avril", "mai", "juin",
+        "juillet", "août", "septembre", "octobre", "novembre", "décembre" },
+      " ", " " },                                   /* Lundi 28 septembre */
+    { "es",
+      { "Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado" },
+      { "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre" },
+      ", ", " de " },                               /* Lunes, 28 de septiembre */
+    { "it",
+      { "Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato" },
+      { "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+        "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre" },
+      " ", " " },                                   /* Lunedì 28 settembre */
+    { "pt",
+      { "Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado" },
+      { "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro" },
+      ", ", " de " },                               /* Segunda-feira, 28 de setembro */
+    { "nl",
+      { "Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag" },
+      { "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december" },
+      " ", " " },                                   /* Maandag 28 september */
+    { "pl",
+      { "Niedziela", "Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota" },
+      { "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",   /* genitive */
+        "lipca", "sierpnia", "września", "października", "listopada", "grudnia" },
+      ", ", " " },                                  /* Poniedziałek, 28 września */
 };
 
-void ui_i18n_set_language(const char *lang)
+#define DATE_LANG_COUNT (sizeof(s_date_langs) / sizeof(s_date_langs[0]))
+
+static char s_setting_lang[SETTINGS_LANG_MAX] = "auto";
+static char s_reply_lang[SETTINGS_LANG_MAX];
+static const date_lang_t *s_date = &s_date_langs[0];
+
+/* Table for a code ("de", also "de-at" / "pt-br"), or NULL. */
+static const date_lang_t *find_date_lang(const char *code)
 {
-    s_ro = (lang && strcmp(lang, "ro") == 0);   /* date names only */
+    if (!code || !code[0]) {
+        return NULL;
+    }
+    size_t n = strcspn(code, "-_");
+    for (size_t i = 0; i < DATE_LANG_COUNT; i++) {
+        if (strlen(s_date_langs[i].code) == n && strncmp(s_date_langs[i].code, code, n) == 0) {
+            return &s_date_langs[i];
+        }
+    }
+    return NULL;
 }
 
-bool ui_i18n_is_ro(void)
+/* Recompute the date language; returns true if it changed. */
+static bool update_date_lang(void)
 {
-    return s_ro;
+    const date_lang_t *d = NULL;
+    if (strcmp(s_setting_lang, "auto") == 0) {
+        d = find_date_lang(s_reply_lang);
+    } else {
+        d = find_date_lang(s_setting_lang);
+    }
+    if (!d) {
+        d = &s_date_langs[0];
+    }
+    bool changed = d != s_date;
+    s_date = d;
+    return changed;
+}
+
+bool ui_i18n_set_language(const char *lang)
+{
+    strlcpy(s_setting_lang, (lang && lang[0]) ? lang : "auto", sizeof(s_setting_lang));
+    return update_date_lang();
+}
+
+bool ui_i18n_set_reply_language(const char *lang)
+{
+    if (!lang || !lang[0]) {
+        return false;
+    }
+    strlcpy(s_reply_lang, lang, sizeof(s_reply_lang));
+    return update_date_lang();
 }
 
 const char *ui_str(ui_str_t id)
@@ -84,12 +172,13 @@ const char *ui_str(ui_str_t id)
     return s ? s : "";
 }
 
-const char *ui_weekday(int wday)
+void ui_format_date(char *buf, size_t len, int wday, int mday, int mon, bool with_weekday)
 {
-    return (wday >= 0 && wday < 7) ? (s_ro ? s_wday_ro[wday] : s_wday_en[wday]) : "";
-}
-
-const char *ui_month(int mon)
-{
-    return (mon >= 0 && mon < 12) ? (s_ro ? s_mon_ro[mon] : s_mon_en[mon]) : "";
+    const date_lang_t *d = s_date;
+    const char *month = (mon >= 0 && mon < 12) ? d->mon[mon] : "";
+    if (with_weekday && wday >= 0 && wday < 7) {
+        snprintf(buf, len, "%s%s%d%s%s", d->wday[wday], d->after_wday, mday, d->after_day, month);
+    } else {
+        snprintf(buf, len, "%d%s%s", mday, d->after_day, month);
+    }
 }

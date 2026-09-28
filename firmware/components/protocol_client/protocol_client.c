@@ -676,6 +676,10 @@ static void handle_text(const char *txt)
         if (text) {
             emit(PROTO_EVT_TRANSCRIPT, cJSON_IsTrue(cJSON_GetObjectItem(j, "final")), text);
         }
+        const char *lang = json_str(j, "language");     /* optional, detected language */
+        if (lang && lang[0]) {
+            emit(PROTO_EVT_REPLY_LANGUAGE, 0, lang);
+        }
     } else if (strcmp(type, "llm_text") == 0) {
         const char *delta = json_str(j, "delta");
         if (delta) {
@@ -685,7 +689,12 @@ static void handle_text(const char *txt)
     } else if (strcmp(type, "tts_start") == 0) {
         uint32_t rate = 0;
         json_uint32(j, "sample_rate", &rate);
-        ESP_LOGI(TAG, "tts_start turn %lu @ %lu Hz", (unsigned long)turn, (unsigned long)rate);
+        const char *lang = json_str(j, "language");     /* optional, reply language */
+        ESP_LOGI(TAG, "tts_start turn %lu @ %lu Hz lang=%s", (unsigned long)turn, (unsigned long)rate,
+                 lang ? lang : "-");
+        if (lang && lang[0]) {
+            emit(PROTO_EVT_REPLY_LANGUAGE, 0, lang);
+        }
         audio_capture_stop();
         audio_playback_begin(turn);
         s_turn_deadline_ms = now_ms() + SPEAKING_IDLE_MS;

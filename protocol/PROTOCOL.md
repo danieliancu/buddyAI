@@ -41,7 +41,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. |
-| `listen_start` | `turn_id`, `language?` | User tapped the mic; uplink audio for `turn_id` follows. |
+| `listen_start` | `turn_id`, `language?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
 | `playback_done` | `turn_id` | Device finished playing the reply. |
@@ -58,9 +58,9 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `hello_ack` | `session_id`, `server_time`, `settings`, `settings_version`, `downlink_rate` | Session established. |
 | `listen_stop` | `turn_id`, `reason` (`vad`\|`max_duration`\|`no_speech`) | Server detected end of speech; device stops the uplink. |
 | `state` | `turn_id`, `state` (`idle`\|`listening`\|`thinking`\|`speaking`) | UI state hint. |
-| `stt_result` | `turn_id`, `text`, `final` | Transcript (partials optional). |
+| `stt_result` | `turn_id`, `text`, `final`, `language?` | Transcript (partials optional). The final result carries the language used for the reply (detected when `auto`). |
 | `llm_text` | `turn_id`, `delta` | Reply text as it streams (for on-screen caption). |
-| `tts_start` | `turn_id`, `sample_rate` | Downlink audio for the turn follows. |
+| `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
 | `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`) | Server finished the turn. |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
@@ -89,7 +89,12 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 
 ```json
 {
-  "language": "en",
+  "language": "auto",
+  "quick_languages": [
+    {"code": "auto", "label": "Auto"},
+    {"code": "en", "label": "English"},
+    {"code": "ro", "label": "Română"}
+  ],
   "volume": 70,
   "brightness": 80,
   "screen_timeout_s": 15,
@@ -107,6 +112,9 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 ```
 
 - The server is the source of truth. `settings_version` increments on every change.
+- `language`: `"auto"` (reply in the language the user speaks) or an ISO 639-1 code.
+  `quick_languages` (max 3) are the options for the watch's quick toggle; labels are always
+  renderable with the watch fonts (Latin, Greek, Cyrillic).
 - The watch may change `language`, `volume`, `brightness`, `theme`, `time_24h`
   through `settings_changed`. The server applies them, bumps the version and replies with `settings_update`.
 - AI-only settings (persona, model, voice, VAD sensitivity…) stay on the server.

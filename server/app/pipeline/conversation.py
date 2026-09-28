@@ -13,10 +13,11 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app import languages
 from app.audio.codec import OpusEncoder, apply_gain
 from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
-from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech
+from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
 from app.pipeline.vad import EndpointDetector, SpeechProbability, make_probability
@@ -29,7 +30,6 @@ log = logging.getLogger(__name__)
 
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
-LANGUAGE_NAMES = {"ro": "Romanian", "en": "English"}
 
 MessagesBuilder = Callable[[TurnContext, str], list[dict[str, str]]]
 
@@ -37,18 +37,29 @@ MessagesBuilder = Callable[[TurnContext, str], list[dict[str, str]]]
 def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, str]]:
     s = turn.settings
     with session_scope() as db:
-        persona = PersonaRepo(db).get(s.persona_id)
-        history = ConversationRepo(db).history(turn.conversation_id, s.history_turns) if turn.conversation_id else []
+        persona = PersonaRepo(db).get(s.persona_id, turn.account_id)
+        history = (
+            ConversationRepo(db).history(turn.conversation_id, s.history_turns, turn.account_id)
+            if turn.conversation_id
+            else []
+        )
         persona_prompt = persona.system_prompt if persona else "You are a helpful voice assistant."
         past = [(t.user_text, t.assistant_text) for t in history]
     now = datetime.now(ZoneInfo(s.timezone))
-    lang = LANGUAGE_NAMES.get(turn.language, "English")
+    lang = languages.display_name(turn.language)
+    if turn.auto_language:
+        language_rule = (
+            "Reply in the same language the user used in their last message"
+            f" (it appears to be {lang}), even if earlier messages were in another language."
+        )
+    else:
+        language_rule = f"Always reply in {lang}."
     system = "\n".join(
         filter(
             None,
             [
                 persona_prompt,
-                f"Always reply in {lang}.",
+                language_rule,
                 "Your reply is spoken aloud through a small smartwatch speaker: be brief and conversational, "
                 f"at most about {s.max_reply_chars} characters. Plain sentences only: no markdown, no lists, "
                 "no emojis, no URLs. Write numbers, dates and units the way they should be spoken.",
@@ -136,7 +147,12 @@ class ConversationPipeline:
                 return ""
             text = (await session.finish()).strip()
             turn.marks.stt_final = mono_ms()
-            await io.send(turn, "stt_result", text=text, final=True)
+            if turn.auto_language and text:
+                detected, _confidence = languages.detect(
+                    text, prefer=[turn.fallback_language, turn.settings.preferred_language]
+                )
+                turn.language = detected or turn.fallback_language or languages.DEFAULT_LANGUAGE
+            await io.send(turn, "stt_result", text=text, final=True, language=turn.language)
             return text
         finally:
             turn.listening = False
@@ -168,7 +184,9 @@ class ConversationPipeline:
                         if turn.marks.llm_first_token is None:
                             turn.marks.llm_first_token = mono_ms()
                         reply_parts.append(chunk.delta)
-                        await io.send(turn, "llm_text", delta=chunk.delta)
+                        caption = strip_emoji(chunk.delta)
+                        if caption:
+                            await io.send(turn, "llm_text", delta=caption)
                         await deltas.put(chunk.delta)
                     if chunk.input_tokens is not None:
                         usage_in, usage_out = chunk.input_tokens, chunk.output_tokens or 0
@@ -224,7 +242,7 @@ class ConversationPipeline:
                     for packet in encoder.encode(apply_gain(pcm.pcm, gain), pcm.sample_rate):
                         if not started:
                             started = True
-                            await io.send(turn, "tts_start", sample_rate=turn.downlink_rate)
+                            await io.send(turn, "tts_start", sample_rate=turn.downlink_rate, language=turn.language)
                             await io.send(turn, "state", state="speaking")
                         await io.send_audio(turn, packet)
             for packet in encoder.flush():

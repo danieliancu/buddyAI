@@ -1,14 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BatteryMedium, Mic, Wifi } from "lucide-react";
-import type { Language, Theme } from "../api";
+import type { DeviceLanguage, Language, Theme } from "../api";
 
 // Native AMOLED resolution of the Waveshare ESP32-S3 2.06" panel.
 const W = 410;
 const H = 502;
 const BEZEL = 14;
 
-function formatParts(now: Date, tz: string, lang: Language, h24: boolean) {
-  const locale = lang === "ro" ? "ro-RO" : "en-GB";
+/** Locale for the preview date: the device language; for "auto" the preferred language, else English. */
+function dateLocale(lang: DeviceLanguage, preferred: Language | null | undefined): string {
+  const code = lang === "auto" ? preferred || "en" : lang;
+  if (code === "en") return "en-GB";
+  try {
+    return Intl.DateTimeFormat.supportedLocalesOf([code]).length ? code : "en-GB";
+  } catch {
+    return "en-GB"; // malformed tag
+  }
+}
+
+function formatParts(now: Date, tz: string, locale: string, h24: boolean) {
   let timeZone: string | undefined = tz;
   try {
     new Intl.DateTimeFormat("en", { timeZone: tz });
@@ -19,10 +29,14 @@ function formatParts(now: Date, tz: string, lang: Language, h24: boolean) {
   const hour = tp.find((p) => p.type === "hour")?.value ?? "0";
   const minute = tp.find((p) => p.type === "minute")?.value ?? "00";
   const period = tp.find((p) => p.type === "dayPeriod")?.value ?? "";
-  // "Monday, 28 September" / "Luni, 28 septembrie" (assembled from parts: separators differ per ICU version).
+  // "Monday, 28 September" / "Montag, 28. September".
   const dp = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone }).formatToParts(now);
   const part = (t: string) => dp.find((p) => p.type === t)?.value ?? "";
-  const date = `${part("weekday")}, ${part("day")} ${part("month")}`;
+  // en-GB is assembled from parts (its separators differ per ICU version); other locales keep their native order.
+  const date =
+    locale === "en-GB"
+      ? `${part("weekday")}, ${part("day")} ${part("month")}`
+      : dp.map((p) => p.value).join("");
   return {
     time: `${h24 ? hour.padStart(2, "0") : hour}:${minute}`,
     period: h24 ? "" : period,
@@ -33,13 +47,15 @@ function formatParts(now: Date, tz: string, lang: Language, h24: boolean) {
 export default function WatchPreview({
   theme,
   language,
+  preferredLanguage,
   time24h,
   timezone,
   brightness,
   maxWidth = 300,
 }: {
   theme: Theme;
-  language: Language;
+  language: DeviceLanguage;
+  preferredLanguage?: Language | null;
   time24h: boolean;
   timezone: string;
   brightness: number;
@@ -64,7 +80,7 @@ export default function WatchPreview({
     return () => ro.disconnect();
   }, [maxWidth]);
 
-  const { time, period, date } = formatParts(now, timezone, language, time24h);
+  const { time, period, date } = formatParts(now, timezone, dateLocale(language, preferredLanguage), time24h);
   const dim = Math.max(0, Math.min(0.85, (100 - brightness) / 100));
 
   return (
@@ -130,7 +146,7 @@ export default function WatchPreview({
                 <Mic size={68} strokeWidth={2.2} />
               </div>
               <div style={{ fontSize: 22, marginTop: 22, opacity: 0.85 }}>
-                {language === "ro" ? "Atinge pentru a vorbi" : "Tap to talk"}
+                Tap to talk
               </div>
             </div>
 

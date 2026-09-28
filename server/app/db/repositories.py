@@ -60,11 +60,26 @@ class DeviceRepo:
             select(Device).where(Device.token_hash == token_hash, col(Device.revoked_at).is_(None))
         ).first()
 
-    def list(self) -> Sequence[Device]:
-        return self.s.exec(select(Device).where(col(Device.token_hash).is_not(None))).all()
+    def list(self, account_id: int | None = None) -> Sequence[Device]:
+        """Paired devices; restricted to one account when account_id is given."""
+        q = select(Device).where(col(Device.token_hash).is_not(None))
+        if account_id is not None:
+            q = q.where(Device.account_id == account_id)
+        return self.s.exec(q).all()
 
-    def pair(self, device_id: str, token_hash: str, name: str, hw_model: str, fw: str) -> Device:
+    def owned(self, device_id: str, account_id: int) -> Device | None:
+        """The device if (and only if) it is paired and belongs to the account."""
+        dev = self.get(device_id)
+        return dev if dev is not None and dev.account_id == account_id and dev.token_hash else None
+
+    def pair(
+        self, device_id: str, token_hash: str, name: str, hw_model: str, fw: str, account_id: int | None = None
+    ) -> Device:
         dev = self.get(device_id) or Device(id=device_id)
+        if dev.account_id is not None and dev.account_id != account_id:
+            # New owner: the previous owner's conversations on this watch must not carry over.
+            ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+        dev.account_id = account_id
         dev.name = name or dev.name
         dev.hw_model = hw_model
         dev.fw_version = fw
@@ -76,13 +91,28 @@ class DeviceRepo:
         self.s.refresh(dev)
         return dev
 
-    def revoke(self, device_id: str) -> Device | None:
+    def revoke(self, device_id: str, unassign: bool = False) -> Device | None:
         dev = self.get(device_id)
         if dev:
             dev.revoked_at = utcnow()
             dev.token_hash = None
+            if unassign:
+                dev.account_id = None
             self.s.add(dev)
             self.s.commit()
+        return dev
+
+    def assign(self, device_id: str, account_id: int | None) -> Device | None:
+        """Operator: move a watch to another account (or to stock). Old history is erased."""
+        dev = self.get(device_id)
+        if dev is None:
+            return None
+        if dev.account_id != account_id:
+            ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+            dev.account_id = account_id
+            self.s.add(dev)
+            self.s.commit()
+            self.s.refresh(dev)
         return dev
 
     def touch(self, device_id: str, **fields: Any) -> None:
@@ -159,22 +189,40 @@ class PersonaRepo:
             self.s.add(Persona(name=name, system_prompt=prompt, is_default=(i == 0)))
         self.s.commit()
 
-    def list(self) -> Sequence[Persona]:
-        return self.s.exec(select(Persona).order_by(Persona.id)).all()
+    def list(self, account_id: int | None = None, system_only: bool = False) -> Sequence[Persona]:
+        """All personas (operator), system personas only, or system + the account's own."""
+        q = select(Persona)
+        if system_only:
+            q = q.where(col(Persona.account_id).is_(None))
+        elif account_id is not None:
+            q = q.where((col(Persona.account_id).is_(None)) | (Persona.account_id == account_id))
+        return self.s.exec(q.order_by(Persona.id)).all()
 
-    def get(self, persona_id: int | None) -> Persona | None:
+    def visible_to(self, persona_id: int, account_id: int | None) -> bool:
+        p = self.s.get(Persona, persona_id)
+        return p is not None and (p.account_id is None or p.account_id == account_id)
+
+    def get(self, persona_id: int | None, account_id: int | None = None) -> Persona | None:
+        """The requested persona if visible to the account, else the system default."""
         if persona_id is not None:
             p = self.s.get(Persona, persona_id)
-            if p:
+            if p and (p.account_id is None or p.account_id == account_id):
                 return p
-        return self.s.exec(select(Persona).where(Persona.is_default == True)).first()  # noqa: E712
+        return self.s.exec(
+            select(Persona).where(Persona.is_default == True, col(Persona.account_id).is_(None))  # noqa: E712
+        ).first()
 
-    def upsert(self, persona_id: int | None, name: str, prompt: str, is_default: bool) -> Persona:
+    def upsert(
+        self, persona_id: int | None, name: str, prompt: str, is_default: bool, account_id: int | None = None
+    ) -> Persona:
+        """Create/update. Customer personas (account_id set) can never be the system default."""
         p = self.s.get(Persona, persona_id) if persona_id else None
-        p = p or Persona(name=name, system_prompt=prompt)
+        p = p or Persona(name=name, system_prompt=prompt, account_id=account_id)
         p.name, p.system_prompt = name, prompt
+        if account_id is not None:
+            is_default = False
         if is_default:
-            for other in self.list():
+            for other in self.list(system_only=True):
                 if other.is_default and other.id != p.id:
                     other.is_default = False
                     self.s.add(other)
@@ -212,12 +260,14 @@ class ConversationRepo:
         self.s.refresh(conv)
         return conv
 
-    def history(self, conversation_id: int, limit_turns: int) -> list[Turn]:
+    def history(self, conversation_id: int, limit_turns: int, account_id: int | None = None) -> list[Turn]:
+        """Completed turns for the LLM context, only those of the current owner."""
         if limit_turns <= 0:
             return []
+        owner = Turn.account_id == account_id if account_id is not None else col(Turn.account_id).is_(None)
         rows = self.s.exec(
             select(Turn)
-            .where(Turn.conversation_id == conversation_id, Turn.status == "completed")
+            .where(Turn.conversation_id == conversation_id, Turn.status == "completed", owner)
             .order_by(col(Turn.id).desc())
             .limit(limit_turns)
         ).all()
@@ -231,12 +281,13 @@ class ConversationRepo:
             .limit(limit)
         ).all()
 
-    def turns(self, conversation_id: int) -> Sequence[Turn]:
-        return self.s.exec(
-            select(Turn).where(Turn.conversation_id == conversation_id).order_by(Turn.id)
-        ).all()
+    def turns(self, conversation_id: int, account_id: int | None = None) -> Sequence[Turn]:
+        q = select(Turn).where(Turn.conversation_id == conversation_id)
+        if account_id is not None:
+            q = q.where(Turn.account_id == account_id)
+        return self.s.exec(q.order_by(Turn.id)).all()
 
-    def delete_device_history(self, device_id: str) -> int:
+    def delete_device_history(self, device_id: str, commit: bool = True) -> int:
         turns = self.s.exec(select(Turn).where(Turn.device_id == device_id)).all()
         for usage in self.s.exec(
             select(UsageRecord).where(col(UsageRecord.turn_id).in_([t.id for t in turns]))
@@ -247,7 +298,10 @@ class ConversationRepo:
             self.s.delete(t)
         for c in self.s.exec(select(Conversation).where(Conversation.device_id == device_id)).all():
             self.s.delete(c)
-        self.s.commit()
+        if commit:
+            self.s.commit()
+        else:
+            self.s.flush()
         return len(turns)
 
 
@@ -271,10 +325,12 @@ class TurnRepo:
         self.s.add(t)
         self.s.commit()
 
-    def recent(self, since: datetime, device_id: str | None = None) -> Sequence[Turn]:
+    def recent(self, since: datetime, device_id: str | None = None, account_id: int | None = None) -> Sequence[Turn]:
         q = select(Turn).where(Turn.created_at >= since)
         if device_id:
             q = q.where(Turn.device_id == device_id)
+        if account_id is not None:
+            q = q.where(Turn.account_id == account_id)
         return self.s.exec(q.order_by(Turn.id)).all()
 
 
@@ -286,10 +342,14 @@ class UsageRepo:
         self.s.add_all(records)
         self.s.commit()
 
-    def since(self, since: datetime, device_id: str | None = None) -> Sequence[UsageRecord]:
+    def since(
+        self, since: datetime, device_id: str | None = None, account_id: int | None = None
+    ) -> Sequence[UsageRecord]:
         q = select(UsageRecord).where(UsageRecord.created_at >= since)
         if device_id:
             q = q.where(UsageRecord.device_id == device_id)
+        if account_id is not None:
+            q = q.where(UsageRecord.account_id == account_id)
         return self.s.exec(q).all()
 
 

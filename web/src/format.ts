@@ -100,4 +100,26 @@ export const STATUS_LABEL: Record<string, string> = {
   active: "in progress",
 };
 
-export const LANG_LABEL: Record<string, string> = { ro: "Romanian", en: "English" };
+/** Minimal shape needed for language labels (see languages.ts / LanguageInfo). */
+type LangLookup = { get(code: string): { name: string; native_name: string } | undefined };
+
+/** English name of a language code ("German"); unknown codes fall back to the code upper-cased. */
+export function langName(code: string | null | undefined, langs?: LangLookup): string {
+  if (!code) return "—";
+  if (code === "auto") return "Auto";
+  return langs?.get(code)?.name ?? code.toUpperCase();
+}
+
+/** Native name ("Deutsch"); unknown codes fall back to the code upper-cased. */
+export function langNative(code: string | null | undefined, langs?: LangLookup): string {
+  if (!code) return "—";
+  if (code === "auto") return "Auto";
+  return langs?.get(code)?.native_name ?? code.toUpperCase();
+}
+
+/** "Deutsch (German)", or just the name when both are the same ("English"). */
+export function langLabel(code: string | null | undefined, langs?: LangLookup): string {
+  const name = langName(code, langs);
+  const native = langNative(code, langs);
+  return native === name ? name : `${native} (${name})`;
+}

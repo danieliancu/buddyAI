@@ -120,11 +120,21 @@ class ProviderRouter:
     def llm_params(self) -> dict[str, Any]:
         return dict(self.config["llm"].get("params", {}))
 
-    def tts_options(self) -> dict[str, Any]:
-        return self.config["tts"]["by_language"]
+    def _tts_entry(self, language: str) -> dict[str, Any]:
+        tts = self.config["tts"]
+        return tts.get("by_language", {}).get(language) or tts["default"]
 
-    def tts(self, language: str, settings: DeviceSettings) -> TTSSelection:
-        sel = self.config["tts"]["by_language"][language]
-        wanted = settings.tts_voice_ro if language == "ro" else settings.tts_voice_en
+    def tts_options(self) -> dict[str, Any]:
+        """Voices for the settings UI: the default entry plus per-language overrides."""
+        tts = self.config["tts"]
+        pick = lambda e: {"voices": e["voices"], "default_voice": e["default_voice"]}  # noqa: E731
+        return {
+            **pick(tts["default"]),
+            "by_language": {lang: pick(e) for lang, e in tts.get("by_language", {}).items()},
+        }
+
+    def tts(self, language: str, settings: DeviceSettings, voice: str | None = None) -> TTSSelection:
+        sel = self._tts_entry(language)
+        wanted = voice or settings.tts_voice_overrides.get(language) or settings.tts_voice
         voice = wanted if wanted in sel["voices"] else sel["default_voice"]
         return TTSSelection(self._build(sel["provider"], sel["model"]), voice, sel.get("instructions", ""))

@@ -63,6 +63,9 @@ void ui_set_conv_state(ui_conv_t st);
 void ui_caption_clear(void);
 void ui_caption_set(const char *text);
 void ui_caption_append(const char *delta);
+/* Detected language of the current reply (stt_result / tts_start "language").
+ * With language = "auto" the date follows it when a table exists. */
+void ui_set_reply_language(const char *lang);
 void ui_set_hint(const char *text);        /* small status line, NULL clears */
 void ui_set_status(int battery_pct, bool charging, ui_link_t link);
 

@@ -50,7 +50,7 @@ async def _paired_watch(host: str, device_id: str) -> tuple[FakeWatch, str]:
             await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
         w = FakeWatch(f"ws://{host}/ws/device", device_id)
         await w.connect()
-        code = "424242" if device_id.endswith("1") else "737373"
+        code = {"e2e-1": "424242", "e2e-2": "737373", "e2e-auto": "515151"}[device_id]
         await w.send("hello", device_id=device_id, fw_version="t", hw_model="t", pairing_code=code)
         await w.expect("pairing_pending")
         assert (await http.post("/api/devices/pair", json={"code": code, "name": "t"})).status_code == 200
@@ -99,3 +99,11 @@ async def test_bad_token_is_rejected(server):
     msg = await w.inbox.get()
     await w.close()
     assert msg["type"] == "error" and msg["code"] == "unauthorized"
+
+
+async def test_auto_language_is_detected_and_reported(server):
+    w, _ = await _paired_watch(server, "e2e-auto")
+    tl = await w.ask(load_wav_16k(SAMPLES / "en_3.wav"), "auto", realtime=False)
+    await w.close()
+    assert tl.status == "completed"
+    assert tl.language == "en"  # mock STT returns English text in auto mode

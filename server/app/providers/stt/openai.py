@@ -63,7 +63,7 @@ class _OpenAISTTSession(STTSession):
         except Exception as exc:
             raise ProviderError("stt", f"connect failed: {exc}") from exc
         transcription = {"model": self.p.model}
-        if self.language:
+        if self.language and self.language != "auto":  # "auto": let the model detect it
             transcription["language"] = self.language
         await self._send(
             {

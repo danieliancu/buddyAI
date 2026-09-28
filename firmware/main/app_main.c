@@ -182,6 +182,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
             ui_caption_append(ev->str);
         }
         break;
+    case PROTO_EVT_REPLY_LANGUAGE:
+        ui_set_reply_language(ev->str);
+        break;
     case PROTO_EVT_ERROR:
         switch ((proto_error_t)ev->num) {
         case PROTO_ERR_NOT_CONNECTED:

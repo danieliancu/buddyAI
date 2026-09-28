@@ -11,9 +11,10 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from app import languages
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
-from app.db.models import utcnow
+from app.db.models import Account, utcnow
 from app.db.repositories import ConversationRepo, DeviceRepo, SettingsRepo, TurnRepo, UsageRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
@@ -46,6 +47,8 @@ class DeviceConnection:
         self.active: TurnContext | None = None
         self.last_turn_id = 0
         self.recent: dict[int, TurnContext] = {}
+        self.last_language: str | None = None  # last detected reply language in this session
+        self.account_id: int | None = None  # owner of this watch
         self._send_lock = asyncio.Lock()
         self._decoder: OpusDecoder | None = None
         self._closed = False
@@ -171,6 +174,8 @@ class DeviceConnection:
         token, code = msg.get("token"), msg.get("pairing_code")
         hw, fw = str(msg.get("hw_model", ""))[:64], str(msg.get("fw_version", ""))[:32]
         if token:
+            owner_status: str | None = None
+            account_id: int | None = None
             with session_scope() as db:
                 dev = DeviceRepo(db).by_token_hash(hash_device_token(token))
                 if dev is None or dev.id != device_id:
@@ -178,9 +183,16 @@ class DeviceConnection:
                 else:
                     DeviceRepo(db).touch(dev.id, fw_version=fw, hw_model=hw, last_ip=self._client_ip())
                     settings, version = SettingsRepo(db).ensure(dev.id)
+                    account_id = dev.account_id
+                    owner = db.get(Account, account_id) if account_id else None
+                    owner_status = owner.status if owner else None
             if dev is None:
                 await self.send_json("error", code="unauthorized", message="unknown or revoked token")
                 raise _Close()
+            if owner_status not in (None, "active"):
+                await self.send_json("error", code="account_inactive", message="account suspended or closed")
+                raise _Close()
+            self.account_id = account_id
             self.settings = settings
             self.authenticated = True
             self.env.session_id = uuid.uuid4().hex
@@ -219,7 +231,8 @@ class DeviceConnection:
         if self.active:
             await self._cancel_active()
         self.last_turn_id = turn_id
-        language = msg.get("language") if msg.get("language") in ("ro", "en") else self.settings.language
+        requested = msg.get("language")
+        language = requested if isinstance(requested, str) and languages.is_known(requested) else self.settings.language
         turn = TurnContext(
             turn_id=turn_id,
             session_id=self.env.session_id or "",
@@ -227,11 +240,14 @@ class DeviceConnection:
             language=language,
             settings=self.settings,
             downlink_rate=self.downlink_rate,
+            fallback_language=self.last_language,
+            account_id=self.account_id,
         )
         with session_scope() as db:
             conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
             row = TurnRepo(db).create(
                 device_id=self.device_id,
+                account_id=self.account_id,
                 conversation_id=conv.id,
                 session_id=turn.session_id,
                 turn_no=turn_id,
@@ -296,6 +312,8 @@ class DeviceConnection:
 
     async def _finish_turn(self, turn: TurnContext, result: TurnResult) -> None:
         live = self._is_live(turn)
+        if turn.language != languages.AUTO and turn.user_text:
+            self.last_language = turn.language
         if result.error_code and live:
             await self.send_json("error", turn.turn_id, code=result.error_code, message=result.error_message or "")
         if live:
@@ -324,6 +342,7 @@ class DeviceConnection:
             TurnRepo(db).update(
                 turn.db_id,
                 status=result.status,
+                language=turn.language,
                 user_text=turn.user_text,
                 assistant_text=turn.assistant_text,
                 error=result.error_message if result.error_code else None,
@@ -334,7 +353,7 @@ class DeviceConnection:
                 **turn.marks.as_db_fields(),
             )
             pricing = ProviderPricingConfig.load(db)
-            UsageRepo(db).add_many(pricing.records(turn.usage, self.device_id, turn.db_id))
+            UsageRepo(db).add_many(pricing.records(turn.usage, self.device_id, turn.db_id, turn.account_id))
 
     async def _on_playback_started(self, msg: dict[str, Any]) -> None:
         turn = self.recent.get(msg.get("turn_id"))

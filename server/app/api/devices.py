@@ -1,48 +1,44 @@
-"""Devices: list, pairing, rename, revoke, settings, personas, history."""
+"""Operator API: all devices, pairing (optionally to an account), settings, personas, history."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from app.db.repositories import ConversationRepo, DeviceRepo, PersonaRepo, SettingsRepo
-from app.db.models import Persona
+from app import accounts
+from app.api.common import (
+    PersonaBody,
+    VoiceSampleBody,
+    conversations_out,
+    device_out,
+    hub_of,
+    options,
+    patch_settings,
+    read_settings,
+    voice_sample,
+)
+from app.db.models import Account, Persona
+from app.db.repositories import ConversationRepo, DeviceRepo, PersonaRepo
 from app.db.session import get_session
-from app.device_settings import THEME_PRESETS, DeviceSettings
-from app.gateway.hub import DeviceHub, PairingError
+from app.gateway.hub import PairingError
 from app.security import is_valid_pairing_code, require_admin
 
 router = APIRouter(prefix="/api", tags=["devices"], dependencies=[Depends(require_admin)])
 
 
-def hub_of(request: Request) -> DeviceHub:
-    return request.app.state.hub
-
-
-def _device_out(dev, hub: DeviceHub) -> dict[str, Any]:
-    return {
-        "id": dev.id,
-        "name": dev.name,
-        "hw_model": dev.hw_model,
-        "fw_version": dev.fw_version,
-        "paired_at": dev.paired_at,
-        "last_seen_at": dev.last_seen_at,
-        "last_ip": dev.last_ip,
-        "battery_pct": dev.battery_pct,
-        "charging": dev.charging,
-        "rssi": dev.rssi,
-        "online": hub.is_online(dev.id),
-        "state": hub.state_of(dev.id),
-    }
+def _with_owner(dev, db: Session, request: Request) -> dict[str, Any]:
+    out = device_out(dev, hub_of(request))
+    owner = db.get(Account, dev.account_id) if dev.account_id else None
+    out["account"] = {"id": owner.id, "email": owner.email, "name": owner.name} if owner else None
+    return out
 
 
 @router.get("/devices")
-def list_devices(request: Request, db: Session = Depends(get_session)) -> list[dict]:
-    hub = hub_of(request)
-    return [_device_out(d, hub) for d in DeviceRepo(db).list()]
+def list_devices(request: Request, account_id: int | None = None, db: Session = Depends(get_session)) -> list[dict]:
+    return [_with_owner(d, db, request) for d in DeviceRepo(db).list(account_id)]
 
 
 @router.get("/devices/pending")
@@ -53,16 +49,20 @@ def pending(request: Request) -> list[dict]:
 class PairBody(BaseModel):
     code: str
     name: str = Field("BuddyAI Watch", min_length=1, max_length=80)
+    account_id: int | None = None  # None = operator stock (not owned by a customer)
 
 
 @router.post("/devices/pair")
-async def pair(body: PairBody, request: Request) -> dict:
+async def pair(body: PairBody, request: Request, db: Session = Depends(get_session)) -> dict:
     if not is_valid_pairing_code(body.code):
         raise HTTPException(400, "code must be 6 digits")
+    if body.account_id is not None and not db.get(Account, body.account_id):
+        raise HTTPException(404, "account not found")
     try:
-        device_id = await hub_of(request).pair(body.code, body.name)
+        device_id = await hub_of(request).pair(body.code, body.name, body.account_id)
     except PairingError as exc:
         raise HTTPException(404, str(exc)) from exc
+    accounts.audit(db, request.session["admin"], "device.pair", body.account_id, device_id)
     return {"device_id": device_id}
 
 
@@ -75,7 +75,26 @@ def rename(device_id: str, body: RenameBody, request: Request, db: Session = Dep
     dev = DeviceRepo(db).rename(device_id, body.name)
     if not dev:
         raise HTTPException(404, "device not found")
-    return _device_out(dev, hub_of(request))
+    return _with_owner(dev, db, request)
+
+
+class AssignBody(BaseModel):
+    account_id: int | None
+
+
+@router.put("/devices/{device_id}/account")
+async def assign(device_id: str, body: AssignBody, request: Request, db: Session = Depends(get_session)) -> dict:
+    """Move a watch to another owner (or back to stock). The previous owner's history is erased."""
+    if body.account_id is not None and not db.get(Account, body.account_id):
+        raise HTTPException(404, "account not found")
+    dev = DeviceRepo(db).assign(device_id, body.account_id)
+    if not dev:
+        raise HTTPException(404, "device not found")
+    hub = hub_of(request)
+    hub.forget_owner(device_id)
+    await hub.disconnect(device_id, "owner changed")  # the watch reconnects and picks up its new owner
+    accounts.audit(db, request.session["admin"], "device.assign", body.account_id, device_id)
+    return _with_owner(dev, db, request)
 
 
 @router.delete("/devices/{device_id}")
@@ -83,6 +102,7 @@ async def revoke(device_id: str, request: Request, db: Session = Depends(get_ses
     if not DeviceRepo(db).revoke(device_id):
         raise HTTPException(404, "device not found")
     await hub_of(request).revoke(device_id)
+    accounts.audit(db, request.session["admin"], "device.revoke", None, device_id)
     return {"ok": True}
 
 
@@ -93,53 +113,36 @@ async def revoke(device_id: str, request: Request, db: Session = Depends(get_ses
 def get_settings_(device_id: str, db: Session = Depends(get_session)) -> dict:
     if not DeviceRepo(db).get(device_id):
         raise HTTPException(404, "device not found")
-    settings, version = SettingsRepo(db).ensure(device_id)
-    return {"settings": settings.model_dump(), "version": version}
+    return read_settings(db, device_id)
 
 
 @router.patch("/devices/{device_id}/settings")
-async def patch_settings(
+async def patch_settings_(
     device_id: str, changes: dict[str, Any], request: Request, db: Session = Depends(get_session)
 ) -> dict:
-    if not DeviceRepo(db).get(device_id):
+    dev = DeviceRepo(db).get(device_id)
+    if not dev:
         raise HTTPException(404, "device not found")
-    unknown = sorted(set(changes) - set(DeviceSettings.model_fields))
-    if unknown:
-        raise HTTPException(422, [{"loc": [k], "msg": "unknown setting", "type": "extra_forbidden"} for k in unknown])
-    try:
-        settings, version = SettingsRepo(db).update(device_id, changes)
-    except ValidationError as exc:
-        # include_context=False: the context may hold exception objects that are not JSON-serializable
-        raise HTTPException(422, exc.errors(include_url=False, include_context=False, include_input=False)) from exc
-    await hub_of(request).push_settings(device_id)
-    return {"settings": settings.model_dump(), "version": version}
+    return await patch_settings(db, hub_of(request), device_id, changes, dev.account_id)
 
 
 @router.get("/options")
-def options(request: Request) -> dict:
-    """Choices for the settings UI (models, voices, presets) — all from config."""
-    r = request.app.state.router
-    return {
-        "llm_models": r.llm_models(),
-        "tts": {lang: {"voices": v["voices"], "default_voice": v["default_voice"]} for lang, v in r.tts_options().items()},
-        "theme_presets": THEME_PRESETS,
-        "languages": [{"id": "ro", "label": "Română"}, {"id": "en", "label": "English"}],
-        "vad_sensitivity": ["low", "medium", "high"],
-    }
+def options_(request: Request) -> dict:
+    return options(request)
 
 
-# --- personas -------------------------------------------------------------------------------
+@router.post("/voice-sample")
+async def voice_sample_(body: VoiceSampleBody, request: Request) -> Response:
+    return await voice_sample(body, request)
 
 
-class PersonaBody(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    system_prompt: str = Field(min_length=1, max_length=4000)
-    is_default: bool = False
+# --- system personas (operator) ------------------------------------------------------------------
 
 
 @router.get("/personas")
 def personas(db: Session = Depends(get_session)) -> list[dict]:
-    return [p.model_dump() for p in PersonaRepo(db).list()]
+    """System personas (available to every customer)."""
+    return [p.model_dump() for p in PersonaRepo(db).list(system_only=True)]
 
 
 @router.post("/personas")
@@ -147,51 +150,42 @@ def create_persona(body: PersonaBody, db: Session = Depends(get_session)) -> dic
     return PersonaRepo(db).upsert(None, body.name, body.system_prompt, body.is_default).model_dump()
 
 
+def _system_persona(db: Session, persona_id: int) -> Persona:
+    p = db.get(Persona, persona_id)
+    if not p or p.account_id is not None:
+        raise HTTPException(404, "persona not found")
+    return p
+
+
 @router.put("/personas/{persona_id}")
 def update_persona(persona_id: int, body: PersonaBody, db: Session = Depends(get_session)) -> dict:
-    if not db.get(Persona, persona_id):
-        raise HTTPException(404, "persona not found")
+    _system_persona(db, persona_id)
     return PersonaRepo(db).upsert(persona_id, body.name, body.system_prompt, body.is_default).model_dump()
 
 
 @router.delete("/personas/{persona_id}")
 def delete_persona(persona_id: int, db: Session = Depends(get_session)) -> dict:
+    _system_persona(db, persona_id)
     if not PersonaRepo(db).delete(persona_id):
-        raise HTTPException(400, "cannot delete (missing or default persona)")
+        raise HTTPException(400, "cannot delete the default persona")
     return {"ok": True}
 
 
-# --- history --------------------------------------------------------------------------------
+# --- history (operator access is audited) --------------------------------------------------------
 
 
 @router.get("/devices/{device_id}/conversations")
-def conversations(device_id: str, db: Session = Depends(get_session)) -> list[dict]:
-    repo = ConversationRepo(db)
-    out = []
-    for c in repo.list_for_device(device_id):
-        turns = repo.turns(c.id)
-        out.append(
-            {
-                "id": c.id,
-                "started_at": c.started_at,
-                "last_activity_at": c.last_activity_at,
-                "turns": [
-                    {
-                        "id": t.id,
-                        "status": t.status,
-                        "language": t.language,
-                        "user_text": t.user_text,
-                        "assistant_text": t.assistant_text,
-                        "ttfa_ms": t.ttfa_device_ms or t.ttfa_server_ms,
-                        "created_at": t.created_at,
-                    }
-                    for t in turns
-                ],
-            }
-        )
-    return out
+def conversations(device_id: str, request: Request, db: Session = Depends(get_session)) -> list[dict]:
+    dev = DeviceRepo(db).get(device_id)
+    if not dev:
+        raise HTTPException(404, "device not found")
+    if dev.account_id is not None:
+        accounts.audit(db, request.session["admin"], "history.view", dev.account_id, device_id)
+    return conversations_out(db, device_id, dev.account_id)
 
 
 @router.delete("/devices/{device_id}/conversations")
-def delete_history(device_id: str, db: Session = Depends(get_session)) -> dict:
+def delete_history(device_id: str, request: Request, db: Session = Depends(get_session)) -> dict:
+    dev = DeviceRepo(db).get(device_id)
+    accounts.audit(db, request.session["admin"], "history.delete", dev.account_id if dev else None, device_id)
     return {"deleted_turns": ConversationRepo(db).delete_device_history(device_id)}

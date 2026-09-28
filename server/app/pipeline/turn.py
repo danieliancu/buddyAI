@@ -24,9 +24,12 @@ class TurnContext:
     turn_id: int
     session_id: str
     device_id: str
-    language: str
+    language: str  # "auto" until the transcript's language is detected, then an ISO 639-1 code
     settings: DeviceSettings
     downlink_rate: int
+    account_id: int | None = None  # owner of the watch (None = unassigned/operator stock)
+    fallback_language: str | None = None  # last detected language in this session (used when unsure)
+    auto_language: bool = False
     db_id: int | None = None
     conversation_id: int | None = None
     marks: TurnMarks = field(default_factory=TurnMarks)
@@ -39,6 +42,9 @@ class TurnContext:
     user_text: str = ""
     assistant_text: str = ""
     usage: list[UsageItem] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.auto_language = self.language == "auto"
 
 
 @dataclass

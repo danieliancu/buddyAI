@@ -47,6 +47,7 @@ typedef enum {
     PROTO_EVT_CONV_STATE,           /* num = proto_conv_state_t */
     PROTO_EVT_TRANSCRIPT,           /* str = user text (stt_result) */
     PROTO_EVT_REPLY_DELTA,          /* str = llm_text delta */
+    PROTO_EVT_REPLY_LANGUAGE,       /* str = detected language code (stt_result / tts_start) */
     PROTO_EVT_ERROR,                /* num = proto_error_t, str = message (may be NULL) */
     PROTO_EVT_TIME_SET,             /* system clock set from hello_ack.server_time */
     PROTO_EVT_OTA,                  /* num = progress %, -1 = failed */

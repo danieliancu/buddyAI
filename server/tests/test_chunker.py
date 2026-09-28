@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
+from app import languages
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker
 
 CFG = ChunkerConfig.from_dict(json.loads((Path(__file__).parent.parent / "config/providers.openai.json").read_text("utf-8"))["chunker"])
+CFG.abbreviations = languages.abbreviations()
 
 
 def run(text: str, lang: str = "ro", step: int = 3) -> list[str]:

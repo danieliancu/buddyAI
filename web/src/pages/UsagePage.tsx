@@ -4,7 +4,8 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
 import { api, type Currency, type Device, type Diagnostics, type PricingRule, type Stats, type Usage } from "../api";
 import { useLive } from "../live";
-import { KIND_LABEL, LANG_LABEL, STATUS_LABEL, UNIT_LABEL, fmtDateTime, fmtMoney, fmtMs, fmtQty, fmtUsd } from "../format";
+import { useLanguages } from "../languages";
+import { KIND_LABEL, STATUS_LABEL, langLabel, langName, langNative, UNIT_LABEL, fmtDateTime, fmtMoney, fmtMs, fmtQty, fmtUsd } from "../format";
 import { DevicePicker, TurnStatusBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, cx, useAsync } from "../components/ui";
 
@@ -199,6 +200,7 @@ const STAGES: { key: keyof Diagnostics["stages"]; label: string; hint: string }[
 
 function DiagTab({ days, deviceId, devices }: { days: number; deviceId: string; devices: Device[] }) {
   const diag = useAsync(() => api.diagnostics(Math.min(days, 90), deviceId || undefined), [days, deviceId]);
+  const langs = useLanguages();
   useLive((e) => e.type === "turn_end" && diag.reload());
   if (diag.error) return <ErrorBox error={diag.error} onRetry={diag.reload} />;
   if (!diag.data) return <Spinner />;
@@ -250,7 +252,7 @@ function DiagTab({ days, deviceId, devices }: { days: number; deviceId: string; 
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="TTFA by language" bodyClassName="p-0 px-4">
-          <StatsTable rows={Object.entries(d.by_language).map(([k, v]) => [LANG_LABEL[k] ?? k, v])} target={d.targets} />
+          <StatsTable rows={Object.entries(d.by_language).map(([k, v]) => [langLabel(k, langs), v])} target={d.targets} />
         </Card>
         <Card title="TTFA by provider (STT / LLM / TTS)" bodyClassName="p-0 px-4">
           <StatsTable rows={Object.entries(d.by_provider).map(([k, v]) => [<span className="font-mono text-xs">{k}</span>, v])} target={d.targets} />
@@ -279,7 +281,9 @@ function DiagTab({ days, deviceId, devices }: { days: number; deviceId: string; 
                 <tr key={t.id}>
                   <td className="whitespace-nowrap">{fmtDateTime(t.created_at)}</td>
                   <td className="max-w-40 truncate">{names.get(t.device_id) ?? t.device_id}</td>
-                  <td>{t.language.toUpperCase()}</td>
+                  <td className="whitespace-nowrap" title={t.language === "auto" ? "No speech detected" : langName(t.language, langs)}>
+                    {t.language === "auto" ? "—" : langNative(t.language, langs)}
+                  </td>
                   <td>
                     {t.status === "completed" ? <Badge tone="ok">completed</Badge> : <TurnStatusBadge status={t.status} />}
                     {t.error && <span className="block max-w-60 truncate text-[11px] text-danger" title={t.error}>{t.error}</span>}

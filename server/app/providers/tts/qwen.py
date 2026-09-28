@@ -11,13 +11,18 @@ from collections.abc import AsyncIterator
 
 import websockets
 
+from app import languages
 from app.providers.base import ProviderError
 from app.providers.tts.base import PCMChunk, TTSProvider, TTSRequest
 
 log = logging.getLogger(__name__)
 
-LANGUAGE_TYPES = {"en": "English", "ro": "Auto"}
 SAMPLE_RATE = 24000
+
+
+def _language_type(code: str) -> str:
+    lang = languages.get(code)
+    return (lang.qwen_language_type if lang else None) or "Auto"
 
 
 class QwenRealtimeTTS(TTSProvider):
@@ -49,7 +54,7 @@ class QwenRealtimeTTS(TTSProvider):
                     "session": {
                         "mode": "commit",
                         "voice": request.voice,
-                        "language_type": LANGUAGE_TYPES.get(request.language, "Auto"),
+                        "language_type": _language_type(request.language),
                         "response_format": "pcm",
                         "sample_rate": SAMPLE_RATE,
                     },

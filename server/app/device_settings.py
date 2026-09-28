@@ -7,7 +7,9 @@ from functools import lru_cache
 from importlib import resources
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app import languages
 
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -37,29 +39,66 @@ class Theme(BaseModel):
 
 class DeviceSettings(BaseModel):
     # --- device-facing -----------------------------------------------------------
-    language: Literal["ro", "en"] = "en"
+    language: str = "auto"  # "auto" (reply in the language spoken) or an ISO 639-1 code
+    preferred_language: str | None = None  # owner's main language, offered on the watch quick toggle
     volume: int = Field(70, ge=0, le=100)
     brightness: int = Field(80, ge=5, le=100)
     screen_timeout_s: int = Field(15, ge=5, le=300)
     time_24h: bool = True
-    timezone: str = "Europe/Bucharest"
+    timezone: str = "Europe/London"
     theme: Theme = Field(default_factory=Theme)
     max_listen_s: int = Field(15, ge=3, le=60)
     # --- AI (server-only) --------------------------------------------------------
     persona_id: int | None = None
     custom_instructions: str = Field("", max_length=2000)
     llm_model: str | None = None  # None -> server default
-    tts_voice_ro: str | None = None
-    tts_voice_en: str | None = None
+    tts_voice: str | None = None  # None -> profile default voice
+    tts_voice_overrides: dict[str, str] = Field(default_factory=dict)  # language code -> voice
     speech_rate: float = Field(1.0, ge=0.5, le=2.0)
     vad_sensitivity: Literal["low", "medium", "high"] = "medium"
     max_reply_chars: int = Field(400, ge=80, le=2000)
     history_turns: int = Field(6, ge=0, le=30)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy(cls, data: Any) -> Any:
+        # Rev. 2 stored per-language voices as tts_voice_ro / tts_voice_en.
+        if isinstance(data, dict) and ("tts_voice_ro" in data or "tts_voice_en" in data):
+            data = dict(data)
+            overrides = dict(data.get("tts_voice_overrides") or {})
+            for code in ("ro", "en"):
+                voice = data.pop(f"tts_voice_{code}", None)
+                if voice:
+                    overrides.setdefault(code, voice)
+            data["tts_voice_overrides"] = overrides
+        return data
+
     @field_validator("timezone")
     @classmethod
     def _tz(cls, v: str) -> str:
         posix_tz(v)  # raises if unknown
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def _language(cls, v: str) -> str:
+        if not languages.is_known(v):
+            raise ValueError(f"unknown language {v!r}")
+        return v
+
+    @field_validator("preferred_language")
+    @classmethod
+    def _preferred(cls, v: str | None) -> str | None:
+        if v is not None and (v == languages.AUTO or not languages.is_known(v)):
+            raise ValueError(f"unknown language {v!r}")
+        return v
+
+    @field_validator("tts_voice_overrides")
+    @classmethod
+    def _overrides(cls, v: dict[str, str]) -> dict[str, str]:
+        bad = [k for k in v if k == languages.AUTO or not languages.is_known(k)]
+        if bad:
+            raise ValueError(f"unknown language(s) {bad}")
         return v
 
 
@@ -70,6 +109,7 @@ def device_view(s: DeviceSettings) -> dict[str, Any]:
     """Subset sent to the watch."""
     return {
         "language": s.language,
+        "quick_languages": languages.quick_languages(s.preferred_language),
         "volume": s.volume,
         "brightness": s.brightness,
         "screen_timeout_s": s.screen_timeout_s,

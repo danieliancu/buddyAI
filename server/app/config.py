@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     display_currency: str = "GBP"
     usd_to_display_rate: float = 0.75  # approximate USD->GBP; update it in the web app (Usage > Currency)
 
+    # Customer app / email
+    app_url: str = ""  # public URL of the customer app, used in email links (e.g. https://app.example.com)
+    email_backend: str = "console"  # console | smtp
+    email_from: str = "BuddyAI <no-reply@localhost>"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+
     # Session / protocol
     session_idle_timeout_s: int = 45
     pairing_code_ttl_s: int = 300

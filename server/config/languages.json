@@ -1,0 +1,679 @@
+{
+ "languages": [
+  {
+   "code": "af",
+   "name": "Afrikaans",
+   "native_name": "Afrikaans",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "af-ZA"
+  },
+  {
+   "code": "ar",
+   "name": "Arabic",
+   "native_name": "العربية",
+   "script": "arabic",
+   "rtl": true,
+   "captions": false,
+   "azure_locale": "ar-SA"
+  },
+  {
+   "code": "hy",
+   "name": "Armenian",
+   "native_name": "Հայերեն",
+   "script": "armenian",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "hy-AM"
+  },
+  {
+   "code": "az",
+   "name": "Azerbaijani",
+   "native_name": "Azərbaycanca",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "az-AZ"
+  },
+  {
+   "code": "be",
+   "name": "Belarusian",
+   "native_name": "Беларуская",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true
+  },
+  {
+   "code": "bs",
+   "name": "Bosnian",
+   "native_name": "Bosanski",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "bs-BA"
+  },
+  {
+   "code": "bg",
+   "name": "Bulgarian",
+   "native_name": "Български",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "bg-BG"
+  },
+  {
+   "code": "ca",
+   "name": "Catalan",
+   "native_name": "Català",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "ca-ES"
+  },
+  {
+   "code": "zh",
+   "name": "Chinese",
+   "native_name": "中文",
+   "script": "han",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "zh-CN",
+   "qwen_language_type": "Chinese"
+  },
+  {
+   "code": "hr",
+   "name": "Croatian",
+   "native_name": "Hrvatski",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "hr-HR"
+  },
+  {
+   "code": "cs",
+   "name": "Czech",
+   "native_name": "Čeština",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "cs-CZ"
+  },
+  {
+   "code": "da",
+   "name": "Danish",
+   "native_name": "Dansk",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "da-DK"
+  },
+  {
+   "code": "nl",
+   "name": "Dutch",
+   "native_name": "Nederlands",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "nl-NL",
+   "abbreviations": [
+    "dhr",
+    "mevr",
+    "dr",
+    "prof",
+    "ir",
+    "nr",
+    "bv",
+    "o.a",
+    "enz",
+    "ca",
+    "d.w.z",
+    "m.b.t",
+    "t.a.v"
+   ]
+  },
+  {
+   "code": "en",
+   "name": "English",
+   "native_name": "English",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "en-GB",
+   "qwen_language_type": "English",
+   "abbreviations": [
+    "mr",
+    "mrs",
+    "ms",
+    "dr",
+    "prof",
+    "sr",
+    "jr",
+    "st",
+    "vs",
+    "etc",
+    "e.g",
+    "i.e",
+    "approx",
+    "no",
+    "fig",
+    "inc",
+    "ltd",
+    "co"
+   ]
+  },
+  {
+   "code": "et",
+   "name": "Estonian",
+   "native_name": "Eesti",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "et-EE"
+  },
+  {
+   "code": "fi",
+   "name": "Finnish",
+   "native_name": "Suomi",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "fi-FI"
+  },
+  {
+   "code": "fr",
+   "name": "French",
+   "native_name": "Français",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "fr-FR",
+   "qwen_language_type": "French",
+   "abbreviations": [
+    "m",
+    "mme",
+    "mlle",
+    "dr",
+    "pr",
+    "n°",
+    "etc",
+    "av",
+    "bd",
+    "cf",
+    "p.ex",
+    "env",
+    "st",
+    "ste"
+   ]
+  },
+  {
+   "code": "gl",
+   "name": "Galician",
+   "native_name": "Galego",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "gl-ES"
+  },
+  {
+   "code": "de",
+   "name": "German",
+   "native_name": "Deutsch",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "de-DE",
+   "qwen_language_type": "German",
+   "abbreviations": [
+    "dr",
+    "prof",
+    "nr",
+    "str",
+    "bzw",
+    "ca",
+    "usw",
+    "z.b",
+    "d.h",
+    "u.a",
+    "evtl",
+    "ggf",
+    "inkl",
+    "sog",
+    "vgl",
+    "hr",
+    "fr"
+   ]
+  },
+  {
+   "code": "el",
+   "name": "Greek",
+   "native_name": "Ελληνικά",
+   "script": "greek",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "el-GR"
+  },
+  {
+   "code": "he",
+   "name": "Hebrew",
+   "native_name": "עברית",
+   "script": "hebrew",
+   "rtl": true,
+   "captions": false,
+   "azure_locale": "he-IL"
+  },
+  {
+   "code": "hi",
+   "name": "Hindi",
+   "native_name": "हिन्दी",
+   "script": "devanagari",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "hi-IN"
+  },
+  {
+   "code": "hu",
+   "name": "Hungarian",
+   "native_name": "Magyar",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "hu-HU"
+  },
+  {
+   "code": "is",
+   "name": "Icelandic",
+   "native_name": "Íslenska",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "is-IS"
+  },
+  {
+   "code": "id",
+   "name": "Indonesian",
+   "native_name": "Bahasa Indonesia",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "id-ID"
+  },
+  {
+   "code": "it",
+   "name": "Italian",
+   "native_name": "Italiano",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "it-IT",
+   "qwen_language_type": "Italian",
+   "abbreviations": [
+    "sig",
+    "sig.ra",
+    "dott",
+    "prof",
+    "ing",
+    "avv",
+    "ecc",
+    "n",
+    "pag",
+    "es",
+    "ca",
+    "via",
+    "p.es"
+   ]
+  },
+  {
+   "code": "ja",
+   "name": "Japanese",
+   "native_name": "日本語",
+   "script": "japanese",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "ja-JP",
+   "qwen_language_type": "Japanese"
+  },
+  {
+   "code": "kn",
+   "name": "Kannada",
+   "native_name": "ಕನ್ನಡ",
+   "script": "kannada",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "kn-IN"
+  },
+  {
+   "code": "kk",
+   "name": "Kazakh",
+   "native_name": "Қазақ тілі",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "kk-KZ"
+  },
+  {
+   "code": "ko",
+   "name": "Korean",
+   "native_name": "한국어",
+   "script": "hangul",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "ko-KR",
+   "qwen_language_type": "Korean"
+  },
+  {
+   "code": "lv",
+   "name": "Latvian",
+   "native_name": "Latviešu",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "lv-LV"
+  },
+  {
+   "code": "lt",
+   "name": "Lithuanian",
+   "native_name": "Lietuvių",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "lt-LT"
+  },
+  {
+   "code": "mk",
+   "name": "Macedonian",
+   "native_name": "Македонски",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "mk-MK"
+  },
+  {
+   "code": "ms",
+   "name": "Malay",
+   "native_name": "Bahasa Melayu",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "ms-MY"
+  },
+  {
+   "code": "mi",
+   "name": "Maori",
+   "native_name": "Te Reo Māori",
+   "script": "latin",
+   "rtl": false,
+   "captions": true
+  },
+  {
+   "code": "mr",
+   "name": "Marathi",
+   "native_name": "मराठी",
+   "script": "devanagari",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "mr-IN"
+  },
+  {
+   "code": "ne",
+   "name": "Nepali",
+   "native_name": "नेपाली",
+   "script": "devanagari",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "ne-NP"
+  },
+  {
+   "code": "no",
+   "name": "Norwegian",
+   "native_name": "Norsk",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "nb-NO"
+  },
+  {
+   "code": "fa",
+   "name": "Persian",
+   "native_name": "فارسی",
+   "script": "arabic",
+   "rtl": true,
+   "captions": false,
+   "azure_locale": "fa-IR"
+  },
+  {
+   "code": "pl",
+   "name": "Polish",
+   "native_name": "Polski",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "pl-PL",
+   "abbreviations": [
+    "p",
+    "dr",
+    "prof",
+    "inż",
+    "nr",
+    "ul",
+    "al",
+    "itd",
+    "itp",
+    "np",
+    "tzn",
+    "ok",
+    "godz",
+    "mgr",
+    "św"
+   ]
+  },
+  {
+   "code": "pt",
+   "name": "Portuguese",
+   "native_name": "Português",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "pt-PT",
+   "qwen_language_type": "Portuguese",
+   "abbreviations": [
+    "sr",
+    "sra",
+    "dr",
+    "dra",
+    "prof",
+    "etc",
+    "n.º",
+    "pág",
+    "av",
+    "ex",
+    "aprox",
+    "p.ex"
+   ]
+  },
+  {
+   "code": "ro",
+   "name": "Romanian",
+   "native_name": "Română",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "ro-RO",
+   "abbreviations": [
+    "dl",
+    "dna",
+    "dra",
+    "dr",
+    "prof",
+    "ing",
+    "nr",
+    "str",
+    "ex",
+    "etc",
+    "pag",
+    "art",
+    "bd",
+    "jud",
+    "sec",
+    "min",
+    "aprox",
+    "resp",
+    "tel",
+    "lb"
+   ]
+  },
+  {
+   "code": "ru",
+   "name": "Russian",
+   "native_name": "Русский",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "ru-RU",
+   "qwen_language_type": "Russian"
+  },
+  {
+   "code": "sr",
+   "name": "Serbian",
+   "native_name": "Српски",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "sr-RS"
+  },
+  {
+   "code": "sk",
+   "name": "Slovak",
+   "native_name": "Slovenčina",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "sk-SK"
+  },
+  {
+   "code": "sl",
+   "name": "Slovenian",
+   "native_name": "Slovenščina",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "sl-SI"
+  },
+  {
+   "code": "es",
+   "name": "Spanish",
+   "native_name": "Español",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "es-ES",
+   "qwen_language_type": "Spanish",
+   "abbreviations": [
+    "sr",
+    "sra",
+    "srta",
+    "dr",
+    "dra",
+    "prof",
+    "etc",
+    "núm",
+    "pág",
+    "av",
+    "ej",
+    "aprox",
+    "ud",
+    "uds"
+   ]
+  },
+  {
+   "code": "sw",
+   "name": "Swahili",
+   "native_name": "Kiswahili",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "sw-KE"
+  },
+  {
+   "code": "sv",
+   "name": "Swedish",
+   "native_name": "Svenska",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "sv-SE"
+  },
+  {
+   "code": "tl",
+   "name": "Tagalog",
+   "native_name": "Tagalog",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "fil-PH"
+  },
+  {
+   "code": "ta",
+   "name": "Tamil",
+   "native_name": "தமிழ்",
+   "script": "tamil",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "ta-IN"
+  },
+  {
+   "code": "th",
+   "name": "Thai",
+   "native_name": "ไทย",
+   "script": "thai",
+   "rtl": false,
+   "captions": false,
+   "azure_locale": "th-TH"
+  },
+  {
+   "code": "tr",
+   "name": "Turkish",
+   "native_name": "Türkçe",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "tr-TR"
+  },
+  {
+   "code": "uk",
+   "name": "Ukrainian",
+   "native_name": "Українська",
+   "script": "cyrillic",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "uk-UA"
+  },
+  {
+   "code": "ur",
+   "name": "Urdu",
+   "native_name": "اردو",
+   "script": "arabic",
+   "rtl": true,
+   "captions": false,
+   "azure_locale": "ur-PK"
+  },
+  {
+   "code": "vi",
+   "name": "Vietnamese",
+   "native_name": "Tiếng Việt",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "vi-VN"
+  },
+  {
+   "code": "cy",
+   "name": "Welsh",
+   "native_name": "Cymraeg",
+   "script": "latin",
+   "rtl": false,
+   "captions": true,
+   "azure_locale": "cy-GB"
+  }
+ ]
+}

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Bot, Check, Palette, RefreshCw, RotateCcw, Save } from "lucide-react";
+import { ArrowLeft, Bot, Captions, Check, ChevronRight, Palette, Plus, RefreshCw, RotateCcw, Save, X } from "lucide-react";
 import {
   api,
   ApiError,
   type Device,
   type DeviceSettings,
+  type LanguageInfo,
   type Options,
   type Persona,
   type SettingsPatch,
@@ -14,6 +15,8 @@ import {
 import { useLive } from "../live";
 import { OnlineDot, StateBadge } from "../components/DeviceBits";
 import WatchPreview from "../components/WatchPreview";
+import { LanguagePicker, VoiceSampleButton } from "../components/LanguageBits";
+import { primeLanguages } from "../languages";
 import { Button, Card, ErrorBox, Field, Input, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
 const TIMEZONES = [
@@ -58,14 +61,24 @@ const PRESET_LABEL: Record<string, string> = {
   custom: "Custom",
 };
 const VAD_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
-const LANGUAGE_LABEL: Record<string, string> = { ro: "Romanian", en: "English" };
+
+/** Voice that will be used for `lang` (mirrors the server: override > default voice, within the language's voice set). */
+function effectiveVoice(s: DeviceSettings, o: Options, lang: string): string {
+  const override = s.tts_voice_overrides?.[lang];
+  if (override) return override;
+  const set = o.tts.by_language?.[lang];
+  if (set) return s.tts_voice && set.voices.includes(s.tts_voice) ? s.tts_voice : set.default_voice;
+  return s.tts_voice ?? o.tts.default_voice;
+}
+
+const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
 /** Only the fields that differ; theme is diffed per key (the server merges partial themes). */
 function diff(orig: DeviceSettings, draft: DeviceSettings): SettingsPatch {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(draft) as (keyof DeviceSettings)[]) {
     if (k === "theme") continue;
-    if (draft[k] !== orig[k]) out[k] = draft[k];
+    if (!same(draft[k], orig[k])) out[k] = draft[k];
   }
   const theme: Partial<Theme> = {};
   for (const k of ["preset", ...THEME_KEYS] as (keyof Theme)[]) {
@@ -118,6 +131,7 @@ export default function DeviceSettingsPage() {
       .then(([devs, opts, pers]) => {
         setDevice(devs.find((d) => d.id === id) ?? null);
         setOptions(opts);
+        primeLanguages(opts.languages);
         setPersonas(pers);
       })
       .catch(setLoadErr);
@@ -193,13 +207,21 @@ export default function DeviceSettingsPage() {
     }
   };
 
-  const ttsRo = options.tts.ro;
-  const ttsEn = options.tts.en;
+  const languages: LanguageInfo[] = Array.isArray(options.languages) ? options.languages : [];
+  const langInfo = (code: string | null | undefined) => languages.find((l) => l.code === code);
+  const selectedLang = draft.language === "auto" ? null : langInfo(draft.language);
+  const preferredLang = langInfo(draft.preferred_language);
+  // Language used for the "Play sample" button: the fixed language, else the preferred one, else English.
+  const sampleLang = draft.language !== "auto" ? draft.language : draft.preferred_language || "en";
+  const sampleLangName = langInfo(sampleLang)?.name ?? sampleLang.toUpperCase();
+  const overrides = draft.tts_voice_overrides ?? {};
+  const setOverrides = (next: Record<string, string>) => set("tts_voice_overrides", next);
 
   const preview = (
     <WatchPreview
       theme={draft.theme}
       language={draft.language}
+      preferredLanguage={draft.preferred_language}
       time24h={draft.time_24h}
       timezone={draft.timezone}
       brightness={draft.brightness}
@@ -239,14 +261,29 @@ export default function DeviceSettingsPage() {
           {/* ---------------- AI ---------------- */}
           <Card title={<SectionTitle icon={<Bot className="size-4" />}>AI</SectionTitle>}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Language" error={err("language")} hint="Voice and assistant language">
-                <div className="flex gap-2">
-                  {options.languages.map((l) => (
-                    <Chip key={l.id} active={draft.language === l.id} onClick={() => set("language", l.id)}>
-                      {l.id.toUpperCase()} · {LANGUAGE_LABEL[l.id] ?? l.label}
-                    </Chip>
-                  ))}
-                </div>
+              <Field label="Language" error={err("language")} hint={<CaptionsNote lang={selectedLang} fallback="Voice and assistant language" />}>
+                <LanguagePicker
+                  ariaLabel="Language"
+                  value={draft.language}
+                  onChange={(v) => set("language", v ?? "auto")}
+                  languages={languages}
+                  autoLabel="Auto — reply in the language you speak"
+                  invalid={!!err("language")}
+                />
+              </Field>
+              <Field
+                label="Preferred language"
+                error={err("preferred_language")}
+                hint={<CaptionsNote lang={preferredLang} fallback="Shown on the watch's quick settings" />}
+              >
+                <LanguagePicker
+                  ariaLabel="Preferred language"
+                  value={draft.preferred_language}
+                  onChange={(v) => set("preferred_language", v)}
+                  languages={languages}
+                  noneLabel="None"
+                  invalid={!!err("preferred_language")}
+                />
               </Field>
               <Field label="Persona" error={err("persona_id")} hint={<Link to="/personas" className="underline">Manage personas</Link>}>
                 <Select
@@ -289,30 +326,29 @@ export default function DeviceSettingsPage() {
                   ))}
                 </div>
               </Field>
-              {ttsRo && (
-                <Field label="Romanian voice" error={err("tts_voice_ro")}>
-                  <Select value={draft.tts_voice_ro ?? ""} onChange={(e) => set("tts_voice_ro", e.target.value || null)}>
-                    <option value="">Default ({ttsRo.default_voice})</option>
-                    {ttsRo.voices.map((v) => (
+              <Field label="Voice" error={err("tts_voice")} hint={`Sample in ${sampleLangName}`}>
+                <div className="flex gap-2">
+                  <Select className="min-w-0 flex-1" value={draft.tts_voice ?? ""} onChange={(e) => set("tts_voice", e.target.value || null)}>
+                    <option value="">Default voice ({options.tts.default_voice})</option>
+                    {(options.tts.voices ?? []).map((v) => (
                       <option key={v} value={v}>
                         {v}
                       </option>
                     ))}
                   </Select>
-                </Field>
-              )}
-              {ttsEn && (
-                <Field label="English voice" error={err("tts_voice_en")}>
-                  <Select value={draft.tts_voice_en ?? ""} onChange={(e) => set("tts_voice_en", e.target.value || null)}>
-                    <option value="">Default ({ttsEn.default_voice})</option>
-                    {ttsEn.voices.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              )}
+                  <VoiceSampleButton voice={effectiveVoice(draft, options, sampleLang)} language={sampleLang} />
+                </div>
+              </Field>
+              <div className="sm:col-span-2">
+                <VoiceOverrides
+                  overrides={overrides}
+                  onChange={setOverrides}
+                  options={options}
+                  languages={languages}
+                  settings={draft}
+                  err={err}
+                />
+              </div>
               <Field label="Speech rate" error={err("speech_rate")}>
                 <Slider value={draft.speech_rate} min={0.5} max={2} step={0.05} onChange={(v) => set("speech_rate", v)} format={(v) => `${v.toFixed(2)}×`} />
               </Field>
@@ -465,5 +501,136 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     >
       {children}
     </button>
+  );
+}
+
+function CaptionsNote({ lang, fallback }: { lang: LanguageInfo | null | undefined; fallback: string }) {
+  if (lang && !lang.captions) {
+    return (
+      <span className="inline-flex items-start gap-1 text-warn">
+        <Captions className="mt-px size-3.5 shrink-0" />
+        The watch will speak this language but can't display its text.
+      </span>
+    );
+  }
+  return <>{fallback}</>;
+}
+
+/** Optional per-language voice (tts_voice_overrides), collapsed unless something is set. */
+function VoiceOverrides({
+  overrides,
+  onChange,
+  options,
+  languages,
+  settings,
+  err,
+}: {
+  overrides: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+  options: Options;
+  languages: LanguageInfo[];
+  settings: DeviceSettings;
+  err: (k: string) => string | undefined;
+}) {
+  const entries = Object.entries(overrides);
+  const [open, setOpen] = useState(entries.length > 0);
+  const [adding, setAdding] = useState(false);
+  const byLang = options.tts.by_language ?? {};
+  const special = Object.keys(byLang);
+  const name = (code: string) => languages.find((l) => l.code === code)?.name ?? code.toUpperCase();
+  const voicesFor = (code: string) => byLang[code]?.voices ?? options.tts.voices ?? [];
+  const defaultFor = (code: string) => effectiveVoice({ ...settings, tts_voice_overrides: {} }, options, code);
+
+  // Open automatically when overrides appear (e.g. after a reload).
+  useEffect(() => {
+    if (entries.length) setOpen(true);
+  }, [entries.length]);
+
+  const setVoice = (code: string, voice: string) => onChange({ ...overrides, [code]: voice });
+  const remove = (code: string) => {
+    const next = { ...overrides };
+    delete next[code];
+    onChange(next);
+  };
+  const add = (code: string | null) => {
+    setAdding(false);
+    if (!code || code === "auto" || overrides[code]) return;
+    onChange({ ...overrides, [code]: defaultFor(code) });
+  };
+
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm"
+      >
+        <ChevronRight className={cx("size-4 text-muted transition-transform", open && "rotate-90")} />
+        <span className="font-medium">Per-language voice</span>
+        <span className="text-xs text-muted">
+          {entries.length ? `${entries.length} ${entries.length === 1 ? "language" : "languages"}` : "optional"}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-border px-3 py-3">
+          <p className="text-xs text-muted">
+            Use a different voice for specific languages. Other languages use the voice above.
+            {special.length > 0 && <> Languages with their own voice set: {special.map(name).join(", ")}.</>}
+          </p>
+          {entries.map(([code, voice]) => {
+            const voices = voicesFor(code);
+            const e = err(`tts_voice_overrides.${code}`);
+            return (
+              <div key={code} className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-start gap-2">
+                  <span className="flex h-10 w-32 items-center truncate text-sm" title={code}>
+                    {name(code)}
+                  </span>
+                  <Select
+                    aria-label={`Voice for ${name(code)}`}
+                    className="min-w-0 flex-1"
+                    value={voice}
+                    onChange={(ev) => setVoice(code, ev.target.value)}
+                  >
+                    {!voices.includes(voice) && <option value={voice}>{voice}</option>}
+                    {voices.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </Select>
+                  <VoiceSampleButton voice={voice} language={code} label="Play" />
+                  <Button variant="ghost" icon={<X className="size-4" />} aria-label={`Remove ${name(code)}`} onClick={() => remove(code)} />
+                </div>
+                {e && <p className="text-xs text-danger">{e}</p>}
+              </div>
+            );
+          })}
+          {err("tts_voice_overrides") && <p className="text-xs text-danger">{err("tts_voice_overrides")}</p>}
+          {adding ? (
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <LanguagePicker
+                  ariaLabel="Add language"
+                  value={null}
+                  onChange={add}
+                  languages={languages}
+                  noneLabel="Choose a language…"
+                  exclude={Object.keys(overrides)}
+                />
+              </div>
+              <Button variant="ghost" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" icon={<Plus className="size-3.5" />} onClick={() => setAdding(true)} disabled={!languages.length}>
+              Add language
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

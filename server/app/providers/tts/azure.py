@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any
 from xml.sax.saxutils import escape
 
+from app import languages
 from app.providers.base import ProviderError
 from app.providers.tts.base import TTSRequest
 from app.providers.tts.http_stream import HTTPStreamingTTS
 
-LOCALES = {"ro": "ro-RO", "en": "en-US"}
 
 
 class AzureTTS(HTTPStreamingTTS):
@@ -26,7 +26,8 @@ class AzureTTS(HTTPStreamingTTS):
             raise ProviderError("tts", "Azure Speech key is not configured")
 
     def ssml(self, text: str, request: TTSRequest) -> str:
-        locale = LOCALES.get(request.language, "ro-RO")
+        lang = languages.get(request.language)
+        locale = (lang.azure_locale if lang else None) or "en-GB"
         rate = f"{round((request.speech_rate - 1.0) * 100):+d}%"
         return (
             f"<speak version='1.0' xml:lang='{locale}'><voice name='{escape(request.voice)}'>"

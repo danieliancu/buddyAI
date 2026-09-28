@@ -9,8 +9,10 @@
 #include "ui.h"
 
 /* ---- fonts (components/ui/fonts, generated with lv_font_conv 1.5.2) ----
- * buddy_font_20 / 28 : Montserrat Medium, Latin-1 + Romanian (ă â î ș ț, also
- *                      legacy cedilla ş ţ) + FontAwesome 5 symbols below
+ * buddy_font_20 / 28 : Noto Sans Medium: Latin-1, Latin Extended-A/B,
+ *                      Latin Extended Additional, Greek, Cyrillic, punctuation
+ *                      U+2010-2027, € + FontAwesome 5 symbols below
+ *                      (regenerate with tools/gen_fonts.ps1)
  * buddy_font_clock   : Montserrat SemiBold 112 px, digits, ':' '-' ' '
  * buddy_font_code    : Montserrat SemiBold 64 px, digits, '-' ' '
  * buddy_font_icon    : FontAwesome 5, 80 px, a few large icons              */
@@ -85,10 +87,14 @@ typedef enum {
 } ui_str_t;
 
 const char *ui_str(ui_str_t id);
-const char *ui_weekday(int wday);           /* 0 = Sunday */
-const char *ui_month(int mon);              /* 0 = January */
-void        ui_i18n_set_language(const char *lang);
-bool        ui_i18n_is_ro(void);
+/* Localized date line, e.g. "Monday, 28 September" / "Montag, 28. September".
+ * wday 0 = Sunday, mon 0 = January. Without weekday: "28 September". */
+void        ui_format_date(char *buf, size_t len, int wday, int mday, int mon, bool with_weekday);
+/* Language setting ("auto" or a code). Returns true if the date language changed. */
+bool        ui_i18n_set_language(const char *lang);
+/* Detected language of the last reply (used for the date in "auto" mode).
+ * Returns true if the date language changed. */
+bool        ui_i18n_set_reply_language(const char *lang);
 
 /* ---- shared theme state ---- */
 typedef struct {

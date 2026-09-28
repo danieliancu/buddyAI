@@ -1,6 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, KeyRound, PlugZap, Server, XCircle } from "lucide-react";
 import { api, type KeyName, type TestResult, type TestTarget } from "../api";
+import { LanguagePicker } from "../components/LanguageBits";
+import { useLanguages } from "../languages";
 import { Badge, Button, Card, ErrorBox, Field, Input, PageHeader, Spinner, useAsync } from "../components/ui";
 
 const KEYS: { name: KeyName; label: string; secret: boolean; placeholder: string }[] = [
@@ -12,11 +14,12 @@ const KEYS: { name: KeyName; label: string; secret: boolean; placeholder: string
 
 const PROFILE_LABEL: Record<string, string> = { openai: "OpenAI", qwen: "Qwen + Azure" };
 
-const TESTS: { target: TestTarget; label: string }[] = [
-  { target: "llm", label: "LLM" },
-  { target: "stt", label: "STT" },
-  { target: "tts_ro", label: "TTS RO" },
-  { target: "tts_en", label: "TTS EN" },
+type TestKey = "llm" | "stt" | "tts";
+type TestState = TestResult | "running";
+
+const TESTS: { key: Exclude<TestKey, "tts">; label: string }[] = [
+  { key: "llm", label: "LLM" },
+  { key: "stt", label: "STT" },
 ];
 
 export default function SystemPage() {
@@ -25,7 +28,10 @@ export default function SystemPage() {
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
-  const [tests, setTests] = useState<Partial<Record<TestTarget, TestResult | "running">>>({});
+  const [tests, setTests] = useState<Partial<Record<TestKey, TestState>>>({});
+  const [ttsLang, setTtsLang] = useState("en");
+  const langMap = useLanguages();
+  const languages = [...langMap.values()];
 
   const saveKeys = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,13 +52,13 @@ export default function SystemPage() {
     }
   };
 
-  const runTest = async (t: TestTarget) => {
-    setTests((m) => ({ ...m, [t]: "running" }));
+  const runTest = async (key: TestKey, target: TestTarget) => {
+    setTests((m) => ({ ...m, [key]: "running" }));
     try {
-      const r = await api.system.test(t);
-      setTests((m) => ({ ...m, [t]: r }));
+      const r = await api.system.test(target);
+      setTests((m) => ({ ...m, [key]: r }));
     } catch (err) {
-      setTests((m) => ({ ...m, [t]: { ok: false, detail: err instanceof Error ? err.message : String(err) } }));
+      setTests((m) => ({ ...m, [key]: { ok: false, detail: err instanceof Error ? err.message : String(err) } }));
     }
   };
 
@@ -132,30 +138,55 @@ export default function SystemPage() {
 
         <Card title={<span className="inline-flex items-center gap-2"><PlugZap className="size-4 text-accent" /> Connection test</span>}>
           <div className="grid gap-3 sm:grid-cols-2">
-            {TESTS.map(({ target, label }) => {
-              const r = tests[target];
-              return (
-                <div key={target} className="flex items-start gap-3 rounded-lg border border-border px-3 py-3">
-                  <Button size="sm" loading={r === "running"} onClick={() => runTest(target)} className="w-24 shrink-0">
-                    {label}
-                  </Button>
-                  <div className="min-w-0 flex-1 pt-1 text-sm">
-                    {r === undefined && <span className="text-muted">Not tested</span>}
-                    {r === "running" && <span className="text-muted">Testing…</span>}
-                    {r && r !== "running" && (
-                      <span className={r.ok ? "text-ok" : "text-danger"}>
-                        {r.ok ? <CheckCircle2 className="mr-1 inline size-4" /> : <XCircle className="mr-1 inline size-4" />}
-                        <span className="break-words">{r.detail || (r.ok ? "OK" : "Failed")}</span>
-                      </span>
-                    )}
-                  </div>
+            {TESTS.map(({ key, label }) => (
+              <div key={key} className="flex items-start gap-3 rounded-lg border border-border px-3 py-3">
+                <Button size="sm" loading={tests[key] === "running"} onClick={() => runTest(key, key)} className="w-24 shrink-0">
+                  {label}
+                </Button>
+                <TestOutcome r={tests[key]} />
+              </div>
+            ))}
+            <div className="flex flex-col gap-3 rounded-lg border border-border px-3 py-3 sm:col-span-2">
+              <span className="text-sm font-medium">Test voice output</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-48 flex-1">
+                  <LanguagePicker
+                    ariaLabel="Voice test language"
+                    value={ttsLang}
+                    onChange={(v) => v && setTtsLang(v)}
+                    languages={languages}
+                  />
                 </div>
-              );
-            })}
+                <Button
+                  size="sm"
+                  loading={tests.tts === "running"}
+                  onClick={() => runTest("tts", `tts_${ttsLang}`)}
+                  className="h-10 w-24 shrink-0"
+                >
+                  Test
+                </Button>
+              </div>
+              <TestOutcome r={tests.tts} />
+            </div>
           </div>
         </Card>
       </div>
     </>
+  );
+}
+
+function TestOutcome({ r }: { r: TestState | undefined }) {
+  return (
+    <div className="min-w-0 flex-1 pt-1 text-sm">
+      {r === undefined && <span className="text-muted">Not tested</span>}
+      {r === "running" && <span className="text-muted">Testing…</span>}
+      {r && r !== "running" && (
+        <span className={r.ok ? "text-ok" : "text-danger"}>
+          {r.ok ? <CheckCircle2 className="mr-1 inline size-4" /> : <XCircle className="mr-1 inline size-4" />}
+          <span className="break-words">{r.detail || (r.ok ? "OK" : "Failed")}</span>
+        </span>
+      )}
+    </div>
   );
 }
 

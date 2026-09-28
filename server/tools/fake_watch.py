@@ -121,6 +121,7 @@ class TurnLog:
     listen_stop_reason: str | None = None
     stt_final_at: float | None = None
     transcript: str = ""
+    language: str | None = None  # detected/used language reported by the server
     first_llm_at: float | None = None
     reply_text: str = ""
     tts_start_at: float | None = None
@@ -295,6 +296,7 @@ class FakeWatch:
             tl.listen_stopped.set()
         elif kind == "stt_result" and msg.get("final"):
             tl.stt_final_at, tl.transcript = t, msg.get("text", "")
+            tl.language = msg.get("language") or tl.language
         elif kind == "llm_text":
             tl.first_llm_at = tl.first_llm_at or t
             tl.reply_text += msg.get("delta", "")
@@ -362,7 +364,7 @@ class FakeWatch:
 
 def report_turn(tl: TurnLog) -> None:
     print(f"  turn {tl.turn_id}: status={tl.status} stop={tl.listen_stop_reason} frames={tl.frames}")
-    print(f"    user : {tl.transcript!r}")
+    print(f"    user : {tl.transcript!r}  [language: {tl.language or '-'}]")
     print(f"    reply: {tl.reply_text.strip()!r}")
     print(
         f"    timeline vs end of speech: listen_stop {tl.rel(tl.listen_stop_at)}, stt_final {tl.rel(tl.stt_final_at)}, "
@@ -546,25 +548,25 @@ def main() -> None:
     sub.add_parser("pair")
     a = sub.add_parser("ask")
     a.add_argument("--wav", required=True)
-    a.add_argument("--lang", choices=["ro", "en"])
+    a.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
     a.add_argument("--save")
     a.add_argument("--fast", action="store_true", help="stream faster than realtime (TTFA not meaningful)")
     b = sub.add_parser("bench")
     b.add_argument("--wav")
     b.add_argument("--wav-dir")
-    b.add_argument("--lang", choices=["ro", "en"])
+    b.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
     b.add_argument("--repeat", type=int, default=1)
     b.add_argument("--strict", action="store_true", help="fail when TTFA is over target")
     ab = sub.add_parser("abort-test")
     ab.add_argument("--wav", required=True)
-    ab.add_argument("--lang", choices=["ro", "en"])
+    ab.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
     ab.add_argument("--abort-after-ms", type=int, default=400)
     rc = sub.add_parser("reconnect-test")
     rc.add_argument("--wav", required=True)
-    rc.add_argument("--lang", choices=["ro", "en"])
+    rc.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
     sc = sub.add_parser("scenario")
     sc.add_argument("file")
-    sc.add_argument("--lang", choices=["ro", "en"])
+    sc.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
     sc.add_argument("--strict", action="store_true")
     args = p.parse_args()
     for attr, default in (("save", None), ("fast", False), ("repeat", 1), ("strict", False), ("wav_dir", None), ("abort_after_ms", 400)):

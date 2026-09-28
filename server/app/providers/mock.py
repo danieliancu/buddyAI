@@ -41,6 +41,7 @@ class _MockSTTSession(STTSession):
         await asyncio.sleep(self.latency_s)
         if self.bytes < self.rate * 2 * 0.3:  # < 300 ms of audio
             return ""
+        # "auto" and languages without a canned transcript fall back to English.
         return MOCK_TRANSCRIPTS.get(self.language, MOCK_TRANSCRIPTS["en"])
 
     async def close(self) -> None:
@@ -55,7 +56,7 @@ class MockLLM(LLMProvider):
 
     async def stream(self, request: LLMRequest) -> AsyncIterator[LLMChunk]:
         system = request.messages[0]["content"] if request.messages else ""
-        lang = "ro" if "Romanian" in system else "en"
+        lang = "ro" if "Romanian" in system else "en"  # the prompt names the reply language
         await asyncio.sleep(self.first_token_s)
         words = MOCK_REPLIES[lang].split(" ")
         for i, w in enumerate(words):

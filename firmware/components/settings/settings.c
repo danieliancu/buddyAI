@@ -76,10 +76,21 @@ const char *const *settings_theme_preset_names(void)
 /* Helpers                                                                    */
 /* ------------------------------------------------------------------------- */
 
+static void set_default_quick_languages(buddy_settings_t *s)
+{
+    memset(s->quick_languages, 0, sizeof(s->quick_languages));
+    strcpy(s->quick_languages[0].code, "auto");
+    strcpy(s->quick_languages[0].label, "Auto");
+    strcpy(s->quick_languages[1].code, "en");
+    strcpy(s->quick_languages[1].label, "English");
+    s->quick_language_count = 2;
+}
+
 static void set_defaults(buddy_settings_t *s)
 {
     memset(s, 0, sizeof(*s));
-    strcpy(s->language, "en");
+    strcpy(s->language, "auto");
+    set_default_quick_languages(s);
     s->volume = 70;
     s->brightness = 80;
     s->screen_timeout_s = 15;
@@ -108,14 +119,91 @@ static int clamp_int(int v, int lo, int hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+/* "auto" or a language code: 2..7 chars of [a-z-] (ISO 639-1, maybe a region). */
+static bool valid_language(const char *v)
+{
+    if (!v) {
+        return false;
+    }
+    size_t n = strlen(v);
+    if (n < 2 || n >= SETTINGS_LANG_MAX) {
+        return false;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (!((v[i] >= 'a' && v[i] <= 'z') || v[i] == '-')) {
+            return false;
+        }
+    }
+    return true;   /* "auto" matches the same pattern */
+}
+
+/* Copy a UTF-8 string, truncating at a code point boundary. */
+static void utf8_copy(char *dst, size_t len, const char *src)
+{
+    strlcpy(dst, src, len);
+    size_t n = strlen(dst);
+    if (n == strlen(src)) {
+        return;
+    }
+    /* Truncated: drop a partial trailing sequence. */
+    size_t i = n;
+    while (i > 0 && (((unsigned char)dst[i - 1] & 0xC0) == 0x80)) {
+        i--;
+    }
+    if (i > 0 && ((unsigned char)dst[i - 1] & 0x80)) {
+        unsigned char lead = (unsigned char)dst[i - 1];
+        size_t need = (lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1;
+        if (n - (i - 1) < need) {
+            dst[i - 1] = '\0';
+        }
+    }
+}
+
+/* quick_languages: [{"code": "auto"|"en"|..., "label": "Auto"|"English"|...}], max 3.
+ * Invalid entries are skipped; an empty result falls back to the default. */
+static void merge_quick_languages(buddy_settings_t *s, const cJSON *arr)
+{
+    uint8_t n = 0;
+    settings_quick_lang_t out[SETTINGS_QUICK_LANG_MAX];
+    memset(out, 0, sizeof(out));
+    const cJSON *e;
+    cJSON_ArrayForEach(e, arr) {
+        if (n >= SETTINGS_QUICK_LANG_MAX) {
+            break;
+        }
+        const cJSON *code = cJSON_GetObjectItemCaseSensitive(e, "code");
+        const cJSON *label = cJSON_GetObjectItemCaseSensitive(e, "label");
+        if (!cJSON_IsString(code) || !valid_language(code->valuestring)) {
+            continue;
+        }
+        strlcpy(out[n].code, code->valuestring, sizeof(out[n].code));
+        if (cJSON_IsString(label) && label->valuestring[0]) {
+            utf8_copy(out[n].label, sizeof(out[n].label), label->valuestring);
+        } else {
+            strlcpy(out[n].label, code->valuestring, sizeof(out[n].label));
+        }
+        n++;
+    }
+    if (n == 0) {
+        set_default_quick_languages(s);
+        return;
+    }
+    memcpy(s->quick_languages, out, sizeof(out));
+    s->quick_language_count = n;
+}
+
 /* Merge the keys present in `j` into `s`. Unknown keys are ignored. */
 static void merge_json(buddy_settings_t *s, const cJSON *j)
 {
     const cJSON *it;
 
     it = cJSON_GetObjectItemCaseSensitive(j, "language");
-    if (cJSON_IsString(it) && (strcmp(it->valuestring, "ro") == 0 || strcmp(it->valuestring, "en") == 0)) {
+    if (cJSON_IsString(it) && valid_language(it->valuestring)) {
         strlcpy(s->language, it->valuestring, sizeof(s->language));
+    }
+    it = cJSON_GetObjectItemCaseSensitive(j, "quick_languages");
+    if (cJSON_IsArray(it)) {
+        merge_quick_languages(s, it);
     }
     it = cJSON_GetObjectItemCaseSensitive(j, "volume");
     if (cJSON_IsNumber(it)) {
@@ -198,6 +286,13 @@ cJSON *settings_to_json(const buddy_settings_t *s)
     color_str(s->theme.text, buf);
     cJSON_AddStringToObject(t, "text", buf);
     cJSON_AddNumberToObject(j, "max_listen_s", s->max_listen_s);
+    cJSON *ql = cJSON_AddArrayToObject(j, "quick_languages");
+    for (int i = 0; i < s->quick_language_count && i < SETTINGS_QUICK_LANG_MAX; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "code", s->quick_languages[i].code);
+        cJSON_AddStringToObject(o, "label", s->quick_languages[i].label);
+        cJSON_AddItemToArray(ql, o);
+    }
     return j;
 }
 

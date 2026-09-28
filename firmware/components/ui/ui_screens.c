@@ -22,8 +22,12 @@ static lv_obj_t *s_lbl_lang;
 static lv_obj_t *s_lbl_theme;
 static lv_obj_t *s_sld_vol;
 static lv_obj_t *s_sld_bri;
-static lv_obj_t *s_btn_ro;
-static lv_obj_t *s_btn_en;
+static lv_obj_t *s_lang_row;
+static lv_obj_t *s_lang_btns[SETTINGS_QUICK_LANG_MAX];
+static int       s_lang_count;
+/* quick_languages the language pills were built from (rebuilt on change). */
+static settings_quick_lang_t s_lang_built[SETTINGS_QUICK_LANG_MAX];
+static int       s_lang_built_count = -1;
 static lv_obj_t *s_btn_wifi;
 static lv_obj_t *s_lbl_wifi_btn;
 static lv_obj_t *s_theme_btns[8];
@@ -71,9 +75,12 @@ static void slider_cb(lv_event_t *e)
 
 static void lang_cb(lv_event_t *e)
 {
-    lv_obj_t *btn = lv_event_get_target(e);
-    const char *lang = (btn == s_btn_en) ? "en" : "ro";
-    if (strcmp(lang, g_ui_settings.language) == 0 || !g_ui_cb.on_settings_change) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= s_lang_count || idx >= SETTINGS_QUICK_LANG_MAX) {
+        return;
+    }
+    const char *lang = s_lang_built[idx].code;
+    if (!lang[0] || strcmp(lang, g_ui_settings.language) == 0 || !g_ui_cb.on_settings_change) {
         return;
     }
     cJSON *c = cJSON_CreateObject();
@@ -205,17 +212,18 @@ static void build_settings(void)
     s_sld_bri = make_slider(s_set_scr, 5, 100);
 
     s_lbl_lang = section_label(s_set_scr);
-    lv_obj_t *lang_row = lv_obj_create(s_set_scr);
-    lv_obj_remove_style_all(lang_row);
-    lv_obj_set_size(lang_row, CONTENT_W, 52);
-    lv_obj_set_flex_flow(lang_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(lang_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    s_btn_ro = make_pill_button(lang_row, "Romanian", NULL);
-    s_btn_en = make_pill_button(lang_row, "English", NULL);
-    lv_obj_set_width(s_btn_ro, 150);
-    lv_obj_set_width(s_btn_en, 150);
-    lv_obj_add_event_cb(s_btn_ro, lang_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(s_btn_en, lang_cb, LV_EVENT_CLICKED, NULL);
+    /* Language pills, built from quick_languages in ui_settings_refresh().
+     * Pills size to their label and wrap to a second row if needed. */
+    s_lang_row = lv_obj_create(s_set_scr);
+    lv_obj_remove_style_all(s_lang_row);
+    lv_obj_set_size(s_lang_row, CONTENT_W, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_ver(s_lang_row, 2, 0);
+    lv_obj_set_style_pad_row(s_lang_row, 8, 0);
+    lv_obj_set_style_pad_column(s_lang_row, 8, 0);
+    lv_obj_add_flag(s_lang_row, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_remove_flag(s_lang_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(s_lang_row, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(s_lang_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     s_lbl_theme = section_label(s_set_scr);
     lv_obj_t *theme_row = lv_obj_create(s_set_scr);
@@ -247,6 +255,46 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_btn_wifi, wifi_btn_cb, LV_EVENT_CLICKED, NULL);
 }
 
+static bool quick_langs_changed(void)
+{
+    if (s_lang_built_count != g_ui_settings.quick_language_count) {
+        return true;
+    }
+    for (int i = 0; i < s_lang_built_count && i < SETTINGS_QUICK_LANG_MAX; i++) {
+        if (strcmp(s_lang_built[i].code, g_ui_settings.quick_languages[i].code) != 0 ||
+            strcmp(s_lang_built[i].label, g_ui_settings.quick_languages[i].label) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* (Re)create one pill per quick_languages entry. */
+static void build_lang_pills(void)
+{
+    lv_obj_clean(s_lang_row);
+    memset(s_lang_btns, 0, sizeof(s_lang_btns));
+    int n = g_ui_settings.quick_language_count;
+    if (n > SETTINGS_QUICK_LANG_MAX) {
+        n = SETTINGS_QUICK_LANG_MAX;
+    }
+    memcpy(s_lang_built, g_ui_settings.quick_languages, sizeof(s_lang_built));
+    s_lang_built_count = g_ui_settings.quick_language_count;
+    s_lang_count = n;
+    for (int i = 0; i < n; i++) {
+        lv_obj_t *l;
+        lv_obj_t *b = make_pill_button(s_lang_row, s_lang_built[i].label, &l);
+        lv_obj_set_width(b, LV_SIZE_CONTENT);
+        lv_obj_set_style_min_width(b, 92, 0);
+        lv_obj_set_style_pad_hor(b, 16, 0);
+        lv_obj_set_style_max_width(l, CONTENT_W - 32, 0);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+        lv_obj_add_event_cb(b, lang_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        s_lang_btns[i] = b;
+    }
+}
+
 void ui_settings_refresh(void)
 {
     if (!s_set_scr) {
@@ -262,9 +310,13 @@ void ui_settings_refresh(void)
     lv_slider_set_value(s_sld_vol, g_ui_settings.volume, LV_ANIM_OFF);
     lv_slider_set_value(s_sld_bri, g_ui_settings.brightness, LV_ANIM_OFF);
 
-    bool ro = strcmp(g_ui_settings.language, "en") != 0;
-    lv_obj_set_state(s_btn_ro, LV_STATE_CHECKED, ro);
-    lv_obj_set_state(s_btn_en, LV_STATE_CHECKED, !ro);
+    if (quick_langs_changed()) {
+        build_lang_pills();
+    }
+    for (int i = 0; i < s_lang_count; i++) {
+        lv_obj_set_state(s_lang_btns[i], LV_STATE_CHECKED,
+                         strcmp(s_lang_built[i].code, g_ui_settings.language) == 0);
+    }
 
     const char *const *names = settings_theme_preset_names();
     for (int i = 0; i < s_theme_count; i++) {

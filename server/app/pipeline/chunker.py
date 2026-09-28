@@ -20,10 +20,18 @@ WEAK = ",;:"
 CLOSERS = "\"')]»”’*_`"
 _MARKDOWN = re.compile(r"(\*\*|__|`+|^#+\s*|^\s*[-*•]\s+)", re.MULTILINE)
 _SPACES = re.compile(r"\s+")
+# Emoji and pictographs: not spoken, and the watch font can't draw them (they would hide captions).
+_EMOJI = re.compile(
+    "[🀀-🫿☀-➿🤀-🧿️‍🇦-🇿]+"
+)
+
+
+def strip_emoji(text: str) -> str:
+    return _EMOJI.sub("", text)
 
 
 def clean_for_speech(text: str) -> str:
-    return _SPACES.sub(" ", _MARKDOWN.sub("", text)).strip()
+    return _SPACES.sub(" ", strip_emoji(_MARKDOWN.sub("", text))).strip()
 
 
 @dataclass

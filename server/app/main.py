@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -10,7 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import auth, devices, firmware, live, system, usage
+from app import languages
+from app.api import accounts_admin, auth, devices, firmware, live, me, system, usage
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
@@ -34,11 +36,16 @@ async def lifespan(app: FastAPI):
 
     app.state.hub = DeviceHub(settings.pairing_code_ttl_s)
     app.state.router = ProviderRouter(settings, config)
+    chunker_config = ChunkerConfig.from_dict(config.get("chunker", {}))
+    chunker_config.abbreviations = languages.abbreviations()
     app.state.pipeline = ConversationPipeline(
         app.state.router,
-        ChunkerConfig.from_dict(config.get("chunker", {})),
+        chunker_config,
         downlink_bitrate=config["audio"]["opus_downlink_bitrate"],
     )
+
+    # Build the language detector in the background so the first "auto" turn doesn't wait for it.
+    warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
 
     mdns = None
     if settings.mdns_enabled:
@@ -51,6 +58,7 @@ async def lifespan(app: FastAPI):
     if settings.mock_providers:
         log.warning("MOCK providers enabled: no real STT/LLM/TTS calls")
     yield
+    warmup.cancel()
     if mdns:
         await mdns.stop()
 
@@ -66,7 +74,17 @@ def create_app() -> FastAPI:
         https_only=settings.public_url.startswith("https"),
         max_age=14 * 24 * 3600,
     )
-    for r in (auth.router, devices.router, usage.router, system.router, firmware.router, live.router, device_ws.router):
+    for r in (
+        auth.router,
+        me.router,
+        accounts_admin.router,
+        devices.router,
+        usage.router,
+        system.router,
+        firmware.router,
+        live.router,
+        device_ws.router,
+    ):
         app.include_router(r)
 
     @app.get("/healthz")
