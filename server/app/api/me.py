@@ -223,6 +223,9 @@ def change_password(
 ) -> dict:
     try:
         accounts.authenticate(db, acc.email, body.current_password)
+    except accounts.AccountError as exc:
+        raise HTTPException(403, "current password is wrong") from exc
+    try:
         accounts.set_password(db, acc, body.new_password)
     except accounts.AccountError as exc:
         raise _err(exc) from exc

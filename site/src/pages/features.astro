@@ -1,0 +1,67 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import FeatureGrid from "../components/FeatureGrid.astro";
+import Designed from "../components/Designed.astro";
+import SectionHeading from "../components/SectionHeading.astro";
+import Icon from "../components/Icon.astro";
+import { languageCount, languageCountLabel } from "../lib/languages";
+import { privacyLine } from "../data/features";
+
+const specs: [string, string][] = [
+  ["Display", "AMOLED touch screen, 410 × 502 pixels, rectangular"],
+  ["Audio", "Built-in microphones and speaker"],
+  ["Connectivity", "Wi-Fi (2.4 GHz). No mobile/cellular connection."],
+  ["Updates", "Firmware updates over the air"],
+  ["Languages", `${languageCount} languages + Auto (answers in the language you speak)`],
+  ["Battery life", "We'll publish measured figures before shipping"],
+  ["Size, weight & water resistance", "To be confirmed before shipping"],
+  ["What you need", "Wi-Fi, a BuddyAI account and a BuddyAI Care subscription (first 3 months free)"],
+];
+---
+<Base
+  title="Features"
+  description={`Natural voice conversation, tap to talk and interrupt, ${languageCountLabel} languages, personas, custom colours and a history you control — on a rectangular AMOLED watch.`}
+>
+  <PageHero
+    eyebrow="Features"
+    title="Everything it does,"
+    gradient="honestly explained."
+    lead="BuddyAI does one thing and does it well: it's an AI you can talk to, right on your wrist. Here's exactly what it can do today."
+  />
+
+  <section class="container-x mt-6" aria-labelledby="core-title">
+    <h2 id="core-title" class="sr-only">Core features</h2>
+    <FeatureGrid detailed />
+  </section>
+
+  <section class="container-x mt-20" aria-labelledby="privacy-title">
+    <div class="glass grid gap-6 p-6 sm:p-8 md:grid-cols-[auto_1fr]">
+      <span class="icon-tile"><Icon name="lock" /></span>
+      <div>
+        <h2 id="privacy-title" class="text-xl font-semibold text-white">Privacy, in plain words</h2>
+        <p class="mt-2 text-muted">{privacyLine}</p>
+        <p class="mt-2 text-sm text-muted">AI can make mistakes — please double-check anything important.</p>
+      </div>
+    </div>
+  </section>
+
+  <Designed cta={false} />
+
+  <section class="container-x mt-20" aria-labelledby="specs-title">
+    <SectionHeading id="specs-title" title="Specifications" subtitle="Figures we haven't measured yet are marked — we'll publish them before shipping." />
+    <dl class="mt-8 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+      {specs.map(([k, v]) => (
+        <div class="grid gap-1 p-4 sm:grid-cols-[14rem_1fr] sm:gap-6 sm:px-6">
+          <dt class="font-semibold text-white">{k}</dt>
+          <dd class="text-muted">{v}</dd>
+        </div>
+      ))}
+    </dl>
+    <p class="mt-3 text-xs text-muted">Watch images on this site are illustrations — product photos coming soon.</p>
+  </section>
+
+  <section class="container-x mt-16 text-center">
+    <a href="/pricing/#buy" class="btn btn-primary">See pricing <Icon name="arrow" size={18} /></a>
+  </section>
+</Base>

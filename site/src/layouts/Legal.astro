@@ -1,0 +1,67 @@
+---
+import Base from "./Base.astro";
+import { config } from "../config";
+
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+const legalNav = [
+  { href: "/legal/terms-of-sale/", label: "Terms of sale" },
+  { href: "/legal/subscription-terms/", label: "Subscription terms" },
+  { href: "/legal/privacy/", label: "Privacy" },
+  { href: "/legal/cookies/", label: "Cookies" },
+  { href: "/legal/returns/", label: "Returns & cancellation" },
+  { href: "/legal/warranty/", label: "Guarantee & warranty" },
+];
+const path = Astro.url.pathname.replace(/\/?$/, "/");
+---
+<Base title={title} description={description}>
+  <div class="border-b border-amber-300/40 bg-amber-300/15">
+    <div class="container-x py-4" role="note">
+      <p class="text-lg font-extrabold tracking-wide text-amber-200">DRAFT — needs legal review before launch</p>
+      <p class="mt-1 text-sm text-amber-100/90">
+        This is a template, not final legal text. It must be reviewed by a qualified lawyer for the UK and EU before
+        any sale. {/* TODO(owner): legal review, then remove this banner (src/layouts/Legal.astro). */}
+      </p>
+    </div>
+  </div>
+
+  <div class="container-x grid gap-10 py-12 lg:grid-cols-[14rem_1fr]">
+    <nav aria-label="Legal pages" class="lg:sticky lg:top-24 lg:self-start">
+      <ul class="flex flex-wrap gap-2 lg:flex-col lg:gap-1">
+        {legalNav.map((l) => (
+          <li>
+            <a
+              href={l.href}
+              class:list={[
+                "block rounded-lg px-3 py-2 text-sm",
+                path === l.href ? "bg-white/10 text-white" : "text-muted hover:text-white",
+              ]}
+              aria-current={path === l.href ? "page" : undefined}
+            >
+              {l.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+
+    <article class="prose-legal min-w-0 max-w-3xl">
+      <h1 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{title}</h1>
+      <p class="mt-2 text-sm text-muted">Last updated: TODO(owner): date of the reviewed version</p>
+
+      <slot />
+
+      <h2>Who we are</h2>
+      <p>
+        {config.companyName}<br />
+        {config.address}<br />
+        Company number: {config.companyNumber}<br />
+        VAT number: {config.vatNumber}<br />
+        Email: <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>
+      </p>
+    </article>
+  </div>
+</Base>

@@ -1,0 +1,63 @@
+---
+import Legal from "../../layouts/Legal.astro";
+import { config, prices, formatPrice } from "../../config";
+---
+<Legal title="Subscription terms" description="Terms for BuddyAI Care, the subscription that powers the AI assistant (DRAFT, needs legal review).">
+  <p>
+    BuddyAI Care is the subscription that powers the AI voice assistant on your BuddyAI watch. The watch's assistant
+    does not answer without an active BuddyAI Care subscription.
+  </p>
+
+  <h2>1. Price and free period</h2>
+  <p>
+    BuddyAI Care costs {formatPrice(prices.care.GBP, "GBP")} per month (UK) or {formatPrice(prices.care.EUR, "EUR")} per
+    month (EU), including VAT. The first {prices.trialMonths} months are free. Your subscription starts when you buy
+    the watch; after the free period it renews automatically every month and your card is charged, unless you cancel
+    before the free period ends.
+  </p>
+
+  <h2>2. Reminder before you are charged</h2>
+  <p>
+    We will email you before the free period ends, telling you the date of the first payment and how to cancel.
+    {/* TODO(owner): make sure this reminder email is actually sent (UK DMCC Act subscription rules). */}
+  </p>
+
+  <h2>3. What's included</h2>
+  <ul>
+    <li>Voice conversations with the AI assistant, in all supported languages.</li>
+    <li>Personas, custom colours, and your conversation history in your account (export or delete anytime).</li>
+    <li>Firmware updates over the air.</li>
+    <li>
+      A monthly fair-use allowance of AI usage. If you reach it, the assistant pauses until your next monthly period
+      starts; we email you when you reach 80% of it.
+      {/* TODO(owner): state the allowance in plain terms (e.g. approximate minutes of conversation). */}
+    </li>
+  </ul>
+
+  <h2>4. Cancelling</h2>
+  <p>
+    You can cancel anytime from your account (Plan &amp; usage), which opens our payment provider's secure billing
+    portal. The subscription then ends at the end of the current paid period (or of the free period) and you won't be
+    charged again. You also have a 14-day right to cancel the subscription from the day the contract starts.
+  </p>
+
+  <h2>5. Price changes</h2>
+  <p>
+    We may change the price with at least 30 days' notice by email. If you don't agree, you can cancel before the new
+    price applies.
+  </p>
+
+  <h2>6. Failed payments</h2>
+  <p>
+    If a payment fails we will email you and retry. If it still fails, the assistant stops answering until the payment
+    is made.
+  </p>
+
+  <h2>7. Service availability</h2>
+  <p>
+    The assistant relies on our servers and our AI partners (OpenAI) and needs Wi-Fi. We work to keep the service
+    available but can't guarantee it will be uninterrupted.
+  </p>
+
+  <p>Questions: <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.</p>
+</Legal>

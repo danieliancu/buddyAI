@@ -1,0 +1,36 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import FaqList from "../components/FaqList.astro";
+import { faqGroups, allFaqs } from "../data/faq";
+import { config } from "../config";
+
+const strip = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: allFaqs.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: strip(f.a) },
+  })),
+};
+---
+<Base
+  title="FAQ"
+  description="Answers about BuddyAI: what it does, languages, privacy, price and subscription, delivery, returns and your legal rights."
+  jsonLd={jsonLd}
+>
+  <PageHero eyebrow="FAQ" title="Questions," gradient="answered." />
+  <div class="container-x mt-4 space-y-12">
+    {faqGroups.map((g, i) => (
+      <section aria-labelledby={`faq-${i}`}>
+        <h2 id={`faq-${i}`} class="mb-4 text-xl font-bold text-white">{g.title}</h2>
+        <FaqList items={g.items} />
+      </section>
+    ))}
+    <p class="text-muted">
+      Still wondering? Email <a class="link" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.
+    </p>
+  </div>
+</Base>

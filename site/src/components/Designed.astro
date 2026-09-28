@@ -1,0 +1,54 @@
+---
+import Icon from "./Icon.astro";
+import WatchMock from "./WatchMock.astro";
+import { hardware } from "../data/features";
+
+interface Props {
+  cta?: boolean;
+}
+const { cta = true } = Astro.props;
+const left = hardware.slice(0, 2);
+const right = hardware.slice(2);
+---
+<section class="relative mt-24 overflow-hidden border-y border-line bg-bg-2/60 py-16" aria-labelledby="designed-title">
+  <div class="container-x grid items-center gap-10 lg:grid-cols-[1fr_1.6fr]">
+    <div>
+      <h2 id="designed-title" class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+        Thoughtfully designed.<br /><span class="text-gradient">Powered by AI.</span>
+      </h2>
+      <p class="mt-4 max-w-md text-muted">
+        A rectangular AMOLED touch display, built-in microphones and speaker, and an AI assistant that's ready when you
+        tap.
+      </p>
+      {cta && (
+        <a href="/features/" class="btn btn-primary mt-6">Explore features <Icon name="arrow" size={18} /></a>
+      )}
+    </div>
+
+    <div class="grid items-center gap-6 sm:grid-cols-[1fr_auto_1fr]">
+      <ul class="order-2 space-y-6 sm:order-1">
+        {left.map((h) => (
+          <li class="flex gap-3 sm:flex-row-reverse sm:text-right">
+            <span class="icon-tile !h-10 !w-10 shrink-0"><Icon name={h.icon} size={20} /></span>
+            <div>
+              <h3 class="text-sm font-semibold text-white">{h.title}</h3>
+              <p class="mt-1 text-sm text-muted">{h.text}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <WatchMock id="designed-watch" class="order-1 w-44 sm:order-2 sm:w-48 lg:w-52" />
+      <ul class="order-3 space-y-6">
+        {right.map((h) => (
+          <li class="flex gap-3">
+            <span class="icon-tile !h-10 !w-10 shrink-0"><Icon name={h.icon} size={20} /></span>
+            <div>
+              <h3 class="text-sm font-semibold text-white">{h.title}</h3>
+              <p class="mt-1 text-sm text-muted">{h.text}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</section>

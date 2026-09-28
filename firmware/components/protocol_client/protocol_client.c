@@ -37,6 +37,7 @@ static const char *TAG = "proto";
 #define BACKOFF_MIN_MS          2000
 #define BACKOFF_MAX_MS          120000
 #define BACKOFF_UNSUPPORTED_MS  (10 * 60 * 1000)
+#define BACKOFF_ACCOUNT_INACTIVE_MS (10 * 60 * 1000)
 #define MDNS_TIMEOUT_MS         3000
 
 #define AUDIO_HDR_LEN           12
@@ -94,6 +95,10 @@ static volatile uint32_t s_conn_id;         /* id of the live client (read in ws
 static conn_state_t     s_conn = CONN_NO_NET;
 static int64_t          s_deadline_ms;      /* connect / hello / backoff deadline */
 static uint32_t         s_backoff_ms = BACKOFF_MIN_MS;
+/* Minimum backoff until the next successful hello_ack (protocol_unsupported,
+ * account_inactive): the server refuses us, so do not hammer it. */
+static uint32_t         s_backoff_floor_ms;
+static bool             s_account_inactive; /* last hello refused with account_inactive */
 
 static char             s_candidates[MAX_CANDIDATES][SETTINGS_URL_MAX];
 static int              s_cand_count;
@@ -427,7 +432,7 @@ static void start_turn(void)
 static void handle_tap(void)
 {
     if (s_conn != CONN_SESSION) {
-        emit(PROTO_EVT_ERROR, PROTO_ERR_NOT_CONNECTED, NULL);
+        emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
         return;
     }
     switch (s_conv) {
@@ -492,6 +497,8 @@ static void on_hello_ack(const cJSON *j)
     s_conn = CONN_SESSION;
     s_turn_counter = 0;
     s_backoff_ms = BACKOFF_MIN_MS;
+    s_backoff_floor_ms = 0;
+    s_account_inactive = false;
     s_last_ping_ms = s_last_status_ms = now_ms();
     s_pairing_code[0] = '\0';
     settings_set_last_server(s_url);
@@ -517,10 +524,31 @@ static void on_error_msg(const cJSON *j, bool has_turn, uint32_t turn)
     }
     if (strcmp(code, "protocol_unsupported") == 0) {
         emit(PROTO_EVT_ERROR, PROTO_ERR_PROTOCOL_UNSUPPORTED, message);
-        s_backoff_ms = BACKOFF_UNSUPPORTED_MS;  /* stop reconnecting fast */
+        s_backoff_floor_ms = BACKOFF_UNSUPPORTED_MS;    /* stop reconnecting fast */
         if (s_ws) {
             esp_websocket_client_close(s_ws, pdMS_TO_TICKS(1000));
         }
+    } else if (strcmp(code, "account_inactive") == 0) {
+        /* Reply to hello; the server closes the socket. Keep the token (the
+         * account may be reactivated) and retry slowly. */
+        s_account_inactive = true;
+        s_backoff_floor_ms = BACKOFF_ACCOUNT_INACTIVE_MS;
+        local_stop_turn();
+        set_conv(PROTO_CONV_IDLE);
+        emit(PROTO_EVT_ERROR, PROTO_ERR_ACCOUNT_INACTIVE, message);
+        if (s_ws) {
+            esp_websocket_client_close(s_ws, pdMS_TO_TICKS(1000));
+        }
+    } else if (strcmp(code, "subscription_required") == 0 || strcmp(code, "limit_reached") == 0) {
+        /* Reply to listen_start (turn_end {status: error} follows). The uplink
+         * was already cut in the websocket task (uplink_refused_fast_path);
+         * stop capture, go idle, no automatic retry. */
+        if (has_turn && turn != s_active_turn) {
+            return; /* stale turn */
+        }
+        local_stop_turn();
+        set_conv(PROTO_CONV_IDLE);
+        emit(PROTO_EVT_ERROR, code[0] == 's' ? PROTO_ERR_SUBSCRIPTION_REQUIRED : PROTO_ERR_LIMIT_REACHED, message);
     } else if (strcmp(code, "unauthorized") == 0) {
         settings_erase_token();
         local_stop_turn();
@@ -708,6 +736,35 @@ out:
     cJSON_Delete(j);
 }
 
+/* Uplink-refused fast path - runs in the websocket task. subscription_required
+ * / limit_reached answer listen_start while the mic is already streaming: kill
+ * the turn here (capture_cb checks s_turn_live) so not one more uplink frame is
+ * sent while the message waits in the proto queue. The proto task then does
+ * the full handling (on_error_msg). */
+static void uplink_refused_fast_path(const char *txt)
+{
+    if (!strstr(txt, "subscription_required") && !strstr(txt, "limit_reached")) {
+        return;
+    }
+    cJSON *j = cJSON_Parse(txt);
+    if (!j) {
+        return;
+    }
+    const char *type = json_str(j, "type");
+    const char *code = json_str(j, "code");
+    uint32_t turn = 0;
+    bool has_turn = json_uint32(j, "turn_id", &turn);
+    if (type && code && strcmp(type, "error") == 0 &&
+        (strcmp(code, "subscription_required") == 0 || strcmp(code, "limit_reached") == 0)) {
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        if (!has_turn || turn == s_active_turn) {
+            s_turn_live = false;
+        }
+        xSemaphoreGive(s_turn_lock);
+    }
+    cJSON_Delete(j);
+}
+
 /* Binary downlink fast path - runs in the websocket task. */
 static void handle_binary(const uint8_t *data, size_t len)
 {
@@ -801,6 +858,7 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
         } else if (s_rx_opcode == 0x01) {
             msg_t t = { .type = MSG_TEXT, .a = conn, .str = dup_psram((const char *)s_rx_buf, s_rx_len) };
             if (t.str) {
+                uplink_refused_fast_path(t.str);
                 post(&t);
             }
         }
@@ -868,6 +926,13 @@ static void add_candidate(const char *url)
     if (!url || !url[0] || s_cand_count >= MAX_CANDIDATES) {
         return;
     }
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    /* Release builds only talk to the server over TLS. */
+    if (strncmp(url, "wss://", 6) != 0) {
+        ESP_LOGW(TAG, "release build: ignoring non-wss server URL %s", url);
+        return;
+    }
+#endif
     for (int i = 0; i < s_cand_count; i++) {
         if (strcmp(s_candidates[i], url) == 0) {
             return;
@@ -895,9 +960,10 @@ static void build_candidates(void)
 
 static void enter_backoff(void)
 {
+    uint32_t wait = s_backoff_ms > s_backoff_floor_ms ? s_backoff_ms : s_backoff_floor_ms;
     s_conn = CONN_BACKOFF;
-    s_deadline_ms = now_ms() + s_backoff_ms;
-    ESP_LOGI(TAG, "next connection attempt in %lu s", (unsigned long)(s_backoff_ms / 1000));
+    s_deadline_ms = now_ms() + wait;
+    ESP_LOGI(TAG, "next connection attempt in %lu s", (unsigned long)(wait / 1000));
     s_backoff_ms = s_backoff_ms * 2 > BACKOFF_MAX_MS ? BACKOFF_MAX_MS : s_backoff_ms * 2;
 }
 

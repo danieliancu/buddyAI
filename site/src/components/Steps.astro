@@ -1,0 +1,34 @@
+---
+import Icon from "./Icon.astro";
+const steps = [
+  {
+    icon: "wifi" as const,
+    title: "Set it up",
+    text: "Sign in to your BuddyAI account, choose Add watch, and connect the watch to Wi-Fi.",
+  },
+  {
+    icon: "mic" as const,
+    title: "Tap and talk",
+    text: "Tap the big mic button and speak naturally — ask a question or just start chatting.",
+  },
+  {
+    icon: "wave" as const,
+    title: "Hear the answer",
+    text: "BuddyAI replies out loud in your language. Tap again anytime to interrupt.",
+  },
+];
+---
+<ol class="grid gap-4 md:grid-cols-3">
+  {steps.map((s, i) => (
+    <li class="glass relative flex items-start gap-4 p-5">
+      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-violet/50 bg-violet/15 text-sm font-bold text-white" aria-hidden="true">{i + 1}</span>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <Icon name={s.icon} size={20} class="text-violet" />
+          <h3 class="font-semibold text-white"><span class="sr-only">Step {i + 1}: </span>{s.title}</h3>
+        </div>
+        <p class="mt-1.5 text-sm text-muted">{s.text}</p>
+      </div>
+    </li>
+  ))}
+</ol>

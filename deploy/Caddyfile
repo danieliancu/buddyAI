@@ -1,0 +1,61 @@
+# BuddyAI — HTTPS reverse proxy. Caddy obtains and renews Let's Encrypt certificates automatically.
+# Domains come from deploy/.env (SITE_DOMAIN, APP_DOMAIN, API_DOMAIN, ROOT_DOMAIN).
+{
+	email {$ACME_EMAIL}
+}
+
+(common_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# example.com -> www.example.com
+{$ROOT_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+# Marketing site (static) + the shop API on the same origin (no CORS needed).
+{$SITE_DOMAIN} {
+	import common_headers
+	encode zstd gzip
+	header Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	handle /api/shop/* {
+		reverse_proxy server:8765
+	}
+	handle {
+		root * /srv/site
+		try_files {path} {path}/index.html {path}.html
+		file_server
+	}
+	handle_errors 404 {
+		root * /srv/site
+		rewrite * /404.html
+		file_server
+	}
+}
+
+# Customer + operator web app, REST API, Stripe webhook.
+{$APP_DOMAIN} {
+	import common_headers
+	encode zstd gzip
+	header {
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; connect-src 'self' wss:; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+	reverse_proxy server:8765
+}
+
+# Watches: WebSocket gateway and firmware downloads only.
+{$API_DOMAIN} {
+	import common_headers
+	@device path /ws/device /fw/* /healthz
+	handle @device {
+		reverse_proxy server:8765
+	}
+	respond 404
+}

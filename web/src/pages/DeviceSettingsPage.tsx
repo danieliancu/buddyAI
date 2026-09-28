@@ -8,8 +8,10 @@ import {
   type DeviceSettings,
   type LanguageInfo,
   type Options,
+  type MyPersona,
   type Persona,
   type SettingsPatch,
+  type SettingsResponse,
   type Theme,
 } from "../api";
 import { useLive } from "../live";
@@ -17,6 +19,7 @@ import { OnlineDot, StateBadge } from "../components/DeviceBits";
 import WatchPreview from "../components/WatchPreview";
 import { LanguagePicker, VoiceSampleButton } from "../components/LanguageBits";
 import { primeLanguages } from "../languages";
+import WatchHeader from "./my/WatchHeader";
 import { Button, Card, ErrorBox, Field, Input, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
 const TIMEZONES = [
@@ -101,11 +104,42 @@ function validateLocal(s: DeviceSettings): Record<string, string> {
   return out;
 }
 
-export default function DeviceSettingsPage() {
+interface Source {
+  devices: () => Promise<Device[]>;
+  settings: (id: string) => Promise<SettingsResponse>;
+  patchSettings: (id: string, changes: SettingsPatch) => Promise<SettingsResponse>;
+  options: () => Promise<Options>;
+  personas: () => Promise<(Persona | MyPersona)[]>;
+}
+
+const SOURCES: Record<"admin" | "customer", Source> = {
+  admin: {
+    devices: () => api.devices.list(),
+    settings: api.devices.settings,
+    patchSettings: api.devices.patchSettings,
+    options: api.options,
+    personas: api.personas.list,
+  },
+  customer: {
+    devices: api.me.devices.list,
+    settings: api.me.devices.settings,
+    patchSettings: api.me.devices.patchSettings,
+    options: api.me.options,
+    personas: api.me.personas.list,
+  },
+};
+
+/**
+ * Watch settings. The operator ("admin") sees every field; the customer view hides the technical
+ * ones (model, VAD, listening time, context turns, reply length) and uses the /api/me endpoints.
+ */
+export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" | "customer" }) {
+  const customer = mode === "customer";
+  const src = SOURCES[mode];
   const { id = "" } = useParams();
   const [device, setDevice] = useState<Device | null>(null);
   const [options, setOptions] = useState<Options | null>(null);
-  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [personas, setPersonas] = useState<(Persona | MyPersona)[]>([]);
   const [orig, setOrig] = useState<DeviceSettings | null>(null);
   const [draft, setDraft] = useState<DeviceSettings | null>(null);
   const [version, setVersion] = useState<number | null>(null);
@@ -117,7 +151,7 @@ export default function DeviceSettingsPage() {
   const [remoteChange, setRemoteChange] = useState(false);
 
   const loadSettings = async () => {
-    const s = await api.devices.settings(id);
+    const s = await src.settings(id);
     setOrig(s.settings);
     setDraft(s.settings);
     setVersion(s.version);
@@ -127,7 +161,7 @@ export default function DeviceSettingsPage() {
 
   useEffect(() => {
     setLoadErr(null);
-    Promise.all([api.devices.list(), api.options(), api.personas.list(), loadSettings()])
+    Promise.all([src.devices(), src.options(), src.personas(), loadSettings()])
       .then(([devs, opts, pers]) => {
         setDevice(devs.find((d) => d.id === id) ?? null);
         setOptions(opts);
@@ -136,7 +170,7 @@ export default function DeviceSettingsPage() {
       })
       .catch(setLoadErr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, mode]);
 
   const patch = useMemo(() => (orig && draft ? diff(orig, draft) : {}), [orig, draft]);
   const dirtyCount = Object.keys(patch).length;
@@ -150,13 +184,23 @@ export default function DeviceSettingsPage() {
       setDevice((d) => d && { ...d, online: e.type === "device_online", state: e.type === "device_online" ? "idle" : null });
     } else if (e.type === "device_state") {
       setDevice((d) => d && { ...d, state: e.state });
+    } else if (e.type === "device_status") {
+      setDevice(
+        (d) =>
+          d && {
+            ...d,
+            battery_pct: e.battery_pct ?? d.battery_pct,
+            charging: e.charging ?? d.charging,
+            rssi: e.rssi ?? d.rssi,
+          },
+      );
     }
   });
 
   if (loadErr) {
     return (
       <>
-        <BackLink />
+        <BackLink customer={customer} />
         <ErrorBox error={loadErr instanceof ApiError && loadErr.status === 404 ? new Error("Watch not found.") : loadErr} />
       </>
     );
@@ -189,7 +233,7 @@ export default function DeviceSettingsPage() {
     }
     setSaving(true);
     try {
-      const r = await api.devices.patchSettings(id, patch);
+      const r = await src.patchSettings(id, patch);
       setOrig(r.settings);
       setDraft(r.settings);
       setVersion(r.version);
@@ -228,24 +272,35 @@ export default function DeviceSettingsPage() {
     />
   );
 
+  const savedNote = savedAt && dirtyCount === 0 && (
+    <span className="inline-flex items-center gap-1 text-ok">
+      <Check className="size-3.5" /> Saved{device?.online ? " and sent to the watch" : ""}
+    </span>
+  );
+  const defaultPersona = personas.find((p) => p.is_default);
+  const ownPersonas = personas.filter((p) => "own" in p && p.own);
+  const systemPersonas = personas.filter((p) => !ownPersonas.includes(p));
+
   return (
     <>
-      <BackLink />
-      <PageHeader
+      {customer ? (
+        <WatchHeader id={id} device={device} active="settings" note={savedNote || undefined} onRenamed={(name) => setDevice((d) => d && { ...d, name })} />
+      ) : (
+        <>
+          <BackLink customer={false} />
+          <PageHeader
         title={device?.name ?? id}
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-2">
             {device && <OnlineDot online={device.online} />}
             {device && <StateBadge online={device.online} state={device.state} />}
             <span>Settings • version {version}</span>
-            {savedAt && dirtyCount === 0 && (
-              <span className="inline-flex items-center gap-1 text-ok">
-                <Check className="size-3.5" /> Saved{device?.online ? " and sent to the watch" : ""}
-              </span>
-            )}
+            {savedNote}
           </span>
         }
-      />
+          />
+        </>
+      )}
 
       {remoteChange && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn">
@@ -259,7 +314,7 @@ export default function DeviceSettingsPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-6">
           {/* ---------------- AI ---------------- */}
-          <Card title={<SectionTitle icon={<Bot className="size-4" />}>AI</SectionTitle>}>
+          <Card title={<SectionTitle icon={<Bot className="size-4" />}>{customer ? "Voice & language" : "AI"}</SectionTitle>}>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Language" error={err("language")} hint={<CaptionsNote lang={selectedLang} fallback="Voice and assistant language" />}>
                 <LanguagePicker
@@ -285,17 +340,44 @@ export default function DeviceSettingsPage() {
                   invalid={!!err("preferred_language")}
                 />
               </Field>
-              <Field label="Persona" error={err("persona_id")} hint={<Link to="/personas" className="underline">Manage personas</Link>}>
+              <Field
+                label="Persona"
+                error={err("persona_id")}
+                hint={
+                  <Link to={customer ? "/my/personas" : "/admin/personas"} className="underline">
+                    {customer ? "Create your own personas" : "Manage personas"}
+                  </Link>
+                }
+              >
                 <Select
                   value={draft.persona_id ?? ""}
                   onChange={(e) => set("persona_id", e.target.value ? Number(e.target.value) : null)}
                 >
-                  <option value="">Default ({personas.find((p) => p.is_default)?.name ?? "—"})</option>
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
+                  <option value="">Default ({defaultPersona?.name ?? "—"})</option>
+                  {ownPersonas.length > 0 ? (
+                    <>
+                      <optgroup label="BuddyAI personas">
+                        {systemPersonas.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="My personas">
+                        {ownPersonas.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </>
+                  ) : (
+                    personas.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))
+                  )}
                 </Select>
               </Field>
               <Field label="Custom instructions" className="sm:col-span-2" error={err("custom_instructions")} hint={`${draft.custom_instructions.length}/2000`}>
@@ -307,6 +389,8 @@ export default function DeviceSettingsPage() {
                   onChange={(e) => set("custom_instructions", e.target.value)}
                 />
               </Field>
+              {!customer && (
+              <>
               <Field label="LLM model" error={err("llm_model")}>
                 <Select value={draft.llm_model ?? ""} onChange={(e) => set("llm_model", e.target.value || null)}>
                   <option value="">Default (server)</option>
@@ -326,6 +410,8 @@ export default function DeviceSettingsPage() {
                   ))}
                 </div>
               </Field>
+              </>
+              )}
               <Field label="Voice" error={err("tts_voice")} hint={`Sample in ${sampleLangName}`}>
                 <div className="flex gap-2">
                   <Select className="min-w-0 flex-1" value={draft.tts_voice ?? ""} onChange={(e) => set("tts_voice", e.target.value || null)}>
@@ -349,9 +435,11 @@ export default function DeviceSettingsPage() {
                   err={err}
                 />
               </div>
-              <Field label="Speech rate" error={err("speech_rate")}>
+              <Field label={customer ? "Speaking speed" : "Speech rate"} error={err("speech_rate")}>
                 <Slider value={draft.speech_rate} min={0.5} max={2} step={0.05} onChange={(v) => set("speech_rate", v)} format={(v) => `${v.toFixed(2)}×`} />
               </Field>
+              {!customer && (
+              <>
               <Field label="Max reply length" error={err("max_reply_chars")}>
                 <Slider value={draft.max_reply_chars} min={80} max={2000} step={20} onChange={(v) => set("max_reply_chars", v)} format={(v) => `${v} chars`} />
               </Field>
@@ -361,6 +449,8 @@ export default function DeviceSettingsPage() {
               <Field label="Max listening time" error={err("max_listen_s")}>
                 <Slider value={draft.max_listen_s} min={3} max={60} onChange={(v) => set("max_listen_s", v)} format={(v) => `${v} s`} />
               </Field>
+              </>
+              )}
             </div>
           </Card>
 
@@ -450,7 +540,7 @@ export default function DeviceSettingsPage() {
       </div>
 
       {/* save bar */}
-      <div className="sticky bottom-0 z-20 -mx-4 mt-6 border-t border-border bg-bg/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <div style={{ bottom: "var(--bottom-nav, 0px)" }} className="sticky z-20 -mx-4 mt-6 border-t border-border bg-bg/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <span className="min-w-0 flex-1 text-sm text-muted">
             {dirtyCount ? `${dirtyCount} unsaved ${dirtyCount === 1 ? "change" : "changes"}` : "No changes"}
@@ -472,10 +562,10 @@ export default function DeviceSettingsPage() {
   );
 }
 
-function BackLink() {
+function BackLink({ customer }: { customer: boolean }) {
   return (
-    <Link to="/devices" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
-      <ArrowLeft className="size-4" /> Devices
+    <Link to={customer ? "/my" : "/admin/devices"} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
+      <ArrowLeft className="size-4" /> {customer ? "My watches" : "Devices"}
     </Link>
   );
 }

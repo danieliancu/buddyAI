@@ -1,0 +1,18 @@
+---
+import type { Faq } from "../data/faq";
+interface Props {
+  items: Faq[];
+}
+const { items } = Astro.props;
+---
+<div class="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+  {items.map((f) => (
+    <details class="group p-5 [&_a]:text-indigo-300 [&_a]:underline [&_a]:underline-offset-2">
+      <summary class="flex cursor-pointer list-none items-start justify-between gap-4 rounded font-semibold text-white [&::-webkit-details-marker]:hidden">
+        <span>{f.q}</span>
+        <span class="mt-0.5 text-violet transition-transform group-open:rotate-45" aria-hidden="true">+</span>
+      </summary>
+      <p class="mt-3 text-muted" set:html={f.a} />
+    </details>
+  ))}
+</div>

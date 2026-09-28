@@ -1,0 +1,42 @@
+---
+import Legal from "../../layouts/Legal.astro";
+import { config } from "../../config";
+---
+<Legal title="Guarantee & warranty" description="Your legal rights if a BuddyAI watch is faulty: UK statutory rights and the EU 2-year legal guarantee (DRAFT, needs legal review).">
+  <p>
+    Your legal rights come first. Nothing on this page limits them.
+  </p>
+
+  <h2>If you live in the UK</h2>
+  <p>
+    Under the Consumer Rights Act 2015, the watch must be of satisfactory quality, fit for purpose and as described.
+    If it isn't:
+  </p>
+  <ul>
+    <li>within 30 days of delivery you can reject it for a full refund;</li>
+    <li>within 6 months, we will repair or replace it; if that fails, you are entitled to a refund or price reduction;</li>
+    <li>you can claim for up to 6 years (5 years in Scotland), although after 6 months you may need to show the fault was there at delivery.</li>
+  </ul>
+
+  <h2>If you live in the EU</h2>
+  <p>
+    You have a legal guarantee of conformity of at least 2 years from delivery. If the watch is faulty, you can ask for
+    repair or replacement free of charge and, if that isn't possible, a price reduction or refund. Faults that appear
+    within 1 year of delivery are presumed to have existed at delivery (longer in some countries).
+  </p>
+
+  <h2>How to make a claim</h2>
+  <p>
+    Email <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a> with your order number and a short
+    description of the problem. We cover the cost of returning a faulty watch.
+  </p>
+
+  <h2>Commercial warranty</h2>
+  <p>
+    We do not currently offer an additional commercial warranty beyond your legal rights.
+    {/* TODO(owner): if you decide to offer one, describe it here — it must be in addition to, not instead of, legal rights. */}
+  </p>
+
+  <h2>What isn't covered by legal rights</h2>
+  <p>Normal wear and tear, accidental damage, and damage from misuse or unauthorised repair.</p>
+</Legal>

@@ -35,6 +35,9 @@ typedef enum {
     PROTO_ERR_PROTOCOL_UNSUPPORTED, /* firmware update required */
     PROTO_ERR_AI,                   /* stt/llm/tts_failed, internal */
     PROTO_ERR_BUSY,
+    PROTO_ERR_SUBSCRIPTION_REQUIRED, /* listen_start refused: no active BuddyAI Care subscription */
+    PROTO_ERR_LIMIT_REACHED,        /* listen_start refused: monthly allowance used up */
+    PROTO_ERR_ACCOUNT_INACTIVE,     /* hello refused: owner account suspended/closed (slow retry) */
 } proto_error_t;
 
 typedef enum {

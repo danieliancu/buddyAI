@@ -1,95 +1,71 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router";
-import { api, setUnauthorizedHandler } from "./api";
-import { LiveProvider } from "./live";
-import Layout from "./components/Layout";
-import { ErrorBox, Spinner } from "./components/ui";
-import AuthPage from "./pages/AuthPage";
-import DevicesPage from "./pages/DevicesPage";
-import DeviceSettingsPage from "./pages/DeviceSettingsPage";
-import PersonasPage from "./pages/PersonasPage";
-import ConversationsPage from "./pages/ConversationsPage";
-import SystemPage from "./pages/SystemPage";
-import FirmwarePage from "./pages/FirmwarePage";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { api } from "./api";
+import { Spinner } from "./components/ui";
+import OperatorApp, { OperatorLoginPage } from "./OperatorApp";
+import CustomerApp from "./pages/my/CustomerApp";
+import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage, VerifyEmailPage } from "./pages/my/AuthPages";
 
-// recharts is heavy: load the usage/diagnostics page on demand.
-const UsagePage = lazy(() => import("./pages/UsagePage"));
+/**
+ * One SPA, two roles:
+ *   - customers: /login, /signup, /forgot-password, /reset-password, /verify-email, /my/*
+ *   - operator:  /admin/login, /admin/*
+ * The pre-M7 operator paths (/devices, …) redirect to /admin/… so bookmarks keep working.
+ */
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<RootRedirect />} />
 
-interface AuthState {
-  loading: boolean;
-  needsSetup: boolean;
-  user: string | null;
-  error: unknown;
+      {/* customer */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/my/*" element={<CustomerApp />} />
+
+      {/* operator */}
+      <Route path="/admin/login" element={<OperatorLoginPage />} />
+      <Route path="/admin/*" element={<OperatorApp />} />
+
+      {/* legacy operator paths */}
+      {["devices", "conversations", "personas", "usage", "firmware", "system"].map((p) => (
+        <Route key={p} path={`/${p}`} element={<LegacyRedirect to={`/admin/${p}`} />} />
+      ))}
+      <Route path="/devices/:id" element={<LegacyDeviceRedirect />} />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
 
-export default function App() {
-  const [auth, setAuth] = useState<AuthState>({ loading: true, needsSetup: false, user: null, error: null });
-
-  const load = useCallback(() => {
-    setAuth((a) => ({ ...a, loading: true, error: null }));
-    api.auth
-      .status()
-      .then((s) => setAuth({ loading: false, needsSetup: s.needs_setup, user: s.user, error: null }))
-      .catch((e) => setAuth((a) => ({ ...a, loading: false, error: e })));
-  }, []);
-
+/** "/" → /my when signed in as a customer, else /login. */
+function RootRedirect() {
+  const navigate = useNavigate();
   useEffect(() => {
-    load();
-    // Any 401 from a protected endpoint drops the session and shows the login form.
-    setUnauthorizedHandler(() => setAuth((a) => ({ ...a, user: null })));
-    return () => setUnauthorizedHandler(null);
-  }, [load]);
-
-  if (auth.loading && !auth.user) {
-    return (
-      <div className="grid min-h-screen place-items-center">
-        <Spinner />
-      </div>
-    );
-  }
-  if (auth.error) {
-    return (
-      <div className="mx-auto max-w-md p-6">
-        <ErrorBox error={auth.error} onRetry={load} />
-      </div>
-    );
-  }
-  if (auth.needsSetup || !auth.user) {
-    return (
-      <AuthPage
-        mode={auth.needsSetup ? "setup" : "login"}
-        onDone={(user) => setAuth({ loading: false, needsSetup: false, user, error: null })}
-      />
-    );
-  }
-
-  const logout = async () => {
-    await api.auth.logout().catch(() => undefined);
-    setAuth((a) => ({ ...a, user: null }));
-  };
-
+    let alive = true;
+    api.me
+      .get({ no401: true })
+      .then(() => alive && navigate("/my", { replace: true }))
+      .catch(() => alive && navigate("/login", { replace: true }));
+    return () => {
+      alive = false;
+    };
+  }, [navigate]);
   return (
-    <LiveProvider>
-      <Layout user={auth.user} onLogout={logout}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/devices" replace />} />
-          <Route path="/devices" element={<DevicesPage />} />
-          <Route path="/devices/:id" element={<DeviceSettingsPage />} />
-          <Route path="/conversations" element={<ConversationsPage />} />
-          <Route path="/personas" element={<PersonasPage />} />
-          <Route
-            path="/usage"
-            element={
-              <Suspense fallback={<Spinner />}>
-                <UsagePage />
-              </Suspense>
-            }
-          />
-          <Route path="/firmware" element={<FirmwarePage />} />
-          <Route path="/system" element={<SystemPage />} />
-          <Route path="*" element={<Navigate to="/devices" replace />} />
-        </Routes>
-      </Layout>
-    </LiveProvider>
+    <div className="grid min-h-screen place-items-center">
+      <Spinner />
+    </div>
   );
+}
+
+function LegacyRedirect({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={to + search} replace />;
+}
+
+function LegacyDeviceRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate to={`/admin/devices/${encodeURIComponent(id)}`} replace />;
 }

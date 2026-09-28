@@ -139,6 +139,9 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `bad_request` | Malformed message | Log. |
 | `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn | Show error, go idle. |
 | `busy` | Server overloaded | Retry later. |
+| `subscription_required` | Owner has no active/trial BuddyAI Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the BuddyAI app", go idle. |
+| `limit_reached` | Monthly fair-use allowance used up | Show "Monthly limit reached — resets on the 1st", go idle. |
+| `account_inactive` | Owner account suspended or closed (reply to `hello`, then close) | Show "Account inactive — contact support"; retry slowly. |
 | `internal` | Unexpected server error | Show error, go idle. |
 
 ## 8. Session flow

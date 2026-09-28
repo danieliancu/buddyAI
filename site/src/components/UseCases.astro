@@ -1,0 +1,45 @@
+---
+import Icon from "./Icon.astro";
+// No people photos and no children's use case: icons and gradients only.
+const cases = [
+  {
+    icon: "bulb" as const,
+    title: "For curious minds",
+    text: "Ask the question that just popped into your head and get a clear, spoken answer.",
+    bg: "linear-gradient(135deg, rgba(124,92,255,.45), rgba(35,88,224,.15))",
+  },
+  {
+    icon: "globe" as const,
+    title: "For language practice",
+    text: "Hold a conversation in another language — or let Auto follow whichever you speak.",
+    bg: "linear-gradient(135deg, rgba(35,120,224,.45), rgba(20,184,166,.15))",
+  },
+  {
+    icon: "home" as const,
+    title: "Around the house",
+    text: "Hands full in the kitchen? One tap on your wrist, then just talk.",
+    bg: "linear-gradient(135deg, rgba(168,85,247,.4), rgba(236,72,153,.12))",
+  },
+  {
+    icon: "chat" as const,
+    title: "For thinking out loud",
+    text: "Brainstorm ideas or talk a problem through with an assistant whose persona you choose.",
+    bg: "linear-gradient(135deg, rgba(59,130,246,.45), rgba(124,92,255,.15))",
+  },
+];
+---
+<ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  {cases.map((c) => (
+    <li class="glass relative overflow-hidden p-0">
+      <div class="relative grid h-36 place-items-center" style={`background:${c.bg}`}>
+        <span class="grid h-16 w-16 place-items-center rounded-2xl border border-white/20 bg-black/25 text-white shadow-[0_0_40px_rgba(124,92,255,.45)]">
+          <Icon name={c.icon} size={32} />
+        </span>
+      </div>
+      <div class="p-5">
+        <h3 class="font-semibold text-white">{c.title}</h3>
+        <p class="mt-1.5 text-sm text-muted">{c.text}</p>
+      </div>
+    </li>
+  ))}
+</ul>

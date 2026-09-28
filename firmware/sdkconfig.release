@@ -1,0 +1,54 @@
+# BuddyAI watch firmware - RELEASE overlay (customer units)
+#
+# Layered on top of sdkconfig.defaults. Build in a SEPARATE build directory with
+# its own sdkconfig so the development configuration is never touched:
+#
+#   idf.py -B build-release -D SDKCONFIG=build-release/sdkconfig ^
+#          -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release" build
+#
+# (see README.md "Release build"). Development builds (plain `idf.py build`)
+# do not read this file.
+#
+# This overlay does NOT enable hardware Secure Boot or flash encryption: both
+# burn eFuses irreversibly on first boot. They are enabled only on production
+# units, following README.md "PRODUCTION UNITS ONLY".
+
+# ---- BuddyAI -----------------------------------------------------------------
+CONFIG_BUDDYAI_RELEASE_BUILD=y
+# !!! The owner MUST replace example.com with the real API domain before
+# !!! building units for customers (wss:// only - the CA bundle is enabled).
+CONFIG_BUDDYAI_DEFAULT_SERVER_URL="wss://api.example.com/ws/device"
+# LAN discovery would let any device on the customer's network offer a server.
+# CONFIG_BUDDYAI_MDNS_DISCOVERY is not set
+
+# ---- OTA ---------------------------------------------------------------------
+# https:// only (the firmware also refuses non-https offers in release builds).
+# CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP is not set
+# Roll back to the previous image if a new one never reaches a server session.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Signed app images WITHOUT hardware secure boot (Secure Boot V2 scheme,
+# RSA-3072 signature block appended at build time). esp_ota_end() rejects any
+# OTA image not signed with the same key as the running app.
+# The key lives in firmware/keys/ and is NEVER committed (see keys/README.md).
+# Path is relative to the project directory (firmware/).
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/buddyai_signing_key.pem"
+
+# ---- NVS encryption ----------------------------------------------------------
+# The chosen scheme is the flash-encryption based one (XTS keys stored in the
+# encrypted `nvs_keys` partition, already in partitions.csv). In ESP-IDF 5.5
+# CONFIG_NVS_ENCRYPTION / CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC depend on
+# CONFIG_SECURE_FLASH_ENC_ENABLED, so they cannot be switched on here without
+# enabling flash encryption itself. They are part of the production overlay in
+# README.md ("PRODUCTION UNITS ONLY"), where flash encryption is enabled and
+# NVS encryption follows automatically.
+# (Production units also need partitions_production.csv: the Secure Boot +
+# flash encryption bootloader is larger than 0x8000.)
+
+# ---- Logging -----------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y

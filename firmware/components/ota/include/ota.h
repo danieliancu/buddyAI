@@ -3,8 +3,14 @@
  *
  * Downloads the image with esp_https_ota (CA bundle for https), verifies the
  * SHA-256 of the written image against the offer, then switches the boot
- * partition and restarts. Signature verification (`signature`) is M5 (secure
- * boot v2 / signed app images) - TODO.
+ * partition and restarts.
+ *
+ * Signatures: release builds (sdkconfig.release) enable
+ * CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT + CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT
+ * (Secure Boot V2 RSA-3072 signature block appended to the image at build
+ * time). esp_ota_end() then rejects any image not signed with the same key as
+ * the running app. The optional `signature` field of ota_available is not
+ * needed for this and is ignored. Release builds also refuse non-https URLs.
  */
 #pragma once
 

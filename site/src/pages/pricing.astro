@@ -1,0 +1,72 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import BuyBox from "../components/BuyBox.astro";
+import SectionHeading from "../components/SectionHeading.astro";
+import FaqList from "../components/FaqList.astro";
+import Price from "../components/Price.astro";
+import Icon from "../components/Icon.astro";
+import { faqGroups } from "../data/faq";
+import { config, prices, formatPrice, deliveryText } from "../config";
+import { languageCountLabel } from "../lib/languages";
+
+const included = [
+  "Natural voice conversations with the AI assistant",
+  `${languageCountLabel} languages, plus Auto`,
+  "Personas — choose or write your own",
+  "Conversation history in your account (export or delete anytime)",
+  "Firmware updates over the air",
+  "A monthly fair-use allowance of AI usage",
+];
+const pricingFaq = [
+  ...faqGroups.find((g) => g.title === "Price & subscription")!.items,
+  ...faqGroups.find((g) => g.title.startsWith("Delivery"))!.items,
+];
+const description = `${formatPrice(prices.watch.GBP, "GBP")} today, then ${formatPrice(prices.care.GBP, "GBP")}/month for BuddyAI Care after ${prices.trialMonths} months free. Cancel anytime. 14-day right to cancel, UK statutory rights and a 2-year EU legal guarantee.`;
+---
+<Base title="Pricing" description={description}>
+  <PageHero
+    eyebrow="Pricing"
+    title="Simple, upfront"
+    gradient="pricing."
+    lead="One price for the watch. One monthly subscription for the AI that answers you. No hidden extras."
+  />
+
+  <section class="container-x mt-4 grid gap-8 lg:grid-cols-[1.2fr_1fr]" aria-label="Buy BuddyAI">
+    <BuyBox />
+
+    <div class="space-y-6">
+      <div class="glass p-6">
+        <h2 class="text-lg font-semibold text-white">BuddyAI Care includes</h2>
+        <ul class="mt-4 space-y-2.5">
+          {included.map((i) => (
+            <li class="flex gap-2.5 text-sm text-muted"><Icon name="check" size={18} class="mt-0.5 shrink-0 text-ok" />{i}</li>
+          ))}
+        </ul>
+        <p class="mt-4 text-sm text-muted">
+          <Price item="care" class="font-semibold text-white" />/month after {prices.trialMonths} months free. Cancel anytime
+          from your account; if you cancel during the free period you pay nothing for Care.
+        </p>
+      </div>
+      <div class="glass p-6">
+        <h2 class="text-lg font-semibold text-white">Delivery</h2>
+        <p class="mt-2 text-sm text-muted">We ship to the United Kingdom and all EU member states.</p>
+        <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt class="text-white">UK</dt><dd class="text-muted">Delivery time {deliveryText(config.shipping.deliveryTimes.UK)}</dd>
+          <dt class="text-white">EU</dt><dd class="text-muted">Delivery time {deliveryText(config.shipping.deliveryTimes.EU)}</dd>
+        </dl>
+        <p class="mt-3 text-sm text-muted">{config.shipping.costNote}</p>
+        <details class="mt-3 text-sm">
+          <summary class="cursor-pointer text-indigo-300">All destinations ({config.shipping.countries.length})</summary>
+          <p class="mt-2 text-muted">{config.shipping.countries.join(", ")}</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="container-x mt-20" aria-labelledby="pfaq-title">
+    <SectionHeading id="pfaq-title" title="Pricing questions" />
+    <div class="mt-8"><FaqList items={pricingFaq} /></div>
+    <p class="mt-4 text-sm text-muted">More in the <a class="link" href="/faq/">FAQ</a>.</p>
+  </section>
+</Base>

@@ -1,16 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
-import { Activity, Cpu, LogOut, Menu, MessagesSquare, Server, Sparkles, Watch, X } from "lucide-react";
+import { Activity, Cpu, LogOut, Menu, MessagesSquare, Package, Server, Sparkles, Users, Watch, X } from "lucide-react";
 import { useLive } from "../live";
 import { cx } from "./ui";
 
 const NAV = [
-  { to: "/devices", label: "Devices", icon: Watch },
-  { to: "/conversations", label: "Conversations", icon: MessagesSquare },
-  { to: "/personas", label: "Personas", icon: Sparkles },
-  { to: "/usage", label: "Usage & diagnostics", icon: Activity },
-  { to: "/firmware", label: "Firmware", icon: Cpu },
-  { to: "/system", label: "System", icon: Server },
+  { to: "/admin/devices", label: "Devices", icon: Watch },
+  { to: "/admin/customers", label: "Customers", icon: Users },
+  { to: "/admin/orders", label: "Orders", icon: Package },
+  { to: "/admin/conversations", label: "Conversations", icon: MessagesSquare },
+  { to: "/admin/personas", label: "Personas", icon: Sparkles },
+  { to: "/admin/usage", label: "Usage & diagnostics", icon: Activity },
+  { to: "/admin/firmware", label: "Firmware", icon: Cpu },
+  { to: "/admin/system", label: "System", icon: Server },
 ];
 
 export default function Layout({ user, onLogout, children }: { user: string; onLogout: () => void; children: ReactNode }) {

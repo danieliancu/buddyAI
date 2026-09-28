@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Check, Copy, MessagesSquare, Pencil, Plus, SlidersHorizontal, Trash2, Watch } from "lucide-react";
+import { Check, Copy, MessagesSquare, Pencil, Plus, SlidersHorizontal, Trash2, UserRound, Watch } from "lucide-react";
 import { api, ApiError, type Device, type LiveEvent, type PendingPairing } from "../api";
 import { useLive } from "../live";
 import { fmtAgo, fmtDateTime } from "../format";
 import { BatteryInfo, OnlineDot, RssiInfo, StateBadge } from "../components/DeviceBits";
+import { AccountPicker } from "../components/AccountPicker";
+import { turnRefusedText } from "../components/BillingBits";
 import { Badge, Button, buttonCls, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, useAsync } from "../components/ui";
 
 interface LastTurn {
   user_text: string;
   assistant_text: string;
   status: string;
+  /** turn_refused code (billing / account state) */
+  refused?: string;
 }
 
 export default function DevicesPage() {
@@ -21,6 +25,7 @@ export default function DevicesPage() {
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<Device | null>(null);
   const [revoking, setRevoking] = useState<Device | null>(null);
+  const [assigning, setAssigning] = useState<Device | null>(null);
   const [, setNow] = useState(Date.now());
 
   const loadPending = useCallback(() => {
@@ -58,6 +63,9 @@ export default function DevicesPage() {
       }
       case "turn_end":
         setLastTurn((m) => ({ ...m, [e.device_id]: e }));
+        break;
+      case "turn_refused":
+        setLastTurn((m) => ({ ...m, [e.device_id]: { user_text: "", assistant_text: "", status: "refused", refused: e.code } }));
         break;
       case "pairing_pending":
         loadPending();
@@ -119,6 +127,7 @@ export default function DevicesPage() {
               lastTurn={lastTurn[d.id]}
               onRename={() => setRenaming(d)}
               onRevoke={() => setRevoking(d)}
+              onAssign={() => setAssigning(d)}
             />
           ))}
         </div>
@@ -133,6 +142,11 @@ export default function DevicesPage() {
           devices.reload();
           loadPending();
         }}
+      />
+      <AssignDialog
+        device={assigning}
+        onClose={() => setAssigning(null)}
+        onSaved={(d) => update(d.id, { account: d.account ?? null })}
       />
       <RenameDialog
         device={renaming}
@@ -166,11 +180,13 @@ function DeviceCard({
   lastTurn,
   onRename,
   onRevoke,
+  onAssign,
 }: {
   device: Device;
   lastTurn?: LastTurn;
   onRename: () => void;
   onRevoke: () => void;
+  onAssign: () => void;
 }) {
   return (
     <div className="flex flex-col rounded-xl border border-border bg-surface">
@@ -185,6 +201,16 @@ function DeviceCard({
           </div>
           <p className="truncate font-mono text-xs text-muted" title={d.id}>
             {d.id}
+          </p>
+          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs">
+            <UserRound className="size-3.5 shrink-0 text-muted" />
+            {d.account ? (
+              <Link to={`/admin/customers/${d.account.id}`} className="truncate text-accent hover:underline" title={d.account.name || d.account.email}>
+                {d.account.email}
+              </Link>
+            ) : (
+              <span className="text-muted">Stock</span>
+            )}
           </p>
         </div>
         <button onClick={onRename} className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg" title="Rename" aria-label="Rename">
@@ -205,7 +231,10 @@ function DeviceCard({
           <span title={fmtDateTime(d.last_seen_at)}>{d.online ? "now" : fmtAgo(d.last_seen_at)}</span>
         </Info>
       </dl>
-      {lastTurn && (
+      {lastTurn?.refused && (
+        <p className="mx-4 mb-4 rounded-lg bg-warn-bg px-3 py-2 text-xs text-warn">{turnRefusedText(lastTurn.refused, true)}</p>
+      )}
+      {lastTurn && !lastTurn.refused && (
         <div className="mx-4 mb-4 space-y-1 rounded-lg bg-surface-2 px-3 py-2 text-xs">
           {lastTurn.user_text && (
             <p className="truncate">
@@ -222,12 +251,15 @@ function DeviceCard({
         </div>
       )}
       <div className="mt-auto flex flex-wrap gap-2 border-t border-border px-4 py-3">
-        <Link to={`/devices/${encodeURIComponent(d.id)}`} className={buttonCls("secondary", "sm")}>
+        <Link to={`/admin/devices/${encodeURIComponent(d.id)}`} className={buttonCls("secondary", "sm")}>
           <SlidersHorizontal className="size-3.5" /> Settings
         </Link>
-        <Link to={`/conversations?device=${encodeURIComponent(d.id)}`} className={buttonCls("ghost", "sm")}>
+        <Link to={`/admin/conversations?device=${encodeURIComponent(d.id)}`} className={buttonCls("ghost", "sm")}>
           <MessagesSquare className="size-3.5" /> Conversations
         </Link>
+        <Button size="sm" variant="ghost" icon={<UserRound className="size-3.5" />} onClick={onAssign}>
+          Assign to customer
+        </Button>
         <Button size="sm" variant="ghost" className="ml-auto text-danger" icon={<Trash2 className="size-3.5" />} onClick={onRevoke}>
           Revoke
         </Button>
@@ -285,6 +317,7 @@ function AddWatchDialog({
 }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("BuddyAI Watch");
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState(false);
@@ -292,6 +325,7 @@ function AddWatchDialog({
   useEffect(() => {
     if (!open) return;
     setCode("");
+    setAccountId(null);
     setError(null);
     setDone(false);
     onRefresh();
@@ -305,7 +339,7 @@ function AddWatchDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.devices.pair(code, name.trim() || "BuddyAI Watch");
+      await api.devices.pair(code, name.trim() || "BuddyAI Watch", accountId);
       setDone(true);
       onPaired();
       window.setTimeout(onClose, 900);
@@ -349,6 +383,9 @@ function AddWatchDialog({
         </Field>
         <Field label="Name" htmlFor="name">
           <Input id="name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Customer (optional)" htmlFor="pair-acc" hint="Leave as stock to assign the watch later.">
+          <AccountPicker id="pair-acc" value={accountId} onChange={setAccountId} />
         </Field>
         <ErrorBox error={error} />
         {done && <p className="text-sm text-ok">Watch paired.</p>}
@@ -419,6 +456,67 @@ function RenameDialog({ device, onClose, onSaved }: { device: Device | null; onC
         <Field label="Name" htmlFor="rn">
           <Input id="rn" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
+        <ErrorBox error={error} />
+      </form>
+    </Dialog>
+  );
+}
+
+function AssignDialog({ device, onClose, onSaved }: { device: Device | null; onClose: () => void; onSaved: (d: Device) => void }) {
+  const [accountId, setAccountId] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    if (device) {
+      setAccountId(device.account?.id ?? null);
+      setError(null);
+    }
+  }, [device]);
+  const current = device?.account?.id ?? null;
+  const changed = accountId !== current;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!device || !changed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api.devices.assign(device.id, accountId));
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      open={!!device}
+      onClose={onClose}
+      title="Assign to customer"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant={current != null ? "danger" : "primary"} type="submit" form="assign-form" loading={busy} disabled={!changed}>
+            Assign
+          </Button>
+        </>
+      }
+    >
+      <form id="assign-form" onSubmit={submit} className="space-y-4">
+        <p className="text-sm">
+          <b>{device?.name}</b> is currently {device?.account ? <>owned by <b>{device.account.email}</b></> : "in stock"}.
+        </p>
+        <Field label="New owner" htmlFor="assign-acc">
+          <AccountPicker id="assign-acc" value={accountId} onChange={setAccountId} noneLabel="Stock (no customer)" />
+        </Field>
+        {current != null && changed && (
+          <p className="rounded-lg border border-danger/30 bg-danger-bg px-3 py-2 text-sm text-danger">
+            The previous owner's history on this watch will be erased.
+          </p>
+        )}
+        <p className="text-xs text-muted">The watch reconnects under its new owner. Its settings (voice, colours, custom instructions) are kept.</p>
         <ErrorBox error={error} />
       </form>
     </Dialog>

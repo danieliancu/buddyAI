@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Play, Square } from "lucide-react";
 import { api, ApiError, type LanguageInfo } from "../api";
+import { useArea } from "../area";
 import { Button, cx } from "./ui";
 
 // ---------- searchable language select ----------
@@ -234,6 +235,7 @@ export function VoiceSampleButton({
   size?: "sm" | "md";
   disabled?: boolean;
 }) {
+  const area = useArea();
   const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
   const [error, setError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -259,7 +261,7 @@ export function VoiceSampleButton({
     setState("loading");
     const req = ++reqRef.current;
     try {
-      const blob = await api.voiceSample(voice, language);
+      const blob = await (area === "me" ? api.me.voiceSample : api.voiceSample)(voice, language);
       if (req !== reqRef.current) return;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);

@@ -1,0 +1,72 @@
+---
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { config } from "../config";
+
+interface Props {
+  title: string;
+  description: string;
+  noindex?: boolean;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+}
+
+const { title, description, noindex = false, jsonLd } = Astro.props;
+const site = Astro.site ?? new URL("https://www.example.com");
+const path = Astro.url.pathname === "/" ? "/" : Astro.url.pathname.replace(/\/?$/, "/");
+const canonical = new URL(path, site).href;
+const fullTitle = path === "/" ? `${config.siteName} — ${title}` : `${title} | ${config.siteName}`;
+const ogImage = new URL("/og-image.png", site).href;
+---
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="alternate" hreflang="en-GB" href={canonical} />
+    <link rel="alternate" hreflang="en-IE" href={canonical} />
+    <link rel="alternate" hreflang="x-default" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="theme-color" content="#060913" />
+    <meta name="color-scheme" content="dark" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={config.siteName} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="BuddyAI — your AI companion, now on your wrist (illustration)" />
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:locale:alternate" content="en_IE" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+    {config.plausibleDomain && (
+      <script is:inline defer data-domain={config.plausibleDomain} src={config.plausibleSrc}></script>
+    )}
+  </head>
+  <body class="min-h-screen">
+    <a
+      href="#main"
+      class="sr-only z-50 rounded-lg bg-white px-4 py-2 font-semibold text-black focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+    >
+      Skip to content
+    </a>
+    <Header />
+    <main id="main" tabindex="-1" class="focus:outline-none">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

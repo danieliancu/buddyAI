@@ -1,0 +1,27 @@
+---
+interface Props {
+  class?: string;
+}
+const { class: cls = "" } = Astro.props;
+---
+<div class={`inline-flex items-center gap-2 ${cls}`} role="group" aria-label="Currency">
+  <span class="text-xs text-muted">Currency</span>
+  <div class="inline-flex rounded-xl border border-line-strong bg-white/5 p-1">
+    <button type="button" data-currency-btn="GBP" aria-pressed="true"
+      class="rounded-lg px-3 py-1.5 text-sm font-semibold text-muted aria-pressed:bg-white/15 aria-pressed:text-white">
+      £ GBP
+    </button>
+    <button type="button" data-currency-btn="EUR" aria-pressed="false"
+      class="rounded-lg px-3 py-1.5 text-sm font-semibold text-muted aria-pressed:bg-white/15 aria-pressed:text-white">
+      € EUR
+    </button>
+  </div>
+</div>
+
+<script>
+  import { applyCurrency, getCurrency, setCurrency, type Cur } from "../lib/currency";
+  document.querySelectorAll<HTMLButtonElement>("[data-currency-btn]").forEach((b) => {
+    b.addEventListener("click", () => setCurrency(b.dataset.currencyBtn as Cur));
+  });
+  applyCurrency(getCurrency());
+</script>

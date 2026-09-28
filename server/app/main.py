@@ -6,13 +6,16 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from urllib.parse import urlsplit
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages
-from app.api import accounts_admin, auth, devices, firmware, live, me, system, usage
+from app.api import accounts_admin, auth, devices, firmware, live, me, shop, system, usage
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
@@ -77,6 +80,7 @@ def create_app() -> FastAPI:
     for r in (
         auth.router,
         me.router,
+        shop.router,
         accounts_admin.router,
         devices.router,
         usage.router,
@@ -87,9 +91,38 @@ def create_app() -> FastAPI:
     ):
         app.include_router(r)
 
+    @app.middleware("http")
+    async def same_origin_writes(request: Request, call_next):
+        """CSRF defence in depth (cookies are already SameSite=Strict): browser writes to /api must
+        come from our own origin. Requests without an Origin header (Stripe webhook, curl, the
+        watch) are unaffected."""
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/"):
+            origin = request.headers.get("origin")
+            if origin and urlsplit(origin).netloc != request.headers.get("host", ""):
+                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
+
     @app.get("/healthz")
     def healthz() -> dict:
         return {"ok": True}
+
+    @app.get("/readyz")
+    def readyz() -> JSONResponse:
+        """Load-balancer / uptime check: also verifies the database answers."""
+        try:
+            with session_scope() as db:
+                db.exec(text("SELECT 1"))
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False, "db": False}, status_code=503)
+        return JSONResponse({"ok": True, "db": True})
 
     dist = settings.web_dist
     if dist.exists():
@@ -97,6 +130,9 @@ def create_app() -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str) -> FileResponse:
+            if path.startswith(("api/", "ws/", "fw/")):
+                # Unknown API route: a JSON 404, never the web page (it would break the app silently).
+                raise HTTPException(404, "not found")
             file = dist / path
             if path and file.is_file() and dist in file.resolve().parents:
                 return FileResponse(file)
@@ -111,9 +147,23 @@ app = create_app()
 def main() -> None:
     import uvicorn
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     s = get_settings()
-    uvicorn.run("app.main:app", host=s.host, port=s.port, ws_max_size=1 << 20, log_level="info")
+    if s.log_json:
+        from app.logging_json import configure_json_logging
+
+        configure_json_logging()
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    uvicorn.run(
+        "app.main:app",
+        host=s.host,
+        port=s.port,
+        ws_max_size=1 << 20,
+        log_level="info",
+        proxy_headers=True,
+        forwarded_allow_ips=s.forwarded_allow_ips,
+        log_config=None if s.log_json else uvicorn.config.LOGGING_CONFIG,
+    )
 
 
 if __name__ == "__main__":

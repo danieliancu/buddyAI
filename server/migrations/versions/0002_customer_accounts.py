@@ -27,11 +27,11 @@ def upgrade() -> None:
         sa.Column("password_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("name", sqlmodel.sql.sqltypes.AutoString(length=120), nullable=False),
         sa.Column("country", sqlmodel.sql.sqltypes.AutoString(length=2), nullable=True),
-        sa.Column("email_verified_at", sa.DateTime(), nullable=True),
+        sa.Column("email_verified_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
         sa.Column("status", sqlmodel.sql.sqltypes.AutoString(length=16), nullable=False),
         sa.Column("session_version", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("last_login_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=False),
+        sa.Column("last_login_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_accounts_email", "accounts", ["email"], unique=True)
@@ -41,9 +41,9 @@ def upgrade() -> None:
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("purpose", sqlmodel.sql.sqltypes.AutoString(length=16), nullable=False),
         sa.Column("token_hash", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
-        sa.Column("expires_at", sa.DateTime(), nullable=False),
-        sa.Column("used_at", sa.DateTime(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("expires_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=False),
+        sa.Column("used_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=True),
+        sa.Column("created_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=False),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.Column("account_id", sa.Integer(), nullable=True),
         sa.Column("device_id", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=True),
         sa.Column("detail", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sqlmodel.sql.sqltypes.UTCDateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_audit_log_account_id", "audit_log", ["account_id"])

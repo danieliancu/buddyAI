@@ -38,6 +38,57 @@ class Account(SQLModel, table=True):
     session_version: int = 1  # bump to log out every session (password change/reset)
     created_at: datetime = Field(default_factory=utcnow)
     last_login_at: Optional[datetime] = None
+    stripe_customer_id: Optional[str] = Field(default=None, index=True, max_length=64)
+    allowance_override: Optional[float] = None  # monthly AI cost cap in display currency; None = plan default
+    allowance_warned_month: Optional[str] = Field(default=None, max_length=7)  # "YYYY-MM" of the 80% email
+
+
+class Order(SQLModel, table=True):
+    """A watch purchase, created from a completed Stripe Checkout session."""
+
+    __tablename__ = "orders"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    stripe_session_id: str = Field(index=True, unique=True, max_length=255)
+    stripe_payment_intent: Optional[str] = Field(default=None, max_length=255)
+    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)
+    email: str = Field(max_length=254)
+    currency: str = Field(max_length=3)
+    amount_total: int  # minor units (pence / cents), including tax and shipping
+    amount_tax: int = 0
+    amount_shipping: int = 0
+    status: str = Field(default="paid", max_length=16)  # paid | shipped | delivered | refunded | cancelled
+    shipping_name: str = Field(default="", max_length=200)
+    shipping_address: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    country: Optional[str] = Field(default=None, max_length=2)
+    carrier: str = Field(default="", max_length=60)
+    tracking_number: str = Field(default="", max_length=120)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+
+
+class Subscription(SQLModel, table=True):
+    """Mirror of a Stripe subscription ("BuddyAI Care"), kept in sync by webhooks."""
+
+    __tablename__ = "subscriptions"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    stripe_subscription_id: str = Field(index=True, unique=True, max_length=255)
+    stripe_customer_id: str = Field(index=True, max_length=64)
+    account_id: Optional[int] = Field(default=None, foreign_key="accounts.id", index=True)
+    status: str = Field(max_length=24)  # trialing | active | past_due | canceled | unpaid | incomplete...
+    trial_end: Optional[datetime] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: bool = False
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class StripeEvent(SQLModel, table=True):
+    """Processed webhook event ids (Stripe may deliver an event more than once)."""
+
+    __tablename__ = "stripe_events"
+    id: str = Field(primary_key=True, max_length=255)
+    type: str = Field(max_length=80)
+    processed_at: datetime = Field(default_factory=utcnow)
 
 
 class AuthToken(SQLModel, table=True):

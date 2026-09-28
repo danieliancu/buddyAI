@@ -1,0 +1,35 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import Icon from "../components/Icon.astro";
+import { config } from "../config";
+---
+<Base title="Contact" description="Get in touch with the BuddyAI team by email for orders, support, returns and privacy requests.">
+  <PageHero
+    eyebrow="Contact"
+    title="We're here"
+    gradient="to help."
+    lead="The quickest way to reach us is email."
+  />
+  <section class="container-x mt-4 grid gap-4 md:grid-cols-2" aria-label="Contact details">
+    <div class="glass p-6">
+      <span class="icon-tile"><Icon name="mail" /></span>
+      <h2 class="mt-4 text-lg font-semibold text-white">Email</h2>
+      <p class="mt-1 text-muted">Orders, support, returns and privacy requests:</p>
+      <a class="btn btn-primary mt-4 max-w-full break-all" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>
+    </div>
+    <div class="glass p-6">
+      <span class="icon-tile"><Icon name="box" /></span>
+      <h2 class="mt-4 text-lg font-semibold text-white">Company details</h2>
+      <address class="mt-2 not-italic text-muted">
+        {config.companyName}<br />
+        {config.address}<br />
+        Company number: {config.companyNumber}<br />
+        VAT number: {config.vatNumber}
+      </address>
+      <p class="mt-3 text-sm text-muted">
+        Returning a watch? Please email us first — see <a class="link" href="/legal/returns/">returns &amp; cancellation</a>.
+      </p>
+    </div>
+  </section>
+</Base>

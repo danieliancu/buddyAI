@@ -1,0 +1,52 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import Icon from "../components/Icon.astro";
+import { config } from "../config";
+import { privacyLine } from "../data/features";
+
+const values = [
+  {
+    icon: "check" as const,
+    title: "Honest claims",
+    text: "We only describe features that exist today. Anything we haven't measured yet, like battery life, is marked as such until we have real figures.",
+  },
+  { icon: "lock" as const, title: "Respect for your data", text: privacyLine },
+  {
+    icon: "chat" as const,
+    title: "Simple by design",
+    text: "One big button. Tap to talk, tap to interrupt. Technology should get out of the way.",
+  },
+];
+---
+<Base title="About" description="Why we're building BuddyAI: a simple, honest AI voice companion on your wrist, for the UK and Europe.">
+  <PageHero
+    eyebrow="About"
+    title="A companion you can"
+    gradient="simply talk to."
+    lead="We think talking is the most natural way to use AI. BuddyAI puts a friendly, capable assistant on your wrist, one tap away."
+  />
+  <section class="container-x mt-6" aria-labelledby="values-title">
+    <h2 id="values-title" class="sr-only">What we believe</h2>
+    <ul class="grid gap-4 md:grid-cols-3">
+      {values.map((v) => (
+        <li class="glass p-6">
+          <span class="icon-tile"><Icon name={v.icon} /></span>
+          <h3 class="mt-4 font-semibold text-white">{v.title}</h3>
+          <p class="mt-1.5 text-sm text-muted">{v.text}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+  <section class="container-x mt-16" aria-labelledby="who-title">
+    <h2 id="who-title" class="text-2xl font-bold text-white">Who we are</h2>
+    <p class="mt-3 max-w-3xl text-muted">
+      BuddyAI is designed and sold by {config.companyName}, {config.address}. We sell directly to customers in the UK
+      and the EU.
+    </p>
+    <p class="mt-3 max-w-3xl text-muted">
+      Questions, ideas or press enquiries:
+      <a class="link" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.
+    </p>
+  </section>
+</Base>

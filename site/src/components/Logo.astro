@@ -1,0 +1,21 @@
+---
+interface Props {
+  size?: "md" | "lg";
+}
+const { size = "md" } = Astro.props;
+const h = size === "lg" ? 32 : 26;
+---
+<span class="inline-flex items-center gap-2">
+  <svg width={h} height={h} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id={`logo-g-${size}`} x1="0" x2="1">
+        <stop offset="0" stop-color="#8b7bff" />
+        <stop offset="1" stop-color="#4ea3ff" />
+      </linearGradient>
+    </defs>
+    <g stroke={`url(#logo-g-${size})`} stroke-width="3.2" stroke-linecap="round">
+      <path d="M4 13v6M10 9v14M16 5v22M22 9v14M28 13v6" />
+    </g>
+  </svg>
+  <span class:list={["font-bold tracking-tight text-white", size === "lg" ? "text-2xl" : "text-xl"]}>BuddyAI</span>
+</span>

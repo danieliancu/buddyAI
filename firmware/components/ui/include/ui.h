@@ -36,6 +36,9 @@ typedef enum {
     UI_ERR_PROTOCOL,            /* protocol_unsupported: update required */
     UI_ERR_LOW_BATTERY,
     UI_ERR_BUSY,
+    UI_ERR_SUBSCRIPTION,        /* subscription_required: no active BuddyAI Care */
+    UI_ERR_LIMIT,               /* limit_reached: monthly allowance used up */
+    UI_ERR_ACCOUNT_INACTIVE,    /* account_inactive: owner account suspended/closed */
 } ui_error_t;
 
 typedef enum {
@@ -53,6 +56,8 @@ typedef struct {
     void (*on_retry)(void);
     /* Audio level 0..100 used by the listening / speaking animations. */
     int  (*get_audio_level)(void);
+    /* User confirmed the factory reset screen (ui_show_reset_confirm). */
+    void (*on_factory_reset)(void);
 } ui_callbacks_t;
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);
@@ -73,6 +78,10 @@ void ui_show_pairing(const char *code);
 void ui_show_wifi_setup(const char *ap_ssid);
 void ui_show_error(ui_error_t err, const char *detail);
 void ui_show_ota(int pct);                  /* -1 = failed */
+/* Factory reset: "Reset watch?" confirmation (auto-cancels) and the
+ * "Resetting..." screen shown while NVS is erased. */
+void ui_show_reset_confirm(void);
+void ui_show_resetting(void);
 
 /* Wake the screen (PWR key, incoming reply). */
 void ui_wake(void);

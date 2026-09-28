@@ -16,6 +16,7 @@
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #include "esp_http_server.h"
+#include "sdkconfig.h"
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 #include "settings.h"
@@ -27,6 +28,18 @@ static const char *TAG = "portal";
 #define PORTAL_IP           "192.168.4.1"
 #define MAX_SCAN_RESULTS    16
 #define DNS_PORT            53
+
+/* Release builds accept only wss:// server URLs (TLS); development builds also
+ * accept plain ws:// for a LAN server. */
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+#define PORTAL_URL_PLACEHOLDER  "wss://api.example.com/ws/device"
+#define PORTAL_URL_HINT         "wss:// only &mdash; leave empty to use the default server."
+#define PORTAL_URL_RULE         "must start with wss://"
+#else
+#define PORTAL_URL_PLACEHOLDER  "ws://192.168.1.10:8765/ws/device"
+#define PORTAL_URL_HINT         "ws:// or wss:// &mdash; leave empty for automatic discovery."
+#define PORTAL_URL_RULE         "must start with ws:// or wss://"
+#endif
 
 static httpd_handle_t s_httpd;
 static TaskHandle_t   s_dns_task;
@@ -180,13 +193,13 @@ static esp_err_t root_get(httpd_req_t *req)
         "<label>Password</label>"
         "<input name='password' type='password' maxlength='64'>"
         "<label>Server URL <small>(optional)</small></label>"
-        "<input name='server_url' maxlength='190' placeholder='ws://192.168.1.10:8765/ws/device' value=\"");
+        "<input name='server_url' maxlength='190' placeholder='" PORTAL_URL_PLACEHOLDER "' value=\"");
     char url[SETTINGS_URL_MAX];
     if (settings_get_server_url(url, sizeof(url))) {
         send_escaped(req, url);
     }
     httpd_resp_sendstr_chunk(req,
-        "\"><small>ws:// or wss:// &mdash; leave empty for automatic discovery.</small>"
+        "\"><small>" PORTAL_URL_HINT "</small>"
         "<button type='submit'>Save</button></form></main></body></html>");
     httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;
@@ -228,13 +241,16 @@ static esp_err_t save_post(httpd_req_t *req)
     form_field(body, "server_url", url, sizeof(url));
     free(body);
 
-    bool url_ok = url[0] == '\0' || strncmp(url, "ws://", 5) == 0 || strncmp(url, "wss://", 6) == 0;
+    bool url_ok = url[0] == '\0' || strncmp(url, "wss://", 6) == 0;
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+    url_ok = url_ok || strncmp(url, "ws://", 5) == 0;   /* plain ws:// for LAN development only */
+#endif
     if (ssid[0] == '\0' || strlen(ssid) >= SETTINGS_SSID_MAX || strlen(pass) >= SETTINGS_PASS_MAX ||
         strlen(url) >= SETTINGS_URL_MAX || !url_ok) {
         httpd_resp_set_type(req, "text/html; charset=utf-8");
         httpd_resp_sendstr_chunk(req, PAGE_HEAD);
         httpd_resp_sendstr_chunk(req, "<h1>Invalid input</h1><p>Check the network name and the server URL "
-                                      "(must start with ws:// or wss://).</p><a href='/'>Back</a></main></body></html>");
+                                      "(" PORTAL_URL_RULE ").</p><a href='/'>Back</a></main></body></html>");
         httpd_resp_sendstr_chunk(req, NULL);
         return ESP_OK;
     }

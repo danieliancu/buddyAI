@@ -1,0 +1,52 @@
+---
+import Legal from "../../layouts/Legal.astro";
+import { config } from "../../config";
+---
+<Legal title="Returns & cancellation" description="Your 14-day right to cancel a BuddyAI order and how returns work (DRAFT, needs legal review).">
+  <h2>Your 14-day right to cancel</h2>
+  <p>
+    Under UK and EU distance-selling rules you can cancel your order within 14 days after the day you receive the watch,
+    without giving any reason. If you cancel before it is delivered, you can simply refuse delivery or tell us.
+  </p>
+
+  <h2>How to cancel</h2>
+  <p>
+    Tell us clearly before the 14 days end, by email to
+    <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a> with your order number. You may use the model
+    cancellation form below, but you don't have to.
+  </p>
+
+  <h2>Returning the watch</h2>
+  <p>
+    Send the watch back to us within 14 days after telling us you are cancelling. We will email you the return address.
+    {config.freeReturns
+      ? " Returns are free: we send you a prepaid return label."
+      : " Unless the watch is faulty or not as described, you pay the direct cost of returning it."}
+    {/* TODO(owner): return address / process. */}
+  </p>
+
+  <h2>Refunds</h2>
+  <p>
+    We refund the price of the watch and the standard delivery cost within 14 days after we receive the watch back (or
+    you provide proof that you sent it, whichever is earlier), using the same payment method. We may reduce the refund if
+    the watch has been handled more than was needed to check what it is and how it works.
+  </p>
+
+  <h2>BuddyAI Care</h2>
+  <p>
+    Cancelling the watch order also cancels your BuddyAI Care subscription. You can cancel BuddyAI Care on its own at
+    any time from your account — see the <a href="/legal/subscription-terms/">subscription terms</a>.
+  </p>
+
+  <h2>Faulty watch</h2>
+  <p>Your legal rights for faulty goods are explained in <a href="/legal/warranty/">guarantee &amp; warranty</a>.</p>
+
+  <h2>Model cancellation form</h2>
+  <p>
+    To {config.companyName}, {config.address}, {config.supportEmail}:<br />
+    I hereby give notice that I cancel my contract of sale of the following goods: ____<br />
+    Ordered on / received on: ____<br />
+    Name: ____ · Address: ____<br />
+    Signature (only if on paper): ____ · Date: ____
+  </p>
+</Legal>

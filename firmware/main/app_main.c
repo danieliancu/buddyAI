@@ -3,7 +3,8 @@
  *
  * Wires the components together:
  *   board (HW) -> settings (NVS) -> ui (LVGL) -> audio -> net -> protocol_client
- * and runs the app loop (network events, battery / PWR key polling, RTC sync).
+ * and runs the app loop (network events, battery / PWR key polling, RTC sync,
+ * BOOT-button factory reset).
  *
  * Core usage: LVGL, Wi-Fi, WebSocket and protocol tasks on core 0;
  * audio capture / decode / playback tasks on core 1.
@@ -18,6 +19,9 @@
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "nvs_flash.h"
+#include "esp_secure_boot.h"
+#include "esp_flash_encrypt.h"
 #include "sdkconfig.h"
 
 #include "board.h"
@@ -33,10 +37,12 @@ static const char *TAG = "app";
 #define WIFI_CONNECT_GRACE_MS   20000
 #define BATTERY_POLL_MS         10000
 #define PWR_KEY_POLL_MS         200
+#define FACTORY_RESET_HOLD_MS   8000    /* BOOT button hold time for the reset prompt */
 
 typedef enum {
     APP_EV_NET,             /* arg = net_event_t */
     APP_EV_START_PORTAL,
+    APP_EV_FACTORY_RESET,   /* user confirmed the reset screen */
 } app_ev_type_t;
 
 typedef struct {
@@ -203,6 +209,15 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         case PROTO_ERR_BUSY:
             ui_show_error(UI_ERR_BUSY, NULL);
             break;
+        case PROTO_ERR_SUBSCRIPTION_REQUIRED:
+            ui_show_error(UI_ERR_SUBSCRIPTION, NULL);
+            break;
+        case PROTO_ERR_LIMIT_REACHED:
+            ui_show_error(UI_ERR_LIMIT, NULL);
+            break;
+        case PROTO_ERR_ACCOUNT_INACTIVE:
+            ui_show_error(UI_ERR_ACCOUNT_INACTIVE, NULL);
+            break;
         case PROTO_ERR_AI:
         default:
             ui_show_error(UI_ERR_AI, ev->str);
@@ -241,6 +256,11 @@ static void ui_retry(void)
     proto_reconnect();
 }
 
+static void ui_factory_reset(void)
+{
+    post_app(APP_EV_FACTORY_RESET, 0);
+}
+
 static int ui_audio_level(void)
 {
     return audio_capture_active() ? audio_capture_level() : audio_playback_level();
@@ -259,6 +279,44 @@ static void start_portal(void)
     proto_network_down();
     if (net_portal_start() == ESP_OK) {
         ui_show_wifi_setup(net_portal_ssid());
+    }
+}
+
+/* Erase Wi-Fi, server URL, token and settings, then restart into the setup
+ * portal. This unpairs the watch locally; the owner removes it in the app. */
+static void factory_reset(void)
+{
+    ESP_LOGW(TAG, "factory reset confirmed");
+    ui_show_resetting();
+    proto_network_down();
+    esp_err_t err = settings_factory_reset();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "factory reset failed (%s) - erasing the whole NVS partition", esp_err_to_name(err));
+        nvs_flash_deinit();
+        nvs_flash_erase();
+    }
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    esp_restart();
+}
+
+/* BOOT button held >= FACTORY_RESET_HOLD_MS -> confirmation screen (once per hold). */
+static void poll_factory_reset_button(uint32_t now)
+{
+    static uint32_t down_since;
+    static bool     prompted;
+
+    if (!board_boot_button_down()) {
+        down_since = 0;
+        prompted = false;
+        return;
+    }
+    if (down_since == 0) {
+        down_since = now ? now : 1;
+    } else if (!prompted && now - down_since >= FACTORY_RESET_HOLD_MS) {
+        prompted = true;
+        ESP_LOGW(TAG, "BOOT held %d s - asking for factory reset", FACTORY_RESET_HOLD_MS / 1000);
+        ui_wake();
+        ui_show_reset_confirm();
     }
 }
 
@@ -304,6 +362,8 @@ static void app_loop(void)
                 handle_net_event((net_event_t)ev.arg);
             } else if (ev.type == APP_EV_START_PORTAL) {
                 start_portal();
+            } else if (ev.type == APP_EV_FACTORY_RESET) {
+                factory_reset();
             }
         }
 
@@ -311,6 +371,7 @@ static void app_loop(void)
         if (board_power_key_pressed()) {
             ui_wake();
         }
+        poll_factory_reset_button(now);
         if (now - last_batt >= BATTERY_POLL_MS || last_batt == 0) {
             last_batt = now;
             refresh_status();
@@ -333,6 +394,11 @@ void app_main(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
     ESP_LOGI(TAG, "BuddyAI watch fw %s (IDF %s)", app->version, app->idf_ver);
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    /* WARN level so it is visible with the release log level. */
+    ESP_LOGW(TAG, "release build %s: secure boot %s, flash encryption %s", app->version,
+             esp_secure_boot_enabled() ? "ON" : "off", esp_flash_encryption_enabled() ? "ON" : "off");
+#endif
 
     s_app_q = xQueueCreate(16, sizeof(app_ev_t));
 
@@ -354,6 +420,7 @@ void app_main(void)
             .on_wifi_setup = ui_wifi_setup,
             .on_retry = ui_retry,
             .get_audio_level = ui_audio_level,
+            .on_factory_reset = ui_factory_reset,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
     }

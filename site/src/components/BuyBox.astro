@@ -1,0 +1,127 @@
+---
+import { prices } from "../config";
+import Icon from "./Icon.astro";
+import Price from "./Price.astro";
+import CurrencyToggle from "./CurrencyToggle.astro";
+import LegalFacts from "./LegalFacts.astro";
+
+interface Props {
+  headingLevel?: "h2" | "h3";
+}
+const { headingLevel = "h2" } = Astro.props;
+const H = headingLevel;
+const trial = `${prices.trialMonths} months`;
+---
+<div id="buy" class="glass relative overflow-hidden p-6 sm:p-8" data-buybox>
+  <div
+    class="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full opacity-60 blur-3xl"
+    style="background: radial-gradient(circle, rgba(110,80,255,.5), transparent 70%)"
+    aria-hidden="true"
+  >
+  </div>
+
+  <div class="relative flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <H class="text-xl font-bold text-white">BuddyAI Watch + BuddyAI Care</H>
+      <p class="mt-1 text-sm text-muted">AMOLED touch display · Voice AI · Wi-Fi</p>
+    </div>
+    <CurrencyToggle />
+  </div>
+
+  <div class="relative mt-6 flex items-end gap-3">
+    <Price item="watch" class="text-5xl font-extrabold tracking-tight text-white" />
+    <span class="pb-1.5 text-sm text-muted">for the watch, one-off</span>
+  </div>
+
+  <p class="relative mt-3 text-base text-fg" data-price-sentence>
+    <strong><Price item="watch" /> today</strong>, then <strong><Price item="care" />/month</strong> for BuddyAI Care
+    after {trial} free. Cancel anytime.
+  </p>
+  <p class="relative mt-2 text-sm text-muted">
+    BuddyAI Care is the subscription that powers the AI assistant: it is needed for the watch to answer you. It
+    includes a monthly fair-use allowance. See the <a class="link" href="/legal/subscription-terms/">subscription terms</a>.
+  </p>
+
+  <div class="relative mt-6">
+    <button type="button" class="btn btn-primary w-full text-base sm:w-auto sm:min-w-64" data-buy-btn>
+      <span data-buy-label>Buy now</span>
+      <Icon name="arrow" size={18} />
+    </button>
+    <div class="mt-3 min-h-6 text-sm" role="status" aria-live="polite" data-buy-status></div>
+    <div id="notify-panel" class="mt-3 hidden rounded-xl border border-line-strong bg-white/5 p-4" data-notify-panel>
+      <p class="font-semibold text-white">Sales open soon</p>
+      <p class="mt-1 text-sm text-muted">We're getting ready to ship. Check back here soon — this button will turn into
+        "Buy now" the moment sales open.</p>
+    </div>
+  </div>
+
+  <LegalFacts class="relative mt-6 border-t border-line pt-6" />
+</div>
+
+<script>
+  import { getCurrency } from "../lib/currency";
+
+  const box = document.querySelector<HTMLElement>("[data-buybox]");
+  if (box) {
+    const btn = box.querySelector<HTMLButtonElement>("[data-buy-btn]")!;
+    const label = box.querySelector<HTMLElement>("[data-buy-label]")!;
+    const status = box.querySelector<HTMLElement>("[data-buy-status]")!;
+    const panel = box.querySelector<HTMLElement>("[data-notify-panel]")!;
+    let mode: "loading" | "buy" | "notify" = "loading";
+
+    const showError = (msg: string) => {
+      status.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "text-danger";
+      p.textContent = msg;
+      status.append(p);
+    };
+
+    const setNotify = () => {
+      mode = "notify";
+      label.textContent = "Get notified";
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-controls", "notify-panel");
+    };
+
+    const statusPromise = fetch("/api/shop/status", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((s: { open?: boolean }) => {
+        if (s && s.open) mode = "buy";
+        else setNotify();
+      })
+      .catch(() => setNotify());
+
+    btn.addEventListener("click", async () => {
+      if (mode === "loading") await statusPromise;
+      if (mode === "notify") {
+        const open = panel.classList.toggle("hidden") === false;
+        btn.setAttribute("aria-expanded", String(open));
+        return;
+      }
+      status.textContent = "";
+      btn.disabled = true;
+      label.textContent = "Opening secure checkout…";
+      try {
+        const res = await fetch("/api/shop/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ currency: getCurrency().toLowerCase() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.url) {
+          const detail = typeof data.detail === "string" ? data.detail : "";
+          throw new Error(detail || "Checkout is unavailable right now. Please try again in a moment.");
+        }
+        window.location.assign(data.url);
+      } catch (e) {
+        const msg = e instanceof Error && e.message && !/fetch|network/i.test(e.message)
+          ? e.message
+          : "We couldn't reach checkout. Check your connection and try again.";
+        showError(msg);
+        btn.disabled = false;
+        label.textContent = "Buy now";
+      }
+    });
+  }
+</script>

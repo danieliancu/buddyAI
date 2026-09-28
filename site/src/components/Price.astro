@@ -1,0 +1,17 @@
+---
+// A price that follows the £/€ toggle. Renders the default currency statically (works without JS).
+import { prices, formatPrice } from "../config";
+interface Props {
+  item: "watch" | "care";
+  class?: string;
+}
+const { item, class: cls } = Astro.props;
+const p = prices[item];
+const gbp = formatPrice(p.GBP, "GBP");
+const eur = formatPrice(p.EUR, "EUR");
+---
+<script>
+  import { applyCurrency, getCurrency } from "../lib/currency";
+  applyCurrency(getCurrency());
+</script>
+<span data-money={item} data-gbp={gbp} data-eur={eur} class={cls}>{prices.currencyDefault === "EUR" ? eur : gbp}</span>

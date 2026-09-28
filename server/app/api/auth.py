@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from app.config import get_settings
 from app.db.repositories import AdminRepo
 from app.db.session import get_session
 from app.ratelimit import LOGIN_PER_ACCOUNT, LOGIN_PER_IP, client_ip
@@ -21,7 +22,11 @@ class Credentials(BaseModel):
 
 @router.get("/status")
 def status(request: Request, db: Session = Depends(get_session)) -> dict:
-    return {"needs_setup": AdminRepo(db).count() == 0, "user": request.session.get("admin")}
+    return {
+        "needs_setup": AdminRepo(db).count() == 0,
+        "web_setup_allowed": get_settings().allow_web_setup,
+        "user": request.session.get("admin"),
+    }
 
 
 @router.post("/setup")
@@ -29,6 +34,8 @@ def setup(body: Credentials, request: Request, db: Session = Depends(get_session
     repo = AdminRepo(db)
     if repo.count() > 0:
         raise HTTPException(409, "already set up")
+    if not get_settings().allow_web_setup:
+        raise HTTPException(403, "web setup disabled: run `python -m app.cli create-operator` on the server")
     repo.create(body.username, hash_password(body.password))
     request.session.pop("account_id", None)  # one role per browser session
     request.session["admin"] = body.username

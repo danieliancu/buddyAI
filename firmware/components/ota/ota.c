@@ -17,6 +17,7 @@
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "mbedtls/sha256.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "ota";
 
@@ -136,9 +137,14 @@ static void ota_task(void *arg)
         goto fail;
     }
 
+    /* With CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT (release builds) or
+     * hardware Secure Boot, esp_ota_end() inside finish() verifies the image's
+     * signature block against the key that signed the running app and fails
+     * with ESP_ERR_OTA_VALIDATE_FAILED / ESP_ERR_IMAGE_INVALID otherwise. */
     err = esp_https_ota_finish(h);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "finish failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "finish failed: %s%s", esp_err_to_name(err),
+                 err == ESP_ERR_OTA_VALIDATE_FAILED ? " (image invalid or signature check failed)" : "");
         goto fail;
     }
     ESP_LOGI(TAG, "update verified, restarting");
@@ -162,6 +168,14 @@ esp_err_t ota_start(const char *url, const char *version, const char *sha256_hex
     if (!url || strlen(url) >= sizeof(((ota_job_t *)0)->url)) {
         return ESP_ERR_INVALID_ARG;
     }
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    /* Release builds download firmware over TLS only (esp_https_ota also
+     * refuses http:// because CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP is off). */
+    if (strncmp(url, "https://", 8) != 0) {
+        ESP_LOGE(TAG, "release build: OTA URL must be https:// - offer ignored");
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
     ota_job_t *job = calloc(1, sizeof(*job));
     if (!job) {
         return ESP_ERR_NO_MEM;

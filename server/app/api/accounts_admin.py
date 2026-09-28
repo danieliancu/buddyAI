@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from app import accounts, email
+from app import accounts, billing, email, entitlements
 from app.api.common import device_out, hub_of
-from app.db.models import Account, AuditLog, Device
+from app.db.models import Account, AuditLog, Device, Order
 from app.db.repositories import DeviceRepo, UsageRepo
 from app.db.session import get_session
 from app.pricing.currency import convert, get_currency
@@ -68,10 +68,15 @@ def _account(db: Session, account_id: int) -> Account:
 def account_detail(account_id: int, request: Request, db: Session = Depends(get_session)) -> dict:
     acc = _account(db, account_id)
     hub = hub_of(request)
+    sub = billing.active_subscription(db, acc.id)
+    a = entitlements.allowance(db, acc)
     return {
         **accounts.public(acc),
         "last_login_at": acc.last_login_at,
         "devices": [device_out(d, hub) for d in DeviceRepo(db).list(acc.id)],
+        "subscription": sub.model_dump() if sub else None,
+        "allowance": {"used": a.used, "limit": a.limit, "currency": a.currency, "override": acc.allowance_override},
+        "orders": [o.model_dump() for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()],
     }
 
 

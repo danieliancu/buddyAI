@@ -1,0 +1,32 @@
+---
+import Legal from "../../layouts/Legal.astro";
+import { config } from "../../config";
+---
+<Legal title="Cookie notice" description="BuddyAI's website uses no tracking cookies (DRAFT, needs legal review).">
+  <p><strong>This website uses no tracking cookies</strong>, so there is no cookie banner.</p>
+
+  <h2>Analytics</h2>
+  <p>
+    {config.plausibleDomain
+      ? "We use Plausible Analytics, a cookieless analytics service. It counts page views in aggregate without cookies and without building personal profiles or tracking you across websites."
+      : "We don't currently use analytics on this website. If we add analytics, it will be cookieless (for example Plausible) and we will update this notice."}
+  </p>
+
+  <h2>Local storage</h2>
+  <p>
+    If you choose a currency (£ or €), your browser remembers that choice in local storage on your device. It is not
+    sent to us and is not used for tracking. You can clear it at any time in your browser settings.
+  </p>
+
+  <h2>Checkout</h2>
+  <p>
+    When you click "Buy now" you are taken to Stripe's checkout page, which uses cookies that are strictly necessary for
+    secure payment and fraud prevention. See Stripe's own cookie policy for details.
+  </p>
+
+  <h2>The BuddyAI app</h2>
+  <p>
+    The customer web app (where you sign in) uses a strictly necessary session cookie to keep you logged in.
+    {/* TODO(owner): confirm the app's cookies. */}
+  </p>
+</Legal>

@@ -1,0 +1,101 @@
+---
+import Icon from "./Icon.astro";
+import Logo from "./Logo.astro";
+
+const nav = [
+  { href: "/features/", label: "Features" },
+  { href: "/how-it-works/", label: "How it works" },
+  { href: "/pricing/", label: "Pricing" },
+  { href: "/languages/", label: "Languages" },
+  { href: "/faq/", label: "FAQ" },
+  { href: "/about/", label: "About" },
+];
+const path = Astro.url.pathname.replace(/\/?$/, "/");
+const isActive = (href: string) => path === href;
+---
+<header class="sticky top-0 z-40 border-b border-line bg-[#060913]/85 backdrop-blur-md">
+  <div class="container-x flex h-16 items-center justify-between gap-4">
+    <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="BuddyAI home">
+      <Logo />
+    </a>
+
+    <nav aria-label="Main" class="hidden lg:block">
+      <ul class="flex items-center gap-1">
+        {nav.map((item) => (
+          <li>
+            <a
+              href={item.href}
+              class:list={[
+                "rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:text-white",
+                isActive(item.href) ? "text-white" : "text-muted",
+              ]}
+              aria-current={isActive(item.href) ? "page" : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a href="/pricing/#buy" class="btn btn-primary hidden !min-h-10 !px-4 !py-2 text-sm sm:inline-flex">
+        Buy now <Icon name="arrow" size={16} />
+      </a>
+      <button
+        type="button"
+        class="inline-grid h-11 w-11 place-items-center rounded-xl border border-line text-fg lg:hidden"
+        aria-controls="mobile-nav"
+        aria-expanded="false"
+        data-nav-toggle
+      >
+        <span class="sr-only">Open menu</span>
+        <span data-icon-open><Icon name="menu" /></span>
+        <span data-icon-close hidden><Icon name="close" /></span>
+      </button>
+    </div>
+  </div>
+
+  <nav id="mobile-nav" aria-label="Mobile" class="border-t border-line lg:hidden" hidden>
+    <ul class="container-x flex flex-col py-3">
+      {nav.map((item) => (
+        <li>
+          <a
+            href={item.href}
+            class:list={[
+              "block rounded-lg px-2 py-3 text-base font-medium",
+              isActive(item.href) ? "text-white" : "text-muted",
+            ]}
+            aria-current={isActive(item.href) ? "page" : undefined}
+          >
+            {item.label}
+          </a>
+        </li>
+      ))}
+      <li class="pt-2">
+        <a href="/pricing/#buy" class="btn btn-primary w-full">Buy now <Icon name="arrow" size={16} /></a>
+      </li>
+    </ul>
+  </nav>
+</header>
+
+<script>
+  const btn = document.querySelector<HTMLButtonElement>("[data-nav-toggle]");
+  const menu = document.getElementById("mobile-nav");
+  if (btn && menu) {
+    const set = (open: boolean) => {
+      btn.setAttribute("aria-expanded", String(open));
+      menu.hidden = !open;
+      btn.querySelector<HTMLElement>("[data-icon-open]")!.hidden = open;
+      btn.querySelector<HTMLElement>("[data-icon-close]")!.hidden = !open;
+      btn.querySelector(".sr-only")!.textContent = open ? "Close menu" : "Open menu";
+    };
+    btn.addEventListener("click", () => set(btn.getAttribute("aria-expanded") !== "true"));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && btn.getAttribute("aria-expanded") === "true") {
+        set(false);
+        btn.focus();
+      }
+    });
+  }
+</script>

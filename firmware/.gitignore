@@ -1,0 +1,4 @@
+# Release / verification build directories (the dev build/ is ignored by the root .gitignore)
+/build-*/
+# Signing keys are ignored by keys/.gitignore; never commit *.pem anywhere
+*.pem

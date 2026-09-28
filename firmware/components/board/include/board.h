@@ -43,6 +43,10 @@ esp_err_t board_power_get_status(board_power_status_t *out);
 bool      board_power_key_pressed(void);
 void      board_power_off(void);
 
+/* ---- BOOT button (GPIO0) ---- */
+/* Current level: true while the BOOT button is held (used for factory reset). */
+bool      board_boot_button_down(void);
+
 /* ---- RTC (PCF85063, stores UTC) ---- */
 esp_err_t board_rtc_read(struct tm *utc);
 esp_err_t board_rtc_write(const struct tm *utc);

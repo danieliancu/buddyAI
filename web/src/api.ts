@@ -1,4 +1,10 @@
 // Small typed client for the BuddyAI FastAPI backend (same origin, cookie session).
+//
+// Two roles share one browser session cookie (the server keeps one role at a time):
+//   - operator ("admin" area): /api/auth, /api/devices, /api/accounts, ... → `api.*`
+//   - customer ("me" area):    /api/me/...                                → `api.me.*`
+// A 401 is reported to the handler of the area the request belongs to, so the app can send
+// operators to /admin/login and customers to /login.
 
 // ---------- types ----------
 
@@ -7,6 +13,8 @@ export type UiState = "idle" | "listening" | "thinking" | "speaking" | string;
 export interface AuthStatus {
   needs_setup: boolean;
   user: string | null;
+  /** False on production servers: the first operator is created with the CLI, not the browser. */
+  web_setup_allowed?: boolean;
 }
 
 export interface Device {
@@ -22,6 +30,131 @@ export interface Device {
   rssi: number | null;
   online: boolean;
   state: UiState | null;
+  /** Operator API only: the customer owning the watch (null = operator stock). */
+  account?: AccountRef | null;
+}
+
+export interface AccountRef {
+  id: number;
+  email: string;
+  name: string;
+}
+
+export type AccountStatus = "active" | "suspended" | "deleted";
+
+/** `accounts.public()` on the server. */
+export interface Account {
+  id: number;
+  email: string;
+  name: string;
+  /** ISO 3166-1 alpha-2, upper case. */
+  country: string | null;
+  email_verified: boolean;
+  status: AccountStatus | string;
+  has_password: boolean;
+  created_at: string;
+}
+
+/** Row of GET /api/accounts (operator). */
+export interface AccountRow extends Account {
+  last_login_at: string | null;
+  /** Number of paired watches. */
+  devices: number;
+  /** AI cost this calendar month, in the display currency. */
+  month_cost: number;
+}
+
+export interface AccountList {
+  currency: string;
+  symbol: string;
+  accounts: AccountRow[];
+}
+
+/** Stripe subscription status ("BuddyAI Care"). */
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete"
+  | "incomplete_expired"
+  | string;
+
+export interface SubscriptionInfo {
+  status: SubscriptionStatus;
+  trial_end: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
+/** Full subscription row (operator). */
+export interface Subscription extends SubscriptionInfo {
+  id: number;
+  stripe_subscription_id: string;
+  stripe_customer_id: string;
+  account_id: number | null;
+  updated_at: string;
+}
+
+export type OrderStatus = "paid" | "shipped" | "delivered" | "refunded" | "cancelled" | string;
+
+export interface Order {
+  id: number;
+  stripe_session_id: string;
+  stripe_payment_intent: string | null;
+  account_id: number | null;
+  email: string;
+  /** ISO 4217, lower case ("gbp"). */
+  currency: string;
+  /** Minor units (pence / cents), including tax and shipping. */
+  amount_total: number;
+  amount_tax: number;
+  amount_shipping: number;
+  status: OrderStatus;
+  shipping_name: string;
+  shipping_address: Record<string, unknown>;
+  country: string | null;
+  carrier: string;
+  tracking_number: string;
+  created_at: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+}
+
+export interface OrderUpdate {
+  status: "paid" | "shipped" | "delivered" | "cancelled";
+  carrier: string;
+  tracking_number: string;
+}
+
+/** Monthly fair-use AI allowance (display currency). */
+export interface Allowance {
+  used: number;
+  limit: number;
+  currency: string;
+  /** Operator override of the plan limit; null = plan default. */
+  override: number | null;
+}
+
+/** GET /api/accounts/{id} (operator). */
+export interface AccountDetail extends Account {
+  last_login_at: string | null;
+  devices: Device[];
+  subscription: Subscription | null;
+  allowance: Allowance;
+  orders: Order[];
+}
+
+export interface AuditEntry {
+  id: number;
+  /** Operator username, "account:<id>" or "system". */
+  actor: string;
+  action: string;
+  account_id: number | null;
+  device_id: string | null;
+  detail: string;
+  created_at: string;
 }
 
 export interface PendingPairing {
@@ -112,6 +245,30 @@ export interface Persona {
 }
 
 export type PersonaInput = Pick<Persona, "name" | "system_prompt" | "is_default">;
+
+/** Customer view of a persona: system personas (own=false, read-only) and the account's own. */
+export interface MyPersona extends Persona {
+  own: boolean;
+}
+
+/** GET /api/me/subscription. */
+export interface MySubscription {
+  /** False when the server runs without Stripe: hide the whole plan section. */
+  billing_enabled: boolean;
+  subscription: SubscriptionInfo | null;
+  /** 0–100 */
+  allowance_used_pct: number;
+  orders: Pick<Order, "id" | "status" | "created_at" | "tracking_number" | "carrier">[];
+}
+
+/** GET /api/me/usage. `cost` is internal and never shown to customers. */
+export interface MyUsage {
+  period_start: string;
+  questions: number;
+  cost: number;
+  currency: string;
+  symbol: string;
+}
 
 export type TurnStatus = "active" | "completed" | "aborted" | "error" | "no_speech" | string;
 
@@ -271,7 +428,8 @@ export class ApiError extends Error {
   }
 
   static describe(status: number, detail: unknown): string {
-    if (typeof detail === "string") return detail;
+    if (status === 429) return "Too many attempts, try again in a few minutes.";
+    if (typeof detail === "string") return detail ? detail.charAt(0).toUpperCase() + detail.slice(1) : `Error ${status}`;
     if (Array.isArray(detail)) {
       return detail
         .map((e) => (e && typeof e === "object" && "msg" in e ? `${(e.loc ?? []).join(".")}: ${e.msg}` : String(e)))
@@ -284,23 +442,31 @@ export class ApiError extends Error {
 
 // ---------- core ----------
 
-let unauthorizedHandler: (() => void) | null = null;
+/** Which role an endpoint belongs to: "admin" = operator, "me" = customer. */
+export type Area = "admin" | "me";
 
-/** Called on any 401 from a protected endpoint (global redirect to login). */
-export function setUnauthorizedHandler(fn: (() => void) | null): void {
-  unauthorizedHandler = fn;
+const unauthorizedHandlers: Record<Area, Set<() => void>> = { admin: new Set(), me: new Set() };
+
+/** Register a handler for 401s of one area (e.g. redirect to that area's login). Returns an unsubscribe. */
+export function onUnauthorized(area: Area, fn: () => void): () => void {
+  unauthorizedHandlers[area].add(fn);
+  return () => {
+    unauthorizedHandlers[area].delete(fn);
+  };
 }
 
-export function notifyUnauthorized(): void {
-  unauthorizedHandler?.();
+export function notifyUnauthorized(area: Area = "admin"): void {
+  unauthorizedHandlers[area].forEach((fn) => fn());
 }
 
 interface RequestOpts {
   /** Do not trigger the global 401 handler (login form, status probe). */
   no401?: boolean;
+  /** Area whose 401 handler is notified (default "admin"). */
+  area?: Area;
 }
 
-async function errorFromResponse(res: Response): Promise<ApiError> {
+async function errorFromResponse(res: Response, area: Area): Promise<ApiError> {
   let detail: unknown = res.statusText;
   try {
     const text = await res.text();
@@ -315,7 +481,7 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
   } catch {
     /* keep statusText */
   }
-  if (res.status === 401) notifyUnauthorized();
+  if (res.status === 401) notifyUnauthorized(area);
   return new ApiError(res.status, detail);
 }
 
@@ -343,18 +509,27 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
     }
   }
   if (!res.ok) {
-    if (res.status === 401 && !opts.no401) notifyUnauthorized();
+    if (res.status === 401 && !opts.no401) notifyUnauthorized(opts.area ?? "admin");
     const detail = data && typeof data === "object" && "detail" in data ? (data as { detail: unknown }).detail : data;
     throw new ApiError(res.status, detail ?? res.statusText);
   }
   return data as T;
 }
 
-const get = <T>(p: string, o?: RequestOpts) => request<T>("GET", p, undefined, o);
-const post = <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>("POST", p, b ?? {}, o);
-const put = <T>(p: string, b: unknown) => request<T>("PUT", p, b);
-const patch = <T>(p: string, b: unknown) => request<T>("PATCH", p, b);
-const del = <T>(p: string) => request<T>("DELETE", p);
+/** Verb helpers bound to one area (for 401 routing). */
+function client(area: Area) {
+  const o = (x?: RequestOpts): RequestOpts => ({ area, ...x });
+  return {
+    get: <T>(p: string, x?: RequestOpts) => request<T>("GET", p, undefined, o(x)),
+    post: <T>(p: string, b?: unknown, x?: RequestOpts) => request<T>("POST", p, b ?? {}, o(x)),
+    put: <T>(p: string, b: unknown) => request<T>("PUT", p, b, o()),
+    patch: <T>(p: string, b: unknown) => request<T>("PATCH", p, b, o()),
+    del: <T>(p: string, b?: unknown) => request<T>("DELETE", p, b, o()),
+  };
+}
+
+const { get, post, put, patch, del } = client("admin");
+const me = client("me");
 
 const q = (params: Record<string, string | number | undefined | null>) => {
   const s = new URLSearchParams();
@@ -366,7 +541,7 @@ const enc = encodeURIComponent;
 
 // ---------- endpoints ----------
 
-export const api = {
+const operatorApi = {
   auth: {
     status: () => get<AuthStatus>("/api/auth/status", { no401: true }),
     setup: (username: string, password: string) =>
@@ -377,9 +552,13 @@ export const api = {
     me: () => get<{ user: string }>("/api/auth/me"),
   },
   devices: {
-    list: () => get<Device[]>("/api/devices"),
+    /** All watches, or only those of one customer. */
+    list: (accountId?: number) => get<Device[]>(`/api/devices${q({ account_id: accountId })}`),
     pending: () => get<PendingPairing[]>("/api/devices/pending"),
-    pair: (code: string, name: string) => post<{ device_id: string }>("/api/devices/pair", { code, name }),
+    pair: (code: string, name: string, accountId: number | null = null) =>
+      post<{ device_id: string }>("/api/devices/pair", { code, name, account_id: accountId }),
+    /** Move a watch to a customer (null = back to stock). The previous owner's history is erased. */
+    assign: (id: string, accountId: number | null) => put<Device>(`/api/devices/${enc(id)}/account`, { account_id: accountId }),
     rename: (id: string, name: string) => patch<Device>(`/api/devices/${enc(id)}`, { name }),
     revoke: (id: string) => del<{ ok: boolean }>(`/api/devices/${enc(id)}`),
     settings: (id: string) => get<SettingsResponse>(`/api/devices/${enc(id)}/settings`),
@@ -391,21 +570,7 @@ export const api = {
   },
   options: () => get<Options>("/api/options"),
   /** A short sample sentence spoken with `voice` in `language` (audio/wav). May take a few seconds. */
-  voiceSample: async (voice: string, language: Language): Promise<Blob> => {
-    let res: Response;
-    try {
-      res = await fetch("/api/voice-sample", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice, language }),
-      });
-    } catch {
-      throw new ApiError(0, "Server not reachable");
-    }
-    if (!res.ok) throw await errorFromResponse(res);
-    return res.blob();
-  },
+  voiceSample: (voice: string, language: Language) => fetchVoiceSample("/api/voice-sample", voice, language, "admin"),
   personas: {
     list: () => get<Persona[]>("/api/personas"),
     create: (p: PersonaInput) => post<Persona>("/api/personas", p),
@@ -439,7 +604,99 @@ export const api = {
   },
 };
 
-// ---------- live events (/api/live) ----------
+async function fetchVoiceSample(path: string, voice: string, language: Language, area: Area): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice, language }),
+    });
+  } catch {
+    throw new ApiError(0, "Server not reachable");
+  }
+  if (!res.ok) throw await errorFromResponse(res, area);
+  return res.blob();
+}
+
+// ---------- operator: customer accounts (/api/accounts) ----------
+
+const accountsApi = {
+  list: (search = "", status?: AccountStatus | "") => get<AccountList>(`/api/accounts${q({ q: search, status })}`),
+  get: (id: number) => get<AccountDetail>(`/api/accounts/${id}`),
+  /** The customer receives an email with a link to set their password. */
+  create: (body: { email: string; name?: string; country?: string | null }) => post<Account>("/api/accounts", body),
+  setStatus: (id: number, status: "active" | "suspended") => patch<Account>(`/api/accounts/${id}`, { status }),
+  audit: (id: number) => get<AuditEntry[]>(`/api/accounts/${id}/audit`),
+  /** null = back to the plan default. */
+  setAllowance: (id: number, allowance_override: number | null) =>
+    patch<{ allowance_override: number | null; used: number; limit: number; currency: string }>(`/api/accounts/${id}/allowance`, {
+      allowance_override,
+    }),
+};
+
+// ---------- operator: shop orders (/api/orders) ----------
+
+const ordersApi = {
+  list: (status?: OrderStatus | "") => get<Order[]>(`/api/orders${q({ status })}`),
+  update: (id: number, body: OrderUpdate) => patch<Order>(`/api/orders/${id}`, body),
+};
+
+// ---------- customer API (/api/me) ----------
+
+const meApi = {
+  // session / sign-up (no401: a wrong password must not bounce the login form)
+  get: (opts?: RequestOpts) => me.get<Account>("/api/me", opts),
+  signup: (body: { email: string; password: string; name?: string; country?: string | null }) =>
+    me.post<Account>("/api/me/signup", body, { no401: true }),
+  login: (email: string, password: string) => me.post<Account>("/api/me/login", { email, password }, { no401: true }),
+  logout: () => me.post<{ ok: boolean }>("/api/me/logout", {}, { no401: true }),
+  verifyEmail: (token: string) => me.post<{ ok: boolean }>("/api/me/verify-email", { token }, { no401: true }),
+  resendVerification: () => me.post<{ ok: boolean }>("/api/me/verify-email/resend"),
+  forgotPassword: (email: string) => me.post<{ ok: boolean }>("/api/me/password/forgot", { email }, { no401: true }),
+  /** Also sets the first password of an account created by the operator. Signs the customer in. */
+  resetPassword: (token: string, password: string) =>
+    me.post<Account>("/api/me/password/reset", { token, password }, { no401: true }),
+  changePassword: (current_password: string, new_password: string) =>
+    // no401: a wrong current password answers 401 but the session stays valid
+    me.post<{ ok: boolean }>("/api/me/password/change", { current_password, new_password }, { no401: true }),
+  updateProfile: (body: { name?: string; country?: string }) => me.patch<Account>("/api/me", body),
+  /** Permanently erases the account, its watches' pairing and history. */
+  deleteAccount: (password: string) => me.del<{ ok: boolean }>("/api/me", { password }),
+  /** JSON download (Content-Disposition: attachment). */
+  exportUrl: "/api/me/export",
+
+  devices: {
+    list: () => me.get<Device[]>("/api/me/devices"),
+    pair: (code: string, name: string) => me.post<{ device_id: string }>("/api/me/devices/pair", { code, name }),
+    rename: (id: string, name: string) => me.patch<Device>(`/api/me/devices/${enc(id)}`, { name }),
+    /** Unpairs the watch and erases its history. */
+    remove: (id: string) => me.del<{ ok: boolean }>(`/api/me/devices/${enc(id)}`),
+    settings: (id: string) => me.get<SettingsResponse>(`/api/me/devices/${enc(id)}/settings`),
+    patchSettings: (id: string, changes: SettingsPatch) =>
+      me.patch<SettingsResponse>(`/api/me/devices/${enc(id)}/settings`, changes),
+    conversations: (id: string) => me.get<Conversation[]>(`/api/me/devices/${enc(id)}/conversations`),
+    deleteHistory: (id: string) => me.del<{ deleted_turns: number }>(`/api/me/devices/${enc(id)}/conversations`),
+  },
+  options: () => me.get<Options>("/api/me/options"),
+  voiceSample: (voice: string, language: Language) => fetchVoiceSample("/api/me/voice-sample", voice, language, "me"),
+  personas: {
+    list: () => me.get<MyPersona[]>("/api/me/personas"),
+    create: (p: Pick<Persona, "name" | "system_prompt">) => me.post<MyPersona>("/api/me/personas", p),
+    update: (id: number, p: Pick<Persona, "name" | "system_prompt">) => me.put<MyPersona>(`/api/me/personas/${id}`, p),
+    remove: (id: number) => me.del<{ ok: boolean }>(`/api/me/personas/${id}`),
+  },
+  usage: () => me.get<MyUsage>("/api/me/usage"),
+  subscription: () => me.get<MySubscription>("/api/me/subscription"),
+  /** Stripe Billing Portal URL (404 = no subscription on this account). */
+  billingPortal: () => me.post<{ url: string }>("/api/me/billing-portal"),
+};
+
+/** Operator endpoints at the top level, customer accounts under `api.accounts`, the customer API under `api.me`. */
+export const api = { ...operatorApi, accounts: accountsApi, orders: ordersApi, me: meApi };
+
+// ---------- live events (/api/live, /api/me/live) ----------
 
 interface LiveBase {
   device_id: string;
@@ -467,4 +724,8 @@ export type LiveEvent =
   | ({ type: "pairing_pending" } & LiveBase)
   | ({ type: "device_paired" } & LiveBase)
   | ({ type: "settings_changed" } & LiveBase)
+  /** The server refused a question from the watch (billing / account state). */
+  | ({ type: "turn_refused"; code: TurnRefusedCode } & LiveBase)
   | { type: "keepalive"; at?: number };
+
+export type TurnRefusedCode = "subscription_required" | "limit_reached" | "account_inactive" | string;

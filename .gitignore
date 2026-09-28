@@ -20,3 +20,6 @@ firmware/sdkconfig.old
 # OS / editor
 .DS_Store
 Thumbs.db
+# Deployment secrets and backups
+deploy/.env
+deploy/backups/

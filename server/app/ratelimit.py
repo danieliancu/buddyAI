@@ -32,10 +32,8 @@ class RateLimiter:
 
 
 def client_ip(request: Request) -> str:
-    # Behind Caddy the real client is in X-Forwarded-For (Caddy sets it; the app is not exposed directly).
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    # Never read X-Forwarded-For here (clients can forge it). Behind Caddy, Uvicorn replaces
+    # request.client with the real address because the proxy is listed in forwarded_allow_ips.
     return request.client.host if request.client else "unknown"
 
 

@@ -195,3 +195,27 @@ def test_suspend_and_delete_account():
 
         assert db.exec(select(Turn).where(Turn.device_id == dev)).all() == []  # history erased
     assert c.post("/api/me/login", json={"email": me["email"], "password": "correct-horse-1"}).status_code == 401
+
+
+def test_new_owner_gets_clean_settings_and_deleted_persona_is_cleared():
+    a, acc_a = _customer()
+    b, acc_b = _customer()
+    dev = _give_watch(acc_a["id"])
+    pa = a.post("/api/me/personas", json={"name": "Mine", "system_prompt": "private"}).json()
+    assert a.patch(f"/api/me/devices/{dev}/settings",
+                   json={"persona_id": pa["id"], "custom_instructions": "My name is Ana"}).status_code == 200
+    # deleting the persona clears the reference
+    assert a.delete(f"/api/me/personas/{pa['id']}").status_code == 200
+    assert a.get(f"/api/me/devices/{dev}/settings").json()["settings"]["persona_id"] is None
+    # new owner: personal settings are gone
+    with session_scope() as db:
+        DeviceRepo(db).assign(dev, acc_b["id"])
+    s = b.get(f"/api/me/devices/{dev}/settings").json()["settings"]
+    assert s["custom_instructions"] == "" and s["persona_id"] is None
+
+
+def test_wrong_current_password_is_403():
+    c, me = _customer()
+    r = c.post("/api/me/password/change", json={"current_password": "nope-nope-1", "new_password": "another-pass-1"})
+    assert r.status_code == 403
+    assert c.get("/api/me").status_code == 200  # still signed in

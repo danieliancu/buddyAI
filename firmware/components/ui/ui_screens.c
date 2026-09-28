@@ -532,7 +532,44 @@ void ui_show_error(ui_error_t err, const char *detail)
         ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_BUSY_T), ui_str(STR_ERR_BUSY_B), NULL,
                     NULL, NULL, true, 4000);
         break;
+    case UI_ERR_SUBSCRIPTION:
+        ui_msg_show(ICON_LOCK, amber, ui_str(STR_ERR_SUB_T), ui_str(STR_ERR_SUB_B), NULL,
+                    NULL, NULL, true, 6000);
+        break;
+    case UI_ERR_LIMIT:
+        ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_LIMIT_T), ui_str(STR_ERR_LIMIT_B), NULL,
+                    NULL, NULL, true, 6000);
+        break;
+    case UI_ERR_ACCOUNT_INACTIVE:
+        ui_msg_show(ICON_LOCK, red, ui_str(STR_ERR_INACTIVE_T), ui_str(STR_ERR_INACTIVE_B), NULL,
+                    NULL, NULL, true, 10000);
+        break;
     }
+    UNLOCK();
+}
+
+static void reset_confirm_action(void)
+{
+    if (g_ui_cb.on_factory_reset) {
+        g_ui_cb.on_factory_reset();
+    }
+}
+
+void ui_show_reset_confirm(void)
+{
+    LOCK();
+    /* Not dismissable by a stray tap: only the button confirms; the screen
+     * returns to the watchface by itself after 10 s (= cancel). */
+    ui_msg_show(ICON_WARNING, lv_palette_main(LV_PALETTE_RED), ui_str(STR_RESET_T), ui_str(STR_RESET_B),
+                NULL, ui_str(STR_RESET_BTN), reset_confirm_action, false, 10000);
+    UNLOCK();
+}
+
+void ui_show_resetting(void)
+{
+    LOCK();
+    ui_msg_show(ICON_REFRESH, lv_palette_main(LV_PALETTE_RED), ui_str(STR_RESETTING), "", NULL,
+                NULL, NULL, false, 0);
     UNLOCK();
 }
 

@@ -77,8 +77,8 @@ class DeviceRepo:
     ) -> Device:
         dev = self.get(device_id) or Device(id=device_id)
         if dev.account_id is not None and dev.account_id != account_id:
-            # New owner: the previous owner's conversations on this watch must not carry over.
-            ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+            # New owner: nothing personal from the previous owner carries over.
+            self._forget_owner_data(device_id)
         dev.account_id = account_id
         dev.name = name or dev.name
         dev.hw_model = hw_model
@@ -97,10 +97,19 @@ class DeviceRepo:
             dev.revoked_at = utcnow()
             dev.token_hash = None
             if unassign:
+                self._forget_owner_data(device_id)
                 dev.account_id = None
             self.s.add(dev)
             self.s.commit()
         return dev
+
+    def _forget_owner_data(self, device_id: str) -> None:
+        """History and settings (which may hold personal text) are erased when the owner changes."""
+        ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+        row = self.s.get(DeviceSettingsRow, device_id)
+        if row is not None:
+            self.s.delete(row)
+            self.s.flush()
 
     def assign(self, device_id: str, account_id: int | None) -> Device | None:
         """Operator: move a watch to another account (or to stock). Old history is erased."""
@@ -108,7 +117,7 @@ class DeviceRepo:
         if dev is None:
             return None
         if dev.account_id != account_id:
-            ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+            self._forget_owner_data(device_id)
             dev.account_id = account_id
             self.s.add(dev)
             self.s.commit()
@@ -236,6 +245,11 @@ class PersonaRepo:
         p = self.s.get(Persona, persona_id)
         if not p or p.is_default:
             return False
+        for row in self.s.exec(select(DeviceSettingsRow)).all():
+            if row.data.get("persona_id") == persona_id:
+                row.data = {**row.data, "persona_id": None}  # reassign: JSON column change tracking
+                row.version += 1
+                self.s.add(row)
         self.s.delete(p)
         self.s.commit()
         return True

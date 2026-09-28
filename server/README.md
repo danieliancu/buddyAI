@@ -77,12 +77,32 @@ The server stores per-stage latencies for every turn (web app → Usage & Diagno
 ## Tests
 
 ```powershell
+.\.venv\Scripts\pip install -r requirements-dev.txt
 .\.venv\Scripts\python -m pytest -q
 ```
 
 Unit tests cover the chunker, protocol framing, Opus codec, VAD endpointing and settings. End-to-end
 tests start a real server with mock providers and drive it with the simulator, including
 abort/stale-frame checks.
+
+## Accounts, shop and roles
+
+- **Operators** (you): `/admin` in the web app, `app/api/devices.py`, `accounts_admin.py`, `usage.py`,
+  `system.py`, `firmware.py`, orders in `shop.py`. On a public server, create the operator with
+  `python -m app.cli create-operator <name>` (web setup is disabled by `BUDDYAI_ALLOW_WEB_SETUP=false`).
+- **Customers**: `/api/me/...` (`app/api/me.py`). Every device route checks ownership (`DeviceRepo.owned`),
+  and other customers' watches answer 404. History never carries over when a watch changes owner.
+  Customers can export or delete their data.
+- **Emails** (`app/email.py`): printed to the log by default (`BUDDYAI_EMAIL_BACKEND=console`), SMTP in production.
+- **Shop** (`app/billing.py`, `app/api/shop.py`): one Stripe Checkout sells the watch together with the
+  "BuddyAI Care" subscription (trial first). Webhooks keep orders and subscriptions in sync.
+  `app/entitlements.py` refuses turns without an active or trial subscription, or once the monthly
+  fair-use allowance is used up.
+  Billing stays off until `BUDDYAI_STRIPE_SECRET_KEY` is set, so every watch is then allowed.
+- **Languages** (`app/languages.py`, `config/languages.json`): 57 languages; `auto` detects the
+  spoken language (lingua).
+
+Deployment (Docker, PostgreSQL, HTTPS, backups): see [deploy/README.md](../deploy/README.md).
 
 ## Layout
 

@@ -1,0 +1,28 @@
+---
+// Renders ONLY when src/content/testimonials.json has real entries (ships empty on purpose).
+import testimonials from "../content/testimonials.json";
+interface Testimonial {
+  quote: string;
+  name: string;
+  context?: string;
+}
+const items = testimonials as Testimonial[];
+---
+{items.length > 0 && (
+  <section class="container-x mt-24" aria-labelledby="stories-title">
+    <h2 id="stories-title" class="text-2xl font-bold tracking-tight text-white sm:text-3xl">Real people. Real stories.</h2>
+    <ul class="mt-8 grid gap-4 md:grid-cols-3">
+      {items.map((t) => (
+        <li class="glass p-6">
+          <figure>
+            <blockquote class="text-fg">“{t.quote}”</blockquote>
+            <figcaption class="mt-4 text-sm">
+              <span class="font-semibold text-white">{t.name}</span>
+              {t.context && <span class="block text-muted">{t.context}</span>}
+            </figcaption>
+          </figure>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}

@@ -91,3 +91,65 @@ def reset_password(to: str, link: str) -> Email:
 
 def watch_paired(to: str, watch_name: str) -> Email:
     return Email(to, "Your BuddyAI watch is connected", f"Hi,\n\n\"{watch_name}\" is now linked to your account.{_footer()}")
+
+
+def _money(minor: int, currency: str) -> str:
+    symbol = {"gbp": "£", "eur": "€"}.get(currency.lower(), currency.upper() + " ")
+    return f"{symbol}{minor / 100:,.2f}"
+
+
+def welcome_set_password(to: str, link: str) -> Email:
+    return Email(
+        to,
+        "Welcome to BuddyAI — set your password",
+        "Hi,\n\nThank you for your order! We created your BuddyAI account with this email address.\n"
+        f"Set your password here (valid for 1 hour, you can request a new link any time):\n{link}\n\n"
+        "When your watch arrives, sign in and choose \"Add watch\".{footer}".replace("{footer}", _footer()),
+    )
+
+
+def order_confirmed(to: str, order_id: int, amount_minor: int, currency: str) -> Email:
+    return Email(
+        to,
+        f"Your BuddyAI order #{order_id}",
+        f"Hi,\n\nWe received your order #{order_id} ({_money(amount_minor, currency)} incl. VAT and shipping).\n"
+        "We'll email you the tracking number as soon as it ships.\n\n"
+        "You can cancel within 14 days of delivery for a full refund (your statutory right to cancel)."
+        + _footer(),
+    )
+
+
+def order_shipped(to: str, order_id: int, carrier: str, tracking: str) -> Email:
+    track = f"\nCarrier: {carrier}\nTracking number: {tracking}\n" if tracking else "\n"
+    return Email(to, f"Your BuddyAI order #{order_id} is on its way", f"Hi,\n\nGood news: your order has shipped.{track}{_footer()}")
+
+
+def payment_failed(to: str) -> Email:
+    return Email(
+        to,
+        "Payment problem with your BuddyAI subscription",
+        "Hi,\n\nWe couldn't take the payment for your BuddyAI Care subscription. We'll retry automatically.\n"
+        "Please update your card in your account (Account > Manage subscription) to keep your assistant working."
+        + _footer(),
+    )
+
+
+def allowance_warning(to: str) -> Email:
+    return Email(
+        to,
+        "You've used most of this month's BuddyAI allowance",
+        "Hi,\n\nYou've used about 80% of this month's fair-use allowance for your assistant.\n"
+        "It resets on the 1st of next month." + _footer(),
+    )
+
+
+def trial_ending(to: str, trial_end) -> Email:
+    when = trial_end.strftime("%d %B %Y") if trial_end else "in a few days"
+    body = (
+        "Hi,\n\n"
+        f"Your free BuddyAI Care period ends on {when}. After that your subscription continues "
+        "at the monthly price shown when you bought your watch, charged to the card on file.\n\n"
+        "Nothing to do if you want to keep your assistant. To cancel, go to Account > Manage subscription "
+        "before that date and you won't be charged."
+    )
+    return Email(to, "Your BuddyAI Care free period ends soon", body + _footer())

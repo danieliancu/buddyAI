@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Pencil, Plus, Sparkles, Star, Trash2 } from "lucide-react";
-import { api, ApiError, type Persona } from "../api";
+import { api, ApiError, type Persona, type PersonaInput } from "../api";
 import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Textarea, Toggle, useAsync } from "../components/ui";
 
-type Editing = Persona | "new" | null;
+export type Editing = Persona | "new" | null;
 
 export default function PersonasPage() {
   const personas = useAsync(api.personas.list, []);
@@ -16,7 +16,7 @@ export default function PersonasPage() {
     <>
       <PageHeader
         title="Personas"
-        subtitle="The system prompt used by the AI. Each watch can pick one; otherwise the default persona is used."
+        subtitle="System personas: available to every customer. Each watch can pick one; otherwise the default persona is used. Customers' own personas are private and not listed here."
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing("new")}>
             Add persona
@@ -60,8 +60,13 @@ export default function PersonasPage() {
 
       <PersonaDialog
         editing={editing}
+        allowDefault
         onClose={() => setEditing(null)}
-        onSaved={() => personas.reload()}
+        onSave={async (body) => {
+          if (editing === "new") await api.personas.create(body);
+          else if (editing) await api.personas.update(editing.id, body);
+          personas.reload();
+        }}
       />
       <ConfirmDialog
         open={!!deleting}
@@ -89,7 +94,18 @@ export default function PersonasPage() {
   );
 }
 
-function PersonaDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: () => void; onSaved: () => void }) {
+/** Create/edit a persona. `allowDefault` shows the "Use as default" toggle (operator, system personas only). */
+export function PersonaDialog({
+  editing,
+  onClose,
+  onSave,
+  allowDefault,
+}: {
+  editing: Editing;
+  onClose: () => void;
+  onSave: (body: PersonaInput) => Promise<unknown>;
+  allowDefault?: boolean;
+}) {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isDefault, setIsDefault] = useState(false);
@@ -116,11 +132,9 @@ function PersonaDialog({ editing, onClose, onSaved }: { editing: Editing; onClos
     if (!name.trim() || !prompt.trim()) return setError(new Error("Name and prompt are required."));
     setBusy(true);
     setError(null);
-    const body = { name: name.trim(), system_prompt: prompt.trim(), is_default: isDefault };
+    const body = { name: name.trim(), system_prompt: prompt.trim(), is_default: allowDefault ? isDefault : false };
     try {
-      if (editing === "new") await api.personas.create(body);
-      else if (editing) await api.personas.update(editing.id, body);
-      onSaved();
+      await onSave(body);
       onClose();
     } catch (err) {
       setError(err);
@@ -154,11 +168,13 @@ function PersonaDialog({ editing, onClose, onSaved }: { editing: Editing; onClos
           <Textarea id="pp" rows={9} maxLength={4000} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         </Field>
         {/* The server has no way to "unset" the default without choosing another one. */}
-        <Toggle
-          checked={isDefault}
-          onChange={(v) => (wasDefault ? undefined : setIsDefault(v))}
-          label={wasDefault ? "Default (make another persona the default to change this)" : "Use as default"}
-        />
+        {allowDefault && (
+          <Toggle
+            checked={isDefault}
+            onChange={(v) => (wasDefault ? undefined : setIsDefault(v))}
+            label={wasDefault ? "Default (make another persona the default to change this)" : "Use as default"}
+          />
+        )}
         <ErrorBox error={error} />
       </form>
     </Dialog>

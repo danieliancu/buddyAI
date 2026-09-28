@@ -1,0 +1,12 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+server/data
+server/out
+server/.env
+web/dist
+site/dist
+site/.astro
+firmware
+.git

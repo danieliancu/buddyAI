@@ -518,6 +518,25 @@ async def cmd_reconnect(args) -> int:
     return 0 if ok else 1
 
 
+async def cmd_online(args) -> int:
+    """Stay connected like an idle watch (status every 60 s, ping every 15 s) until Ctrl+C."""
+    w = await connected(args)
+    print(f"  {args.device_id} online (session {w.session_id}). Ctrl+C to disconnect.")
+    battery = 87
+    try:
+        while True:
+            await w.send("status", battery_pct=battery, charging=False, rssi=-55, free_heap=180000)
+            for _ in range(4):
+                await asyncio.sleep(15)
+                await w.send("ping")
+            battery = max(5, battery - 1)
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        pass
+    finally:
+        await w.close()
+    return 0
+
+
 async def cmd_scenario(args) -> int:
     """JSON: {"steps": [{"do": "ask", "wav": "...", "lang": "ro"}, {"do": "abort_test", ...}, {"do": "reconnect", ...}]}"""
     spec = json.loads(Path(args.file).read_text(encoding="utf-8"))
@@ -546,6 +565,7 @@ def main() -> None:
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("pair")
+    sub.add_parser("online", help="stay connected as an idle watch until Ctrl+C")
     a = sub.add_parser("ask")
     a.add_argument("--wav", required=True)
     a.add_argument("--lang", metavar="CODE", help="auto or a language code (default: the watch setting)")
@@ -574,6 +594,7 @@ def main() -> None:
             setattr(args, attr, default)
     fn = {
         "pair": cmd_pair,
+        "online": cmd_online,
         "ask": cmd_ask,
         "bench": cmd_bench,
         "abort-test": cmd_abort,

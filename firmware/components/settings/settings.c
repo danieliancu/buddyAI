@@ -527,6 +527,27 @@ esp_err_t settings_erase_token(void)
     return nvs_set_string(KEY_TOKEN, NULL);
 }
 
+esp_err_t settings_factory_reset(void)
+{
+    /* Everything BuddyAI persists lives in this one namespace (Wi-Fi driver
+     * storage is RAM-only, see net_wifi.c). */
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return ESP_OK;  /* nothing stored yet */
+    }
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_erase_all(h);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    ESP_LOGW(TAG, "factory reset: namespace '%s' erased (%s)", NVS_NS, esp_err_to_name(err));
+    return err;
+}
+
 const char *settings_device_id(void)
 {
     return s_device_id;

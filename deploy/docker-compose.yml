@@ -1,0 +1,89 @@
+# BuddyAI production stack (one server). Usage (from the repository root):
+#   cp deploy/.env.example deploy/.env   # then fill it in
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+name: buddyai
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: buddyai
+      POSTGRES_USER: buddyai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buddyai -d buddyai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/server.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BUDDYAI_DATABASE_URL: postgresql+psycopg://buddyai:${POSTGRES_PASSWORD}@postgres:5432/buddyai
+      BUDDYAI_PUBLIC_URL: https://${API_DOMAIN}
+      BUDDYAI_APP_URL: https://${APP_DOMAIN}
+      BUDDYAI_SITE_URL: https://${SITE_DOMAIN}
+      BUDDYAI_FORWARDED_ALLOW_IPS: "*" # only Caddy can reach the server (no published port)
+      BUDDYAI_LOG_JSON: "true"
+      BUDDYAI_MDNS_ENABLED: "false"
+      BUDDYAI_ALLOW_WEB_SETUP: "false" # create the operator with: docker compose exec server python -m app.cli create-operator <name>
+    volumes:
+      - serverdata:/data # secret key, firmware images, provider keys set from the web UI
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/caddy.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      ROOT_DOMAIN: ${ROOT_DOMAIN}
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+
+  # Nightly database dump, 14 days kept on the server. Copy ./backups off-site (see README).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/buddyai-$$(date +%Y%m%d-%H%M).dump
+          pg_dump -h postgres -U buddyai -d buddyai -Fc -f "$$f" && echo "backup ok: $$f" || echo "BACKUP FAILED"
+          find /backups -name 'buddyai-*.dump' -mtime +14 -delete
+          sleep 86400
+        done
+
+volumes:
+  pgdata:
+  serverdata:
+  caddy_data:
+  caddy_config:

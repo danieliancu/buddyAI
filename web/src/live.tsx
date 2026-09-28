@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { notifyUnauthorized, type LiveEvent } from "./api";
+import { notifyUnauthorized, type Area, type LiveEvent } from "./api";
 
 type Listener = (e: LiveEvent) => void;
 
@@ -10,8 +10,13 @@ interface LiveCtx {
 
 const Ctx = createContext<LiveCtx | null>(null);
 
-/** One shared WebSocket to /api/live with exponential-backoff reconnect. */
-export function LiveProvider({ children }: { children: ReactNode }) {
+const LIVE_PATH: Record<Area, string> = { admin: "/api/live", me: "/api/me/live" };
+
+/**
+ * One shared WebSocket with exponential-backoff reconnect: /api/live for the operator (all watches),
+ * /api/me/live for a customer (only their own watches; same event format). Close code 4401 = signed out.
+ */
+export function LiveProvider({ children, area = "admin" }: { children: ReactNode; area?: Area }) {
   const listeners = useRef(new Set<Listener>());
   const [connected, setConnected] = useState(false);
   const [ctx] = useState<Omit<LiveCtx, "connected">>(() => ({
@@ -29,7 +34,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/api/live`);
+      ws = new WebSocket(`${proto}://${location.host}${LIVE_PATH[area]}`);
       ws.onopen = () => {
         attempt = 0;
         setConnected(true);
@@ -48,7 +53,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         ws = null;
         if (stopped) return;
         if (e.code === 4401) {
-          notifyUnauthorized();
+          notifyUnauthorized(area);
           return;
         }
         const delay = Math.min(30000, 1000 * 2 ** attempt) * (0.75 + Math.random() * 0.5);
@@ -73,7 +78,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
       ws?.close();
     };
-  }, []);
+  }, [area]);
 
   return <Ctx.Provider value={{ connected, subscribe: ctx.subscribe }}>{children}</Ctx.Provider>;
 }

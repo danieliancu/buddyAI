@@ -61,6 +61,35 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_starttls: bool = True
 
+    # Shop & subscription (Stripe). Billing is off until stripe_secret_key is set: every watch is
+    # then entitled (development / private use).
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_watch_gbp: str = ""  # one-time price ids from the Stripe dashboard
+    stripe_price_watch_eur: str = ""
+    stripe_price_care_gbp: str = ""  # monthly "BuddyAI Care" price ids
+    stripe_price_care_eur: str = ""
+    stripe_shipping_rates_gbp: str = ""  # comma-separated shipping rate ids
+    stripe_shipping_rates_eur: str = ""
+    care_trial_days: int = 90
+    care_allowance: float = 3.0  # monthly fair-use AI cost cap per account, in display currency
+    site_url: str = ""  # public marketing site, for checkout success/cancel redirects
+    # UK + EU (post-Brexit shipping to the EU needs customs/IOSS handling — see deploy/README.md)
+    ship_countries: str = (
+        "GB,IE,AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE"
+    )
+
+    @property
+    def billing_enabled(self) -> bool:
+        return bool(self.stripe_secret_key)
+
+    # Production
+    forwarded_allow_ips: str = "127.0.0.1"  # proxies trusted for X-Forwarded-For ("*" inside Docker behind Caddy)
+    log_json: bool = False
+    # First-run operator setup from the browser. Keep it off on public servers and create the
+    # operator with `python -m app.cli create-operator` instead.
+    allow_web_setup: bool = True
+
     # Session / protocol
     session_idle_timeout_s: int = 45
     pairing_code_ttl_s: int = 300

@@ -95,6 +95,11 @@ bool      settings_get_token(char *out, size_t len);
 esp_err_t settings_set_token(const char *token);
 esp_err_t settings_erase_token(void);
 
+/* Factory reset: erase Wi-Fi credentials, server URLs, device token and the
+ * device-facing settings (the whole "buddyai" NVS namespace). The caller
+ * restarts the device afterwards; it then boots into the setup portal. */
+esp_err_t settings_factory_reset(void);
+
 /* Stable device id derived from the factory MAC, e.g. "buddy-a1b2c3d4e5f6". */
 const char *settings_device_id(void);
 

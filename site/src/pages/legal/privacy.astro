@@ -1,0 +1,61 @@
+---
+import Legal from "../../layouts/Legal.astro";
+import { config } from "../../config";
+import { privacyLine } from "../../data/features";
+---
+<Legal title="Privacy notice" description="How BuddyAI collects, uses and protects personal data (DRAFT, needs legal review).">
+  <p><strong>In short:</strong> {privacyLine}</p>
+
+  <h2>1. Controller</h2>
+  <p>
+    {config.companyName} is the controller of your personal data. Contact:
+    <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.
+    {/* TODO(owner): ICO registration number; EU representative (Art. 27 GDPR) if required; DPO if appointed. */}
+  </p>
+
+  <h2>2. What we collect and why</h2>
+  <ul>
+    <li><strong>Account data</strong> (name, email, password hash, country) — to provide your account. Legal basis: contract.</li>
+    <li><strong>Order data</strong> (items, amounts, shipping address, tracking) — to deliver your order and meet tax and accounting duties. Legal basis: contract and legal obligation.</li>
+    <li><strong>Payment data</strong> — handled by Stripe; we do not store your full card details. Legal basis: contract.</li>
+    <li><strong>Voice and conversations</strong> — when you tap the mic, your voice is sent to our servers and to our AI partners (OpenAI) to transcribe it and generate a spoken reply. Transcripts and replies are stored in your conversation history. Legal basis: contract.</li>
+    <li><strong>Watch settings and usage</strong> (language, persona, colours, usage amounts for the fair-use allowance). Legal basis: contract.</li>
+    <li><strong>Website analytics</strong> — {config.plausibleDomain ? "cookieless, aggregated statistics (Plausible); no personal profiles." : "none at present."} Legal basis: legitimate interests.</li>
+  </ul>
+
+  <h2>3. Who we share it with</h2>
+  <ul>
+    <li>OpenAI (AI processing of voice and text) — {/* TODO(owner): confirm DPA, retention settings and transfer mechanism. */} as our processor.</li>
+    <li>Stripe (payments and billing).</li>
+    <li>Our hosting provider and email provider. {/* TODO(owner): name them. */}</li>
+    <li>Delivery carriers (name and address only).</li>
+  </ul>
+  <p>We never sell your data and we don't use it for advertising.</p>
+
+  <h2>4. International transfers</h2>
+  <p>
+    Some providers may process data outside the UK/EEA (for example in the United States). Where they do, we rely on
+    appropriate safeguards such as the UK International Data Transfer Addendum / EU Standard Contractual Clauses or an
+    adequacy decision. {/* TODO(owner): list per provider. */}
+  </p>
+
+  <h2>5. How long we keep it</h2>
+  <p>
+    Conversation history: until you delete it or close your account. Order and tax records: as long as the law requires
+    (typically 6–10 years). {/* TODO(owner): confirm retention periods, including at AI partners. */}
+  </p>
+
+  <h2>6. Your rights</h2>
+  <p>
+    You can access, correct, export or delete your data, object to or restrict certain processing, and withdraw consent
+    where we rely on it. You can export or delete your conversation history yourself in your account at any time. You
+    can complain to the UK Information Commissioner's Office (ico.org.uk) or your local EU data protection authority.
+  </p>
+
+  <h2>7. Children</h2>
+  <p>BuddyAI is intended for adults. You must be 18 or over to buy a BuddyAI watch and create an account.
+    {/* TODO(owner): confirm minimum age policy. */}</p>
+
+  <h2>8. Security</h2>
+  <p>Connections between the watch, the app and our servers are encrypted. Access to personal data is restricted to people who need it.</p>
+</Legal>

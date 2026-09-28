@@ -282,5 +282,24 @@ esp_err_t board_init(void)
     if (rtc_init() != ESP_OK) {
         ESP_LOGE(TAG, "RTC init failed");
     }
+
+    /* BOOT button (GPIO0, active low, external pull-up on the board). Only
+     * sampled at run time - holding it during reset still enters the ROM
+     * download mode as usual. */
+    const gpio_config_t boot = {
+        .pin_bit_mask = 1ULL << BOARD_BTN_BOOT,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    if (gpio_config(&boot) != ESP_OK) {
+        ESP_LOGE(TAG, "BOOT button config failed");
+    }
     return ESP_OK;
+}
+
+bool board_boot_button_down(void)
+{
+    return gpio_get_level(BOARD_BTN_BOOT) == 0;
 }

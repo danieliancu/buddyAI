@@ -1,0 +1,105 @@
+---
+/**
+ * Illustration of the BuddyAI watch (rectangular 410×502 AMOLED screen) drawn in SVG.
+ * Placeholder until real product photos exist — always shown with a visible note.
+ */
+interface Props {
+  id: string; // unique prefix for SVG gradient/filter ids
+  class?: string;
+  note?: boolean;
+  eager?: boolean;
+}
+const { id, class: cls = "", note = true } = Astro.props;
+const g = (s: string) => `${id}-${s}`;
+---
+<figure class={`relative mx-auto ${cls}`}>
+  <div
+    class="pointer-events-none absolute inset-[8%] -z-10 rounded-full"
+    style="background: radial-gradient(closest-side, rgba(110,80,255,.45), rgba(40,90,230,.18) 60%, transparent);"
+    aria-hidden="true"
+  >
+  </div>
+  <svg
+    viewBox="0 0 320 560"
+    class="h-auto w-full"
+    role="img"
+    aria-labelledby={g("title")}
+  >
+    <title id={g("title")}>
+      Illustration of the BuddyAI watch: a rectangular watch with rounded corners and a black AMOLED screen showing
+      the time 10:09, the date, and a large glowing round microphone button.
+    </title>
+    <defs>
+      <linearGradient id={g("strap")} x1="0" x2="1">
+        <stop offset="0" stop-color="#0c0f18" />
+        <stop offset="0.5" stop-color="#1b2030" />
+        <stop offset="1" stop-color="#0c0f18" />
+      </linearGradient>
+      <linearGradient id={g("case")} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#5a6070" />
+        <stop offset="0.35" stop-color="#23272f" />
+        <stop offset="0.7" stop-color="#15181e" />
+        <stop offset="1" stop-color="#3b404b" />
+      </linearGradient>
+      <linearGradient id={g("rim")} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#b9b3ff" stop-opacity="0.8" />
+        <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.06" />
+        <stop offset="1" stop-color="#6ea8ff" stop-opacity="0.6" />
+      </linearGradient>
+      <radialGradient id={g("mic")} cx="0.35" cy="0.3" r="0.8">
+        <stop offset="0" stop-color="#c9b8ff" />
+        <stop offset="0.45" stop-color="#7a5cff" />
+        <stop offset="1" stop-color="#2356e8" />
+      </radialGradient>
+      <radialGradient id={g("halo")}>
+        <stop offset="0" stop-color="#7c5cff" stop-opacity="0.75" />
+        <stop offset="0.6" stop-color="#3b6cff" stop-opacity="0.25" />
+        <stop offset="1" stop-color="#3b6cff" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient id={g("glass")} x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.09" />
+        <stop offset="0.4" stop-color="#ffffff" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+
+    <!-- straps -->
+    <path d="M88 0h144l-8 150H96z" fill={`url(#${g("strap")})`} />
+    <path d="M96 410h128l8 150H88z" fill={`url(#${g("strap")})`} />
+    <g stroke="#ffffff" stroke-opacity="0.05">
+      <path d="M100 30h120M100 60h120M100 90h120" />
+      <path d="M100 470h120M100 500h120M100 530h120" />
+    </g>
+
+    <!-- side buttons -->
+    <rect x="279" y="222" width="13" height="50" rx="5" fill="#2a2e37" stroke="#5b6170" stroke-width="1" />
+    <rect x="280" y="296" width="10" height="30" rx="4" fill="#23262e" stroke="#4b505c" stroke-width="1" />
+
+    <!-- case -->
+    <rect x="40" y="130" width="240" height="300" rx="54" fill={`url(#${g("case")})`} />
+    <rect x="40.75" y="130.75" width="238.5" height="298.5" rx="53.5" fill="none" stroke={`url(#${g("rim")})`} stroke-width="1.5" />
+    <rect x="49" y="139" width="222" height="282" rx="46" fill="#030306" />
+
+    <!-- screen (410×502 aspect) -->
+    <rect x="55" y="151" width="210" height="257" rx="38" fill="#000" />
+
+    <text x="160" y="178" text-anchor="middle" fill="#a99bff" font-size="11" font-weight="600" letter-spacing="1.5" font-family="Inter Variable, Inter, system-ui, sans-serif">BUDDYAI</text>
+    <text x="160" y="226" text-anchor="middle" fill="#ffffff" font-size="50" font-weight="700" font-family="Inter Variable, Inter, system-ui, sans-serif" letter-spacing="-1">10:09</text>
+    <text x="160" y="250" text-anchor="middle" fill="#9aa3b8" font-size="13" font-family="Inter Variable, Inter, system-ui, sans-serif">Thu 1 Oct</text>
+
+    <circle cx="160" cy="322" r="64" fill={`url(#${g("halo")})`} class="mic-pulse" />
+    <circle cx="160" cy="322" r="42" fill={`url(#${g("mic")})`} />
+    <circle cx="160" cy="322" r="42" fill="none" stroke="#e3dcff" stroke-opacity="0.45" stroke-width="1.2" />
+    <g transform="translate(145 305) scale(1.25)" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <path d="M12 17v4" />
+    </g>
+    <text x="160" y="392" text-anchor="middle" fill="#8e97ad" font-size="11" font-family="Inter Variable, Inter, system-ui, sans-serif">Tap to talk</text>
+
+    <!-- glass reflection -->
+    <rect x="55" y="151" width="210" height="257" rx="38" fill={`url(#${g("glass")})`} />
+  </svg>
+  {note && (
+    <figcaption class="mt-3 text-center text-xs text-muted">Illustration — product photos coming soon</figcaption>
+  )}
+</figure>

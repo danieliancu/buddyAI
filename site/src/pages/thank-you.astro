@@ -1,0 +1,44 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import { config } from "../config";
+
+const next = [
+  { icon: "mail" as const, title: "Check your email", text: "Your order confirmation is on its way, with a link to set your BuddyAI account password." },
+  { icon: "truck" as const, title: "Shipping", text: "When your watch ships, we'll email you the tracking details." },
+  { icon: "wifi" as const, title: "When it arrives", text: "Sign in at the BuddyAI app, choose Add watch, and connect it to Wi-Fi. Then tap the mic and say hello." },
+];
+---
+<Base title="Thank you for your order" description="Your BuddyAI order is confirmed." noindex>
+  <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title">
+    <span class="icon-tile !h-14 !w-14 text-ok"><Icon name="check" size={28} /></span>
+    <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
+      Thank you — <span class="text-gradient">your order is confirmed.</span>
+    </h1>
+    <p class="mt-4 max-w-2xl text-lg text-muted">
+      We've received your payment. An email is on its way with your order details and a link to set your account
+      password.
+    </p>
+
+    <h2 class="mt-12 text-xl font-bold text-white">What happens next</h2>
+    <ol class="mt-6 grid gap-4 md:grid-cols-3">
+      {next.map((n, i) => (
+        <li class="glass p-5">
+          <span class="icon-tile !h-10 !w-10"><Icon name={n.icon} size={20} /></span>
+          <h3 class="mt-3 font-semibold text-white"><span class="text-muted">{i + 1}.</span> {n.title}</h3>
+          <p class="mt-1 text-sm text-muted">{n.text}</p>
+        </li>
+      ))}
+    </ol>
+
+    <div class="mt-10 flex flex-col gap-3 sm:flex-row">
+      <a class="btn btn-primary" href={config.appUrl}>Go to the BuddyAI app <Icon name="arrow" size={18} /></a>
+      <a class="btn btn-ghost" href="/">Back to home</a>
+    </div>
+    <p class="mt-8 text-sm text-muted">
+      No email after a few minutes? Check your spam folder, or contact
+      <a class="link" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>. You have a 14-day right to cancel
+      after delivery — see <a class="link" href="/legal/returns/">returns &amp; cancellation</a>.
+    </p>
+  </section>
+</Base>

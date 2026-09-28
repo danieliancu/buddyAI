@@ -1,5 +1,15 @@
 menu "BuddyAI"
 
+    config BUDDYAI_RELEASE_BUILD
+        bool "Release (production) build"
+        default n
+        help
+            Set by sdkconfig.release. Hardens the firmware for customer units:
+            the setup portal accepts only wss:// server URLs, stored or
+            discovered ws:// URLs are ignored, and OTA URLs must be https://.
+            Development builds (default) keep plain ws:// / http:// for a LAN
+            server.
+
     config BUDDYAI_DEFAULT_SERVER_URL
         string "Default server URL (development)"
         default ""

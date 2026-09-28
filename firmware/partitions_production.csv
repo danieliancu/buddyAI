@@ -1,0 +1,15 @@
+# BuddyAI partition table - PRODUCTION UNITS (Secure Boot V2 + flash encryption)
+# The signed secure-boot bootloader (~34 KB) does not fit below 0x8000, so the
+# partition table moves to 0x10000 (CONFIG_PARTITION_TABLE_OFFSET=0x10000 in the
+# production overlay, see README.md section 8). Same partitions and sizes as
+# partitions.csv, shifted. Apps built for this layout run ONLY on production
+# units (and vice versa): production OTA images use the production overlay.
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x11000,   0x10000,
+# NVS encryption keys (flash-encryption based scheme), encrypted by flash encryption
+nvs_keys,   data, nvs_keys, 0x21000,   0x1000,    encrypted
+otadata,    data, ota,      0x22000,   0x2000,
+phy_init,   data, phy,      0x24000,   0x1000,
+ota_0,      app,  ota_0,    0x30000,   6M,
+ota_1,      app,  ota_1,    0x630000,  6M,
+assets,     data, spiffs,   0xC30000,  0x13D0000,

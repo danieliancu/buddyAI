@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import languages
+from app import entitlements, languages
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, utcnow
@@ -231,6 +231,12 @@ class DeviceConnection:
         if self.active:
             await self._cancel_active()
         self.last_turn_id = turn_id
+        decision = await entitlements.check(self.account_id)
+        if not decision.allowed:
+            await self.send_json("error", turn_id, code=decision.code, message=decision.message)
+            await self.send_json("turn_end", turn_id, status="error")
+            self.hub.publish({"type": "turn_refused", "device_id": self.device_id, "code": decision.code})
+            return
         requested = msg.get("language")
         language = requested if isinstance(requested, str) and languages.is_known(requested) else self.settings.language
         turn = TurnContext(

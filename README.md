@@ -1,79 +1,71 @@
 # BuddyAI
 
-AI voice companion for the Waveshare ESP32-S3-Touch-AMOLED-2.06 watch.
+AI voice companion watch (Waveshare ESP32-S3-Touch-AMOLED-2.06), sold directly to consumers in the UK and EU.
 
 | Folder | What |
 |---|---|
 | [protocol/](protocol/PROTOCOL.md) | Watch ↔ server protocol v1 (WebSocket, JSON + Opus) |
-| [server/](server/README.md) | FastAPI server: device gateway, voice pipeline, REST API, hosts the web app |
-| [web/](web/) | Admin web app (React + Vite + TypeScript + Tailwind) |
-| [firmware/](firmware/) | Watch firmware (ESP-IDF 5.5, LVGL 9) |
+| [server/](server/README.md) | FastAPI server: watch gateway, voice pipeline (OpenAI or Qwen), customer accounts, shop + subscription (Stripe), REST API |
+| [web/](web/) | Web app: customer area (`/my`) and operator area (`/admin`) |
+| [site/](site/) | Public marketing site (Astro, static) |
+| [firmware/](firmware/README.md) | Watch firmware (ESP-IDF 5.5, LVGL 9) |
+| [deploy/](deploy/README.md) | Production: Docker, Caddy (HTTPS), PostgreSQL, backups — **step-by-step server runbook** |
 
-## 1. Run the server and web app (Windows, PowerShell)
+## Run everything on your PC
 
 ```powershell
 cd C:\_work\BuddyAI\server
 .\.venv\Scripts\python -m app.main
 ```
 
-Open http://localhost:8765. On first run, create the admin account.
+- **Web app:** http://localhost:8765
+  - `/signup` and `/my` for customers;
+  - `/admin` for you, the operator.
+  - Emails (confirmation, password reset) are printed in the server window.
+- **AI:** put `BUDDYAI_OPENAI_API_KEY=sk-...` in `server\.env`, or enter it under **Admin → System**.
+  Without a key, run `$env:BUDDYAI_MOCK_PROVIDERS="true"` before starting the server to get simulated answers.
+- **Marketing site:** `cd site; npm run dev`, then open http://localhost:4321.
+- **Shop:** it stays closed until Stripe keys are set; see [deploy/README.md](deploy/README.md) §6.
 
-- **AI keys:** put `BUDDYAI_OPENAI_API_KEY=sk-...` in `server\.env`, or enter the key on the **System** page.
-  Use **Test connection** there to check STT, LLM and TTS.
-- **No keys yet:** run `$env:BUDDYAI_MOCK_PROVIDERS="true"` before starting to get simulated AI.
-- **Switch AI vendor:** set `BUDDYAI_AI_PROFILE=openai` or `qwen` in `server\.env`, then restart. See [server/README.md](server/README.md).
-- **Costs:** shown in GBP. Vendors bill in USD; set the USD→GBP rate on the Usage page.
-- **Other devices on your network:** use `http://<pc-ip>:8765`. Allow Python through Windows Firewall on private networks.
+To rebuild the web app after changing it, run `cd web; npm install; npm run build`.
 
-The watch's server address is shown on the Devices page, for example `ws://192.168.1.10:8765/ws/device`.
-
-Rebuild the web app after changing it:
-
-```powershell
-cd C:\_work\BuddyAI\web
-npm install
-npm run build        # output: web\dist, served by the server
-npm run dev          # dev server with hot reload, proxies to the server on :8765
-```
-
-## 2. Try it without the watch
+## Try it without the watch
 
 ```powershell
 cd C:\_work\BuddyAI\server
-.\.venv\Scripts\python tools\fake_watch.py pair           # enter the 6-digit code under Devices > Add watch
-.\.venv\Scripts\python tools\fake_watch.py ask --wav tests\samples\en_1.wav --lang en --save out\reply.wav
+.\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 pair       # enter the code in /my → Add watch
+.\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 ask --wav tests\samples\en_1.wav --lang auto
+.\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 online     # stay connected (Ctrl+C to stop)
 ```
 
-## 3. Flash the watch
+## Flash the watch
 
-Connect the watch by USB-C. In PowerShell:
+See [firmware/README.md](firmware/README.md). In short:
 
 ```powershell
 . "C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1"
 cd C:\_work\BuddyAI\firmware
 idf.py build
-idf.py -p COM5 flash monitor      # replace COM5 with the watch's port (Device Manager > Ports)
+idf.py -p COM5 flash monitor
 ```
 
-If flashing does not start, hold **BOOT**, press **RESET**, then release **BOOT**.
-
-To bake a server address into development builds, set it in `idf.py menuconfig` → BuddyAI → Default server URL.
-
 First boot:
-1. The watch opens the Wi-Fi network `BuddyAI-XXXX`. Join it from your phone; the setup page opens.
-2. Pick your Wi-Fi network, enter its password, and optionally the server URL, e.g. `ws://192.168.1.10:8765/ws/device`.
-   If you leave the URL empty, the watch looks for the server on the local network (mDNS).
-3. The watch shows a 6-digit code. Enter it in the web app under **Devices → Add watch**.
-4. Tap the microphone and talk.
+1. The watch opens the Wi-Fi network `BuddyAI-XXXX`. Join it from your phone and enter your Wi-Fi details and the server address.
+2. The watch shows a 6-digit code. Enter it in the web app under **My watches → Add watch**.
 
 ## Status
 
-- **Server:** feature-complete for the MVP. 25 automated tests, including end-to-end tests with the watch simulator (abort, reconnect, TTFA).
-- **Web app:** complete, checked against the running server.
-- **Firmware:** builds cleanly but has **not been tested on hardware yet**. First checks on the real watch:
-  - which microphone channel is used, and the mic gain;
-  - display brightness and touch orientation;
-  - power rails and the battery reading;
-  - speaker quality.
-- **Not verified yet:** Romanian speech recognition quality with real recordings, and latency with real providers.
-- **Production hardening (M5), not started:** WSS/HTTPS, flash/NVS encryption, secure boot, signed OTA, login rate limiting.
+| Area | State |
+|---|---|
+| Server | Complete for launch scope. 63 automated tests: tenant isolation, shop/webhooks, languages, end-to-end with the watch simulator. Also verified on PostgreSQL and in the Docker image. |
+| Web app | Customer + operator areas, checked live in a browser (desktop and mobile). |
+| Marketing site | 16 pages, Lighthouse 95–100. Legal pages are DRAFTs. |
+| Firmware | Builds (dev, release and production configs). **Not yet tested on hardware.** |
+| Deployment | Docker images build; Caddy config validated; runbook in `deploy/README.md`. |
+
+**Before selling:**
+- **Hardware tests:** microphone, display, touch, battery, speaker, OTA.
+- **Real-AI tests:** with your OpenAI key, check recognition in each language you advertise.
+- **Placeholders:** fill every `TODO(owner)` in `site/` (prices, company details).
+- **Legal:** have a lawyer review the legal pages.
+- **Business checklist:** complete the list in `deploy/README.md` §9 (company, VAT/OSS, ICO, UKCA/CE, Stripe).
