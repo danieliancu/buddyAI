@@ -37,7 +37,6 @@ def setup(body: Credentials, request: Request, db: Session = Depends(get_session
     if not get_settings().allow_web_setup:
         raise HTTPException(403, "web setup disabled: run `python -m app.cli create-operator` on the server")
     repo.create(body.username, hash_password(body.password))
-    request.session.pop("account_id", None)  # one role per browser session
     request.session["admin"] = body.username
     return {"user": body.username}
 
@@ -52,14 +51,14 @@ def login(body: Credentials, request: Request, db: Session = Depends(get_session
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "invalid credentials")
     LOGIN_PER_ACCOUNT.reset(key)
-    request.session.pop("account_id", None)  # one role per browser session
     request.session["admin"] = user.username
     return {"user": user.username}
 
 
 @router.post("/logout")
 def logout(request: Request) -> dict:
-    request.session.clear()
+    # Only the operator signs out; a customer session in the same browser stays.
+    request.session.pop("admin", None)
     return {"ok": True}
 
 

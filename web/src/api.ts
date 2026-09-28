@@ -1,6 +1,6 @@
 // Small typed client for the BuddyAI FastAPI backend (same origin, cookie session).
 //
-// Two roles share one browser session cookie (the server keeps one role at a time):
+// Two roles share one browser session cookie (both can be signed in at the same time):
 //   - operator ("admin" area): /api/auth, /api/devices, /api/accounts, ... → `api.*`
 //   - customer ("me" area):    /api/me/...                                → `api.me.*`
 // A 401 is reported to the handler of the area the request belongs to, so the app can send
@@ -217,6 +217,8 @@ export interface DeviceSettings {
   vad_sensitivity: VadSensitivity;
   max_reply_chars: number;
   history_turns: number;
+  /** The AI may search the internet (weather, addresses, news…); each search is billed. */
+  web_search: boolean;
 }
 
 export type SettingsPatch = Partial<Omit<DeviceSettings, "theme">> & { theme?: Partial<Theme> };

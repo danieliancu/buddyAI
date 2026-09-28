@@ -42,7 +42,6 @@ router = APIRouter(prefix="/api/me", tags=["customer"])
 
 
 def _login(request: Request, acc: Account) -> None:
-    request.session.pop("admin", None)  # one role per browser session
     request.session["account_id"] = acc.id
     request.session["account_v"] = acc.session_version
 
@@ -404,7 +403,8 @@ async def delete_account(
     for device_id in device_ids:
         hub.forget_owner(device_id)
         await hub.revoke(device_id)
-    request.session.clear()
+    request.session.pop("account_id", None)
+    request.session.pop("account_v", None)
     return {"ok": True}
 
 
