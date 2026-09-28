@@ -449,6 +449,9 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
               <Field label="Max listening time" error={err("max_listen_s")}>
                 <Slider value={draft.max_listen_s} min={3} max={60} onChange={(v) => set("max_listen_s", v)} format={(v) => `${v} s`} />
               </Field>
+              <Field label="Web search" error={err("web_search")} hint="Weather, news, addresses, opening hours… Each search costs about 1p">
+                <Toggle checked={draft.web_search} onChange={(v) => set("web_search", v)} label="Let the AI search the internet" />
+              </Field>
               </>
               )}
             </div>

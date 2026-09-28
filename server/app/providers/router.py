@@ -26,6 +26,9 @@ STAGES = {
     "openai_tts": "tts",
 }
 
+# LLM providers that implement the hosted web search tool (LLMRequest.web_search).
+WEB_SEARCH_PROVIDERS = {"openai"}
+
 
 @dataclass
 class TTSSelection:
@@ -119,6 +122,17 @@ class ProviderRouter:
 
     def llm_params(self) -> dict[str, Any]:
         return dict(self.config["llm"].get("params", {}))
+
+    def web_search(self, settings: DeviceSettings, provider: LLMProvider) -> dict[str, Any] | None:
+        """Web search tool config for this turn, or None (off for the watch, not in the profile,
+        or the provider has no web search)."""
+        cfg = self.config["llm"].get("web_search")
+        if not settings.web_search or not cfg or provider.name not in WEB_SEARCH_PROVIDERS:
+            return None
+        # Approximate location from the watch's timezone, so "the weather now" is local.
+        city = settings.timezone.rsplit("/", 1)[-1].replace("_", " ")
+        location = {"type": "approximate", "city": city, "timezone": settings.timezone}
+        return {**cfg, "user_location": location}
 
     def _tts_entry(self, language: str) -> dict[str, Any]:
         tts = self.config["tts"]

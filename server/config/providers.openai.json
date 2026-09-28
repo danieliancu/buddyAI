@@ -23,6 +23,9 @@
     ],
     "params": {
       "reasoning_effort": "none"
+    },
+    "web_search": {
+      "search_context_size": "low"
     }
   },
   "tts": {
@@ -78,6 +81,20 @@
       "unit": "output_token",
       "price_usd": 5e-07,
       "note": "$0.50 / 1M output tokens (OpenAI, Sep 2026). Verify."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "unit": "web_search_call",
+      "price_usd": 0.01,
+      "note": "$10 / 1k web search calls (reasoning models, OpenAI, Sep 2026); search content is billed as input tokens. Verify."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-sol",
+      "unit": "web_search_call",
+      "price_usd": 0.01,
+      "note": "$10 / 1k web search calls (reasoning models, OpenAI, Sep 2026); search content is billed as input tokens. Verify."
     },
     {
       "provider": "openai_tts",

@@ -31,6 +31,12 @@ log = logging.getLogger(__name__)
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
 
+WEB_SEARCH_RULE = (
+    "You can search the web. When the question needs current or specific facts (weather, news, "
+    "businesses, addresses, phone numbers, opening hours, prices, sports results), search instead of "
+    "saying you have no real-time access. Say the answer only: never mention sources, websites or links."
+)
+
 MessagesBuilder = Callable[[TurnContext, str], list[dict[str, str]]]
 
 
@@ -164,11 +170,16 @@ class ConversationPipeline:
         s = turn.settings
         llm, model = self.router.llm(s)
         tts_sel = self.router.tts(turn.language, s)
+        web_search = self.router.web_search(s, llm)
+        messages = self.messages_builder(turn, turn.user_text)
+        if web_search is not None and messages and messages[0]["role"] == "system":
+            messages[0] = {**messages[0], "content": messages[0]["content"] + "\n" + WEB_SEARCH_RULE}
         request = LLMRequest(
-            messages=self.messages_builder(turn, turn.user_text),
+            messages=messages,
             model=model,
             max_tokens=max(64, s.max_reply_chars // 2),
             params=self.router.llm_params(),
+            web_search=web_search,
         )
         deltas: asyncio.Queue[str | None] = asyncio.Queue()
         fragments: asyncio.Queue[str | None] = asyncio.Queue()
@@ -177,7 +188,7 @@ class ConversationPipeline:
 
         async def pump_llm() -> None:
             turn.marks.llm_request = mono_ms()
-            usage_in = usage_out = 0
+            usage_in = usage_out = searches = 0
             try:
                 async for chunk in llm.stream(request):
                     if chunk.delta:
@@ -190,9 +201,11 @@ class ConversationPipeline:
                         await deltas.put(chunk.delta)
                     if chunk.input_tokens is not None:
                         usage_in, usage_out = chunk.input_tokens, chunk.output_tokens or 0
+                        searches = chunk.web_searches
             finally:
                 turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in))
                 turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
+                turn.usage.append(UsageItem("llm", llm.name, model, "web_search_call", searches))
                 await deltas.put(None)
 
         async def chunk_text() -> None:

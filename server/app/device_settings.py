@@ -58,6 +58,7 @@ class DeviceSettings(BaseModel):
     vad_sensitivity: Literal["low", "medium", "high"] = "medium"
     max_reply_chars: int = Field(400, ge=80, le=2000)
     history_turns: int = Field(6, ge=0, le=30)
+    web_search: bool = True  # let the AI look things up on the internet (each search is billed)
 
     @model_validator(mode="before")
     @classmethod
