@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -20,8 +21,10 @@
 static const char *TAG = "audio";
 
 /* ---- tuning ---- */
-#define CAPTURE_TASK_STACK      (24 * 1024)     /* libopus encoder is stack hungry */
-#define DECODE_TASK_STACK       (16 * 1024)
+/* libopus is stack hungry (24 KB overflowed on the first encode). The encode
+ * and decode stacks live in PSRAM: internal RAM is needed by Wi-Fi and DMA. */
+#define CAPTURE_TASK_STACK      (48 * 1024)
+#define DECODE_TASK_STACK       (32 * 1024)
 #define WRITER_TASK_STACK       (4 * 1024)
 #define CAPTURE_TASK_PRIO       8
 #define WRITER_TASK_PRIO        7
@@ -238,6 +241,8 @@ static void capture_task(void *arg)
             }
         }
         s_cap_level = 0;
+        ESP_LOGI(TAG, "capture stack: %u B unused of %u", (unsigned)uxTaskGetStackHighWaterMark(NULL),
+                 (unsigned)CAPTURE_TASK_STACK);
     }
 }
 
@@ -552,10 +557,10 @@ esp_err_t audio_init(void)
     ESP_RETURN_ON_FALSE(s_play_lock && s_capture_idle && s_pkt_q, ESP_ERR_NO_MEM, TAG, "rtos objs");
 
     BaseType_t ok = pdPASS;
-    ok &= xTaskCreatePinnedToCore(capture_task, "aud_cap", CAPTURE_TASK_STACK, NULL,
-                                  CAPTURE_TASK_PRIO, &s_capture_task, AUDIO_CORE);
-    ok &= xTaskCreatePinnedToCore(decode_task, "aud_dec", DECODE_TASK_STACK, NULL,
-                                  DECODE_TASK_PRIO, NULL, AUDIO_CORE);
+    ok &= xTaskCreatePinnedToCoreWithCaps(capture_task, "aud_cap", CAPTURE_TASK_STACK, NULL,
+                                          CAPTURE_TASK_PRIO, &s_capture_task, AUDIO_CORE, MALLOC_CAP_SPIRAM);
+    ok &= xTaskCreatePinnedToCoreWithCaps(decode_task, "aud_dec", DECODE_TASK_STACK, NULL,
+                                          DECODE_TASK_PRIO, NULL, AUDIO_CORE, MALLOC_CAP_SPIRAM);
     ok &= xTaskCreatePinnedToCore(writer_task, "aud_out", WRITER_TASK_STACK, NULL,
                                   WRITER_TASK_PRIO, NULL, AUDIO_CORE);
     ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "tasks");

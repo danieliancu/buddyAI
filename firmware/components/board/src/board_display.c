@@ -26,11 +26,13 @@ static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static lv_display_t *s_disp;
 
-/* LVGL draw buffer: 1/5 of the screen, double buffered, in PSRAM. */
-#define DRAW_BUF_LINES      100
-/* Max bytes per SPI transaction (esp_lcd splits larger flushes). Kept modest
- * because PSRAM sourced transfers are bounced through internal DMA memory. */
-#define SPI_MAX_TRANSFER    (BOARD_LCD_H_RES * 40 * sizeof(uint16_t))
+/* LVGL draw buffer: 20 lines (~16 KB), double buffered, in internal DMA RAM.
+ * PSRAM buffers would be bounced through a temporary internal DMA buffer per
+ * queued SPI transaction, which fails once Wi-Fi has taken its share of
+ * internal RAM. These are allocated at boot, before Wi-Fi starts. */
+#define DRAW_BUF_LINES      20
+/* One flush = one SPI transaction. */
+#define SPI_MAX_TRANSFER    (BOARD_LCD_H_RES * DRAW_BUF_LINES * sizeof(uint16_t))
 
 /* Vendor init sequence for this panel [WS-BSP lcd_init_cmds]. */
 static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
@@ -150,8 +152,8 @@ lv_display_t *board_display_init(void)
         .rounder_cb = rounder_cb,
         .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
-            .buff_dma = false,
-            .buff_spiram = true,
+            .buff_dma = true,
+            .buff_spiram = false,
             .sw_rotate = false,
             .swap_bytes = true,
         },
