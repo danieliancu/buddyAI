@@ -1,7 +1,8 @@
 """SemanticSpeechChunker: turns a streaming LLM reply into natural speech fragments for TTS.
 
 It does not wait for full sentences. A fragment is emitted when (first match wins):
-  1. natural punctuation (. , ; : ? !) followed by whitespace,
+  1. natural punctuation (. , ; : ? !) followed by whitespace, once the fragment is long enough
+     (first_chunk_min_chars for the first one, min_chars after: every fragment is one TTS request),
   2. the buffer grows past ~soft_max_chars (split at the last word boundary),
   3. no new tokens for idle_flush_ms and enough text is buffered,
   4. the LLM stream ends.
@@ -36,10 +37,10 @@ def clean_for_speech(text: str) -> str:
 
 @dataclass
 class ChunkerConfig:
-    min_chars: int = 12
-    first_chunk_min_chars: int = 4
-    soft_max_chars: int = 60
-    hard_max_chars: int = 80
+    min_chars: int = 80
+    first_chunk_min_chars: int = 20
+    soft_max_chars: int = 160
+    hard_max_chars: int = 240
     idle_flush_ms: int = 300
     idle_min_chars: int = 20
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
@@ -70,7 +71,7 @@ class SemanticSpeechChunker:
         """Idle flush: call when no tokens arrived for a while."""
         if self._last_input_ms is None or now_ms - self._last_input_ms < self.cfg.idle_flush_ms:
             return []
-        if len(self._buf.strip()) < self.cfg.idle_min_chars:
+        if len(self._buf.strip()) < self._idle_min():
             return []
         # The last word may be incomplete (token boundary), so cut at the last whitespace.
         cut = len(self._buf) if self._buf[-1:].isspace() else self._last_space(len(self._buf))
@@ -79,7 +80,7 @@ class SemanticSpeechChunker:
         return self._emit(cut)
 
     def next_deadline_ms(self) -> float | None:
-        if self._last_input_ms is None or len(self._buf.strip()) < self.cfg.idle_min_chars:
+        if self._last_input_ms is None or len(self._buf.strip()) < self._idle_min():
             return None
         return self._last_input_ms + self.cfg.idle_flush_ms
 
@@ -95,9 +96,14 @@ class SemanticSpeechChunker:
 
     # --- internals --------------------------------------------------------------------
 
-    def _min_len(self, strong: bool) -> int:
-        if strong:
-            return 2
+    def _idle_min(self) -> int:
+        return max(self.cfg.idle_min_chars, self._min_len())
+
+    def _min_len(self) -> int:
+        # Each fragment is a separate TTS request: its audio must last longer than the next
+        # request takes to start (~1 s), or the watch runs dry and there is a pause; and every
+        # seam resets the intonation. So the first fragment is short but not tiny ("Da." alone
+        # would leave a gap), and later fragments are long.
         return self.cfg.first_chunk_min_chars if self._emitted == 0 else self.cfg.min_chars
 
     def _drain(self) -> list[str]:
@@ -122,7 +128,7 @@ class SemanticSpeechChunker:
                 if j >= len(buf):
                     return None  # undecided until we see what follows
                 if buf[j].isspace() and self._is_real_boundary(buf, i):
-                    if len(buf[:j].strip()) >= self._min_len(ch in STRONG):
+                    if len(buf[:j].strip()) >= self._min_len():
                         return j
                 i = j
                 continue

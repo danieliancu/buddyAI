@@ -68,10 +68,10 @@
     "opus_downlink_bitrate": 32000
   },
   "chunker": {
-    "min_chars": 12,
-    "first_chunk_min_chars": 4,
-    "soft_max_chars": 60,
-    "hard_max_chars": 80,
+    "min_chars": 80,
+    "first_chunk_min_chars": 20,
+    "soft_max_chars": 160,
+    "hard_max_chars": 240,
     "idle_flush_ms": 300,
     "idle_min_chars": 20
   },

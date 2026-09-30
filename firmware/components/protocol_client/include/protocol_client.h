@@ -50,10 +50,16 @@ typedef enum {
     PROTO_EVT_CONV_STATE,           /* num = proto_conv_state_t */
     PROTO_EVT_TRANSCRIPT,           /* str = user text (stt_result) */
     PROTO_EVT_REPLY_DELTA,          /* str = llm_text delta */
+    PROTO_EVT_REPLY_DISPLAY,        /* str = short value to show large (llm_display), e.g. "21°C" */
     PROTO_EVT_REPLY_LANGUAGE,       /* str = detected language code (stt_result / tts_start) */
     PROTO_EVT_ERROR,                /* num = proto_error_t, str = message (may be NULL) */
     PROTO_EVT_TIME_SET,             /* system clock set from hello_ack.server_time */
     PROTO_EVT_OTA,                  /* num = progress %, -1 = failed */
+    PROTO_EVT_ITEMS,                /* str = `items` message JSON (notes/reminders snapshot) */
+    PROTO_EVT_LANGUAGES,            /* str = `languages` message JSON (language picker) */
+    PROTO_EVT_ITEMS_OPEN,           /* num = 1 reminders, 0 notes (`items_open`) */
+    PROTO_EVT_ITEM_SHOW,            /* str = `item_show` message JSON */
+    PROTO_EVT_REMINDER,             /* str = `reminder_fire` message JSON */
 } proto_event_type_t;
 
 typedef struct {
@@ -87,6 +93,14 @@ void proto_mic_tap(void);
 /* User changed settings on the watch (subset of PROTOCOL.md section 5). The
  * change is applied locally at once and sent as settings_changed. */
 void proto_settings_changed(const cJSON *changes);
+
+/* The user left the conversation screen: abort a turn that is only listening. */
+void proto_end_conversation(void);
+
+/* Notes / reminders (PROTOCOL.md section 3.3). reminder = false for a note.
+ * Ignored while there is no session. */
+void proto_item_open(bool reminder, int number);
+void proto_item_delete(bool reminder, int number);
 
 /* Force a new connection cycle (e.g. after the server URL changed). */
 void proto_reconnect(void);

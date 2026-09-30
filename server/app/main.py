@@ -21,9 +21,11 @@ from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
 from app.gateway import device_ws
 from app.gateway.hub import DeviceHub
+from app.items import AssistantTools
 from app.pipeline.chunker import ChunkerConfig
 from app.pipeline.conversation import ConversationPipeline
 from app.providers.router import ProviderRouter
+from app.reminders import reminder_loop
 
 log = logging.getLogger("buddyai")
 
@@ -45,7 +47,10 @@ async def lifespan(app: FastAPI):
         app.state.router,
         chunker_config,
         downlink_bitrate=config["audio"]["opus_downlink_bitrate"],
+        tools=AssistantTools(),
     )
+
+    reminders = asyncio.create_task(reminder_loop(app.state.hub), name="reminders")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -62,6 +67,7 @@ async def lifespan(app: FastAPI):
         log.warning("MOCK providers enabled: no real STT/LLM/TTS calls")
     yield
     warmup.cancel()
+    reminders.cancel()
     if mdns:
         await mdns.stop()
 

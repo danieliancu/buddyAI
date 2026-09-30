@@ -42,6 +42,10 @@ class TurnContext:
     user_text: str = ""
     assistant_text: str = ""
     usage: list[UsageItem] = field(default_factory=list)
+    items_changed: bool = False  # a tool created/changed/deleted a note or reminder
+    settings_changed: bool = False  # a tool changed the watch settings (volume, language...)
+    # What to open on the watch after the turn ends: {"list": kind} or {"item": {...}} (last one wins)
+    pending_open: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"

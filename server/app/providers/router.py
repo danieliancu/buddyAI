@@ -84,9 +84,18 @@ class ProviderRouter:
         if provider == "openai_stt":
             from app.providers.stt.openai import OpenAIRealtimeSTT
 
+            prompt = self.config.get("stt", {}).get("prompt", "")
+            fallback = self.config.get("stt", {}).get("fallback_model", "gpt-4o-mini-transcribe")
             return self._cached(
-                ("openai_stt", model, openai_key),
-                lambda: OpenAIRealtimeSTT(openai_key, s.openai_realtime_ws_url, model),
+                ("openai_stt", model, openai_key, prompt, fallback),
+                lambda: OpenAIRealtimeSTT(
+                    openai_key,
+                    s.openai_realtime_ws_url,
+                    model,
+                    prompt=prompt,
+                    rest_url=s.openai_base_url,
+                    fallback_model=fallback,
+                ),
             )
         if provider == "openai":
             from app.providers.llm.openai import OpenAILLM

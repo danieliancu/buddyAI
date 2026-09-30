@@ -20,8 +20,9 @@ def run(text: str, lang: str = "ro", step: int = 3) -> list[str]:
 
 
 def test_example_from_spec():
+    # "Sigur," alone is too short to cover the next TTS request: it joins the next clause.
     out = run("Sigur, mâine ai trei întâlniri, prima este la ora nouă.")
-    assert out == ["Sigur,", "mâine ai trei întâlniri,", "prima este la ora nouă."]
+    assert out == ["Sigur, mâine ai trei întâlniri,", "prima este la ora nouă."]
 
 
 def test_does_not_split_abbreviations_en():
@@ -30,8 +31,8 @@ def test_does_not_split_abbreviations_en():
 
 
 def test_does_not_split_etc_and_ro_abbreviations():
-    out = run("Ia mere, pere etc. și mergi pe str. Lipscani nr. 5 acum.")
-    assert "etc." in out[1] and not any(x.endswith("str.") or x.endswith("nr.") for x in out)
+    out = run("Ia mere, pere etc. și mergi pe str. Lipscani nr. 5 acum. Apoi vino înapoi acasă repede.")
+    assert any("etc. și" in x for x in out) and not any(x.endswith(("str.", "nr.", "etc.")) for x in out)
 
 
 def test_prices_times_decimals_stay_intact():
@@ -47,7 +48,7 @@ def test_romanian_decimal_comma():
 
 
 def test_length_flush_without_punctuation():
-    text = "acesta este un text foarte lung fără nicio punctuație care continuă mult și tot continuă până la capăt"
+    text = "acesta este un text foarte lung fără nicio punctuație care continuă mult și tot continuă până la capăt " * 3
     c = SemanticSpeechChunker("ro", CFG)
     first = c.feed(text, 0)
     assert first and len(first[0]) <= CFG.hard_max_chars
@@ -63,14 +64,26 @@ def test_idle_flush_cuts_at_word_boundary():
     assert c.pending == "imp"
 
 
-def test_first_fragment_is_short_for_low_ttfa():
-    out = run("Da, desigur. Iată răspunsul complet pe care l-ai cerut.")
-    assert out[0] == "Da, desigur."
+def test_first_fragment_is_short_but_not_tiny():
+    out = run("Da. Sigur că da, iată răspunsul. Mai departe urmează restul explicației pe care l-ai cerut.")
+    assert out[0] == "Da. Sigur că da, iată răspunsul."
+
+
+def test_later_fragments_are_long():
+    text = (
+        "Bine, Daniel, mulțumesc! Astăzi la Londra este înnorat, cu șaptesprezece grade. "
+        "Diseară se răcește, deci ia o jachetă. Mâine va fi soare, dar vântul bate puternic, "
+        "mai ales după-amiaza. Poimâine revine ploaia, așa că pregătește și o umbrelă."
+    )
+    out = run(text)
+    assert len(out) <= 4  # few TTS requests: few seams, natural intonation
+    assert all(len(x) >= CFG.min_chars for x in out[1:-1])
+    assert " ".join(out) == text
 
 
 def test_markdown_is_removed():
     out = run("**Sigur!** Iată `codul` tău.")
-    assert out == ["Sigur!", "Iată codul tău."]
+    assert out == ["Sigur! Iată codul tău."]
 
 
 def test_initials_not_split():

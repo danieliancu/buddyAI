@@ -1,0 +1,304 @@
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { CalendarClock, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { api, type Item, type ItemKind } from "../../api";
+import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Spinner, Textarea, useAsync } from "../../components/ui";
+import { fmtDateTime, parseDate } from "../../format";
+import { useLive } from "../../live";
+
+const NOTE_MAX = 10000;
+const REMINDER_MAX = 80;
+
+type Editing = Item | "new" | null;
+
+/** Items of one kind, reloaded whenever the account's notes/reminders change (voice, a watch, another tab). */
+function useItems(kind: ItemKind) {
+  const all = useAsync(api.me.items.list, []);
+  useLive((e) => {
+    if (e.type === "items_changed") all.reload();
+  });
+  return { ...all, items: (all.data ?? []).filter((i) => i.kind === kind) };
+}
+
+// ---------- notes ----------
+
+export function MyNotesPage() {
+  const q = useItems("note");
+  const [editing, setEditing] = useState<Editing>(null);
+  const [deleting, setDeleting] = useState<Item | null>(null);
+  const notes = [...q.items].sort((a, b) => a.number - b.number);
+
+  return (
+    <ItemsLayout
+      title="Notes"
+      intro="Text only, as long as you like. Ask your watch: “note that…”, “show my notes”, “edit note 2”, “delete note 1”."
+      onNew={() => setEditing("new")}
+      error={q.error}
+      onRetry={q.reload}
+      loading={q.loading && !q.data}
+    >
+      {notes.length === 0 ? (
+        <Card>
+          <Empty icon={<NotebookPen className="size-7" />} title="No notes yet" />
+        </Card>
+      ) : (
+        <ul className="space-y-3">
+          {notes.map((n) => (
+            <ItemCard key={n.number} item={n} onEdit={() => setEditing(n)} onDelete={() => setDeleting(n)}>
+              <p className="line-clamp-4 text-sm whitespace-pre-line">{n.text}</p>
+            </ItemCard>
+          ))}
+        </ul>
+      )}
+      <NoteDialog editing={editing} onClose={() => setEditing(null)} onSaved={q.reload} />
+      <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={q.reload} />
+    </ItemsLayout>
+  );
+}
+
+function NoteDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: () => void; onSaved: () => void }) {
+  const [text, setText] = useState("");
+  const form = useSave(editing, onClose, onSaved);
+
+  useEffect(() => {
+    if (editing) setText(editing === "new" ? "" : editing.text);
+  }, [editing]);
+
+  return (
+    <Dialog
+      open={!!editing}
+      onClose={onClose}
+      wide
+      title={editing === "new" ? "New note" : `Note #${editing ? editing.number : ""}`}
+      footer={<DialogButtons onClose={onClose} busy={form.busy} formId="note-form" />}
+    >
+      <form
+        id="note-form"
+        className="space-y-4"
+        onSubmit={(e) => form.submit(e, text.trim() ? { kind: "note", text: text.trim(), due_at: null } : "Write something first.")}
+      >
+        <Field label="Text" htmlFor="ntext" hint={`${text.length.toLocaleString("en-GB")}/${NOTE_MAX.toLocaleString("en-GB")}`}>
+          <Textarea id="ntext" rows={12} maxLength={NOTE_MAX} value={text} onChange={(e) => setText(e.target.value)} />
+        </Field>
+        <ErrorBox error={form.error} />
+      </form>
+    </Dialog>
+  );
+}
+
+// ---------- reminders ----------
+
+export function MyRemindersPage() {
+  const q = useItems("reminder");
+  const [editing, setEditing] = useState<Editing>(null);
+  const [deleting, setDeleting] = useState<Item | null>(null);
+  const reminders = [...q.items].sort((a, b) => (a.due_at ?? "").localeCompare(b.due_at ?? "") || a.number - b.number);
+
+  return (
+    <ItemsLayout
+      title="Reminders"
+      intro="A time and a short text. Ask your watch: “remind me tomorrow at 9 to…”, “show my reminders”, “move reminder 2 to 5 pm”."
+      onNew={() => setEditing("new")}
+      error={q.error}
+      onRetry={q.reload}
+      loading={q.loading && !q.data}
+    >
+      {reminders.length === 0 ? (
+        <Card>
+          <Empty icon={<CalendarClock className="size-7" />} title="No reminders yet" />
+        </Card>
+      ) : (
+        <ul className="space-y-3">
+          {reminders.map((r) => (
+            <ItemCard key={r.number} item={r} onEdit={() => setEditing(r)} onDelete={() => setDeleting(r)}>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <CalendarClock className="size-4 text-muted" />
+                <span className="font-medium">{fmtDateTime(r.due_at)}</span>
+                {r.overdue && (
+                  <Badge tone="danger">
+                    <TriangleAlert className="size-3" /> Overdue
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-1 text-sm">{r.text}</p>
+            </ItemCard>
+          ))}
+        </ul>
+      )}
+      <ReminderDialog editing={editing} onClose={() => setEditing(null)} onSaved={q.reload} />
+      <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={q.reload} />
+    </ItemsLayout>
+  );
+}
+
+/** <input type="datetime-local"> value for a UTC ISO string, in the browser's time zone. */
+function toLocalInput(iso: string | null): string {
+  const d = parseDate(iso);
+  if (!d) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: () => void; onSaved: () => void }) {
+  const [text, setText] = useState("");
+  const [due, setDue] = useState("");
+  const form = useSave(editing, onClose, onSaved);
+
+  useEffect(() => {
+    if (!editing) return;
+    setText(editing === "new" ? "" : editing.text);
+    setDue(editing === "new" ? "" : toLocalInput(editing.due_at));
+  }, [editing]);
+
+  const body = () => {
+    if (!due) return "Choose when to be reminded.";
+    if (!text.trim()) return "Write what to be reminded of.";
+    // datetime-local is the browser's local time; new Date() reads it as local, toISOString gives UTC.
+    return { kind: "reminder" as const, text: text.trim(), due_at: new Date(due).toISOString() };
+  };
+
+  return (
+    <Dialog
+      open={!!editing}
+      onClose={onClose}
+      title={editing === "new" ? "New reminder" : `Reminder #${editing ? editing.number : ""}`}
+      footer={<DialogButtons onClose={onClose} busy={form.busy} formId="reminder-form" />}
+    >
+      <form id="reminder-form" className="space-y-4" onSubmit={(e) => form.submit(e, body())}>
+        <Field label="When" htmlFor="rdue">
+          <Input id="rdue" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+        </Field>
+        <Field label="Text" htmlFor="rtext" hint={`${text.length}/${REMINDER_MAX}`}>
+          <Textarea id="rtext" rows={3} className="min-h-0!" maxLength={REMINDER_MAX} value={text} onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, " "))} />
+        </Field>
+        <ErrorBox error={form.error} />
+      </form>
+    </Dialog>
+  );
+}
+
+// ---------- shared ----------
+
+function ItemsLayout({
+  title,
+  intro,
+  onNew,
+  error,
+  onRetry,
+  loading,
+  children,
+}: {
+  title: string;
+  intro: string;
+  onNew: () => void;
+  error: unknown;
+  onRetry: () => void;
+  loading: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-5 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+          <p className="mt-1 text-sm text-muted">{intro}</p>
+        </div>
+        <Button variant="primary" icon={<Plus className="size-4" />} onClick={onNew}>
+          New
+        </Button>
+      </div>
+      <ErrorBox error={error} onRetry={onRetry} />
+      {loading ? <Spinner /> : children}
+    </div>
+  );
+}
+
+function ItemCard({ item, onEdit, onDelete, children }: { item: Item; onEdit: () => void; onDelete: () => void; children: ReactNode }) {
+  return (
+    <li className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 font-mono text-sm font-semibold text-accent">#{item.number}</span>
+        <div className="min-w-0 flex-1">{children}</div>
+        <button
+          className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg"
+          onClick={onEdit}
+          aria-label={`Edit #${item.number}`}
+        >
+          <Pencil className="size-4" />
+        </button>
+        <button
+          className="rounded p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
+          onClick={onDelete}
+          aria-label={`Delete #${item.number}`}
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function DialogButtons({ onClose, busy, formId }: { onClose: () => void; busy: boolean; formId: string }) {
+  return (
+    <>
+      <Button variant="ghost" onClick={onClose}>
+        Cancel
+      </Button>
+      <Button variant="primary" type="submit" form={formId} loading={busy}>
+        Save
+      </Button>
+    </>
+  );
+}
+
+type ItemBody = { kind: ItemKind; text: string; due_at: string | null };
+
+/** Create or update; `body` is a string when the form is invalid (shown as the error). */
+function useSave(editing: Editing, onClose: () => void, onSaved: () => void) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    if (editing) setError(null);
+  }, [editing]);
+
+  const submit = async (e: FormEvent, body: ItemBody | string) => {
+    e.preventDefault();
+    if (!editing) return;
+    if (typeof body === "string") return setError(new Error(body));
+    setBusy(true);
+    setError(null);
+    try {
+      if (editing === "new") await api.me.items.create(body);
+      else await api.me.items.update(editing.kind, editing.number, body);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, error, submit };
+}
+
+function DeleteDialog({ item, onClose, onDeleted }: { item: Item | null; onClose: () => void; onDeleted: () => void }) {
+  const noun = item?.kind === "reminder" ? "reminder" : "note";
+  return (
+    <ConfirmDialog
+      open={!!item}
+      danger
+      title={`Delete ${noun}`}
+      confirmLabel="Delete"
+      message={
+        <>
+          Delete {noun} <b>#{item?.number}</b>? Its number will be reused by the next new {noun}.
+        </>
+      }
+      onConfirm={async () => {
+        if (!item) return;
+        await api.me.items.remove(item.kind, item.number);
+        onDeleted();
+      }}
+      onClose={onClose}
+    />
+  );
+}

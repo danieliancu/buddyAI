@@ -23,3 +23,8 @@ Thumbs.db
 # Deployment secrets and backups
 deploy/.env
 deploy/backups/
+# Local credentials (never commit)
+superadmin.txt
+.vscode/
+server start.txt
+web/tsconfig.tsbuildinfo

@@ -23,11 +23,9 @@ static lv_obj_t *s_lbl_theme;
 static lv_obj_t *s_sld_vol;
 static lv_obj_t *s_sld_bri;
 static lv_obj_t *s_lang_row;
-static lv_obj_t *s_lang_btns[SETTINGS_QUICK_LANG_MAX];
-static int       s_lang_count;
-/* quick_languages the language pills were built from (rebuilt on change). */
-static settings_quick_lang_t s_lang_built[SETTINGS_QUICK_LANG_MAX];
-static int       s_lang_built_count = -1;
+static lv_obj_t *s_btn_lang_en;     /* English */
+static lv_obj_t *s_btn_lang_other;  /* "Other" or the chosen foreign language: opens the picker */
+static lv_obj_t *s_lbl_lang_other;
 static lv_obj_t *s_btn_wifi;
 static lv_obj_t *s_lbl_wifi_btn;
 static lv_obj_t *s_theme_btns[8];
@@ -60,33 +58,66 @@ static void send_change_int(const char *key, int value)
     cJSON_Delete(c);
 }
 
+/* Only a real drag of a slider changes the setting. LVGL also moves the knob
+ * to the touch point on a plain tap (and the extended click area catches taps
+ * aimed at nearby buttons or at scrolling the screen); those are undone. */
+static bool s_slider_dragged;
+
+static int slider_setting(lv_obj_t *sld)
+{
+    return sld == s_sld_vol ? g_ui_settings.volume : g_ui_settings.brightness;
+}
+
 static void slider_cb(lv_event_t *e)
 {
     lv_obj_t *sld = lv_event_get_target(e);
     lv_event_code_t code = lv_event_get_code(e);
     int v = lv_slider_get_value(sld);
-    if (sld == s_sld_bri && code == LV_EVENT_VALUE_CHANGED) {
-        board_display_set_brightness(v);            /* live preview */
-    }
-    if (code == LV_EVENT_RELEASED) {
-        send_change_int(sld == s_sld_vol ? "volume" : "brightness", v);
+    switch (code) {
+    case LV_EVENT_PRESSED:
+        s_slider_dragged = false;
+        break;
+    case LV_EVENT_PRESSING:
+        if (lv_slider_is_dragged(sld)) {
+            s_slider_dragged = true;
+        }
+        break;
+    case LV_EVENT_VALUE_CHANGED:
+        if (sld == s_sld_bri && s_slider_dragged) {
+            board_display_set_brightness(v);        /* live preview */
+        }
+        break;
+    case LV_EVENT_RELEASED:
+    case LV_EVENT_PRESS_LOST:
+        if (code == LV_EVENT_RELEASED && s_slider_dragged && v != slider_setting(sld)) {
+            send_change_int(sld == s_sld_vol ? "volume" : "brightness", v);
+        } else {
+            lv_slider_set_value(sld, slider_setting(sld), LV_ANIM_OFF);
+            if (sld == s_sld_bri) {
+                board_display_set_brightness(g_ui_settings.brightness);
+            }
+        }
+        s_slider_dragged = false;
+        break;
+    default:
+        break;
     }
 }
 
-static void lang_cb(lv_event_t *e)
+static void lang_en_cb(lv_event_t *e)
 {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx < 0 || idx >= s_lang_count || idx >= SETTINGS_QUICK_LANG_MAX) {
-        return;
-    }
-    const char *lang = s_lang_built[idx].code;
-    if (!lang[0] || strcmp(lang, g_ui_settings.language) == 0 || !g_ui_cb.on_settings_change) {
+    if (strcmp(g_ui_settings.language, "en") == 0 || !g_ui_cb.on_settings_change) {
         return;
     }
     cJSON *c = cJSON_CreateObject();
-    cJSON_AddStringToObject(c, "language", lang);
+    cJSON_AddStringToObject(c, "language", "en");
     g_ui_cb.on_settings_change(c);
     cJSON_Delete(c);
+}
+
+static void lang_other_cb(lv_event_t *e)
+{
+    ui_lang_open();
 }
 
 static void theme_cb(lv_event_t *e)
@@ -141,19 +172,77 @@ static lv_obj_t *section_label(lv_obj_t *parent)
     return l;
 }
 
+#define SLIDER_H       44
+#define SHEEN_W        24
+
+/* A soft light band sweeping left→right across the green fill, so it reads as flowing liquid.
+ * It is clamped to the filled part; the slider clips it to the box. */
+static void sheen_anim_cb(void *var, int32_t t)
+{
+    lv_obj_t *sheen = var;
+    lv_obj_t *sld = lv_obj_get_parent(sheen);
+    int32_t min = lv_slider_get_min_value(sld);
+    int32_t max = lv_slider_get_max_value(sld);
+    int32_t fill = max > min ? lv_obj_get_width(sld) * (lv_slider_get_value(sld) - min) / (max - min) : 0;
+    int32_t x = t * (fill + SHEEN_W) / 1000 - SHEEN_W;
+    int32_t x0 = LV_MAX(x, 0);
+    int32_t x1 = LV_MIN(x + SHEEN_W, fill);
+    if (x1 <= x0) {
+        lv_obj_add_flag(sheen, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(sheen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(sheen, x0, 0);
+    lv_obj_set_width(sheen, x1 - x0);
+}
+
 static lv_obj_t *make_slider(lv_obj_t *parent, int min, int max)
 {
     lv_obj_t *s = lv_slider_create(parent);
     lv_obj_set_width(s, CONTENT_W - 30);
-    lv_obj_set_height(s, 14);
+    lv_obj_set_height(s, SLIDER_H);
     lv_slider_set_range(s, min, max);
-    lv_obj_add_style(s, ui_style_accent_bg(), LV_PART_INDICATOR);
-    lv_obj_add_style(s, ui_style_accent_bg(), LV_PART_KNOB);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x303642), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s, 6, LV_PART_KNOB);
-    lv_obj_set_ext_click_area(s, 16);
-    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_RELEASED, NULL);
+    /* the box */
+    lv_obj_set_style_radius(s, 12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s, lv_color_hex(0x1c2230), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s, lv_color_hex(0x303642), LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s, 0, LV_PART_MAIN);
+    lv_obj_set_style_clip_corner(s, true, LV_PART_MAIN);
+    /* the green liquid */
+    lv_obj_set_style_radius(s, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s, lv_color_hex(0x5ee0b0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_color(s, lv_color_hex(0x1a8f68), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_dir(s, LV_GRAD_DIR_VER, LV_PART_INDICATOR);
+    /* no knob: the fill edge is the handle */
+    lv_obj_set_style_bg_opa(s, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_shadow_width(s, 0, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(s, 0, LV_PART_KNOB);
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_ext_click_area(s, 8);
+    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_ALL, NULL);
+
+    lv_obj_t *sheen = lv_obj_create(s);
+    lv_obj_remove_style_all(sheen);
+    lv_obj_remove_flag(sheen, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(sheen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(sheen, SHEEN_W, LV_PCT(100));
+    lv_obj_set_style_bg_opa(sheen, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(sheen, lv_color_white(), 0);
+    lv_obj_set_style_bg_main_opa(sheen, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_grad_opa(sheen, LV_OPA_40, 0);
+    lv_obj_set_style_bg_grad_color(sheen, lv_color_white(), 0);
+    lv_obj_set_style_bg_grad_dir(sheen, LV_GRAD_DIR_HOR, 0);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, sheen);
+    lv_anim_set_exec_cb(&a, sheen_anim_cb);
+    lv_anim_set_values(&a, 0, 1000);
+    lv_anim_set_duration(&a, 1400);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&a);
     return s;
 }
 
@@ -224,6 +313,18 @@ static void build_settings(void)
     lv_obj_remove_flag(s_lang_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(s_lang_row, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(s_lang_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    s_btn_lang_en = make_pill_button(s_lang_row, "English", NULL);
+    lv_obj_set_width(s_btn_lang_en, 150);
+    lv_obj_add_flag(s_btn_lang_en, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(s_btn_lang_en, lang_en_cb, LV_EVENT_CLICKED, NULL);
+    s_btn_lang_other = make_pill_button(s_lang_row, "", &s_lbl_lang_other);
+    lv_obj_set_width(s_btn_lang_other, 150);
+    lv_obj_set_style_pad_hor(s_btn_lang_other, 12, 0);
+    lv_obj_set_width(s_lbl_lang_other, 126);
+    lv_obj_set_style_text_align(s_lbl_lang_other, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lbl_lang_other, LV_LABEL_LONG_DOT);
+    lv_obj_add_flag(s_btn_lang_other, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(s_btn_lang_other, lang_other_cb, LV_EVENT_CLICKED, NULL);
 
     s_lbl_theme = section_label(s_set_scr);
     lv_obj_t *theme_row = lv_obj_create(s_set_scr);
@@ -255,44 +356,20 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_btn_wifi, wifi_btn_cb, LV_EVENT_CLICKED, NULL);
 }
 
-static bool quick_langs_changed(void)
+/* Name of the active foreign language: the server's list, else quick_languages. */
+static const char *foreign_label(void)
 {
-    if (s_lang_built_count != g_ui_settings.quick_language_count) {
-        return true;
+    const char *lang = g_ui_settings.language;
+    if (strcmp(lang, "en") == 0 || strcmp(lang, "auto") == 0) {
+        return NULL;
     }
-    for (int i = 0; i < s_lang_built_count && i < SETTINGS_QUICK_LANG_MAX; i++) {
-        if (strcmp(s_lang_built[i].code, g_ui_settings.quick_languages[i].code) != 0 ||
-            strcmp(s_lang_built[i].label, g_ui_settings.quick_languages[i].label) != 0) {
-            return true;
+    const char *label = ui_lang_label(lang);
+    for (int i = 0; !label && i < g_ui_settings.quick_language_count && i < SETTINGS_QUICK_LANG_MAX; i++) {
+        if (strcmp(g_ui_settings.quick_languages[i].code, lang) == 0) {
+            label = g_ui_settings.quick_languages[i].label;
         }
     }
-    return false;
-}
-
-/* (Re)create one pill per quick_languages entry. */
-static void build_lang_pills(void)
-{
-    lv_obj_clean(s_lang_row);
-    memset(s_lang_btns, 0, sizeof(s_lang_btns));
-    int n = g_ui_settings.quick_language_count;
-    if (n > SETTINGS_QUICK_LANG_MAX) {
-        n = SETTINGS_QUICK_LANG_MAX;
-    }
-    memcpy(s_lang_built, g_ui_settings.quick_languages, sizeof(s_lang_built));
-    s_lang_built_count = g_ui_settings.quick_language_count;
-    s_lang_count = n;
-    for (int i = 0; i < n; i++) {
-        lv_obj_t *l;
-        lv_obj_t *b = make_pill_button(s_lang_row, s_lang_built[i].label, &l);
-        lv_obj_set_width(b, LV_SIZE_CONTENT);
-        lv_obj_set_style_min_width(b, 92, 0);
-        lv_obj_set_style_pad_hor(b, 16, 0);
-        lv_obj_set_style_max_width(l, CONTENT_W - 32, 0);
-        lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
-        lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
-        lv_obj_add_event_cb(b, lang_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        s_lang_btns[i] = b;
-    }
+    return label ? label : lang;
 }
 
 void ui_settings_refresh(void)
@@ -310,13 +387,10 @@ void ui_settings_refresh(void)
     lv_slider_set_value(s_sld_vol, g_ui_settings.volume, LV_ANIM_OFF);
     lv_slider_set_value(s_sld_bri, g_ui_settings.brightness, LV_ANIM_OFF);
 
-    if (quick_langs_changed()) {
-        build_lang_pills();
-    }
-    for (int i = 0; i < s_lang_count; i++) {
-        lv_obj_set_state(s_lang_btns[i], LV_STATE_CHECKED,
-                         strcmp(s_lang_built[i].code, g_ui_settings.language) == 0);
-    }
+    const char *foreign = foreign_label();
+    lv_label_set_text(s_lbl_lang_other, foreign ? foreign : ui_str(STR_OTHER));
+    lv_obj_set_state(s_btn_lang_en, LV_STATE_CHECKED, strcmp(g_ui_settings.language, "en") == 0);
+    lv_obj_set_state(s_btn_lang_other, LV_STATE_CHECKED, foreign != NULL);
 
     const char *const *names = settings_theme_preset_names();
     for (int i = 0; i < s_theme_count; i++) {
@@ -392,6 +466,11 @@ static void build_msg(void)
     lv_obj_remove_state(s_msg_btn, LV_STATE_CHECKED);
     lv_obj_add_style(s_msg_btn, ui_style_accent_bg(), 0);
     lv_obj_add_event_cb(s_msg_btn, msg_btn_cb, LV_EVENT_CLICKED, NULL);
+}
+
+bool ui_msg_is_active(void)
+{
+    return s_msg_scr && lv_screen_active() == s_msg_scr;
 }
 
 void ui_msg_refresh_theme(void)

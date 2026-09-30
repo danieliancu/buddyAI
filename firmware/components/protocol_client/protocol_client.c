@@ -65,6 +65,9 @@ typedef enum {
     MSG_TAP,
     MSG_SETTINGS_CHANGED,   /* str = JSON changes (owned) */
     MSG_OTA_STATUS,         /* a = state, b = pct */
+    MSG_END_CONVERSATION,   /* user left the conversation screen */
+    MSG_ITEM_OPEN,          /* a = number, b = 1 for a reminder */
+    MSG_ITEM_DELETE,        /* a = number, b = 1 for a reminder */
 } msg_type_t;
 
 typedef struct {
@@ -657,6 +660,28 @@ static void handle_text(const char *txt)
         on_error_msg(j, has_turn, turn);
         goto out;
     }
+    /* ---- notes / reminders (turn_id null) ---- */
+    if (strcmp(type, "items") == 0) {
+        emit(PROTO_EVT_ITEMS, 0, txt);
+        goto out;
+    }
+    if (strcmp(type, "languages") == 0) {
+        emit(PROTO_EVT_LANGUAGES, 0, txt);
+        goto out;
+    }
+    if (strcmp(type, "items_open") == 0) {
+        const char *kind = json_str(j, "kind");
+        emit(PROTO_EVT_ITEMS_OPEN, kind && strcmp(kind, "reminder") == 0, NULL);
+        goto out;
+    }
+    if (strcmp(type, "item_show") == 0) {
+        emit(PROTO_EVT_ITEM_SHOW, 0, txt);
+        goto out;
+    }
+    if (strcmp(type, "reminder_fire") == 0) {
+        emit(PROTO_EVT_REMINDER, 0, txt);
+        goto out;
+    }
 
     /* ---- turn messages ---- */
     if (strcmp(type, "turn_end") == 0) {
@@ -707,6 +732,11 @@ static void handle_text(const char *txt)
         const char *lang = json_str(j, "language");     /* optional, detected language */
         if (lang && lang[0]) {
             emit(PROTO_EVT_REPLY_LANGUAGE, 0, lang);
+        }
+    } else if (strcmp(type, "llm_display") == 0) {
+        const char *text = json_str(j, "text");
+        if (text && text[0]) {
+            emit(PROTO_EVT_REPLY_DISPLAY, 0, text);
         }
     } else if (strcmp(type, "llm_text") == 0) {
         const char *delta = json_str(j, "delta");
@@ -1103,6 +1133,12 @@ static void handle_msg(msg_t *m)
             finish_turn_idle();
         }
         break;
+    case MSG_END_CONVERSATION:
+        if (s_conv == PROTO_CONV_LISTENING) {
+            abort_turn("user_tap");
+            set_conv(PROTO_CONV_IDLE);
+        }
+        break;
     case MSG_TAP:
         handle_tap();
         break;
@@ -1132,6 +1168,15 @@ static void handle_msg(msg_t *m)
     }
     case MSG_OTA_STATUS:
         emit(PROTO_EVT_OTA, m->a == OTA_STATE_FAILED ? -1 : m->b, NULL);
+        break;
+    case MSG_ITEM_OPEN:
+    case MSG_ITEM_DELETE:
+        if (s_conn == CONN_SESSION) {
+            cJSON *msg = cJSON_CreateObject();
+            cJSON_AddStringToObject(msg, "kind", m->b ? "reminder" : "note");
+            cJSON_AddNumberToObject(msg, "number", m->a);
+            send_json(msg, m->type == MSG_ITEM_OPEN ? "item_open" : "item_delete", false, 0);
+        }
         break;
     }
     free(m->str);
@@ -1256,6 +1301,24 @@ void proto_settings_changed(const cJSON *changes)
     if (m.str) {
         post(&m);
     }
+}
+
+void proto_end_conversation(void)
+{
+    msg_t m = { .type = MSG_END_CONVERSATION };
+    post(&m);
+}
+
+void proto_item_open(bool reminder, int number)
+{
+    msg_t m = { .type = MSG_ITEM_OPEN, .a = (uint32_t)number, .b = reminder ? 1 : 0 };
+    post(&m);
+}
+
+void proto_item_delete(bool reminder, int number)
+{
+    msg_t m = { .type = MSG_ITEM_DELETE, .a = (uint32_t)number, .b = reminder ? 1 : 0 };
+    post(&m);
 }
 
 bool proto_session_ready(void)

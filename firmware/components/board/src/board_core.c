@@ -89,6 +89,7 @@ i2c_master_bus_handle_t board_i2c_bus(void)
 #define AXP_ICC_CHG             0x62
 #define AXP_ITERM_CHG           0x63
 #define AXP_CV_CHG              0x64
+#define AXP_BAT_DET_CTRL        0x68    /* b0 battery detection enable */
 #define AXP_BAT_PERCENT         0xA4
 
 #define AXP_PKEY_SHORT_BIT      (1 << 3)
@@ -109,6 +110,8 @@ static esp_err_t pmu_init(void)
     /* ADC: battery, VBUS, system voltage, die temperature. Fuel gauge on. */
     reg_update8(s_pmu, AXP_ADC_CTRL, 0x1D, 0x1D);
     reg_update8(s_pmu, AXP_GAUGE_CTRL, 0x08, 0x08);
+    /* Battery detection: without it STATUS1 never reports a battery and the gauge stays idle. */
+    reg_update8(s_pmu, AXP_BAT_DET_CTRL, 0x01, 0x01);
 
     /* PWRON short-press IRQ (polled, no IRQ GPIO needed). Clear stale status. */
     reg_update8(s_pmu, AXP_INTEN2, AXP_PKEY_SHORT_BIT, AXP_PKEY_SHORT_BIT);
@@ -140,6 +143,18 @@ esp_err_t board_power_get_status(board_power_status_t *out)
         if (reg_read(s_pmu, AXP_BAT_PERCENT, &pct, 1) == ESP_OK) {
             out->battery_pct = pct > 100 ? 100 : pct;
         }
+    } else if (out->battery_mv >= 3000 && out->battery_mv <= 4400) {
+        /* Detection not settled yet but a cell is clearly there: rough estimate from voltage. */
+        out->battery_present = true;
+        int pct = (out->battery_mv - 3300) * 100 / (4150 - 3300);
+        out->battery_pct = pct < 0 ? 0 : pct > 100 ? 100 : pct;
+    }
+    static int s_logged_present = -1;
+    if (s_logged_present != (int)out->battery_present) {
+        s_logged_present = out->battery_present;
+        ESP_LOGI(TAG, "battery: status 0x%02x 0x%02x, present %d, %d mV, %d%%, vbus %d, charging %d",
+                 st[0], st[1], out->battery_present, out->battery_mv, out->battery_pct, out->vbus_present,
+                 out->charging);
     }
     return ESP_OK;
 }

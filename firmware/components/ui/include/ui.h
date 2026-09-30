@@ -58,6 +58,11 @@ typedef struct {
     int  (*get_audio_level)(void);
     /* User confirmed the factory reset screen (ui_show_reset_confirm). */
     void (*on_factory_reset)(void);
+    /* Notes / reminders: open an item (server answers item_show) or delete it. */
+    void (*on_item_open)(bool reminder, int number);
+    void (*on_item_delete)(bool reminder, int number);
+    /* The user closed the conversation screen (X / swipe). */
+    void (*on_chat_closed)(void);
 } ui_callbacks_t;
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);
@@ -65,6 +70,12 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);
 void ui_apply_settings(const buddy_settings_t *s);
 void ui_show_watchface(void);
 void ui_set_conv_state(ui_conv_t st);
+/* Conversation screen (opens when a turn starts): this turn's transcript
+ * (partial or final, replaces the user bubble) and reply text as it streams. */
+void ui_chat_user(const char *text);
+void ui_chat_reply(const char *delta);
+/* Short answer value ("21°C"): the reply bubble shows only this, in large type. */
+void ui_chat_display(const char *text);
 void ui_caption_clear(void);
 void ui_caption_set(const char *text);
 void ui_caption_append(const char *delta);
@@ -82,6 +93,17 @@ void ui_show_ota(int pct);                  /* -1 = failed */
  * "Resetting..." screen shown while NVS is erased. */
 void ui_show_reset_confirm(void);
 void ui_show_resetting(void);
+
+/* Notes & reminders (PROTOCOL.md 3.3). Each takes the whole server message
+ * as JSON: `items` snapshot, `item_show`, `reminder_fire` (wakes the screen
+ * and keeps it on until closed or 60 s pass). */
+void ui_items_set(const char *json);
+void ui_item_show(const char *json);
+void ui_reminder_alert(const char *json);
+/* Open the notes (false) or reminders (true) list (`items_open`). */
+void ui_items_show_list(bool reminder);
+/* Every supported language (`languages` message), for the settings language picker. */
+void ui_languages_set(const char *json);
 
 /* Wake the screen (PWR key, incoming reply). */
 void ui_wake(void);

@@ -177,16 +177,15 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         break;
     case PROTO_EVT_TRANSCRIPT:
         if (!s_reply_started) {
-            ui_caption_set(ev->str);
+            ui_chat_user(ev->str);
         }
         break;
     case PROTO_EVT_REPLY_DELTA:
-        if (!s_reply_started) {
-            s_reply_started = true;
-            ui_caption_set(ev->str);
-        } else {
-            ui_caption_append(ev->str);
-        }
+        s_reply_started = true;
+        ui_chat_reply(ev->str);
+        break;
+    case PROTO_EVT_REPLY_DISPLAY:
+        ui_chat_display(ev->str);
         break;
     case PROTO_EVT_REPLY_LANGUAGE:
         ui_set_reply_language(ev->str);
@@ -230,6 +229,22 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_OTA:
         ui_show_ota(ev->num);
         break;
+    case PROTO_EVT_ITEMS:
+        ui_items_set(ev->str);
+        break;
+    case PROTO_EVT_LANGUAGES:
+        ui_languages_set(ev->str);
+        break;
+    case PROTO_EVT_ITEMS_OPEN:
+        ui_items_show_list(ev->num != 0);
+        break;
+    case PROTO_EVT_ITEM_SHOW:
+        ui_item_show(ev->str);
+        break;
+    case PROTO_EVT_REMINDER:
+        ui_reminder_alert(ev->str);
+        audio_beep();
+        break;
     }
 }
 
@@ -254,6 +269,21 @@ static void ui_retry(void)
 {
     s_server_error_shown = false;
     proto_reconnect();
+}
+
+static void ui_chat_closed(void)
+{
+    proto_end_conversation();
+}
+
+static void ui_item_open(bool reminder, int number)
+{
+    proto_item_open(reminder, number);
+}
+
+static void ui_item_delete(bool reminder, int number)
+{
+    proto_item_delete(reminder, number);
 }
 
 static void ui_factory_reset(void)
@@ -421,6 +451,9 @@ void app_main(void)
             .on_retry = ui_retry,
             .get_audio_level = ui_audio_level,
             .on_factory_reset = ui_factory_reset,
+            .on_item_open = ui_item_open,
+            .on_item_delete = ui_item_delete,
+            .on_chat_closed = ui_chat_closed,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
     }

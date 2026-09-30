@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from openai import AsyncOpenAI, OpenAIError
 
 from app.providers.base import ProviderError
-from app.providers.llm.base import LLMChunk, LLMProvider, LLMRequest
+from app.providers.llm.base import LLMChunk, LLMProvider, LLMRequest, ToolCallAccumulator, chat_tools
 
 
 class QwenLLM(LLMProvider):
@@ -24,6 +24,9 @@ class QwenLLM(LLMProvider):
         extra_body = {}
         if "enable_thinking" in params:
             extra_body["enable_thinking"] = params.pop("enable_thinking")
+        tools = chat_tools(request.tools)
+        if tools:
+            params["tools"] = tools
         try:
             stream = await self._client.chat.completions.create(
                 model=request.model,
@@ -34,10 +37,12 @@ class QwenLLM(LLMProvider):
                 extra_body=extra_body or None,
                 **params,
             )
+            calls = ToolCallAccumulator()
             async for event in stream:
                 delta = ""
                 if event.choices:
                     delta = event.choices[0].delta.content or ""
+                    calls.feed(getattr(event.choices[0].delta, "tool_calls", None))
                 if delta:
                     yield LLMChunk(delta=delta)
                 if event.usage:
@@ -45,5 +50,8 @@ class QwenLLM(LLMProvider):
                         input_tokens=event.usage.prompt_tokens,
                         output_tokens=event.usage.completion_tokens,
                     )
+            tool_calls = calls.result()
+            if tool_calls:
+                yield LLMChunk(tool_calls=tool_calls)
         except OpenAIError as exc:
             raise ProviderError("llm", str(exc)) from exc

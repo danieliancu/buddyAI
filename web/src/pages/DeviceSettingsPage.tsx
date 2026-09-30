@@ -22,7 +22,7 @@ import { primeLanguages } from "../languages";
 import WatchHeader from "./my/WatchHeader";
 import { Button, Card, ErrorBox, Field, Input, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
-const TIMEZONES = [
+const COMMON_TIMEZONES = [
   "Europe/Bucharest",
   "Europe/Chisinau",
   "Europe/London",
@@ -47,6 +47,44 @@ const TIMEZONES = [
   "Australia/Sydney",
   "UTC",
 ];
+
+/** Every IANA zone the browser knows, grouped by region (falls back to the common list). */
+function allTimezones(): string[] {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return COMMON_TIMEZONES;
+  }
+}
+
+/** "UTC+03:00" for a zone, right now (so summer time shows as it is today). */
+function utcOffset(zone: string): string {
+  try {
+    const name = new Intl.DateTimeFormat("en-GB", { timeZone: zone, timeZoneName: "longOffset" })
+      .formatToParts(new Date())
+      .find((p) => p.type === "timeZoneName")?.value;
+    return !name || name === "GMT" ? "UTC+00:00" : name.replace("GMT", "UTC");
+  } catch {
+    return "";
+  }
+}
+
+function tzLabel(zone: string): string {
+  const off = utcOffset(zone);
+  const city = zone.includes("/") ? zone.slice(zone.indexOf("/") + 1).replace(/_/g, " ").replace(/\//g, " / ") : zone;
+  return off ? `${city} (${off})` : city;
+}
+
+const TZ_GROUPS: [string, string[]][] = (() => {
+  const groups = new Map<string, string[]>();
+  for (const z of allTimezones()) {
+    if (!z.includes("/")) continue;
+    const region = z.slice(0, z.indexOf("/"));
+    if (region === "Etc") continue;
+    (groups.get(region) ?? groups.set(region, []).get(region)!).push(z);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+})();
 
 const THEME_KEYS = ["accent", "background", "clock", "text"] as const;
 const COLOR_LABEL: Record<(typeof THEME_KEYS)[number], string> = {
@@ -254,7 +292,6 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
   const languages: LanguageInfo[] = Array.isArray(options.languages) ? options.languages : [];
   const langInfo = (code: string | null | undefined) => languages.find((l) => l.code === code);
   const selectedLang = draft.language === "auto" ? null : langInfo(draft.language);
-  const preferredLang = langInfo(draft.preferred_language);
   // Language used for the "Play sample" button: the fixed language, else the preferred one, else English.
   const sampleLang = draft.language !== "auto" ? draft.language : draft.preferred_language || "en";
   const sampleLangName = langInfo(sampleLang)?.name ?? sampleLang.toUpperCase();
@@ -320,24 +357,15 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                 <LanguagePicker
                   ariaLabel="Language"
                   value={draft.language}
-                  onChange={(v) => set("language", v ?? "auto")}
+                  onChange={(v) => {
+                    const lang = v ?? "auto";
+                    set("language", lang);
+                    // The preferred language (quick settings, "auto" fallback) follows the chosen one.
+                    if (lang !== "auto") set("preferred_language", lang);
+                  }}
                   languages={languages}
                   autoLabel="Auto — reply in the language you speak"
                   invalid={!!err("language")}
-                />
-              </Field>
-              <Field
-                label="Preferred language"
-                error={err("preferred_language")}
-                hint={<CaptionsNote lang={preferredLang} fallback="Shown on the watch's quick settings" />}
-              >
-                <LanguagePicker
-                  ariaLabel="Preferred language"
-                  value={draft.preferred_language}
-                  onChange={(v) => set("preferred_language", v)}
-                  languages={languages}
-                  noneLabel="None"
-                  invalid={!!err("preferred_language")}
                 />
               </Field>
               <Field
@@ -438,6 +466,9 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
               <Field label={customer ? "Speaking speed" : "Speech rate"} error={err("speech_rate")}>
                 <Slider value={draft.speech_rate} min={0.5} max={2} step={0.05} onChange={(v) => set("speech_rate", v)} format={(v) => `${v.toFixed(2)}×`} />
               </Field>
+              <Field label="Wait for speech" error={err("wait_for_speech_s")} hint="How long the mic waits for the first word. Silence is free: nothing is sent for transcription until you speak">
+                <Slider value={draft.wait_for_speech_s} min={5} max={60} onChange={(v) => set("wait_for_speech_s", v)} format={(v) => `${v} s`} />
+              </Field>
               {!customer && (
               <>
               <Field label="Max reply length" error={err("max_reply_chars")}>
@@ -446,7 +477,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
               <Field label="History turns" error={err("history_turns")} hint="Previous turns sent to the AI as context">
                 <Slider value={draft.history_turns} min={0} max={30} onChange={(v) => set("history_turns", v)} format={(v) => `${v} turns`} />
               </Field>
-              <Field label="Max listening time" error={err("max_listen_s")}>
+              <Field label="Max listening time" error={err("max_listen_s")} hint="Longest question, from the first word">
                 <Slider value={draft.max_listen_s} min={3} max={60} onChange={(v) => set("max_listen_s", v)} format={(v) => `${v} s`} />
               </Field>
               <Field label="Web search" error={err("web_search")} hint="Weather, news, addresses, opening hours… Each search costs about 1p">
@@ -469,18 +500,18 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                       type="button"
                       onClick={() => pickPreset(name)}
                       className={cx(
-                        "flex items-center gap-2 rounded-full border py-1 pr-3 pl-1 text-sm transition",
+                        "flex h-6 items-center gap-1.5 rounded-full border pr-2.5 pl-0.5 text-xs transition",
                         draft.theme.preset === name ? "border-accent bg-accent-bg" : "border-border hover:bg-surface-2",
                       )}
                     >
-                      <span className="relative size-6 overflow-hidden rounded-full border border-border" style={{ background: c.background }}>
-                        <span className="absolute inset-1.5 rounded-full" style={{ background: c.accent }} />
+                      <span className="relative size-4.5 overflow-hidden rounded-full border border-border" style={{ background: c.background }}>
+                        <span className="absolute inset-1 rounded-full" style={{ background: c.accent }} />
                       </span>
                       {PRESET_LABEL[name] ?? name}
                     </button>
                   ))}
                   {!(draft.theme.preset in options.theme_presets) && (
-                    <span className="flex items-center rounded-full border border-accent bg-accent-bg px-3 py-1 text-sm">
+                    <span className="flex h-6 items-center rounded-full border border-accent bg-accent-bg px-2.5 text-xs">
                       {PRESET_LABEL[draft.theme.preset] ?? draft.theme.preset}
                     </span>
                   )}
@@ -494,14 +525,14 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                         type="color"
                         value={/^#[0-9a-f]{6}$/i.test(draft.theme[k]) ? draft.theme[k].toLowerCase() : "#000000"}
                         onChange={(e) => setColor(k, e.target.value)}
-                        className="size-10 shrink-0"
+                        className="h-6 w-8 shrink-0"
                         aria-label={COLOR_LABEL[k]}
                       />
                       <Input
                         value={draft.theme[k]}
                         maxLength={7}
                         onChange={(e) => setColor(k, e.target.value)}
-                        className="h-10 min-w-0 px-2 font-mono text-xs uppercase"
+                        className="h-6! min-w-0 px-2 font-mono text-xs uppercase"
                         aria-label={`${COLOR_LABEL[k]} hex`}
                       />
                     </div>
@@ -519,12 +550,27 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                   <Slider value={draft.screen_timeout_s} min={5} max={300} step={5} onChange={(v) => set("screen_timeout_s", v)} format={(v) => `${v} s`} />
                 </Field>
                 <Field label="Time zone" error={err("timezone")}>
-                  <Input list="tz-list" value={draft.timezone} onChange={(e) => set("timezone", e.target.value.trim())} placeholder="Europe/Bucharest" />
-                  <datalist id="tz-list">
-                    {TIMEZONES.map((z) => (
-                      <option key={z} value={z} />
+                  <Select value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} className="h-6! py-0 text-xs">
+                    {![...COMMON_TIMEZONES, ...TZ_GROUPS.flatMap(([, z]) => z)].includes(draft.timezone) && (
+                      <option value={draft.timezone}>{draft.timezone}</option>
+                    )}
+                    <optgroup label="Common">
+                      {COMMON_TIMEZONES.map((z) => (
+                        <option key={z} value={z}>
+                          {z === "UTC" ? "UTC" : `${z.split("/")[0]} · ${tzLabel(z)}`}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {TZ_GROUPS.map(([region, zones]) => (
+                      <optgroup key={region} label={region}>
+                        {zones.map((z) => (
+                          <option key={`${region}-${z}`} value={z}>
+                            {tzLabel(z)}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
-                  </datalist>
+                  </Select>
                 </Field>
                 <div className="sm:col-span-2">
                   <Toggle checked={draft.time_24h} onChange={(v) => set("time_24h", v)} label="24-hour clock" />
@@ -676,8 +722,8 @@ function VoiceOverrides({
             const e = err(`tts_voice_overrides.${code}`);
             return (
               <div key={code} className="flex flex-col gap-1">
-                <div className="flex flex-wrap items-start gap-2">
-                  <span className="flex h-10 w-32 items-center truncate text-sm" title={code}>
+                <div className="flex items-start gap-1.5 sm:gap-2">
+                  <span className="flex h-10 w-20 shrink-0 items-center truncate text-sm sm:w-32" title={name(code)}>
                     {name(code)}
                   </span>
                   <Select
@@ -693,7 +739,7 @@ function VoiceOverrides({
                       </option>
                     ))}
                   </Select>
-                  <VoiceSampleButton voice={voice} language={code} label="Play" />
+                  <VoiceSampleButton voice={voice} language={code} label="Play" compact />
                   <Button variant="ghost" icon={<X className="size-4" />} aria-label={`Remove ${name(code)}`} onClick={() => remove(code)} />
                 </div>
                 {e && <p className="text-xs text-danger">{e}</p>}

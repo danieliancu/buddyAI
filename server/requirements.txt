@@ -9,6 +9,7 @@ numpy==2.4.6
 openai==3.19.2
 psycopg[binary]==3.3.6
 pydantic-settings==2.15.0
+pylatexenc==2.11
 stripe==15.6.1
 onnxruntime==1.30.0
 python-multipart==0.0.32

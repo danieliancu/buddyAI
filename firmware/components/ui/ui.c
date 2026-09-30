@@ -22,14 +22,24 @@ ui_callbacks_t   g_ui_cb;
 #define RING_BASE_SIZE      170
 #define SPINNER_SIZE        186
 #define NUM_BARS            5
-#define DIM_BRIGHTNESS      8       /* % while dimmed */
-#define OFF_AFTER_DIM_MS    60000   /* panel off this long after dimming */
+#define DIM_BRIGHTNESS      30      /* % while dimmed */
 #define CAPTION_MAX         600
 #define CAPTION_SHOW        110     /* code points, ~3 lines at 20 px on 350 px */
 #define CAPTION_W           350
 #define CAPTION_H           78
 #define CAPTION_LINE_SPACE  (-3)    /* Noto Sans 20 px: 28 px line -> 25 px pitch, 3 lines fit */
 #define DATE_MAX_W          380     /* longer dates drop the weekday */
+#define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
+#define STATUS_HINT_W       170
+#define SHORTCUT_W          62      /* notes / reminders / settings icons */
+#define SHORTCUT_H          62
+#define SHORTCUT_GAP        22
+#define DIVIDER_W           300     /* faded lines above and below the icon row */
+#define DIVIDER_GAP         10      /* between the icon row and each line */
+#define DIVIDER_FADE_W      60      /* the line fades out over its last 60 px at each end */
+#define DIVIDER_OPA         LV_OPA_80
+/* Centered vertically between the date line (ends ~y 185) and the mic button (starts at y 308). */
+#define SHORTCUT_Y          ((185 + 308) / 2 - SHORTCUT_H / 2)
 
 typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_state_t;
 
@@ -38,9 +48,14 @@ static lv_obj_t *s_scr;
 static lv_obj_t *s_content;
 static lv_obj_t *s_lbl_wifi;
 static lv_obj_t *s_lbl_batt;
-static lv_obj_t *s_lbl_time;
+static lv_obj_t *s_time_box;            /* clock: hours | colon | minutes, colon pinned in place */
+static lv_obj_t *s_time_hours;
+static lv_obj_t *s_time_minutes;
 static lv_obj_t *s_lbl_date;
 static lv_obj_t *s_lbl_hint;
+static lv_obj_t *s_shortcuts;
+enum { SHORTCUT_NOTES, SHORTCUT_REMINDERS, SHORTCUT_SETTINGS };
+static lv_obj_t *s_shortcut_badge[2];   /* [SHORTCUT_NOTES], [SHORTCUT_REMINDERS] (active ones) */
 static lv_obj_t *s_lbl_caption;
 static lv_obj_t *s_btn_mic;
 static lv_obj_t *s_lbl_mic;
@@ -53,10 +68,13 @@ static lv_style_t s_st_screen;
 static lv_style_t s_st_clock;
 static lv_style_t s_st_accent_bg;
 static lv_style_t s_st_accent_border;
+static lv_style_t s_st_accent_text;
+static lv_style_t s_st_divider;         /* faded lines around the watchface icons */
 
 static ui_conv_t     s_conv = UI_CONV_IDLE;
 static power_state_t s_power = POWER_ON;
 static bool          s_swallow_click;
+static bool          s_hold_awake;      /* reminder alert on screen */
 static int           s_last_min = -1;
 static int           s_shift_idx;
 static int           s_level_smooth;
@@ -103,6 +121,19 @@ void ui_note_activity(void)
     }
 }
 
+bool ui_screen_awake(void)
+{
+    return s_power == POWER_ON;
+}
+
+void ui_hold_awake(bool hold)
+{
+    s_hold_awake = hold;
+    if (hold) {
+        ui_note_activity();
+    }
+}
+
 bool ui_consume_wake_tap(void)
 {
     bool s = s_swallow_click;
@@ -132,6 +163,19 @@ static void apply_brightness(void)
 /* Watchface content                                                          */
 /* ------------------------------------------------------------------------- */
 
+/* "12:34" / "9:05" / "--:--": hours right of their box, minutes left of theirs. */
+static void set_time_text(const char *t)
+{
+    const char *colon = strchr(t, ':');
+    char hours[4] = "";
+    if (colon && colon - t < (ptrdiff_t)sizeof(hours)) {
+        memcpy(hours, t, (size_t)(colon - t));
+        hours[colon - t] = '\0';
+    }
+    lv_label_set_text(s_time_hours, hours);
+    lv_label_set_text(s_time_minutes, colon ? colon + 1 : "");
+}
+
 static void update_clock(bool force)
 {
     time_t now = time(NULL);
@@ -146,7 +190,7 @@ static void update_clock(bool force)
 
     char buf[48];
     if (!valid) {
-        lv_label_set_text(s_lbl_time, "--:--");
+        set_time_text("--:--");
         lv_label_set_text(s_lbl_date, "");
         return;
     }
@@ -156,7 +200,7 @@ static void update_clock(bool force)
         int h = tm.tm_hour % 12;
         snprintf(buf, sizeof(buf), "%d:%02d", h == 0 ? 12 : h, tm.tm_min);
     }
-    lv_label_set_text(s_lbl_time, buf);
+    set_time_text(buf);
     /* "Monday, 28 September" / "Montag, 28. September"; drop the weekday if too wide. */
     char date[64];
     ui_format_date(date, sizeof(date), tm.tm_wday, tm.tm_mday, tm.tm_mon, true);
@@ -386,6 +430,7 @@ static void anim_timer_cb(lv_timer_t *t)
     int level = g_ui_cb.get_audio_level ? g_ui_cb.get_audio_level() : 0;
     s_level_smooth = (s_level_smooth * 3 + level) / 4;
     s_anim_phase += 1;
+    ui_chat_anim(s_level_smooth, s_anim_phase);
 
     if (s_conv == UI_CONV_LISTENING) {
         /* Gentle idle pulse + level-driven growth. */
@@ -409,17 +454,25 @@ static void power_timer_cb(lv_timer_t *t)
 {
     uint32_t inactive = lv_display_get_inactive_time(s_disp);
     uint32_t timeout = (uint32_t)g_ui_settings.screen_timeout_s * 1000;
-    bool busy = s_conv != UI_CONV_IDLE;
+    bool busy = s_conv != UI_CONV_IDLE || s_hold_awake;
     power_state_t want;
     if (busy || inactive < timeout) {
         want = POWER_ON;
-    } else if (inactive < timeout + OFF_AFTER_DIM_MS) {
-        want = POWER_DIM;
     } else {
-        want = POWER_OFF;
+        want = POWER_DIM;           /* stays dimmed: the panel never switches off on its own */
     }
     if (want != s_power) {
         ESP_LOGD(TAG, "screen power %d -> %d", s_power, want);
+        if (want == POWER_DIM && s_conv == UI_CONV_IDLE && s_caption[0]) {
+            s_caption[0] = '\0';        /* the last reply clears when the screen dims */
+            show_caption();
+        }
+        /* The dimmed screen stays on: only the watchface has burn-in pixel shift, so lists and
+         * settings give way to it. The chat and message screens (pairing code...) stay until the
+         * user leaves them. */
+        if (want == POWER_DIM && !ui_is_watchface() && !ui_msg_is_active() && !ui_chat_is_active()) {
+            ui_go_watchface();
+        }
         s_power = want;
         apply_brightness();
     }
@@ -450,6 +503,97 @@ static void mic_event_cb(lv_event_t *e)
     }
 }
 
+static void shortcut_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        s_swallow_click = (s_power != POWER_ON);     /* a tap on a dim screen only wakes it */
+    } else if (code == LV_EVENT_CLICKED && !ui_consume_wake_tap() && s_conv == UI_CONV_IDLE) {
+        int which = (int)(intptr_t)lv_event_get_user_data(e);
+        if (which == SHORTCUT_SETTINGS) {
+            ui_settings_open();
+        } else {
+            ui_items_open(which == SHORTCUT_REMINDERS);
+        }
+    }
+}
+
+static lv_obj_t *add_shortcut(lv_obj_t *parent, const char *icon, int which)
+{
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_set_size(b, SHORTCUT_W, SHORTCUT_H);
+    lv_obj_set_ext_click_area(b, 6);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_style(b, &s_st_accent_text, LV_STATE_PRESSED);     /* text color inherits to the icon */
+    lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)which);
+    lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)which);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &buddy_font_shortcut, 0);
+    lv_obj_set_style_text_opa(l, LV_OPA_80, 0);
+    lv_label_set_text(l, icon);
+    lv_obj_center(l);
+
+    /* Count in the top-right corner, positioned on its own so the icon never moves. */
+    lv_obj_t *badge = lv_label_create(b);
+    lv_obj_set_style_text_font(badge, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(badge, lv_color_white(), 0);
+    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(badge, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_min_width(badge, 20, 0);                   /* round for 1 digit, pill for more */
+    lv_obj_set_style_pad_hor(badge, 5, 0);
+    lv_obj_set_style_pad_ver(badge, 2, 0);
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(badge, "");
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, 0, 0);
+    if (which == SHORTCUT_SETTINGS) {
+        lv_obj_delete(badge);   /* no counter on the gear */
+    } else {
+        s_shortcut_badge[which] = badge;
+    }
+    return b;
+}
+
+void ui_shortcut_counts(int notes, int reminders)
+{
+    const int counts[2] = { notes, reminders };
+    for (int i = 0; i < 2; i++) {
+        if (!s_shortcut_badge[i]) {
+            continue;
+        }
+        if (counts[i] > 0) {
+            lv_label_set_text_fmt(s_shortcut_badge[i], "%d", counts[i]);
+            lv_obj_remove_flag(s_shortcut_badge[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_shortcut_badge[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+/* A 1 px horizontal line that fades out towards both ends (two halves: gradients have 2 stops). */
+static void add_faded_line(lv_obj_t *parent, int32_t y)
+{
+    /* fade in | solid middle | fade out */
+    const int32_t solid = DIVIDER_W - 2 * DIVIDER_FADE_W;
+    const int32_t widths[3] = { DIVIDER_FADE_W, solid, DIVIDER_FADE_W };
+    const lv_opa_t from[3] = { LV_OPA_TRANSP, DIVIDER_OPA, DIVIDER_OPA };
+    const lv_opa_t to[3] = { DIVIDER_OPA, DIVIDER_OPA, LV_OPA_TRANSP };
+    int32_t x = -DIVIDER_W / 2;
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *l = lv_obj_create(parent);
+        lv_obj_remove_style_all(l);
+        lv_obj_set_size(l, widths[i], 1);
+        lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_style(l, &s_st_divider, 0);
+        lv_obj_set_style_bg_main_opa(l, from[i], 0);
+        lv_obj_set_style_bg_grad_opa(l, to[i], 0);
+        lv_obj_align(l, LV_ALIGN_TOP_MID, x + widths[i] / 2, y);
+        x += widths[i];
+    }
+}
+
 static void screen_gesture_cb(lv_event_t *e)
 {
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
@@ -469,6 +613,8 @@ static void theme_styles_init(void)
     lv_style_init(&s_st_clock);
     lv_style_init(&s_st_accent_bg);
     lv_style_init(&s_st_accent_border);
+    lv_style_init(&s_st_accent_text);
+    lv_style_init(&s_st_divider);
 }
 
 static void theme_styles_apply(void)
@@ -482,6 +628,11 @@ static void theme_styles_apply(void)
     lv_style_set_bg_opa(&s_st_accent_bg, LV_OPA_COVER);
     lv_style_set_border_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_arc_color(&s_st_accent_border, g_ui_theme.accent);
+    lv_style_set_text_color(&s_st_accent_text, g_ui_theme.accent);
+    lv_style_set_bg_opa(&s_st_divider, LV_OPA_COVER);
+    lv_style_set_bg_color(&s_st_divider, g_ui_theme.text);
+    lv_style_set_bg_grad_color(&s_st_divider, g_ui_theme.text);
+    lv_style_set_bg_grad_dir(&s_st_divider, LV_GRAD_DIR_HOR);
     lv_obj_report_style_change(NULL);
 }
 
@@ -494,6 +645,11 @@ lv_style_t *ui_style_screen(void)
 lv_style_t *ui_style_accent_bg(void)
 {
     return &s_st_accent_bg;
+}
+
+lv_style_t *ui_style_accent_border(void)
+{
+    return &s_st_accent_border;
 }
 
 static void build_watchface(void)
@@ -509,21 +665,62 @@ static void build_watchface(void)
     lv_obj_remove_flag(s_content, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(s_content, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    /* Status row: Wi-Fi + battery */
-    s_lbl_wifi = lv_label_create(s_content);
-    lv_label_set_text(s_lbl_wifi, ICON_WIFI);
-    lv_obj_align(s_lbl_wifi, LV_ALIGN_TOP_MID, -70, 20);
+    /* Status row at the top, fixed slots so nothing moves when one is empty:
+     * Wi-Fi (left) | hint, e.g. "Connecting…" (middle) | battery (right). */
+    lv_obj_t *status = lv_obj_create(s_content);
+    lv_obj_remove_style_all(status);
+    lv_obj_set_size(status, STATUS_W, 30);
+    lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(status, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_align(status, LV_ALIGN_TOP_MID, 0, 18);
 
-    s_lbl_batt = lv_label_create(s_content);
+    s_lbl_wifi = lv_label_create(status);
+    lv_label_set_text(s_lbl_wifi, ICON_WIFI);
+    lv_obj_align(s_lbl_wifi, LV_ALIGN_LEFT_MID, 0, 0);
+
+    s_lbl_hint = lv_label_create(status);
+    lv_obj_set_width(s_lbl_hint, STATUS_HINT_W);
+    lv_label_set_long_mode(s_lbl_hint, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_lbl_hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_opa(s_lbl_hint, LV_OPA_70, 0);
+    lv_label_set_text(s_lbl_hint, "");
+    lv_obj_align(s_lbl_hint, LV_ALIGN_CENTER, 0, 0);
+
+    s_lbl_batt = lv_label_create(status);
     lv_label_set_text(s_lbl_batt, "");
-    lv_obj_align(s_lbl_batt, LV_ALIGN_TOP_MID, 40, 20);
+    lv_obj_align(s_lbl_batt, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* Time */
-    s_lbl_time = lv_label_create(s_content);
-    lv_obj_add_style(s_lbl_time, &s_st_clock, 0);
-    lv_obj_set_style_text_font(s_lbl_time, &buddy_font_clock, 0);
-    lv_label_set_text(s_lbl_time, "--:--");
-    lv_obj_align(s_lbl_time, LV_ALIGN_TOP_MID, 0, 58);
+    s_time_box = lv_obj_create(s_content);
+    lv_obj_remove_style_all(s_time_box);
+    lv_obj_set_size(s_time_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_remove_flag(s_time_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_time_box, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_flex_flow(s_time_box, LV_FLEX_FLOW_ROW);
+    lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, 58);
+    /* The colon stays in the middle: hours are right-aligned against it, minutes left-aligned,
+     * each in a box two widest digits wide. Digits keep their natural spacing (a "1" gets no
+     * gap) and a change of minutes never moves the hours or the colon. */
+    int32_t digit_w = 0;
+    for (uint32_t c = '0'; c <= '9'; c++) {
+        int32_t w = lv_font_get_glyph_width(&buddy_font_clock, c, 0);
+        digit_w = w > digit_w ? w : digit_w;
+    }
+    lv_obj_t *parts[3];
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *l = lv_label_create(s_time_box);
+        lv_obj_add_style(l, &s_st_clock, 0);
+        lv_obj_set_style_text_font(l, &buddy_font_clock, 0);
+        if (i != 1) {
+            lv_obj_set_width(l, 2 * digit_w);
+            lv_obj_set_style_text_align(l, i == 0 ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT, 0);
+        }
+        parts[i] = l;
+    }
+    lv_label_set_text(parts[1], ":");
+    s_time_hours = parts[0];
+    s_time_minutes = parts[2];
+    set_time_text("--:--");
 
     /* Date */
     s_lbl_date = lv_label_create(s_content);
@@ -531,11 +728,21 @@ static void build_watchface(void)
     lv_label_set_text(s_lbl_date, "");
     lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 146);  /* Noto Sans: taller line box, same baseline */
 
-    /* Hint line (connection state, listening / thinking) */
-    s_lbl_hint = lv_label_create(s_content);
-    lv_obj_set_style_text_opa(s_lbl_hint, LV_OPA_70, 0);
-    lv_label_set_text(s_lbl_hint, "");
-    lv_obj_align(s_lbl_hint, LV_ALIGN_TOP_MID, 0, 192);
+    /* Notes / reminders shortcuts: a centered row between the date and the mic */
+    s_shortcuts = lv_obj_create(s_content);
+    lv_obj_remove_style_all(s_shortcuts);
+    lv_obj_set_size(s_shortcuts, SHORTCUT_W * 3 + SHORTCUT_GAP * 2, SHORTCUT_H);
+    lv_obj_remove_flag(s_shortcuts, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_shortcuts, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_flex_flow(s_shortcuts, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(s_shortcuts, SHORTCUT_GAP, 0);
+    lv_obj_align(s_shortcuts, LV_ALIGN_TOP_MID, 0, SHORTCUT_Y);
+    add_shortcut(s_shortcuts, ICON_PEN, SHORTCUT_NOTES);
+    add_shortcut(s_shortcuts, ICON_CALENDAR, SHORTCUT_REMINDERS);
+    add_shortcut(s_shortcuts, ICON_SETTINGS, SHORTCUT_SETTINGS);
+    add_faded_line(s_content, SHORTCUT_Y - DIVIDER_GAP);
+    add_faded_line(s_content, SHORTCUT_Y + SHORTCUT_H + DIVIDER_GAP);
+
 
     /* Caption (transcript / reply) */
     s_lbl_caption = lv_label_create(s_content);
@@ -631,6 +838,9 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     theme_styles_apply();
     build_watchface();
     ui_screens_init();
+    ui_items_init();
+    ui_chat_init();
+    ui_lang_init();
     update_clock(true);
     update_status();
     lv_screen_load(s_scr);
@@ -664,6 +874,8 @@ void ui_apply_settings(const buddy_settings_t *s)
     update_hint();
     ui_settings_refresh();
     ui_msg_refresh_theme();
+    ui_items_refresh_theme();
+    ui_chat_refresh_theme();
     if (s_power == POWER_ON) {
         board_display_set_brightness(s->brightness);
     }
@@ -705,8 +917,8 @@ void ui_set_conv_state(ui_conv_t st)
             show_caption();
         }
         s_conv = st;
+        ui_chat_set_state(st);      /* a turn opens the conversation screen */
         if (st != UI_CONV_IDLE) {
-            ui_go_watchface();
             ui_note_activity();
             if (s_power != POWER_ON) {
                 s_power = POWER_ON;

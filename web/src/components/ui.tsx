@@ -170,18 +170,21 @@ export function Slider({
   format?: (v: number) => string;
   id?: string;
 }) {
+  const pct = max > min ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0;
   return (
     <div className="flex items-center gap-3">
-      <input
-        id={id}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-2 w-full cursor-pointer"
-      />
+      <div className="liquid w-full">
+        <div className="liquid-fill" style={{ width: `${pct}%` }} />
+        <input
+          id={id}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+      </div>
       <span className="tabular w-16 shrink-0 text-right text-sm">{format ? format(value) : value}</span>
     </div>
   );

@@ -21,6 +21,10 @@ extern lv_font_t buddy_font_28;
 extern lv_font_t buddy_font_clock;
 extern lv_font_t buddy_font_code;
 extern lv_font_t buddy_font_icon;
+extern lv_font_t buddy_font_shortcut;
+extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° µ € (short answers) */
+/* buddy_font_20 / _28 / _big fall back to buddy_math_20 / _28 / _56 for maths and science
+ * symbols (x² H₂O √ π ≤ ≠ ∞ ∑ ∫ → ℃ Ω ⅓...); see tools/gen_fonts.ps1. */  /* FontAwesome 5, 34 px: pen + calendar only */
 
 /* ---- FontAwesome 5 glyphs (UTF-8) present in the fonts above ---- */
 #define ICON_WIFI           "\xEF\x87\xAB"  /* U+F1EB */
@@ -44,6 +48,9 @@ extern lv_font_t buddy_font_icon;
 #define ICON_MIC            "\xEF\x84\xB0"  /* U+F130 */
 #define ICON_LEFT           "\xEF\x81\x93"  /* U+F053 */
 #define ICON_RIGHT          "\xEF\x81\x94"  /* U+F054 */
+#define ICON_PEN            "\xEF\x8C\x84"  /* U+F304 */
+#define ICON_CALENDAR       "\xEF\x81\xB3"  /* U+F073 calendar-alt */
+/* ICON_SETTINGS (U+F013) is also in buddy_font_shortcut (watchface gear). */
 
 /* ---- strings ---- */
 typedef enum {
@@ -93,6 +100,21 @@ typedef enum {
     STR_LISTENING,
     STR_THINKING,
     STR_TAP_TO_TALK,
+    STR_NOTES,
+    STR_REMINDERS,
+    STR_NOTE,
+    STR_REMINDER,
+    STR_OVERDUE,
+    STR_NO_NOTES,
+    STR_NO_REMINDERS,
+    STR_LOADING,
+    STR_DELETE,
+    STR_DELETE_CONFIRM,
+    STR_OTHER,
+    STR_SEARCH,
+    STR_NO_MATCH,
+    STR_TODAY,
+    STR_TOMORROW,
     STR__COUNT,
 } ui_str_t;
 
@@ -126,12 +148,35 @@ void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, con
                  const char *code, const char *button, void (*button_cb)(void),
                  bool dismissable, uint32_t auto_close_ms);
 void ui_msg_refresh_theme(void);
+bool ui_msg_is_active(void);           /* pairing / Wi-Fi setup / error / OTA screen on display */
 void ui_go_watchface(void);
 
 /* ---- core (ui.c) ---- */
 lv_obj_t *ui_watch_screen(void);
 lv_style_t *ui_style_screen(void);
 lv_style_t *ui_style_accent_bg(void);
+lv_style_t *ui_style_accent_border(void);  /* border + arc in the accent color */
 void      ui_load_screen(lv_obj_t *scr, bool to_left);
 void      ui_note_activity(void);
 bool      ui_consume_wake_tap(void);
+bool      ui_screen_awake(void);        /* false while dimmed or off */
+void      ui_hold_awake(bool hold);     /* keep the screen on (reminder alert) */
+
+/* ---- language picker (ui_lang.c); caller holds the lock ---- */
+void        ui_lang_init(void);
+void        ui_lang_open(void);
+const char *ui_lang_label(const char *code);
+
+/* ---- conversation screen (ui_chat.c); caller holds the lock ---- */
+void ui_chat_init(void);
+void ui_chat_set_state(ui_conv_t st);
+void ui_chat_anim(int level, uint32_t phase);
+void ui_chat_refresh_theme(void);
+bool ui_chat_is_active(void);
+
+/* ---- notes & reminders (ui_items.c) ---- */
+void ui_items_init(void);
+void ui_items_open(bool reminder);
+void ui_items_refresh_theme(void);
+/* Counters on the watchface shortcuts (0 = hidden). Caller holds the lock. */
+void ui_shortcut_counts(int notes, int reminders);

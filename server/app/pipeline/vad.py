@@ -124,6 +124,7 @@ class EndpointDetector:
         self.in_speech = False
         self.speech_started = False
         self.last_speech_end_ms: float | None = None
+        self.speech_start_ms: float | None = None
         self.done = False
 
     def feed(self, pcm: bytes) -> list[VadEvent]:
@@ -153,7 +154,8 @@ class EndpointDetector:
             self.last_speech_end_ms = self._pos_ms
             if not self.speech_started and self._speech_ms >= self.min_speech_ms:
                 self.speech_started = True
-                event = VadEvent("speech_start", self._pos_ms - self._speech_ms)
+                self.speech_start_ms = self._pos_ms - self._speech_ms
+                event = VadEvent("speech_start", self.speech_start_ms)
             self.in_speech = True
         else:
             if not self.speech_started:
@@ -164,6 +166,7 @@ class EndpointDetector:
                 return VadEvent("speech_end", self.last_speech_end_ms or self._pos_ms)
         if not self.speech_started and self._pos_ms >= self.no_speech_timeout_ms:
             return VadEvent("no_speech", self._pos_ms)
-        if self._pos_ms >= self.max_duration_ms:
+        # The longest question is measured from the first word, not from the mic tap.
+        if self.speech_start_ms is not None and self._pos_ms - self.speech_start_ms >= self.max_duration_ms:
             return VadEvent("max_duration", self._pos_ms)
         return event

@@ -18,6 +18,7 @@ from app.db.models import (
     Conversation,
     Device,
     DeviceSettingsRow,
+    Item,
     Persona,
     Turn,
     UsageRecord,
@@ -209,11 +210,16 @@ def export(db: Session, account: Account) -> dict[str, Any]:
             }
         )
     personas = db.exec(select(Persona).where(Persona.account_id == account.id)).all()
+    items = db.exec(select(Item).where(Item.account_id == account.id).order_by(Item.kind, Item.number)).all()
     return {
         "exported_at": utcnow(),
         "account": public(account),
         "watches": out_devices,
         "personas": [{"name": p.name, "instructions": p.system_prompt} for p in personas],
+        "notes_and_reminders": [
+            {"kind": i.kind, "number": i.number, "text": i.text, "due_at": i.due_at}
+            for i in items
+        ],
     }
 
 
@@ -245,6 +251,8 @@ def delete_account(db: Session, account: Account) -> list[str]:
             db.delete(row)
     for p in db.exec(select(Persona).where(Persona.account_id == account.id)).all():
         db.delete(p)
+    for it in db.exec(select(Item).where(Item.account_id == account.id)).all():
+        db.delete(it)
     for tok in db.exec(select(AuthToken).where(AuthToken.account_id == account.id)).all():
         db.delete(tok)
     account.status = "deleted"

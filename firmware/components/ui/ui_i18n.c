@@ -62,6 +62,21 @@ static const char *const s_en[STR__COUNT] = {
     [STR_LISTENING]       = "Listening…",
     [STR_THINKING]        = "Thinking…",
     [STR_TAP_TO_TALK]     = "Tap to talk",
+    [STR_NOTES]           = "Notes",
+    [STR_REMINDERS]       = "Reminders",
+    [STR_NOTE]            = "Note",
+    [STR_REMINDER]        = "Reminder",
+    [STR_OVERDUE]         = "Overdue",
+    [STR_NO_NOTES]        = "No notes yet.\nAsk Buddy: \"note that…\"",
+    [STR_NO_REMINDERS]    = "No reminders yet.\nAsk Buddy:\n\"remind me at 9 to…\"",
+    [STR_LOADING]         = "Loading…",
+    [STR_DELETE]          = "Delete",
+    [STR_DELETE_CONFIRM]  = "Tap again to delete",
+    [STR_OTHER]           = "Other",
+    [STR_SEARCH]          = "Search",
+    [STR_NO_MATCH]        = "No language found",
+    [STR_TODAY]           = "Today",
+    [STR_TOMORROW]        = "Tomorrow",
 };
 
 typedef struct {

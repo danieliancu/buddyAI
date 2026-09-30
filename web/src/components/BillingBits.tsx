@@ -75,7 +75,7 @@ export function turnRefusedText(code: TurnRefusedCode, operator = false): string
 /** Horizontal meter 0–100 %. */
 export function Meter({ pct, label }: { pct: number; label: string }) {
   const v = Math.max(0, Math.min(100, pct));
-  const tone = v >= 100 ? "bg-danger" : v >= 80 ? "bg-warn" : "bg-accent";
+  const tone = v >= 100 ? "danger" : v >= 80 ? "warn" : "";
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-2 text-sm">
@@ -83,14 +83,14 @@ export function Meter({ pct, label }: { pct: number; label: string }) {
         <span className="tabular font-medium">{Math.round(v)}%</span>
       </div>
       <div
-        className="h-2 overflow-hidden rounded-full bg-surface-2"
+        className="liquid"
         role="progressbar"
         aria-label={label}
         aria-valuenow={Math.round(v)}
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        <div className={cx("h-full rounded-full transition-all", tone)} style={{ width: `${v}%` }} />
+        <div className={cx("liquid-fill", tone)} style={{ width: `${v}%` }} />
       </div>
     </div>
   );

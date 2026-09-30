@@ -47,7 +47,8 @@ class DeviceSettings(BaseModel):
     time_24h: bool = True
     timezone: str = "Europe/London"
     theme: Theme = Field(default_factory=Theme)
-    max_listen_s: int = Field(15, ge=3, le=60)
+    max_listen_s: int = Field(15, ge=3, le=60)  # longest question, counted from the first word
+    wait_for_speech_s: int = Field(20, ge=5, le=60)  # mic open, waiting for the first word (free: no STT)
     # --- AI (server-only) --------------------------------------------------------
     persona_id: int | None = None
     custom_instructions: str = Field("", max_length=2000)
@@ -103,7 +104,14 @@ class DeviceSettings(BaseModel):
         return v
 
 
-DEVICE_EDITABLE = {"language", "volume", "brightness", "theme", "time_24h"}
+DEVICE_EDITABLE = {
+    "language",
+    "preferred_language",
+    "volume",
+    "brightness",
+    "theme",
+    "time_24h",
+}
 
 
 def device_view(s: DeviceSettings) -> dict[str, Any]:
@@ -117,7 +125,8 @@ def device_view(s: DeviceSettings) -> dict[str, Any]:
         "time_24h": s.time_24h,
         "tz_posix": posix_tz(s.timezone),
         "theme": s.theme.model_dump(),
-        "max_listen_s": s.max_listen_s,
+        # The watch's whole listening window: waiting for the first word + the longest question.
+        "max_listen_s": s.wait_for_speech_s + s.max_listen_s,
     }
 
 

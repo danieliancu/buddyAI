@@ -206,6 +206,7 @@ export interface DeviceSettings {
   timezone: string;
   theme: Theme;
   max_listen_s: number;
+  wait_for_speech_s: number;
   persona_id: number | null;
   custom_instructions: string;
   llm_model: string | null;
@@ -251,6 +252,29 @@ export type PersonaInput = Pick<Persona, "name" | "system_prompt" | "is_default"
 /** Customer view of a persona: system personas (own=false, read-only) and the account's own. */
 export interface MyPersona extends Persona {
   own: boolean;
+}
+
+export type ItemKind = "note" | "reminder";
+
+/** A note (text only) or a reminder (time + short text). Numbered per kind; a deleted number is reused. */
+export interface Item {
+  kind: ItemKind;
+  number: number;
+  text: string;
+  /** Reminders: when it is due (UTC ISO). */
+  due_at: string | null;
+  /** Reminders: the time has passed (stays until deleted or rescheduled). */
+  overdue: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemInput {
+  kind: ItemKind;
+  /** Notes up to 10000 characters, reminders up to 80. */
+  text: string;
+  /** ISO 8601 with offset; required for reminders. */
+  due_at: string | null;
 }
 
 /** GET /api/me/subscription. */
@@ -689,6 +713,12 @@ const meApi = {
     update: (id: number, p: Pick<Persona, "name" | "system_prompt">) => me.put<MyPersona>(`/api/me/personas/${id}`, p),
     remove: (id: number) => me.del<{ ok: boolean }>(`/api/me/personas/${id}`),
   },
+  items: {
+    list: () => me.get<Item[]>("/api/me/items"),
+    create: (body: ItemInput) => me.post<Item>("/api/me/items", body),
+    update: (kind: ItemKind, number: number, body: ItemInput) => me.put<Item>(`/api/me/items/${kind}/${number}`, body),
+    remove: (kind: ItemKind, number: number) => me.del<{ ok: boolean }>(`/api/me/items/${kind}/${number}`),
+  },
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),
   /** Stripe Billing Portal URL (404 = no subscription on this account). */
@@ -728,6 +758,8 @@ export type LiveEvent =
   | ({ type: "settings_changed" } & LiveBase)
   /** The server refused a question from the watch (billing / account state). */
   | ({ type: "turn_refused"; code: TurnRefusedCode } & LiveBase)
+  /** Notes or reminders of the account changed (voice, another tab, a watch). */
+  | { type: "items_changed"; account_id: number; at?: number }
   | { type: "keepalive"; at?: number };
 
 export type TurnRefusedCode = "subscription_required" | "limit_reached" | "account_inactive" | string;

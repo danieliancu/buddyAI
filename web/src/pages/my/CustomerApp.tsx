@@ -10,6 +10,7 @@ import { CustomerCtx, type CustomerSession } from "./session";
 import MyWatchesPage from "./MyWatchesPage";
 import AddWatchPage from "./AddWatchPage";
 import WatchHistoryPage from "./WatchHistoryPage";
+import { MyNotesPage, MyRemindersPage } from "./MyItemsPages";
 import MyPersonasPage from "./MyPersonasPage";
 import AccountPage from "./AccountPage";
 
@@ -81,6 +82,8 @@ export default function CustomerApp() {
               <Route path="add-watch" element={<AddWatchPage />} />
               <Route path="watch/:id" element={<DeviceSettingsPage mode="customer" />} />
               <Route path="watch/:id/history" element={<WatchHistoryPage />} />
+              <Route path="notes" element={<MyNotesPage />} />
+              <Route path="reminders" element={<MyRemindersPage />} />
               <Route path="personas" element={<MyPersonasPage />} />
               <Route path="account" element={<AccountPage />} />
               <Route path="*" element={<Navigate to="/my" replace />} />

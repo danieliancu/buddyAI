@@ -228,12 +228,15 @@ export function VoiceSampleButton({
   label = "Play sample",
   size = "md",
   disabled,
+  compact,
 }: {
   voice: string;
   language: string;
   label?: string;
   size?: "sm" | "md";
   disabled?: boolean;
+  /** Icon only on phones (the text shows from `sm`). */
+  compact?: boolean;
 }) {
   const area = useArea();
   const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
@@ -295,15 +298,17 @@ export function VoiceSampleButton({
     }
   };
 
+  const text = (t: string) => (compact ? <span className="hidden sm:inline">{t}</span> : t);
+
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {state === "playing" ? (
-        <Button size={size} icon={<Square className="size-3.5" />} onClick={stop}>
-          Stop
+        <Button size={size} icon={<Square className="size-3.5" />} onClick={stop} aria-label="Stop">
+          {text("Stop")}
         </Button>
       ) : (
-        <Button size={size} icon={<Play className="size-3.5" />} loading={state === "loading"} disabled={disabled || !voice} onClick={play}>
-          {state === "loading" ? "Loading…" : label}
+        <Button size={size} icon={<Play className="size-3.5" />} loading={state === "loading"} disabled={disabled || !voice} onClick={play} aria-label={label}>
+          {text(state === "loading" ? "Loading…" : label)}
         </Button>
       )}
       {error && <p className="text-xs text-danger" role="alert">{error}</p>}

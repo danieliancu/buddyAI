@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -150,6 +150,25 @@ class Persona(SQLModel, table=True):
     system_prompt: str
     is_default: bool = False
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class Item(SQLModel, table=True):
+    """A note (text only) or a reminder (due time + short text).
+
+    Numbered per (account, kind); a deleted number is reused by the next item.
+    """
+
+    __tablename__ = "items"
+    __table_args__ = (UniqueConstraint("account_id", "kind", "number", name="uq_items_account_kind_number"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    kind: str = Field(max_length=16)  # note | reminder
+    number: int
+    text: str = Field(default="", max_length=10000)
+    due_at: Optional[datetime] = Field(default=None, index=True)  # reminders only (UTC)
+    fired_at: Optional[datetime] = None  # set once a watch received the reminder
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class Conversation(SQLModel, table=True):

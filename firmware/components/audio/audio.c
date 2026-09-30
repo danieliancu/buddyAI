@@ -41,6 +41,17 @@ static const char *TAG = "audio";
 #define WRITE_CHUNK_SAMPLES     (PLAY_RATE / 50)            /* 20 ms */
 #define DEC_OUT_MAX_SAMPLES     (PLAY_RATE * 120 / 1000)    /* up to 120 ms packets */
 #define PA_IDLE_OFF_MS          400
+/* Jitter buffer: a reply starts playing once PREBUFFER_MS is queued, its end
+ * has arrived, or PREBUFFER_MAX_WAIT_MS passed. The server streams TTS
+ * fragment by fragment and the TTS sometimes delivers slower than real time;
+ * a reply that ran dry mid-way therefore waits for a much larger reserve
+ * (REBUFFER_MS) before resuming: one short pause instead of a stutter. */
+#define PREBUFFER_MS            300
+#define PREBUFFER_BYTES         (PLAY_RATE * 2 * PREBUFFER_MS / 1000)
+#define PREBUFFER_MAX_WAIT_MS   600
+#define REBUFFER_MS             1500
+#define REBUFFER_BYTES          (PLAY_RATE * 2 * REBUFFER_MS / 1000)
+#define REBUFFER_MAX_WAIT_MS    2500
 
 /* ------------------------------------------------------------------------- */
 /* PCM ring buffer (PSRAM)                                                    */
@@ -338,6 +349,22 @@ static void decode_task(void *arg)
     }
 }
 
+static bool prebuffer_ready(uint32_t gen, int64_t *since_us, bool rebuffer)
+{
+    size_t have = ring_count(&s_ring);
+    if (have == 0) {
+        *since_us = 0;
+        return s_end_seen && s_end_gen == gen;      /* empty reply: let "done" through */
+    }
+    if (*since_us == 0) {
+        *since_us = esp_timer_get_time();
+    }
+    size_t want = rebuffer ? REBUFFER_BYTES : PREBUFFER_BYTES;
+    int64_t max_wait_us = (rebuffer ? REBUFFER_MAX_WAIT_MS : PREBUFFER_MAX_WAIT_MS) * 1000LL;
+    return have >= want || (s_end_seen && s_end_gen == gen) ||
+           esp_timer_get_time() - *since_us >= max_wait_us;
+}
+
 static void writer_task(void *arg)
 {
     const size_t chunk_bytes = WRITE_CHUNK_SAMPLES * 2;
@@ -350,10 +377,23 @@ static void writer_task(void *arg)
     uint32_t played_gen = UINT32_MAX;       /* generation currently audible */
     uint32_t reported_gen = UINT32_MAX;     /* generation whose done was reported */
     int64_t last_audio_us = 0;
+    bool buffering = true;                  /* waiting to (re)start: new reply or ran dry */
+    bool rebuffer = false;                  /* the wait is after running dry mid-reply */
+    int64_t buffer_since_us = 0;
 
     for (;;) {
         uint32_t gen = s_play_gen;
-        size_t n = ring_read(&s_ring, (uint8_t *)buf, chunk_bytes, pdMS_TO_TICKS(20));
+        if (played_gen != gen) {
+            buffering = true;
+            rebuffer = false;
+        }
+        size_t n = 0;
+        if (!buffering || prebuffer_ready(gen, &buffer_since_us, rebuffer)) {
+            buffering = false;
+            n = ring_read(&s_ring, (uint8_t *)buf, chunk_bytes, pdMS_TO_TICKS(20));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
 
         if (n > 0) {
             if (played_gen != gen) {
@@ -391,6 +431,11 @@ static void writer_task(void *arg)
 
         /* Buffer empty. */
         s_play_level = 0;
+        if (!buffering && played_gen == gen && !(s_end_seen && s_end_gen == gen)) {
+            buffering = true;               /* ran dry mid-reply: rebuffer before resuming */
+            rebuffer = true;
+            buffer_since_us = 0;
+        }
         if (s_end_seen && s_end_gen == gen && reported_gen != gen && s_play_turn_valid) {
             reported_gen = gen;
             uint32_t turn = s_play_turn;
@@ -399,7 +444,8 @@ static void writer_task(void *arg)
                 s_done_cb(turn, s_done_ctx);
             }
         }
-        if (pa_on && (esp_timer_get_time() - last_audio_us) > PA_IDLE_OFF_MS * 1000) {
+        /* Keep the amplifier on while waiting mid-reply (no click on resume). */
+        if (pa_on && !(buffering && rebuffer) && (esp_timer_get_time() - last_audio_us) > PA_IDLE_OFF_MS * 1000) {
             xSemaphoreTake(s_play_lock, portMAX_DELAY);
             board_audio_pa_enable(false);
             xSemaphoreGive(s_play_lock);
@@ -495,6 +541,48 @@ esp_err_t audio_playback_feed(uint32_t turn_id, const uint8_t *opus, size_t len)
 void audio_playback_end(uint32_t turn_id)
 {
     enqueue(turn_id, NULL, 0);
+}
+
+void audio_beep(void)
+{
+    if (!s_ring.buf || audio_playback_active() || audio_capture_active()) {
+        return;
+    }
+    /* 880 Hz then 1320 Hz, 150 ms each with a 60 ms gap; 5 ms fades avoid clicks. */
+    const int tone = PLAY_RATE * 150 / 1000, gap = PLAY_RATE * 60 / 1000, fade = PLAY_RATE * 5 / 1000;
+    const int total = tone * 2 + gap;
+    int16_t *pcm = heap_caps_calloc(total, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!pcm) {
+        return;
+    }
+    const float freqs[2] = { 880.0f, 1320.0f };
+    for (int t = 0; t < 2; t++) {
+        int16_t *out = pcm + t * (tone + gap);
+        for (int i = 0; i < tone; i++) {
+            float env = 1.0f;
+            if (i < fade) {
+                env = (float)i / fade;
+            } else if (i > tone - fade) {
+                env = (float)(tone - i) / fade;
+            }
+            out[i] = (int16_t)(0.4f * 32767.0f * env * sinf(2.0f * (float)M_PI * freqs[t] * i / PLAY_RATE));
+        }
+    }
+
+    xSemaphoreTake(s_play_lock, portMAX_DELAY);
+    flush_locked();
+    s_play_turn_valid = false;      /* no turn: no playback_done callback */
+    uint32_t gen = s_play_gen;
+    xSemaphoreGive(s_play_lock);
+
+    ring_write_some(&s_ring, (const uint8_t *)pcm, total * sizeof(int16_t), gen);
+    free(pcm);
+    xSemaphoreTake(s_play_lock, portMAX_DELAY);
+    if (gen == s_play_gen) {
+        s_end_gen = gen;            /* complete: the writer starts at once */
+        s_end_seen = true;
+    }
+    xSemaphoreGive(s_play_lock);
 }
 
 bool audio_playback_active(void)

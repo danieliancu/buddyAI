@@ -17,6 +17,7 @@ from sqlmodel import Session
 
 from app import accounts, email
 from app.api.common import (
+    ItemBody,
     PersonaBody,
     VoiceSampleBody,
     conversations_out,
@@ -28,9 +29,18 @@ from app.api.common import (
     voice_sample,
 )
 from app.db.models import Account, Device, Persona
-from app.db.repositories import ConversationRepo, DeviceRepo, PersonaRepo, UsageRepo
+from app.db.repositories import (
+    ConversationRepo,
+    DeviceRepo,
+    ItemLimitError,
+    ItemRepo,
+    ItemTextError,
+    PersonaRepo,
+    UsageRepo,
+)
 from app.db.session import get_session, session_scope
 from app.gateway.hub import PairingError
+from app.items import web_view
 from app.pricing.currency import convert, get_currency
 from app.ratelimit import LOGIN_PER_ACCOUNT, LOGIN_PER_IP, RESET_PER_EMAIL, SIGNUP_PER_IP, client_ip
 from app.security import is_valid_pairing_code
@@ -348,6 +358,80 @@ def update_persona(
 def delete_persona(persona_id: int, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
     _own_persona(db, persona_id, acc)
     PersonaRepo(db).delete(persona_id)
+    return {"ok": True}
+
+
+# --- notes and reminders ---------------------------------------------------------------------------
+
+
+def _utc_due(body: ItemBody) -> datetime | None:
+    if body.kind != "reminder":
+        return None
+    if body.due_at is None:
+        raise HTTPException(422, [{"loc": ["due_at"], "msg": "a reminder needs a date and time", "type": "value_error"}])
+    due = body.due_at if body.due_at.tzinfo else body.due_at.replace(tzinfo=timezone.utc)
+    return due.astimezone(timezone.utc)
+
+
+def _own_item(db: Session, acc: Account, kind: str, number: int):
+    it = ItemRepo(db).get(acc.id, kind, number) if kind in ItemRepo.KINDS else None
+    if it is None:
+        raise HTTPException(404, f"{kind} not found")
+    return it
+
+
+async def _items_changed(request: Request, account_id: int) -> None:
+    hub = hub_of(request)
+    await hub.push_items(account_id)
+    hub.items_changed(account_id)
+
+
+@router.get("/items")
+def items(kind: str | None = None, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> list[dict]:
+    return [web_view(it) for it in ItemRepo(db).list(acc.id, kind if kind in ItemRepo.KINDS else None)]
+
+
+@router.post("/items")
+async def create_item(
+    body: ItemBody, request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)
+) -> dict:
+    try:
+        it = ItemRepo(db).create(acc.id, body.kind, body.text, _utc_due(body))
+    except ItemLimitError:
+        raise HTTPException(409, f"you can keep at most {ItemRepo.MAX_PER_KIND} of these; delete some first") from None
+    except ItemTextError as exc:
+        raise HTTPException(422, [{"loc": ["text"], "msg": str(exc), "type": "value_error"}]) from None
+    out = web_view(it)
+    await _items_changed(request, acc.id)
+    return out
+
+
+@router.put("/items/{kind}/{number}")
+async def update_item(
+    kind: str,
+    number: int,
+    body: ItemBody,
+    request: Request,
+    acc: Account = Depends(current_account),
+    db: Session = Depends(get_session),
+) -> dict:
+    it = _own_item(db, acc, kind, number)
+    body.kind = it.kind  # the kind of an item never changes
+    try:
+        it = ItemRepo(db).update(it, text=body.text, due_at=_utc_due(body))
+    except ItemTextError as exc:
+        raise HTTPException(422, [{"loc": ["text"], "msg": str(exc), "type": "value_error"}]) from None
+    out = web_view(it)
+    await _items_changed(request, acc.id)
+    return out
+
+
+@router.delete("/items/{kind}/{number}")
+async def delete_item(
+    kind: str, number: int, request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)
+) -> dict:
+    ItemRepo(db).delete(_own_item(db, acc, kind, number))
+    await _items_changed(request, acc.id)
     return {"ok": True}
 
 

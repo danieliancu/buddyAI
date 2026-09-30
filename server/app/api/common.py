@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import io
 import wave
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, Field, ValidationError
@@ -147,3 +148,14 @@ class PersonaBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     system_prompt: str = Field(min_length=1, max_length=4000)
     is_default: bool = False
+
+
+class ItemBody(BaseModel):
+    """A note or reminder from the web app. `due_at` is ISO 8601 with an offset (the browser's local time).
+
+    Text limits per kind (note 10000, reminder 80) are checked by ItemRepo.
+    """
+
+    kind: Literal["note", "reminder"] = "note"
+    text: str = Field(min_length=1, max_length=10000)
+    due_at: datetime | None = None

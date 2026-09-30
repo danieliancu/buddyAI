@@ -48,6 +48,8 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `settings_changed` | `base_version`, `changes: {…}` | User changed settings on the watch (subset of §5). |
 | `status` | `battery_pct`, `charging`, `rssi`, `free_heap` | Periodic telemetry (≤ 1/min). |
 | `ping` | — | Keepalive. |
+| `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
+| `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
 
 ### 3.2 Server → Device
 
@@ -60,6 +62,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `state` | `turn_id`, `state` (`idle`\|`listening`\|`thinking`\|`speaking`) | UI state hint. |
 | `stt_result` | `turn_id`, `text`, `final`, `language?` | Transcript (partials optional). The final result carries the language used for the reply (detected when `auto`). |
 | `llm_text` | `turn_id`, `delta` | Reply text as it streams (for on-screen caption). |
+| `llm_display` | `turn_id`, `text` | Optional, before the first `llm_text`: the answer's key value (≤ 16 chars, e.g. `21°C`, `14:30`, `£3.50`). The watch shows only this, in large type, while the full reply is spoken. |
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
 | `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`) | Server finished the turn. |
@@ -67,6 +70,23 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `ota_available` | `version`, `url`, `sha256`, `size`, `signature?` | Firmware update offer. |
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
+| `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
+| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, overdue}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
+| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them). Sent after `turn_end`. |
+| `item_show` | `item: {kind, number, text, due_local?, overdue?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. |
+| `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
+
+### 3.3 Notes and reminders
+
+Notes and reminders are separate lists that belong to the account, so every watch of the account gets
+the same lists. A note is text only (up to 10000 characters); a reminder has a due time and a short text
+(up to 80 characters). A reminder whose time has passed is `overdue` until it is deleted or rescheduled
+(there is no "done" state). Numbers are per kind (note #1 and reminder #1 can both exist); a new item
+takes the lowest free number, so after deleting #1 from #1, #2, #3 the next item is #1 again.
+`due_local` is `"YYYY-MM-DD HH:MM"` in the watch's time zone. Note rows carry only a `preview` (first
+line); the full text arrives with `item_show`. A reminder is delivered once: if no watch is online
+when it comes due, it is sent on the next `hello` (up to 24 h late). These messages have `turn_id: null`
+and are additive to protocol v1 (older firmware ignores them).
 
 ## 4. Binary audio frames
 
@@ -107,15 +127,19 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
     "clock": "#FFFFFF",
     "text": "#B0B8C8"
   },
-  "max_listen_s": 15
+  "max_listen_s": 35
 }
 ```
+
+- `max_listen_s`: the watch's whole listening window for one question: the server's wait for the
+  first word (`wait_for_speech_s`, default 20) plus the longest question from the first word
+  (default 15). Silence before the first word is not sent to speech-to-text.
 
 - The server is the source of truth. `settings_version` increments on every change.
 - `language`: `"auto"` (reply in the language the user speaks) or an ISO 639-1 code.
   `quick_languages` (max 3) are the options for the watch's quick toggle; labels are always
   renderable with the watch fonts (Latin, Greek, Cyrillic).
-- The watch may change `language`, `volume`, `brightness`, `theme`, `time_24h`
+- The watch may change `language`, `preferred_language`, `volume`, `brightness`, `theme`, `time_24h`
   through `settings_changed`. The server applies them, bumps the version and replies with `settings_update`.
 - AI-only settings (persona, model, voice, VAD sensitivity…) stay on the server.
 

@@ -77,6 +77,79 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+/* Liquid box: a tall container that fills with flowing green (sliders and meters). */
+.liquid {
+  position: relative;
+  height: 1.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.liquid:focus-within {
+  outline: 2px solid var(--ok);
+  outline-offset: 2px;
+}
+.liquid-fill {
+  --liquid: var(--ok);
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--liquid) 80%, white), var(--liquid) 45%, color-mix(in srgb, var(--liquid) 75%, black));
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--liquid) 60%, white);
+  transition: width 0.25s ease-out;
+}
+.liquid-fill.warn {
+  --liquid: var(--warn);
+}
+.liquid-fill.danger {
+  --liquid: var(--danger);
+}
+/* diagonal stripes drifting sideways, so the fill reads as flowing */
+.liquid-fill::before {
+  content: "";
+  position: absolute;
+  inset: 0 -40px 0 0;
+  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 10px, transparent 10px 20px);
+  animation: liquid-flow 1.1s linear infinite;
+}
+@keyframes liquid-flow {
+  to {
+    transform: translateX(-28.28px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid-fill::before {
+    animation: none;
+  }
+  .liquid-fill {
+    transition: none;
+  }
+}
+/* the native range input sits invisibly on top: drag, tap and keyboard still work */
+.liquid input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.liquid input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1px;
+  height: 1.5rem;
+}
+.liquid input[type="range"]::-moz-range-thumb {
+  width: 1px;
+  height: 1.5rem;
+  border: 0;
+}
+
 input[type="color"] {
   -webkit-appearance: none;
   appearance: none;

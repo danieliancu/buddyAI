@@ -128,6 +128,13 @@ def sample_sentence(code: str) -> str:
     return SAMPLES.get(code, SAMPLES["en"])
 
 
+def watch_languages() -> list[dict[str, str]]:
+    """Every supported language for the watch's language picker: renderable label + English name
+    (for search), sorted by label."""
+    items = [{"code": lang.code, "label": lang.watch_label, "name": lang.name} for lang in supported()]
+    return sorted(items, key=lambda i: i["label"].casefold())
+
+
 def quick_languages(preferred: str | None) -> list[dict[str, str]]:
     """Options for the watch's quick-settings language control (max 3, renderable labels)."""
     items = [{"code": AUTO, "label": "Auto"}, {"code": "en", "label": "English"}]

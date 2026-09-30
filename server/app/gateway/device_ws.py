@@ -15,16 +15,18 @@ from app import entitlements, languages
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, utcnow
-from app.db.repositories import ConversationRepo, DeviceRepo, SettingsRepo, TurnRepo, UsageRepo
+from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, SettingsRepo, TurnRepo, UsageRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
+from app.items import KINDS, device_full
 from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message
 from app.pipeline.conversation import ConversationPipeline
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnResult
 from app.pricing.pricing import ProviderPricingConfig
 from app.providers.base import ProviderError
+from app.reminders import deliver_due
 from app.security import hash_device_token, is_valid_pairing_code
 
 log = logging.getLogger(__name__)
@@ -157,6 +159,8 @@ class DeviceConnection:
             "playback_done": self._on_playback_done,
             "settings_changed": self._on_settings_changed,
             "status": self._on_status,
+            "item_open": self._on_item_open,
+            "item_delete": self._on_item_delete,
         }.get(kind)
         if handler is None:
             await self.send_json("error", code="bad_request", message=f"unknown type {kind!r}")
@@ -207,6 +211,10 @@ class DeviceConnection:
                 settings_version=version,
                 downlink_rate=self.downlink_rate,
             )
+            await self.send_json("languages", items=languages.watch_languages())  # the watch's language picker
+            if account_id is not None:
+                await self.hub.push_items(account_id, only=self)
+                await deliver_due(self.hub, account_id)  # reminders that came due while offline
             return
         if is_valid_pairing_code(code):
             try:
@@ -328,6 +336,17 @@ class DeviceConnection:
         await self.send_json("turn_end", turn.turn_id, status=result.status)
         if self.active is turn:
             self.active = None
+        if turn.settings_changed:  # volume, language... changed by voice: applies after the reply
+            await self.hub.push_settings(self.device_id)
+            self.hub.publish({"type": "settings_changed", "device_id": self.device_id})
+        if turn.items_changed and turn.account_id is not None:
+            await self.hub.push_items(turn.account_id)
+            self.hub.items_changed(turn.account_id)
+        if turn.pending_open is not None and live and result.status == "completed":
+            if "list" in turn.pending_open:
+                await self.send_json("items_open", kind=turn.pending_open["list"])
+            else:
+                await self.send_json("item_show", item=turn.pending_open["item"])
         self._persist(turn, result)
         self.hub.publish(
             {
@@ -385,6 +404,40 @@ class DeviceConnection:
                 await self.send_json("error", code="bad_request", message=f"invalid settings: {exc}")
         await self.hub.push_settings(self.device_id)
         self.hub.publish({"type": "settings_changed", "device_id": self.device_id})
+
+    # --- notes / reminders ------------------------------------------------------------------
+
+    def _item_ref(self, msg: dict[str, Any]) -> tuple[str, int] | None:
+        kind, number = msg.get("kind"), msg.get("number")
+        if self.account_id is None or kind not in KINDS or not isinstance(number, int):
+            return None
+        return kind, number
+
+    async def _on_item_open(self, msg: dict[str, Any]) -> None:
+        ref = self._item_ref(msg)
+        if ref is None:
+            await self.send_json("error", code="bad_request", message="item_open needs kind and number")
+            return
+        with session_scope() as db:
+            it = ItemRepo(db).get(self.account_id, *ref)
+            view = device_full(it, self.settings.timezone) if it else None
+        if view is None:
+            await self.hub.push_items(self.account_id, only=self)  # the watch's list is stale
+            return
+        await self.send_json("item_show", item=view)
+
+    async def _on_item_delete(self, msg: dict[str, Any]) -> None:
+        ref = self._item_ref(msg)
+        if ref is None:
+            await self.send_json("error", code="bad_request", message="item_delete needs kind and number")
+            return
+        with session_scope() as db:
+            repo = ItemRepo(db)
+            it = repo.get(self.account_id, *ref)
+            if it is not None:
+                repo.delete(it)
+        await self.hub.push_items(self.account_id)
+        self.hub.items_changed(self.account_id)
 
     async def _on_status(self, msg: dict[str, Any]) -> None:
         fields = {

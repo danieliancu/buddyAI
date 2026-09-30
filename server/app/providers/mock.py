@@ -62,7 +62,9 @@ class MockLLM(LLMProvider):
         for i, w in enumerate(words):
             yield LLMChunk(delta=(w if i == 0 else " " + w))
             await asyncio.sleep(self.per_token_s)
-        yield LLMChunk(input_tokens=sum(len(m["content"]) for m in request.messages) // 4, output_tokens=len(words))
+        yield LLMChunk(
+            input_tokens=sum(len(m.get("content") or "") for m in request.messages) // 4, output_tokens=len(words)
+        )
 
 
 class MockTTS(TTSProvider):

@@ -57,6 +57,10 @@ int       audio_playback_level(void);
 
 void      audio_set_volume(int percent);
 
+/* Short two-tone alert (reminders). Skipped while a reply plays or the mic is
+ * open. Uses the playback path, so volume and speaker muting behave as usual. */
+void      audio_beep(void);
+
 #ifdef __cplusplus
 }
 #endif

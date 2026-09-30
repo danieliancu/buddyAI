@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from app.db.models import (
@@ -14,6 +15,7 @@ from app.db.models import (
     Device,
     DeviceSettingsRow,
     FirmwareRelease,
+    Item,
     Persona,
     PricingRule,
     Turn,
@@ -417,3 +419,117 @@ class FirmwareRepo:
 
     def get(self, rel_id: int) -> FirmwareRelease | None:
         return self.s.get(FirmwareRelease, rel_id)
+
+
+class ItemLimitError(Exception):
+    """The account already has the maximum number of items of this kind."""
+
+
+class ItemTextError(ValueError):
+    """Empty text, or longer than the kind allows."""
+
+
+class ItemRepo:
+    """Notes and reminders. Numbers are per (account, kind); a new item takes the lowest free number."""
+
+    KINDS = ("note", "reminder")
+    MAX_PER_KIND = 100
+    TEXT_MAX = {"note": 10000, "reminder": 80}
+
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def list(self, account_id: int, kind: str | None = None) -> list[Item]:
+        q = select(Item).where(Item.account_id == account_id)
+        if kind:
+            q = q.where(Item.kind == kind)
+        items = list(self.s.exec(q.order_by(Item.kind, Item.number)).all())
+        for it in items:
+            self._fix(it)
+        return items
+
+    def get(self, account_id: int, kind: str, number: int) -> Item | None:
+        it = self.s.exec(
+            select(Item).where(Item.account_id == account_id, Item.kind == kind, Item.number == number)
+        ).first()
+        return self._fix(it) if it else None
+
+    def next_number(self, account_id: int, kind: str) -> int:
+        used = set(self.s.exec(select(Item.number).where(Item.account_id == account_id, Item.kind == kind)).all())
+        if len(used) >= self.MAX_PER_KIND:
+            raise ItemLimitError(kind)
+        n = 1
+        while n in used:
+            n += 1
+        return n
+
+    @classmethod
+    def check_text(cls, kind: str, text: str) -> str:
+        text = text.strip()
+        if not text:
+            raise ItemTextError("text is empty")
+        if len(text) > cls.TEXT_MAX[kind]:
+            raise ItemTextError(f"{kind} text is {len(text)} characters; the limit is {cls.TEXT_MAX[kind]}")
+        return text
+
+    def create(self, account_id: int, kind: str, text: str, due_at: datetime | None = None) -> Item:
+        text = self.check_text(kind, text)
+        for attempt in range(2):
+            it = Item(
+                account_id=account_id,
+                kind=kind,
+                number=self.next_number(account_id, kind),
+                text=text,
+                due_at=due_at if kind == "reminder" else None,
+            )
+            self.s.add(it)
+            try:
+                self.s.commit()
+            except IntegrityError:  # another writer took the same number
+                self.s.rollback()
+                if attempt:
+                    raise
+                continue
+            self.s.refresh(it)
+            return self._fix(it)
+        raise RuntimeError("unreachable")
+
+    def update(self, it: Item, text: str | None = None, due_at: datetime | None = None) -> Item:
+        if text is not None:
+            it.text = self.check_text(it.kind, text)
+        if it.kind == "reminder" and due_at is not None:
+            it.due_at = due_at
+            it.fired_at = None  # a rescheduled reminder fires again
+        it.updated_at = utcnow()
+        self.s.add(it)
+        self.s.commit()
+        self.s.refresh(it)
+        return self._fix(it)
+
+    def delete(self, it: Item) -> None:
+        self.s.delete(it)
+        self.s.commit()
+
+    def due(self, now: datetime, since: datetime | None = None, account_id: int | None = None) -> list[Item]:
+        """Reminders that are due and not yet delivered (optionally only those due after `since`)."""
+        q = select(Item).where(
+            Item.kind == "reminder", col(Item.due_at).is_not(None), Item.due_at <= now, col(Item.fired_at).is_(None)
+        )
+        if since is not None:
+            q = q.where(Item.due_at >= since)
+        if account_id is not None:
+            q = q.where(Item.account_id == account_id)
+        return [self._fix(it) for it in self.s.exec(q.order_by(Item.due_at)).all()]
+
+    def mark_fired(self, it: Item) -> None:
+        it.fired_at = utcnow()
+        self.s.add(it)
+        self.s.commit()
+
+    @staticmethod
+    def _fix(it: Item) -> Item:
+        it.due_at = _aware(it.due_at)
+        it.fired_at = _aware(it.fired_at)
+        it.created_at = _aware(it.created_at)
+        it.updated_at = _aware(it.updated_at)
+        return it

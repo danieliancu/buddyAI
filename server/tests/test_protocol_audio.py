@@ -56,7 +56,12 @@ def test_settings_tz_and_theme_preset():
     s = merge(DeviceSettings(), {"theme": {"preset": "forest"}})
     assert s.theme.accent == "#3DDC84"
     view = device_view(s)
-    assert set(view) == {"language", "quick_languages", "volume", "brightness", "screen_timeout_s", "time_24h", "tz_posix", "theme", "max_listen_s"}
+    assert set(view) == {
+        "language", "quick_languages", "volume", "brightness", "screen_timeout_s", "time_24h", "tz_posix", "theme",
+        "max_listen_s",
+    }
+    # The watch's listening window = wait for the first word + the longest question.
+    assert view["max_listen_s"] == s.wait_for_speech_s + s.max_listen_s
     with pytest.raises(ValueError):
         merge(DeviceSettings(), {"theme": {"accent": "red"}})
     with pytest.raises(ValueError):

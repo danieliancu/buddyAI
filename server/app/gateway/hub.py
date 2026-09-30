@@ -8,9 +8,11 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from app.db.repositories import DeviceRepo, SettingsRepo
+from app.db.models import Item
+from app.db.repositories import DeviceRepo, ItemRepo, SettingsRepo
 from app.db.session import session_scope
 from app.device_settings import device_view
+from app.items import device_full, device_snapshot
 from app.security import hash_device_token, new_device_token
 
 if TYPE_CHECKING:
@@ -54,7 +56,7 @@ class DeviceHub:
 
     def publish(self, event: dict[str, Any]) -> None:
         event.setdefault("at", int(time.time() * 1000))
-        owner = self._owner_of(event.get("device_id"))
+        owner = event["account_id"] if "account_id" in event else self._owner_of(event.get("device_id"))
         for q, account_id in list(self._listeners.items()):
             if account_id is not None and account_id != owner:
                 continue
@@ -147,6 +149,30 @@ class DeviceHub:
             settings, version = SettingsRepo(db).get(device_id)
         conn.settings = settings
         await conn.send_json("settings_update", settings=device_view(settings), settings_version=version)
+
+    def account_connections(self, account_id: int) -> list["DeviceConnection"]:
+        return [c for c in self.connections.values() if c.authenticated and c.account_id == account_id]
+
+    async def push_items(self, account_id: int, only: "DeviceConnection | None" = None) -> None:
+        """Send the notes/reminders snapshot to the account's watches (or just `only`)."""
+        conns = [only] if only else self.account_connections(account_id)
+        if not conns:
+            return
+        with session_scope() as db:
+            items = ItemRepo(db).list(account_id)
+        for c in conns:
+            await c.send_json("items", **device_snapshot(items, c.settings.timezone))
+
+    def items_changed(self, account_id: int) -> None:
+        """Tell the account's open web pages to reload notes/reminders."""
+        self.publish({"type": "items_changed", "account_id": account_id})
+
+    async def fire_reminder(self, item: Item) -> bool:
+        delivered = False
+        for c in self.account_connections(item.account_id):
+            if await c.send_json("reminder_fire", item=device_full(item, c.settings.timezone)):
+                delivered = True
+        return delivered
 
     async def revoke(self, device_id: str) -> None:
         conn = self.connections.get(device_id)

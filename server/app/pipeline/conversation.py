@@ -8,39 +8,52 @@ The pipeline knows only the provider interfaces and TurnIO, never WebSockets or 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from app import languages
 from app.audio.codec import OpusEncoder, apply_gain
 from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
+from app.items import AssistantTools
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
+from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
 from app.pipeline.vad import EndpointDetector, SpeechProbability, make_probability
 from app.providers.base import ProviderError, UsageItem
-from app.providers.llm.base import LLMRequest
+from app.providers.llm.base import LLMRequest, ToolCall
 from app.providers.router import ProviderRouter
+from app.providers.stt.base import STTSession
 from app.providers.tts.base import TTSRequest
 
 log = logging.getLogger(__name__)
 
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
+PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
 
+# Each web search costs money and adds delay: search only for current or local facts.
 WEB_SEARCH_RULE = (
-    "You can search the web. When the question needs current or specific facts (weather, news, "
-    "businesses, addresses, phone numbers, opening hours, prices, sports results), search instead of "
-    "saying you have no real-time access. Say the answer only: never mention sources, websites or links."
+    "You can search the web, but only when the answer depends on current or local information you cannot "
+    "know: today's weather, news, live traffic or transport, opening hours, current prices, recent results, "
+    "a specific local business. For those, search instead of saying you have no real-time access. Do NOT "
+    "search for general knowledge, definitions, maths, history, science, advice, jokes, small talk, notes "
+    "or reminders: answer those directly. Search at most once per question. Say the answer only: never "
+    "mention sources, websites or links."
 )
 
-MessagesBuilder = Callable[[TurnContext, str], list[dict[str, str]]]
+MAX_TOOL_ROUNDS = 3  # LLM calls that may end in tool calls; the next one gets no tools and must answer
+
+MessagesBuilder = Callable[[TurnContext, str], list[dict[str, Any]]]
 
 
-def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, str]]:
+def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, Any]]:
     s = turn.settings
     with session_scope() as db:
         persona = PersonaRepo(db).get(s.persona_id, turn.account_id)
@@ -69,6 +82,7 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 "Your reply is spoken aloud through a small smartwatch speaker: be brief and conversational, "
                 f"at most about {s.max_reply_chars} characters. Plain sentences only: no markdown, no lists, "
                 "no emojis, no URLs. Write numbers, dates and units the way they should be spoken.",
+                DISPLAY_RULE,
                 f"Current local date and time: {now:%A %Y-%m-%d %H:%M} ({s.timezone}).",
                 s.custom_instructions.strip(),
             ],
@@ -89,12 +103,14 @@ class ConversationPipeline:
         vad_factory: Callable[[], SpeechProbability] = make_probability,
         messages_builder: MessagesBuilder = build_messages_from_db,
         downlink_bitrate: int = 32000,
+        tools: AssistantTools | None = None,
     ) -> None:
         self.router = router
         self.chunker_config = chunker_config
         self.vad_factory = vad_factory
         self.messages_builder = messages_builder
         self.downlink_bitrate = downlink_bitrate
+        self.tools = tools
 
     async def run(self, turn: TurnContext, io: TurnIO) -> TurnResult:
         user_text = await self._listen(turn, io)
@@ -116,11 +132,23 @@ class ConversationPipeline:
             await io.send(turn, "stt_result", text=text, final=False)
 
         detector = EndpointDetector(
-            self.vad_factory(), sensitivity=s.vad_sensitivity, max_duration_ms=s.max_listen_s * 1000
+            self.vad_factory(),
+            sensitivity=s.vad_sensitivity,
+            no_speech_timeout_ms=s.wait_for_speech_s * 1000,
+            max_duration_ms=s.max_listen_s * 1000,
         )
         await io.send(turn, "state", state="listening")
-        session = await stt.start(turn.language, UPLINK_RATE, on_partial)
-        audio_bytes = 0
+        # Silence before the first word never reaches the (billed) STT: audio is sent only once the
+        # local VAD hears speech, starting with the last PREROLL_MS. The connection itself is free, so
+        # it opens now: its handshake (~1.5 s, sometimes much longer) overlaps the wait for speech.
+        opening: asyncio.Task[STTSession] | None = asyncio.create_task(
+            stt.start(turn.language, UPLINK_RATE, on_partial)
+        )
+        session = None
+        preroll: list[bytes] = []
+        preroll_limit = UPLINK_RATE * 2 * PREROLL_MS // 1000
+        timeline_bytes = 0  # all audio received (VAD timeline)
+        audio_bytes = 0  # audio sent to the STT (billed)
         reason = "vad"
         arrivals: list[tuple[float, float]] = []  # (audio end ms, arrival mono ms)
         try:
@@ -136,10 +164,28 @@ class ConversationPipeline:
                     turn.marks.speech_end = mono_ms()
                     break
                 pcm, arrived = item
-                audio_bytes += len(pcm)
-                arrivals.append((audio_bytes / 2 / UPLINK_RATE * 1000, arrived))
-                await session.send(pcm)
-                events = [e for e in detector.feed(pcm) if e.kind != "speech_start"]
+                timeline_bytes += len(pcm)
+                arrivals.append((timeline_bytes / 2 / UPLINK_RATE * 1000, arrived))
+                all_events = detector.feed(pcm)
+                if session is None:
+                    preroll.append(pcm)
+                    while sum(map(len, preroll)) - len(preroll[0]) >= preroll_limit:
+                        preroll.pop(0)
+                    if detector.speech_started:
+                        task, opening = opening, None
+                        try:
+                            session = await task
+                        except ProviderError as exc:
+                            log.warning("turn %s stt: %s, retrying once", turn.turn_id, exc)
+                            session = await stt.start(turn.language, UPLINK_RATE, on_partial)
+                        for chunk in preroll:
+                            await session.send(chunk)
+                            audio_bytes += len(chunk)
+                        preroll.clear()
+                else:
+                    await session.send(pcm)
+                    audio_bytes += len(pcm)
+                events = [e for e in all_events if e.kind != "speech_start"]
                 if events:
                     ev = events[0]
                     reason = {"speech_end": "vad"}.get(ev.kind, ev.kind)
@@ -149,7 +195,7 @@ class ConversationPipeline:
             turn.listening = False
             await io.send(turn, "listen_stop", reason=reason)
             turn.usage.append(UsageItem("stt", stt.name, stt.model, "audio_second", audio_bytes / 2 / UPLINK_RATE))
-            if reason == "no_speech":
+            if reason == "no_speech" or session is None:
                 return ""
             text = (await session.finish()).strip()
             turn.marks.stt_final = mono_ms()
@@ -162,7 +208,12 @@ class ConversationPipeline:
             return text
         finally:
             turn.listening = False
-            await session.close()
+            if opening is not None:  # never used (no speech, or cancelled)
+                opening.cancel()
+                with contextlib.suppress(BaseException):
+                    session = await opening
+            if session is not None:
+                await session.close()
 
     # --- reply: LLM -> chunker -> TTS -> Opus ----------------------------------------------
 
@@ -172,8 +223,12 @@ class ConversationPipeline:
         tts_sel = self.router.tts(turn.language, s)
         web_search = self.router.web_search(s, llm)
         messages = self.messages_builder(turn, turn.user_text)
-        if web_search is not None and messages and messages[0]["role"] == "system":
-            messages[0] = {**messages[0], "content": messages[0]["content"] + "\n" + WEB_SEARCH_RULE}
+        tool_defs = self.tools.definitions(turn.account_id) if self.tools else None
+        extra_rules = [WEB_SEARCH_RULE] if web_search is not None else []
+        if self.tools:
+            extra_rules += self.tools.rules(turn.account_id)
+        if extra_rules and messages and messages[0]["role"] == "system":
+            messages[0] = {**messages[0], "content": "\n".join([messages[0]["content"], *extra_rules])}
         request = LLMRequest(
             messages=messages,
             model=model,
@@ -186,22 +241,70 @@ class ConversationPipeline:
         reply_parts: list[str] = []
         tts_chars = 0
 
+        display = DisplayTagFilter()
+        tools_used = False
+
+        async def emit_text(delta: str) -> None:
+            reply_parts.append(delta)
+            caption = strip_emoji(delta)
+            if caption:
+                await io.send(turn, "llm_text", delta=caption)
+            await deltas.put(delta)
+
         async def pump_llm() -> None:
             turn.marks.llm_request = mono_ms()
             usage_in = usage_out = searches = 0
+            nonlocal tools_used
+            msgs = list(messages)
             try:
-                async for chunk in llm.stream(request):
-                    if chunk.delta:
-                        if turn.marks.llm_first_token is None:
-                            turn.marks.llm_first_token = mono_ms()
-                        reply_parts.append(chunk.delta)
-                        caption = strip_emoji(chunk.delta)
-                        if caption:
-                            await io.send(turn, "llm_text", delta=caption)
-                        await deltas.put(chunk.delta)
-                    if chunk.input_tokens is not None:
-                        usage_in, usage_out = chunk.input_tokens, chunk.output_tokens or 0
-                        searches = chunk.web_searches
+                for round_no in range(MAX_TOOL_ROUNDS + 1):
+                    last = round_no == MAX_TOOL_ROUNDS
+                    req = replace(request, messages=msgs, tools=None if last else tool_defs)
+                    calls: list[ToolCall] | None = None
+                    round_text: list[str] = []
+                    async for chunk in llm.stream(req):
+                        had_value = display.value is not None
+                        delta = display.feed(chunk.delta) if chunk.delta else ""
+                        if (
+                            display.value is not None
+                            and not had_value
+                            and not tools_used
+                            and not echoes_question(display.value, turn.user_text)
+                        ):
+                            await io.send(turn, "llm_display", text=display.value)  # e.g. "21°C", shown large
+                        if delta:
+                            if turn.marks.llm_first_token is None:
+                                turn.marks.llm_first_token = mono_ms()
+                            if round_no and not round_text and reply_parts and not reply_parts[-1].endswith(" "):
+                                delta = " " + delta  # text after a tool call continues the same reply
+                            round_text.append(delta)
+                            await emit_text(delta)
+                        if chunk.input_tokens is not None:
+                            usage_in += chunk.input_tokens
+                            usage_out += chunk.output_tokens or 0
+                            searches += chunk.web_searches
+                        if chunk.tool_calls:
+                            calls = chunk.tool_calls
+                    if not calls or not tool_defs or last:
+                        break
+                    msgs.append(
+                        {
+                            "role": "assistant",
+                            "content": "".join(round_text) or None,
+                            "tool_calls": [
+                                {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
+                                for c in calls
+                            ],
+                        }
+                    )
+                    tools_used = True  # notes / reminders: no large value on screen
+                    for c in calls:
+                        msgs.append(
+                            {"role": "tool", "tool_call_id": c.id, "content": await self._run_tool(turn, c)}
+                        )
+                rest = display.flush()
+                if rest:
+                    await emit_text(rest)
             finally:
                 turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in))
                 turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
@@ -267,8 +370,25 @@ class ConversationPipeline:
             turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", tts_chars))
         if not reply_parts:
             raise ProviderError("llm", "empty reply")
+        if display.value is None and not tools_used and asks_for_value(turn.user_text):
+            value = guess_value(turn.assistant_text)  # the model forgot the [[value]] tag
+            if value and not echoes_question(value, turn.user_text):
+                await io.send(turn, "llm_display", text=value)
         if started:
             await io.send(turn, "tts_end")
+
+
+    async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
+        assert self.tools is not None
+        out = await asyncio.to_thread(
+            self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id
+        )
+        log.info("tool %s(%s) -> %s", call.name, call.arguments, out.result[:200])
+        turn.items_changed |= out.changed
+        turn.settings_changed |= out.settings_changed
+        if out.open is not None:
+            turn.pending_open = out.open
+        return out.result
 
 
 def _first_error(eg: BaseExceptionGroup) -> BaseException:

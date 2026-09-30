@@ -1,6 +1,7 @@
 {
   "supported_languages": "all",
   "stt": {
+    "prompt": "Write numbers, amounts, times, dates, measurements and calculations with digits and symbols (15 × 3, 2 + 2, 14:30, £3.50, 21°C, 10%), but keep words like 'one of them' or 'o dată' as spoken.",
     "default": {
       "provider": "openai_stt",
       "model": "gpt-live-transcribe"
@@ -53,10 +54,10 @@
     "opus_downlink_bitrate": 32000
   },
   "chunker": {
-    "min_chars": 12,
-    "first_chunk_min_chars": 4,
-    "soft_max_chars": 60,
-    "hard_max_chars": 80,
+    "min_chars": 80,
+    "first_chunk_min_chars": 20,
+    "soft_max_chars": 160,
+    "hard_max_chars": 240,
     "idle_flush_ms": 300,
     "idle_min_chars": 20
   },
