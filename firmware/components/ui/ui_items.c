@@ -1,5 +1,5 @@
 /*
- * BuddyAI - notes and reminders screens (PROTOCOL.md section 3.3).
+ * ola - notes and reminders screens (PROTOCOL.md section 3.3).
  *
  * Two separate lists, each opened from its own icon under the date on the
  * watchface (pen = notes, calendar = reminders) or by the server when the user
@@ -7,13 +7,15 @@
  *  - Notes: "#n  first line"; tapping asks the server for the full text
  *    (item_open -> item_show).
  *  - Reminders: "#n  text", due time below, red "Overdue" once the time has
- *    passed; the snapshot already carries the whole (short) text.
+ *    passed, green "Completed" in its place once marked done (Complete is on
+ *    the detail screen). The snapshot already carries the whole (short) text.
  *
  * Detail: full screen with an X in the top-right corner, "Note #n" /
- * "Reminder #n", due time + Overdue (reminders), scrollable text, and a Delete
- * pill (tap twice). The X goes back to that list, or to the watchface when the
- * item was opened by voice or by a due reminder (reminder_fire: screen wakes and
- * stays on until closed or ALERT_HOLD_MS passes).
+ * "Reminder #n", due time + Overdue / Completed (reminders), scrollable text,
+ * then Complete / Reopen (reminders) and Delete (tap twice). The X goes back
+ * to that list, or to the watchface when the item was opened by voice or by a
+ * due reminder (reminder_fire: screen wakes and stays on until closed or
+ * ALERT_HOLD_MS passes).
  *
  * The snapshot rows live in PSRAM; JSON is parsed outside the LVGL lock.
  */
@@ -42,10 +44,13 @@ static const char *TAG = "ui_items";
 #define SCREEN_PAD_TOP  34
 #define CLOSE_Y         10          /* X: px from the top edge of the display */
 #define ROW_LINES       2           /* text lines per list row, then "…" */
+#define DONE_GREEN      0x2fbf71
+#define PILL_H          48
 
 typedef struct {
     bool reminder;
     bool overdue;
+    bool done;                  /* reminders: completed */
     int  number;
     char text[ROW_TEXT_MAX];    /* note preview or reminder text */
     char due[DUE_MAX];          /* "YYYY-MM-DD HH:MM" local, "" for notes */
@@ -72,10 +77,14 @@ static lv_obj_t   *s_det_scr;
 static lv_obj_t   *s_det_header;
 static lv_obj_t   *s_det_due;
 static lv_obj_t   *s_det_text;
+static lv_obj_t   *s_det_done_btn;
+static lv_obj_t   *s_det_done_lbl;
 static lv_obj_t   *s_det_del;
 static lv_obj_t   *s_det_del_lbl;
 static bool        s_det_reminder;
+static bool        s_det_done;
 static int         s_det_number;
+static char        s_det_due_str[DUE_MAX];
 static bool        s_det_from_list;
 static bool        s_det_alert;
 static bool        s_del_armed;
@@ -191,27 +200,67 @@ static void overdue_tag(lv_obj_t *l)
     lv_label_set_text_fmt(l, ICON_WARNING " %s", ui_str(STR_OVERDUE));
 }
 
+/* Green "✓ Completed" tag, where Overdue would be. */
+static void done_tag(lv_obj_t *l)
+{
+    lv_obj_set_style_text_color(l, lv_color_hex(DONE_GREEN), 0);
+    lv_label_set_text_fmt(l, ICON_OK " %s", ui_str(STR_COMPLETED));
+}
+
+/* "YYYY-MM-DD HH:MM" (local) is now or earlier. False while the clock is not set. */
+static bool due_passed(const char *due)
+{
+    int y, mo, d, h, mi;
+    time_t now = time(NULL);
+    struct tm today;
+    localtime_r(&now, &today);
+    if (!due || today.tm_year < 124 || sscanf(due, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi) != 5) {
+        return false;
+    }
+    struct tm t = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = h, .tm_min = mi,
+                    .tm_isdst = -1 };
+    return mktime(&t) <= now;
+}
+
+/* A full-width rounded action button with a centred label. */
+static lv_obj_t *make_pill(lv_obj_t *parent, lv_event_cb_t cb, lv_obj_t **label_out)
+{
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_set_size(b, CONTENT_W - 60, PILL_H);
+    lv_obj_set_style_radius(b, PILL_H / 2, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(PILL_BG), 0);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_obj_center(l);
+    *label_out = l;
+    return b;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Lists                                                                      */
 /* ------------------------------------------------------------------------- */
 
 static void open_list(bool reminder, bool slide_from_left);
 
-/* Watchface counters: all notes, reminders that are not overdue yet. */
+/* Watchface counters: all notes, reminders that are neither overdue nor completed. */
 static void update_counts(void)
 {
     int notes = 0, reminders = 0;
     for (int i = 0; i < s_row_count; i++) {
         if (!s_rows[i].reminder) {
             notes++;
-        } else if (!s_rows[i].overdue) {
+        } else if (!s_rows[i].overdue && !s_rows[i].done) {
             reminders++;
         }
     }
     ui_shortcut_counts(notes, reminders);
 }
 static void show_detail(bool reminder, int number, const char *text, const char *due, bool overdue,
-                        bool from_list, bool alert);
+                        bool done, bool from_list, bool alert);
+static void set_done(int number, bool done);
 
 static void list_close_cb(lv_event_t *e)
 {
@@ -244,9 +293,9 @@ static void row_event_cb(lv_event_t *e)
     item_row_t r = s_rows[idx];
     if (r.reminder) {
         /* The snapshot has the whole reminder: show it right away. */
-        show_detail(true, r.number, r.text, r.due, r.overdue, true, false);
+        show_detail(true, r.number, r.text, r.due, r.overdue, r.done, true, false);
     } else {
-        show_detail(false, r.number, NULL, NULL, false, true, false);  /* "Loading…" until item_show */
+        show_detail(false, r.number, NULL, NULL, false, false, true, false);  /* "Loading…" until item_show */
         if (g_ui_cb.on_item_open) {
             g_ui_cb.on_item_open(false, r.number);
         }
@@ -302,7 +351,9 @@ static void add_row(lv_obj_t *parent, int idx)
         lv_obj_t *d = lv_label_create(meta);
         lv_obj_set_style_text_opa(d, LV_OPA_70, 0);
         lv_label_set_text_fmt(d, ICON_CALENDAR " %s", due);
-        if (r->overdue) {
+        if (r->done) {
+            done_tag(lv_label_create(meta));
+        } else if (r->overdue) {
             overdue_tag(lv_label_create(meta));
         }
     }
@@ -454,6 +505,11 @@ static void del_cb(lv_event_t *e)
     close_detail();
 }
 
+static void done_btn_cb(lv_event_t *e)
+{
+    set_done(s_det_number, !s_det_done);
+}
+
 static void build_detail(void)
 {
     s_det_scr = column_screen(det_gesture_cb, NULL);
@@ -475,48 +531,58 @@ static void build_detail(void)
     lv_obj_set_style_text_line_space(s_det_text, 2, 0);
     lv_obj_set_style_pad_top(s_det_text, 8, 0);
 
-    s_det_del = lv_button_create(s_det_scr);
-    lv_obj_set_size(s_det_del, CONTENT_W - 60, 48);
-    lv_obj_set_style_radius(s_det_del, 24, 0);
-    lv_obj_set_style_shadow_width(s_det_del, 0, 0);
-    lv_obj_set_style_bg_color(s_det_del, lv_color_hex(PILL_BG), 0);
-    lv_obj_set_style_margin_top(s_det_del, 24, 0);
-    lv_obj_add_flag(s_det_del, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(s_det_del, del_cb, LV_EVENT_CLICKED, NULL);
-    s_det_del_lbl = lv_label_create(s_det_del);
-    lv_obj_set_style_text_color(s_det_del_lbl, lv_color_white(), 0);
-    lv_obj_center(s_det_del_lbl);
+    /* Complete / Reopen (reminders), Delete */
+    s_det_done_btn = make_pill(s_det_scr, done_btn_cb, &s_det_done_lbl);
+    lv_obj_set_style_margin_top(s_det_done_btn, 24, 0);
+    s_det_del = make_pill(s_det_scr, del_cb, &s_det_del_lbl);
 }
 
-/* Fill and show the detail screen. `text` NULL = note still loading. */
-static void show_detail(bool reminder, int number, const char *text, const char *due, bool overdue,
-                        bool from_list, bool alert)
+/* Complete / Reopen button and the due line's tag follow s_det_done. */
+static void detail_apply_done(bool overdue)
 {
-    disarm_delete();
-    s_det_reminder = reminder;
-    s_det_number = number;
-    s_det_from_list = from_list;
-
-    lv_obj_set_style_text_color(s_det_header, g_ui_theme.accent, 0);
-    lv_label_set_text_fmt(s_det_header, "%s #%d", ui_str(reminder ? STR_REMINDER : STR_NOTE), number);
-
+    lv_obj_set_flag(s_det_done_btn, LV_OBJ_FLAG_HIDDEN, !s_det_reminder || lv_obj_has_flag(s_det_del, LV_OBJ_FLAG_HIDDEN));
+    lv_obj_set_style_bg_color(s_det_done_btn, s_det_done ? lv_color_hex(PILL_BG) : lv_color_hex(DONE_GREEN), 0);
+    if (s_det_done) {
+        lv_label_set_text_fmt(s_det_done_lbl, ICON_REFRESH "  %s", ui_str(STR_REOPEN));
+    } else {
+        lv_label_set_text_fmt(s_det_done_lbl, ICON_OK "  %s", ui_str(STR_COMPLETE));
+    }
     lv_obj_clean(s_det_due);
-    if (reminder && due && due[0]) {
+    if (s_det_reminder && s_det_due_str[0]) {
         char buf[32];
-        fmt_due(due, buf, sizeof(buf));
+        fmt_due(s_det_due_str, buf, sizeof(buf));
         lv_obj_t *d = lv_label_create(s_det_due);
         lv_label_set_text_fmt(d, ICON_CALENDAR " %s", buf);
-        if (overdue) {
+        if (s_det_done) {
+            done_tag(lv_label_create(s_det_due));
+        } else if (overdue) {
             overdue_tag(lv_label_create(s_det_due));
         }
         lv_obj_remove_flag(s_det_due, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_det_due, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+/* Fill and show the detail screen. `text` NULL = note still loading. */
+static void show_detail(bool reminder, int number, const char *text, const char *due, bool overdue,
+                        bool done, bool from_list, bool alert)
+{
+    disarm_delete();
+    s_det_reminder = reminder;
+    s_det_number = number;
+    s_det_from_list = from_list;
+    s_det_done = reminder && done;
+    copy_str(s_det_due_str, sizeof(s_det_due_str), reminder ? due : NULL);
+
+    lv_obj_set_style_text_color(s_det_header, g_ui_theme.accent, 0);
+    lv_label_set_text_fmt(s_det_header, "%s #%d", ui_str(reminder ? STR_REMINDER : STR_NOTE), number);
+
     lv_obj_set_style_text_font(s_det_text, reminder ? &buddy_font_28 : &buddy_font_20, 0);
     lv_obj_set_style_text_opa(s_det_text, text ? LV_OPA_COVER : LV_OPA_50, 0);
     lv_label_set_text(s_det_text, text ? text : ui_str(STR_LOADING));
     lv_obj_set_flag(s_det_del, LV_OBJ_FLAG_HIDDEN, text == NULL);
+    detail_apply_done(overdue);
 
     if (alert) {
         end_alert();
@@ -538,10 +604,44 @@ static void show_item_json(const cJSON *item, bool alert)
     int number = jint(item, "number");
     const char *text = jstr(item, "text");
     bool overdue = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "overdue"));
+    bool done = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "done"));
     /* Opened from the list and still waiting for this note: keep "back" going to the list. */
     bool from_list = !alert && lv_screen_active() == s_det_scr && s_det_from_list &&
                      s_det_reminder == reminder && s_det_number == number;
-    show_detail(reminder, number, text ? text : "", jstr(item, "due_local"), overdue, from_list, alert);
+    show_detail(reminder, number, text ? text : "", jstr(item, "due_local"), overdue, done, from_list, alert);
+}
+
+static void rebuild_reminders_async(void *arg)
+{
+    if (lv_screen_active() == s_lists[1].scr) {
+        int32_t y = lv_obj_get_scroll_y(s_lists[1].scr);
+        rebuild_list(&s_lists[1]);
+        lv_obj_scroll_to_y(s_lists[1].scr, y, LV_ANIM_OFF);
+    }
+}
+
+/* Complete / reopen a reminder: tell the server, update the row and whatever
+ * shows it right away (the server's snapshot follows). Caller holds the lock. */
+static void set_done(int number, bool done)
+{
+    if (g_ui_cb.on_item_done) {
+        g_ui_cb.on_item_done(number, done);
+    }
+    for (int i = 0; i < s_row_count; i++) {
+        if (s_rows[i].reminder && s_rows[i].number == number) {
+            s_rows[i].done = done;
+            s_rows[i].overdue = !done && due_passed(s_rows[i].due);    /* reopened: red again if past */
+        }
+    }
+    update_counts();
+    if (lv_screen_active() == s_lists[1].scr) {
+        lv_async_call(rebuild_reminders_async, NULL);   /* not from inside a button's own event */
+    }
+    if (s_det_reminder && s_det_number == number) {
+        s_det_done = done;
+        detail_apply_done(!done && due_passed(s_det_due_str));
+    }
+    ui_note_activity();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -606,6 +706,7 @@ void ui_items_set(const char *json)
             r->reminder = (k == 1);
             r->number = jint(it, "number");
             r->overdue = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "overdue"));
+            r->done = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "done"));
             copy_str(r->text, sizeof(r->text), jstr(it, r->reminder ? "text" : "preview"));
             copy_str(r->due, sizeof(r->due), jstr(it, "due_local"));
         }

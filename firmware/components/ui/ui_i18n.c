@@ -1,5 +1,5 @@
 /*
- * BuddyAI - UI strings
+ * ola - UI strings
  *
  * All on-screen UI text is English. Only the date line (weekday / month
  * names) is localized, for the languages that have a table below:
@@ -28,7 +28,7 @@ static const char *const s_en[STR__COUNT] = {
     [STR_OFFLINE]         = "Offline",
     [STR_NO_SERVER_HINT]  = "No server",
     [STR_PAIR_TITLE]      = "Pair this watch",
-    [STR_PAIR_BODY]       = "Open the BuddyAI web app, choose\n\"Add watch\" and enter this code:",
+    [STR_PAIR_BODY]       = "Open the ola web app, choose\n\"Add watch\" and enter this code:",
     [STR_WIFI_TITLE]      = "Wi-Fi setup",
     [STR_WIFI_BODY]       = "On your phone, join the Wi-Fi network",
     [STR_ERR_NO_WIFI_T]   = "No Wi-Fi",
@@ -48,11 +48,11 @@ static const char *const s_en[STR__COUNT] = {
     [STR_ERR_BUSY_T]      = "Server busy",
     [STR_ERR_BUSY_B]      = "Please try again in a moment.",
     [STR_ERR_SUB_T]       = "Subscription needed",
-    [STR_ERR_SUB_B]       = "Open the BuddyAI app to renew\nBuddyAI Care.",
-    [STR_ERR_LIMIT_T]     = "Monthly limit reached",
-    [STR_ERR_LIMIT_B]     = "Your assistant will be back on\nthe 1st of next month.",
+    [STR_ERR_SUB_B]       = "Open the ola app to renew\nola Care.",
+    [STR_ERR_LIMIT_T]     = "Monthly usage reached",
+    [STR_ERR_LIMIT_B]     = "Ola answers again when it resets.\nExtra usage: ola app.",
     [STR_ERR_INACTIVE_T]  = "Account inactive",
-    [STR_ERR_INACTIVE_B]  = "Contact BuddyAI support.",
+    [STR_ERR_INACTIVE_B]  = "Contact ola support.",
     [STR_RESET_T]         = "Reset watch?",
     [STR_RESET_B]         = "Tap Reset to confirm.\nErases Wi-Fi, server and pairing.\nCancels in 10 s.",
     [STR_RESET_BTN]       = "Reset",
@@ -67,8 +67,8 @@ static const char *const s_en[STR__COUNT] = {
     [STR_NOTE]            = "Note",
     [STR_REMINDER]        = "Reminder",
     [STR_OVERDUE]         = "Overdue",
-    [STR_NO_NOTES]        = "No notes yet.\nAsk Buddy: \"note that…\"",
-    [STR_NO_REMINDERS]    = "No reminders yet.\nAsk Buddy:\n\"remind me at 9 to…\"",
+    [STR_NO_NOTES]        = "No notes yet.\nAsk Ola: \"note that…\"",
+    [STR_NO_REMINDERS]    = "No reminders yet.\nAsk Ola:\n\"remind me at 9 to…\"",
     [STR_LOADING]         = "Loading…",
     [STR_DELETE]          = "Delete",
     [STR_DELETE_CONFIRM]  = "Tap again to delete",
@@ -77,6 +77,10 @@ static const char *const s_en[STR__COUNT] = {
     [STR_NO_MATCH]        = "No language found",
     [STR_TODAY]           = "Today",
     [STR_TOMORROW]        = "Tomorrow",
+    [STR_COMPLETE]        = "Complete",
+    [STR_CARE]            = "ola Care",
+    [STR_COMPLETED]       = "Completed",
+    [STR_REOPEN]          = "Reopen",
 };
 
 typedef struct {

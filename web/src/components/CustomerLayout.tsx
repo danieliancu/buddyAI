@@ -4,6 +4,7 @@ import { CalendarClock, LogOut, MailWarning, NotebookPen, Sparkles, UserRound, W
 import { api } from "../api";
 import { useCustomer } from "../pages/my/session";
 import { Button, cx } from "./ui";
+import UsageNotice from "./UsageNotice";
 
 const NAV = [
   { to: "/my", label: "My watches", icon: Watch, end: true },
@@ -28,7 +29,7 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
             <span className="grid size-8 place-items-center rounded-lg bg-accent-bg text-accent">
               <Watch className="size-4" />
             </span>
-            <span className="font-semibold tracking-tight">BuddyAI</span>
+            <span className="font-semibold tracking-tight">ola</span>
           </NavLink>
           <nav className="ml-6 hidden items-center gap-1 sm:flex">
             {NAV.map(({ to, label, end }) => (
@@ -61,6 +62,7 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
       </header>
 
       {!account.email_verified && <VerifyBanner email={account.email} />}
+      <UsageNotice />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 sm:py-8">{children}</main>
 

@@ -72,7 +72,7 @@ def download(release_id: int, db: Session = Depends(get_session)) -> FileRespons
     path = _fw_dir() / f"{release_id}.bin"
     if not rel or not path.exists():
         raise HTTPException(404, "release not found")
-    return FileResponse(path, media_type="application/octet-stream", filename=f"buddyai-{rel.version}.bin")
+    return FileResponse(path, media_type="application/octet-stream", filename=f"ola-{rel.version}.bin")
 
 
 class OtaBody(BaseModel):

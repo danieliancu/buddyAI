@@ -15,7 +15,7 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
           <span className="grid size-10 place-items-center rounded-xl bg-accent-bg text-accent">
             <Watch className="size-5" />
           </span>
-          <span className="text-lg font-semibold tracking-tight">BuddyAI</span>
+          <span className="text-lg font-semibold tracking-tight">ola</span>
         </Link>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xl sm:p-6">
           <h1 className="text-lg font-semibold">{title}</h1>
@@ -78,7 +78,7 @@ export function LoginPage() {
   return (
     <AuthShell
       title="Sign in"
-      subtitle={params.get("deleted") ? "Your account was deleted. Thank you for using BuddyAI." : "Welcome back to BuddyAI."}
+      subtitle={params.get("deleted") ? "Your account was deleted. Thank you for using ola." : "Welcome back to ola."}
       footer={
         <div className="space-y-4">
           <p>
@@ -272,7 +272,7 @@ export function ResetPasswordPage() {
   return (
     <AuthShell
       title="Choose a password"
-      subtitle="Set a new password for your BuddyAI account. You'll be signed in right after."
+      subtitle="Set a new password for your ola account. You'll be signed in right after."
       footer={
         <Link to="/forgot-password" className="hover:text-fg hover:underline">
           Link expired? Request a new one

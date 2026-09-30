@@ -1,5 +1,5 @@
 /*
- * BuddyAI - device side of protocol/PROTOCOL.md v1, see protocol_client.h
+ * ola - device side of protocol/PROTOCOL.md v1, see protocol_client.h
  */
 #include "protocol_client.h"
 
@@ -68,6 +68,7 @@ typedef enum {
     MSG_END_CONVERSATION,   /* user left the conversation screen */
     MSG_ITEM_OPEN,          /* a = number, b = 1 for a reminder */
     MSG_ITEM_DELETE,        /* a = number, b = 1 for a reminder */
+    MSG_ITEM_DONE,          /* a = reminder number, b = 1 completed / 0 open again */
 } msg_type_t;
 
 typedef struct {
@@ -682,6 +683,10 @@ static void handle_text(const char *txt)
         emit(PROTO_EVT_REMINDER, 0, txt);
         goto out;
     }
+    if (strcmp(type, "notice") == 0) {
+        emit(PROTO_EVT_NOTICE, 0, txt);
+        goto out;
+    }
 
     /* ---- turn messages ---- */
     if (strcmp(type, "turn_end") == 0) {
@@ -1178,6 +1183,15 @@ static void handle_msg(msg_t *m)
             send_json(msg, m->type == MSG_ITEM_OPEN ? "item_open" : "item_delete", false, 0);
         }
         break;
+    case MSG_ITEM_DONE:
+        if (s_conn == CONN_SESSION) {
+            cJSON *msg = cJSON_CreateObject();
+            cJSON_AddStringToObject(msg, "kind", "reminder");
+            cJSON_AddNumberToObject(msg, "number", m->a);
+            cJSON_AddBoolToObject(msg, "done", m->b != 0);
+            send_json(msg, "item_done", false, 0);
+        }
+        break;
     }
     free(m->str);
 }
@@ -1318,6 +1332,12 @@ void proto_item_open(bool reminder, int number)
 void proto_item_delete(bool reminder, int number)
 {
     msg_t m = { .type = MSG_ITEM_DELETE, .a = (uint32_t)number, .b = reminder ? 1 : 0 };
+    post(&m);
+}
+
+void proto_item_done(int number, bool done)
+{
+    msg_t m = { .type = MSG_ITEM_DONE, .a = (uint32_t)number, .b = done ? 1 : 0 };
     post(&m);
 }
 

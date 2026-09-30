@@ -24,7 +24,7 @@ class MdnsAdvertiser:
         host = socket.gethostname().split(".")[0]
         self._info = AsyncServiceInfo(
             SERVICE_TYPE,
-            f"BuddyAI {host}.{SERVICE_TYPE}",
+            f"ola {host}.{SERVICE_TYPE}",
             addresses=[socket.inet_aton(self.ip)],
             port=self.port,
             properties={"path": "/ws/device", "scheme": "ws", "proto": str(PROTOCOL_VERSION)},

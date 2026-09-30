@@ -1,5 +1,5 @@
 /*
- * BuddyAI - persistent settings (NVS)
+ * ola - persistent settings (NVS)
  *
  * Holds:
  *  - Wi-Fi credentials, configured server_url, last-known server, device token
@@ -55,7 +55,6 @@ typedef struct {
     uint8_t          volume;            /* 0..100 */
     uint8_t          brightness;        /* 0..100 */
     uint16_t         screen_timeout_s;
-    bool             time_24h;
     char             tz_posix[SETTINGS_TZ_MAX];
     settings_theme_t theme;
     uint16_t         max_listen_s;

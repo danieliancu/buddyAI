@@ -181,8 +181,8 @@ class SettingsRepo:
 class PersonaRepo:
     DEFAULTS = [
         (
-            "Buddy",
-            "You are Buddy, a warm, concise and helpful voice assistant living in a smartwatch.",
+            "Ola",
+            "You are Ola, a warm, concise and helpful voice assistant living in a smartwatch.",
         ),
         (
             "Coach",
@@ -494,12 +494,17 @@ class ItemRepo:
             return self._fix(it)
         raise RuntimeError("unreachable")
 
-    def update(self, it: Item, text: str | None = None, due_at: datetime | None = None) -> Item:
+    def update(
+        self, it: Item, text: str | None = None, due_at: datetime | None = None, done: bool | None = None
+    ) -> Item:
         if text is not None:
             it.text = self.check_text(it.kind, text)
-        if it.kind == "reminder" and due_at is not None:
+        if it.kind == "reminder" and due_at is not None and due_at != it.due_at:
             it.due_at = due_at
             it.fired_at = None  # a rescheduled reminder fires again
+            it.done_at = None  # ...and is open again
+        if it.kind == "reminder" and done is not None:
+            it.done_at = (it.done_at or utcnow()) if done else None
         it.updated_at = utcnow()
         self.s.add(it)
         self.s.commit()
@@ -513,7 +518,11 @@ class ItemRepo:
     def due(self, now: datetime, since: datetime | None = None, account_id: int | None = None) -> list[Item]:
         """Reminders that are due and not yet delivered (optionally only those due after `since`)."""
         q = select(Item).where(
-            Item.kind == "reminder", col(Item.due_at).is_not(None), Item.due_at <= now, col(Item.fired_at).is_(None)
+            Item.kind == "reminder",
+            col(Item.due_at).is_not(None),
+            Item.due_at <= now,
+            col(Item.fired_at).is_(None),
+            col(Item.done_at).is_(None),  # completed early: never fires
         )
         if since is not None:
             q = q.where(Item.due_at >= since)
@@ -530,6 +539,7 @@ class ItemRepo:
     def _fix(it: Item) -> Item:
         it.due_at = _aware(it.due_at)
         it.fired_at = _aware(it.fired_at)
+        it.done_at = _aware(it.done_at)
         it.created_at = _aware(it.created_at)
         it.updated_at = _aware(it.updated_at)
         return it

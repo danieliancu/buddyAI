@@ -1,4 +1,4 @@
-# BuddyAI Server
+# ola Server
 
 FastAPI server: device gateway (WebSocket, [PROTOCOL.md](../protocol/PROTOCOL.md)), voice pipeline, REST API and web app hosting.
 
@@ -95,7 +95,7 @@ abort/stale-frame checks.
   Customers can export or delete their data.
 - **Emails** (`app/email.py`): printed to the log by default (`BUDDYAI_EMAIL_BACKEND=console`), SMTP in production.
 - **Shop** (`app/billing.py`, `app/api/shop.py`): one Stripe Checkout sells the watch together with the
-  "BuddyAI Care" subscription (trial first). Webhooks keep orders and subscriptions in sync.
+  "ola Care" subscription (trial first). Webhooks keep orders and subscriptions in sync.
   `app/entitlements.py` refuses turns without an active or trial subscription, or once the monthly
   fair-use allowance is used up.
   Billing stays off until `BUDDYAI_STRIPE_SECRET_KEY` is set, so every watch is then allowed.

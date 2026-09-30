@@ -1,5 +1,5 @@
 /*
- * BuddyAI - firmware update, see ota.h
+ * ola - firmware update, see ota.h
  */
 #include "ota.h"
 

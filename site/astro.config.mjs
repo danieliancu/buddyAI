@@ -3,7 +3,7 @@ import { defineConfig } from "astro/config";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 
-// Dev only: where `npm run dev` proxies /api/* (the BuddyAI server). In production Caddy
+// Dev only: where `npm run dev` proxies /api/* (the ola server). In production Caddy
 // proxies /api/shop/* on the www domain to the server, so the built site uses same-origin URLs.
 const API_TARGET = process.env.BUDDYAI_API ?? "http://127.0.0.1:8765";
 

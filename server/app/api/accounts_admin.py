@@ -75,7 +75,19 @@ def account_detail(account_id: int, request: Request, db: Session = Depends(get_
         "last_login_at": acc.last_login_at,
         "devices": [device_out(d, hub) for d in DeviceRepo(db).list(acc.id)],
         "subscription": sub.model_dump() if sub else None,
-        "allowance": {"used": a.used, "limit": a.limit, "currency": a.currency, "override": acc.allowance_override},
+        "entitled": bool(sub and billing.is_entitled(sub)),
+        "internal": acc.internal,
+        "allowance": {
+            "used": a.used,
+            "limit": a.limit,
+            "currency": a.currency,
+            "override": acc.allowance_override,
+            "used_pct": a.used_pct,
+            "period_start": a.period.start,
+            "period_end": a.period.end,
+            "period_kind": a.period.kind,
+            "unpriced_rows": a.unpriced_rows,
+        },
         "orders": [o.model_dump() for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()],
     }
 

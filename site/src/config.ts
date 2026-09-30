@@ -1,5 +1,5 @@
 /**
- * Site-wide configuration for the BuddyAI marketing site.
+ * Site-wide configuration for the ola marketing site.
  *
  * Everything marked TODO(owner) must be filled in / confirmed before launch.
  * Search the project for "TODO(owner)" to find every placeholder.
@@ -7,7 +7,7 @@
 
 export type Currency = "GBP" | "EUR";
 
-// TODO(owner): must match the Stripe prices (products "BuddyAI Watch" and "BuddyAI Care", GBP + EUR, trial length).
+// TODO(owner): must match the Stripe prices (products "ola Watch" and "ola Care", GBP + EUR, trial length).
 // Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
 export const prices = {
   watch: { GBP: 199, EUR: 229 },
@@ -17,7 +17,7 @@ export const prices = {
 } as const;
 
 export const config = {
-  siteName: "BuddyAI",
+  siteName: "ola",
   tagline: "Your AI companion, now on your wrist.",
 
   // TODO(owner): company details shown in the footer, contact page and legal pages.

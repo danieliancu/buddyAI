@@ -163,6 +163,23 @@ class DeviceHub:
         for c in conns:
             await c.send_json("items", **device_snapshot(items, c.settings.timezone))
 
+    async def push_usage_notice(self, account_id: int) -> bool:
+        """A usage threshold not yet shown on a watch: a short `notice` to the account's watches.
+
+        The watch keeps it until no conversation is running, so it never interrupts one. Old firmware
+        ignores the message type. Shown once per threshold and period (usage_notices)."""
+        conns = self.account_connections(account_id)
+        if not conns:
+            return False
+        from app import usage_notices  # avoid an import cycle
+
+        notice = usage_notices.take_watch_notice(account_id)
+        if notice is None:
+            return False
+        for c in conns:
+            await c.send_json("notice", level=notice["level"], text=notice["text"])
+        return True
+
     def items_changed(self, account_id: int) -> None:
         """Tell the account's open web pages to reload notes/reminders."""
         self.publish({"type": "items_changed", "account_id": account_id})

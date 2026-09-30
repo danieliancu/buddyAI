@@ -1,4 +1,4 @@
-/* BuddyAI - net component internals */
+/* ola - net component internals */
 #pragma once
 
 #include <stdbool.h>

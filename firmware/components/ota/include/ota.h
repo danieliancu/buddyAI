@@ -1,5 +1,5 @@
 /*
- * BuddyAI - firmware update (ota_available, PROTOCOL.md section 3.2)
+ * ola - firmware update (ota_available, PROTOCOL.md section 3.2)
  *
  * Downloads the image with esp_https_ota (CA bundle for https), verifies the
  * SHA-256 of the written image against the offer, then switches the boot

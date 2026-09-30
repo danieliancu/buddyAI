@@ -1,5 +1,5 @@
 /*
- * BuddyAI - device side of protocol/PROTOCOL.md v1
+ * ola - device side of protocol/PROTOCOL.md v1
  *
  * Owns the WebSocket session: server selection (server_url -> last-known ->
  * mDNS), hello / pairing, envelope + sequence numbers, turn management with
@@ -35,7 +35,7 @@ typedef enum {
     PROTO_ERR_PROTOCOL_UNSUPPORTED, /* firmware update required */
     PROTO_ERR_AI,                   /* stt/llm/tts_failed, internal */
     PROTO_ERR_BUSY,
-    PROTO_ERR_SUBSCRIPTION_REQUIRED, /* listen_start refused: no active BuddyAI Care subscription */
+    PROTO_ERR_SUBSCRIPTION_REQUIRED, /* listen_start refused: no active ola Care subscription */
     PROTO_ERR_LIMIT_REACHED,        /* listen_start refused: monthly allowance used up */
     PROTO_ERR_ACCOUNT_INACTIVE,     /* hello refused: owner account suspended/closed (slow retry) */
 } proto_error_t;
@@ -60,6 +60,7 @@ typedef enum {
     PROTO_EVT_ITEMS_OPEN,           /* num = 1 reminders, 0 notes (`items_open`) */
     PROTO_EVT_ITEM_SHOW,            /* str = `item_show` message JSON */
     PROTO_EVT_REMINDER,             /* str = `reminder_fire` message JSON */
+    PROTO_EVT_NOTICE,               /* str = `notice` message JSON (usage threshold) */
 } proto_event_type_t;
 
 typedef struct {
@@ -101,6 +102,8 @@ void proto_end_conversation(void);
  * Ignored while there is no session. */
 void proto_item_open(bool reminder, int number);
 void proto_item_delete(bool reminder, int number);
+/* Mark a reminder completed (done = true) or open again. */
+void proto_item_done(int number, bool done);
 
 /* Force a new connection cycle (e.g. after the server URL changed). */
 void proto_reconnect(void);

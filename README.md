@@ -1,4 +1,4 @@
-# BuddyAI
+# ola
 
 AI voice companion watch (Waveshare ESP32-S3-Touch-AMOLED-2.06), sold directly to consumers in the UK and EU.
 
@@ -14,7 +14,7 @@ AI voice companion watch (Waveshare ESP32-S3-Touch-AMOLED-2.06), sold directly t
 ## Run everything on your PC
 
 ```powershell
-cd C:\_work\BuddyAI\server
+cd C:\_work\ola\server
 .\.venv\Scripts\python -m app.main
 ```
 
@@ -32,7 +32,7 @@ To rebuild the web app after changing it, run `cd web; npm install; npm run buil
 ## Try it without the watch
 
 ```powershell
-cd C:\_work\BuddyAI\server
+cd C:\_work\ola\server
 .\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 pair       # enter the code in /my → Add watch
 .\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 ask --wav tests\samples\en_1.wav --lang auto
 .\.venv\Scripts\python tools\fake_watch.py --device-id my-watch-1 online     # stay connected (Ctrl+C to stop)
@@ -44,13 +44,13 @@ See [firmware/README.md](firmware/README.md). In short:
 
 ```powershell
 . "C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1"
-cd C:\_work\BuddyAI\firmware
+cd C:\_work\ola\firmware
 idf.py build
 idf.py -p COM5 flash monitor
 ```
 
 First boot:
-1. The watch opens the Wi-Fi network `BuddyAI-XXXX`. Join it from your phone and enter your Wi-Fi details and the server address.
+1. The watch opens the Wi-Fi network `ola-XXXX`. Join it from your phone and enter your Wi-Fi details and the server address.
 2. The watch shows a 6-digit code. Enter it in the web app under **My watches → Add watch**.
 
 ## Status

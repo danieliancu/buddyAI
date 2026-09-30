@@ -1,5 +1,5 @@
 /*
- * BuddyAI - CO5300 QSPI AMOLED (410x502) + FT3168 touch + esp_lvgl_port.
+ * ola - CO5300 QSPI AMOLED (410x502) + FT3168 touch + esp_lvgl_port.
  *
  * Panel init sequence and the "even coordinates" rounder come from the official
  * Waveshare BSP (waveshare/esp32_s3_touch_amoled_2_06) and match the xiaozhi-esp32

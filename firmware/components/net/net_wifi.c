@@ -1,5 +1,5 @@
 /*
- * BuddyAI - Wi-Fi station, SNTP, mDNS discovery
+ * ola - Wi-Fi station, SNTP, mDNS discovery
  */
 #include <string.h>
 #include <stdlib.h>

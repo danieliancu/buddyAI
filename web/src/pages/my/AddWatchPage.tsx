@@ -9,7 +9,7 @@ export default function AddWatchPage() {
   const { account } = useCustomer();
   const navigate = useNavigate();
   const [code, setCode] = useState("");
-  const [name, setName] = useState("My BuddyAI");
+  const [name, setName] = useState("My ola");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const verified = account.email_verified;
@@ -20,7 +20,7 @@ export default function AddWatchPage() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.me.devices.pair(code, name.trim() || "My BuddyAI");
+      const r = await api.me.devices.pair(code, name.trim() || "My ola");
       navigate(`/my/watch/${encodeURIComponent(r.device_id)}`, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) setError(new Error("Please confirm your email address first."));
@@ -42,7 +42,7 @@ export default function AddWatchPage() {
           Hold the side button until the screen lights up.
         </Step>
         <Step n={2} icon={<Smartphone className="size-4" />} title="Connect it to your Wi-Fi">
-          On your phone, open Wi-Fi settings and join the network <b className="font-mono text-fg">BuddyAI-XXXX</b>. A page opens:
+          On your phone, open Wi-Fi settings and join the network <b className="font-mono text-fg">ola-XXXX</b>. A page opens:
           pick your home Wi-Fi and enter its password.
         </Step>
         <Step n={3} icon={<Watch className="size-4" />} title="Enter the code">

@@ -1,4 +1,4 @@
-// Small typed client for the BuddyAI FastAPI backend (same origin, cookie session).
+// Small typed client for the ola FastAPI backend (same origin, cookie session).
 //
 // Two roles share one browser session cookie (both can be signed in at the same time):
 //   - operator ("admin" area): /api/auth, /api/devices, /api/accounts, ... → `api.*`
@@ -70,7 +70,7 @@ export interface AccountList {
   accounts: AccountRow[];
 }
 
-/** Stripe subscription status ("BuddyAI Care"). */
+/** Stripe subscription status ("ola Care"). */
 export type SubscriptionStatus =
   | "trialing"
   | "active"
@@ -88,12 +88,17 @@ export interface SubscriptionInfo {
   cancel_at_period_end: boolean;
 }
 
-/** Full subscription row (operator). */
+/** Full subscription row (operator). `source` "complimentary" = operator-granted pilot/test access (no Stripe ids). */
 export interface Subscription extends SubscriptionInfo {
   id: number;
-  stripe_subscription_id: string;
-  stripe_customer_id: string;
+  source: "stripe" | "complimentary" | string;
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
   account_id: number | null;
+  current_period_start: string | null;
+  allowance_pence: number | null;
+  granted_by: string | null;
+  note: string;
   updated_at: string;
 }
 
@@ -128,13 +133,18 @@ export interface OrderUpdate {
   tracking_number: string;
 }
 
-/** Monthly fair-use AI allowance (display currency). */
+/** AI allowance of the current period, in GBP (operator view). */
 export interface Allowance {
   used: number;
   limit: number;
   currency: string;
-  /** Operator override of the plan limit; null = plan default. */
+  /** Operator override of the plan allowance (GBP); null = plan default. */
   override: number | null;
+  used_pct?: number;
+  period_start?: string;
+  period_end?: string;
+  period_kind?: "stripe" | "complimentary" | "calendar";
+  unpriced_rows?: number;
 }
 
 /** GET /api/accounts/{id} (operator). */
@@ -142,6 +152,10 @@ export interface AccountDetail extends Account {
   last_login_at: string | null;
   devices: Device[];
   subscription: Subscription | null;
+  /** The subscription gives access now (Stripe status, or an unexpired complimentary grant). */
+  entitled: boolean;
+  /** Internal/operator account: never limited (costs still tracked). */
+  internal: boolean;
   allowance: Allowance;
   orders: Order[];
 }
@@ -202,7 +216,6 @@ export interface DeviceSettings {
   volume: number;
   brightness: number;
   screen_timeout_s: number;
-  time_24h: boolean;
   timezone: string;
   theme: Theme;
   max_listen_s: number;
@@ -263,8 +276,10 @@ export interface Item {
   text: string;
   /** Reminders: when it is due (UTC ISO). */
   due_at: string | null;
-  /** Reminders: the time has passed (stays until deleted or rescheduled). */
+  /** Reminders: the time has passed and it is not completed (stays until completed, deleted or rescheduled). */
   overdue: boolean;
+  /** Reminders: marked completed (no longer fires). */
+  done: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -287,13 +302,97 @@ export interface MySubscription {
   orders: Pick<Order, "id" | "status" | "created_at" | "tracking_number" | "carrier">[];
 }
 
-/** GET /api/me/usage. `cost` is internal and never shown to customers. */
+/** GET /api/me/usage: completed conversations in the current allowance period (no costs). */
 export interface MyUsage {
   period_start: string;
+  reset_at: string;
   questions: number;
-  cost: number;
-  currency: string;
-  symbol: string;
+}
+
+export type PlanKind = "trial" | "active" | "past_due" | "canceled" | "complimentary" | "expired" | "none" | "internal";
+
+/** GET /api/me/plan: ola Care for the customer. Shares of the allowance only, never internal costs. */
+export interface MyPlan {
+  billing_enabled: boolean;
+  /** False: usage limits are not active for this account (no meter). */
+  enforced: boolean;
+  status: {
+    kind: PlanKind;
+    trial_end?: string | null;
+    period_end?: string | null;
+    cancel_at_period_end?: boolean;
+    note?: string;
+  };
+  usage: {
+    used_pct: number;
+    period_start: string;
+    reset_at: string;
+    activity_count: number;
+    /** Extra usage bought this period, as % of the plan's usage. */
+    extra_pct: number;
+  };
+  thresholds: number[];
+  prices: { currency: "GBP"; care_price_pence: number; topup_price_pence: number; topup_adds_pct: number };
+  can_subscribe: boolean;
+  topup_available: boolean;
+  can_manage_billing: boolean;
+  topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; period_end: string; current: boolean }[];
+}
+
+export interface UsageNotice {
+  threshold: number;
+  level: "info" | "warning" | "limit";
+}
+
+/** Operator: plan settings (GBP pence). */
+export interface BillingSettings {
+  enforce: boolean;
+  care_price_pence: number;
+  care_allowance_pence: number;
+  topup_price_pence: number;
+  topup_allowance_pence: number;
+  thresholds: string;
+  usd_gbp_rate: string;
+  reserve_pence: number;
+  updated_at: string;
+  updated_by: string;
+  stripe_configured: boolean;
+  stripe_mode: "off" | "test" | "live";
+  care_price_id_set: boolean;
+}
+
+export interface TurnCostStats {
+  count: number;
+  total?: number;
+  mean?: number;
+  p50?: number;
+  p90?: number;
+  p95?: number;
+  max?: number;
+}
+
+/** Operator: GET /api/finance (GBP; estimates, mock usage excluded). */
+export interface Finance {
+  days: number;
+  currency: "GBP";
+  note: string;
+  provider_cost: number;
+  by_group: Record<string, number>;
+  by_day: { day: string; cost: number }[];
+  by_month: { month: string; cost: number }[];
+  by_account: { account_id: number | null; account: string; cost: number }[];
+  by_device: { device_id: string; name: string; cost: number }[];
+  turns: {
+    completed: TurnCostStats;
+    aborted: TurnCostStats;
+    error: TurnCostStats;
+    no_speech: TurnCostStats;
+    not_charged_to_customers: number;
+  };
+  search: { searches: number; cost: number; cache_hits: number; hit_rate: number | null; avoided_at_least: number };
+  unpriced: { provider: string; model: string; unit: string; rows: number; quantity: number }[];
+  revenue: { by_kind: Record<string, { gross: number; vat: number; net: number }>; net: number; other_currencies: Record<string, number> };
+  gross_contribution: number;
 }
 
 export type TurnStatus = "active" | "completed" | "aborted" | "error" | "no_speech" | string;
@@ -604,6 +703,12 @@ const operatorApi = {
     remove: (id: number) => del<{ ok: boolean }>(`/api/personas/${id}`),
   },
   usage: (days: number, deviceId?: string) => get<Usage>(`/api/usage${q({ days, device_id: deviceId })}`),
+  finance: (days: number) => get<Finance>(`/api/finance${q({ days })}`),
+  billingSettings: {
+    get: () => get<BillingSettings>("/api/billing/settings"),
+    update: (body: Partial<Omit<BillingSettings, "updated_at" | "updated_by" | "stripe_configured" | "stripe_mode" | "care_price_id_set">>) =>
+      put<BillingSettings>("/api/billing/settings", body),
+  },
   diagnostics: (days: number, deviceId?: string) =>
     get<Diagnostics>(`/api/diagnostics${q({ days, device_id: deviceId })}`),
   pricing: {
@@ -655,6 +760,10 @@ const accountsApi = {
   create: (body: { email: string; name?: string; country?: string | null }) => post<Account>("/api/accounts", body),
   setStatus: (id: number, status: "active" | "suspended") => patch<Account>(`/api/accounts/${id}`, { status }),
   audit: (id: number) => get<AuditEntry[]>(`/api/accounts/${id}/audit`),
+  /** Complimentary/test ola Care (no payment, no Stripe objects). Idempotent unless `extend`. */
+  grantComplimentary: (id: number, body: { days: number; allowance_pence?: number | null; note?: string; extend?: boolean }) =>
+    post<{ created: boolean; subscription: Subscription }>(`/api/accounts/${id}/complimentary`, body),
+  revokeComplimentary: (id: number) => del<{ revoked: boolean }>(`/api/accounts/${id}/complimentary`),
   /** null = back to the plan default. */
   setAllowance: (id: number, allowance_override: number | null) =>
     patch<{ allowance_override: number | null; used: number; limit: number; currency: string }>(`/api/accounts/${id}/allowance`, {
@@ -718,9 +827,17 @@ const meApi = {
     create: (body: ItemInput) => me.post<Item>("/api/me/items", body),
     update: (kind: ItemKind, number: number, body: ItemInput) => me.put<Item>(`/api/me/items/${kind}/${number}`, body),
     remove: (kind: ItemKind, number: number) => me.del<{ ok: boolean }>(`/api/me/items/${kind}/${number}`),
+    setDone: (number: number, done: boolean) => me.put<Item>(`/api/me/items/reminder/${number}/done`, { done }),
   },
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),
+  plan: () => me.get<MyPlan>("/api/me/plan"),
+  /** Stripe Checkout URL for ola Care (existing account). */
+  subscribe: () => me.post<{ url: string }>("/api/me/subscribe"),
+  /** Stripe Checkout URL for a one-off extra-usage purchase (granted only after payment). */
+  topupCheckout: () => me.post<{ url: string; topup_id: number }>("/api/me/topups/checkout"),
+  usageNotice: () => me.get<{ notice: UsageNotice | null }>("/api/me/usage-notice"),
+  dismissUsageNotice: (threshold: number) => me.post<{ ok: boolean }>("/api/me/usage-notice/dismiss", { threshold }),
   /** Stripe Billing Portal URL (404 = no subscription on this account). */
   billingPortal: () => me.post<{ url: string }>("/api/me/billing-portal"),
 };
@@ -760,6 +877,8 @@ export type LiveEvent =
   | ({ type: "turn_refused"; code: TurnRefusedCode } & LiveBase)
   /** Notes or reminders of the account changed (voice, another tab, a watch). */
   | { type: "items_changed"; account_id: number; at?: number }
+  /** The account reached a usage threshold (80 / 95 / 100 % of the allowance). */
+  | { type: "usage_threshold"; account_id: number; threshold: number; at?: number }
   | { type: "keepalive"; at?: number };
 
 export type TurnRefusedCode = "subscription_required" | "limit_reached" | "account_inactive" | string;

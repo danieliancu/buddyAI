@@ -1,7 +1,9 @@
 """OpenAI LLM (streaming). Params from config pass through (e.g. reasoning_effort).
 
-Without web search: Chat Completions. With web search: Responses API + the hosted `web_search`
-tool (the model decides per question whether to search); citations are stripped from the text.
+Conversation turns use Chat Completions (cached prompt tokens are reported separately). Web search is
+a separate, compact call (`web_search`): Responses API + the hosted `web_search` tool, only when the
+conversation model asked for it (app/search.py). The streaming Responses path with the hosted tool is
+kept for requests that still set `web_search`. Citations are stripped from the text.
 """
 
 from __future__ import annotations
@@ -56,8 +58,10 @@ class OpenAILLM(LLMProvider):
                         yield LLMChunk(delta=d.content)
                     calls.feed(getattr(d, "tool_calls", None))
                 if event.usage:
+                    details = getattr(event.usage, "prompt_tokens_details", None)
                     yield LLMChunk(
                         input_tokens=event.usage.prompt_tokens,
+                        cached_input_tokens=int(getattr(details, "cached_tokens", 0) or 0),
                         output_tokens=event.usage.completion_tokens,
                     )
             tool_calls = calls.result()
@@ -65,6 +69,45 @@ class OpenAILLM(LLMProvider):
                 yield LLMChunk(tool_calls=tool_calls)
         except OpenAIError as exc:
             raise ProviderError("llm", str(exc)) from exc
+
+    async def web_search(
+        self,
+        query: str,
+        location: str,
+        language: str,
+        *,
+        model: str,
+        tool: dict[str, Any],
+        params: dict[str, Any],
+        instructions: str,
+        timezone_name: str = "",
+    ) -> tuple[str, int, int, int]:
+        """One compact web search: (answer, input tokens, output tokens, searches run)."""
+        if not self.api_key:
+            raise ProviderError("llm", "OpenAI API key is not configured")
+        p: dict[str, Any] = dict(params)
+        effort = p.pop("reasoning_effort", None)
+        if effort is not None:
+            p["reasoning"] = {"effort": effort}
+        hosted = {"type": "web_search", **{k: v for k, v in tool.items() if k in ("search_context_size",)}}
+        if location:
+            hosted["user_location"] = {"type": "approximate", "city": location, **({"timezone": timezone_name} if timezone_name else {})}
+        try:
+            r = await self._client.responses.create(
+                model=model,
+                instructions=instructions,
+                input=query,
+                tools=[hosted],
+                max_output_tokens=220,
+                **p,
+            )
+        except OpenAIError as exc:
+            raise ProviderError("llm", f"web search failed: {exc}") from exc
+        citations = CitationFilter()
+        text = (citations.feed(getattr(r, "output_text", "") or "") + citations.flush()).strip()
+        searches = sum(1 for item in r.output or [] if item.type == "web_search_call")
+        usage = r.usage
+        return text, (usage.input_tokens if usage else 0), (usage.output_tokens if usage else 0), searches
 
     async def _stream_responses(self, request: LLMRequest) -> AsyncIterator[LLMChunk]:
         params: dict[str, Any] = dict(request.params)

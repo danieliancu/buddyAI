@@ -1,6 +1,6 @@
-# BuddyAI Device Protocol — v1
+# ola Device Protocol — v1
 
-Contract between the watch firmware and the BuddyAI server. Source of truth for both sides.
+Contract between the watch firmware and the ola server. Source of truth for both sides.
 Any incompatible change increments `protocol_version`.
 
 ## 1. Transport
@@ -50,6 +50,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `ping` | — | Keepalive. |
 | `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
+| `item_done` | `kind` (`reminder`), `number`, `done` | User completed (`true`) or reopened (`false`) a reminder; server replies with a fresh `items` to every watch of the account. |
 
 ### 3.2 Server → Device
 
@@ -71,17 +72,19 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
-| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, overdue}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
+| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
 | `items_open` | `kind` | Open the notes or reminders list (the user asked to see them). Sent after `turn_end`. |
-| `item_show` | `item: {kind, number, text, due_local?, overdue?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. |
+| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
+| `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 
 ### 3.3 Notes and reminders
 
 Notes and reminders are separate lists that belong to the account, so every watch of the account gets
 the same lists. A note is text only (up to 10000 characters); a reminder has a due time and a short text
-(up to 80 characters). A reminder whose time has passed is `overdue` until it is deleted or rescheduled
-(there is no "done" state). Numbers are per kind (note #1 and reminder #1 can both exist); a new item
+(up to 80 characters). A reminder whose time has passed is `overdue` until it is completed, deleted or
+rescheduled. A completed reminder (`done: true`) is listed after the open ones, never fires and is not
+`overdue`; rescheduling it opens it again. Numbers are per kind (note #1 and reminder #1 can both exist); a new item
 takes the lowest free number, so after deleting #1 from #1, #2, #3 the next item is #1 again.
 `due_local` is `"YYYY-MM-DD HH:MM"` in the watch's time zone. Note rows carry only a `preview` (first
 line); the full text arrives with `item_show`. A reminder is delivered once: if no watch is online
@@ -118,7 +121,6 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
   "volume": 70,
   "brightness": 80,
   "screen_timeout_s": 15,
-  "time_24h": true,
   "tz_posix": "EET-2EEST,M3.5.0/3,M10.5.0/4",
   "theme": {
     "preset": "midnight",
@@ -139,8 +141,8 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 - `language`: `"auto"` (reply in the language the user speaks) or an ISO 639-1 code.
   `quick_languages` (max 3) are the options for the watch's quick toggle; labels are always
   renderable with the watch fonts (Latin, Greek, Cyrillic).
-- The watch may change `language`, `preferred_language`, `volume`, `brightness`, `theme`, `time_24h`
-  through `settings_changed`. The server applies them, bumps the version and replies with `settings_update`.
+- The watch may change `language`, `preferred_language`, `volume`, `brightness`, `theme`
+  through `settings_changed`. The clock is always 24-hour. The server applies them, bumps the version and replies with `settings_update`.
 - AI-only settings (persona, model, voice, VAD sensitivity…) stay on the server.
 
 ## 6. Cancellation and stale-frame rules
@@ -163,8 +165,8 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `bad_request` | Malformed message | Log. |
 | `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn | Show error, go idle. |
 | `busy` | Server overloaded | Retry later. |
-| `subscription_required` | Owner has no active/trial BuddyAI Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the BuddyAI app", go idle. |
-| `limit_reached` | Monthly fair-use allowance used up | Show "Monthly limit reached — resets on the 1st", go idle. |
+| `subscription_required` | Owner has no active/trial ola Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the ola app", go idle. |
+| `limit_reached` | The account's AI allowance for the current period is used up (shared by all its watches) | Show "Monthly usage reached — answers again when it resets; extra usage in the app", go idle. |
 | `account_inactive` | Owner account suspended or closed (reply to `hello`, then close) | Show "Account inactive — contact support"; retry slowly. |
 | `internal` | Unexpected server error | Show error, go idle. |
 

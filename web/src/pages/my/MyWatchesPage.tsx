@@ -6,7 +6,7 @@ import { useLive } from "../../live";
 import { fmtAgo } from "../../format";
 import { BatteryInfo, OnlineDot, StateBadge } from "../../components/DeviceBits";
 import { buttonCls, Card, Empty, ErrorBox, Spinner, cx, useAsync } from "../../components/ui";
-import { turnRefusedText } from "../../components/BillingBits";
+import { fmtDayMonth, turnRefusedText } from "../../components/BillingBits";
 import { useCustomer } from "./session";
 
 /** Apply a live event to a device list (status, battery, state). */
@@ -69,9 +69,9 @@ export default function MyWatchesPage() {
             <MessageCircleQuestion className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-xs text-muted">This month</p>
+            <p className="text-xs text-muted">This period · resets {fmtDayMonth(usage.data.reset_at)}</p>
             <p className="font-semibold">
-              <span className="tabular">{usage.data.questions}</span> {usage.data.questions === 1 ? "question" : "questions"}
+              <span className="tabular">{usage.data.questions}</span> {usage.data.questions === 1 ? "conversation" : "conversations"}
             </p>
           </div>
         </div>
@@ -89,7 +89,7 @@ export default function MyWatchesPage() {
       ) : list.length === 0 ? (
         <Card>
           <Empty icon={<Watch className="size-8" />} title="Add your first watch">
-            Turn on your BuddyAI watch and follow the steps. It takes about a minute.
+            Turn on your ola watch and follow the steps. It takes about a minute.
             {account.email_verified && (
               <div className="mt-4">
                 <Link to="/my/add-watch" className={buttonCls("primary")}>

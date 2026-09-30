@@ -1,5 +1,5 @@
 /*
- * BuddyAI - persistent settings (NVS)
+ * ola - persistent settings (NVS)
  */
 #include "settings.h"
 
@@ -94,7 +94,6 @@ static void set_defaults(buddy_settings_t *s)
     s->volume = 70;
     s->brightness = 80;
     s->screen_timeout_s = 15;
-    s->time_24h = true;
     strcpy(s->tz_posix, "EET-2EEST,M3.5.0/3,M10.5.0/4");
     settings_theme_preset("midnight", &s->theme);
     s->max_listen_s = 15;
@@ -217,10 +216,6 @@ static void merge_json(buddy_settings_t *s, const cJSON *j)
     if (cJSON_IsNumber(it)) {
         s->screen_timeout_s = (uint16_t)clamp_int(it->valueint, 5, 3600);
     }
-    it = cJSON_GetObjectItemCaseSensitive(j, "time_24h");
-    if (cJSON_IsBool(it)) {
-        s->time_24h = cJSON_IsTrue(it);
-    }
     it = cJSON_GetObjectItemCaseSensitive(j, "tz_posix");
     if (cJSON_IsString(it) && it->valuestring[0]) {
         strlcpy(s->tz_posix, it->valuestring, sizeof(s->tz_posix));
@@ -273,7 +268,6 @@ cJSON *settings_to_json(const buddy_settings_t *s)
     cJSON_AddNumberToObject(j, "volume", s->volume);
     cJSON_AddNumberToObject(j, "brightness", s->brightness);
     cJSON_AddNumberToObject(j, "screen_timeout_s", s->screen_timeout_s);
-    cJSON_AddBoolToObject(j, "time_24h", s->time_24h);
     cJSON_AddStringToObject(j, "tz_posix", s->tz_posix);
     cJSON *t = cJSON_AddObjectToObject(j, "theme");
     cJSON_AddStringToObject(t, "preset", s->theme.preset);
@@ -529,7 +523,7 @@ esp_err_t settings_erase_token(void)
 
 esp_err_t settings_factory_reset(void)
 {
-    /* Everything BuddyAI persists lives in this one namespace (Wi-Fi driver
+    /* Everything ola persists lives in this one namespace (Wi-Fi driver
      * storage is RAM-only, see net_wifi.c). */
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);

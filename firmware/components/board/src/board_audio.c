@@ -1,5 +1,5 @@
 /*
- * BuddyAI - audio codecs: ES8311 (DAC -> NS4150B PA -> speaker) and
+ * ola - audio codecs: ES8311 (DAC -> NS4150B PA -> speaker) and
  * ES7210 (ADC, 2 onboard MEMS mics + AEC loopback on MIC3).
  *
  * Both codecs share one full-duplex I2S port (ESP32-S3 master, shared BCLK/WS),

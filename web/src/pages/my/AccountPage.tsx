@@ -23,7 +23,7 @@ export default function AccountPage() {
         <p className="mb-3 text-sm text-muted">
           Download everything we store about you: your profile, watch settings, conversation history and personas (JSON file).
         </p>
-        <a href={api.me.exportUrl} download="buddyai-my-data.json" className={buttonCls("secondary")}>
+        <a href={api.me.exportUrl} download="ola-my-data.json" className={buttonCls("secondary")}>
           <Download className="size-4" /> Download my data
         </a>
       </Card>

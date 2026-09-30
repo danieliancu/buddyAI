@@ -9,14 +9,14 @@ import { config, prices } from "../config";
 import { privacyLine } from "../data/features";
 
 const journey = [
-  { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. BuddyAI Care starts with " + prices.trialMonths + " months free." },
-  { icon: "mail" as const, title: "Set your password", text: "Your confirmation email has a link to set your BuddyAI account password." },
+  { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. ola Care starts with " + prices.trialMonths + " months free." },
+  { icon: "mail" as const, title: "Set your password", text: "Your confirmation email has a link to set your ola account password." },
   { icon: "truck" as const, title: "Delivery", text: "We email you tracking details when your watch ships." },
-  { icon: "wifi" as const, title: "Add watch", text: "Sign in at the BuddyAI app, choose Add watch and connect it to Wi-Fi." },
+  { icon: "wifi" as const, title: "Add watch", text: "Sign in at the ola app, choose Add watch and connect it to Wi-Fi." },
   { icon: "mic" as const, title: "Start talking", text: "Tap the mic button. That's it." },
 ];
 ---
-<Base title="How it works" description="Tap the mic, talk, and hear BuddyAI answer. Here's how the watch works, from ordering to your first conversation.">
+<Base title="How it works" description="Tap the mic, talk, and hear ola answer. Here's how the watch works, from ordering to your first conversation.">
   <PageHero eyebrow="How it works" title="Tap. Talk." gradient="Listen." lead="No wake words, no menus to learn. One button on your wrist starts a conversation with your AI assistant." />
 
   <section class="container-x mt-6" aria-labelledby="steps-title">
@@ -49,6 +49,6 @@ const journey = [
         </li>
       ))}
     </ol>
-    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to the BuddyAI app</a>.</p>
+    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to the ola app</a>.</p>
   </section>
 </Base>

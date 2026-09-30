@@ -1,4 +1,4 @@
-"""fake_watch.py — BuddyAI watch simulator speaking the real device protocol (PROTOCOL.md v1).
+"""fake_watch.py — ola watch simulator speaking the real device protocol (PROTOCOL.md v1).
 
 Develop and test the whole AI pipeline without hardware:
   python tools/fake_watch.py pair                          # show a pairing code, wait for the admin, save token

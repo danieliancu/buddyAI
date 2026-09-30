@@ -1,24 +1,35 @@
-"""Stripe shop + "BuddyAI Care" subscription.
+"""Stripe shop, "ola Care" subscription, extra-usage top-ups, complimentary grants.
 
-One Checkout Session sells the watch (one-time price, charged now) together with the monthly
-subscription (free trial first). Stripe Tax computes UK VAT / EU VAT; addresses are collected
-for UK + EU shipping. Webhooks keep orders, subscriptions and accounts in sync; each event id is
-processed once.
+- Shop: one Checkout Session sells the watch (one-time price, charged now) together with the monthly
+  subscription (free trial first). Stripe Tax computes UK VAT / EU VAT; addresses are collected for
+  UK + EU shipping.
+- Existing accounts can subscribe from the app (subscription-only Checkout).
+- Top-ups: one-time Checkout (mode=payment, never recurring) for extra allowance in the current
+  period. A pending TopUp row is created first; it is granted only by a verified webhook whose
+  session is paid, matches the row's account and amount, and flips it from pending exactly once.
+  Refund policy: a refunded top-up's allowance is withdrawn (docs/BILLING.md).
+- Complimentary grants: operator-assigned pilot/test entitlements without any Stripe object.
+- Webhooks keep orders, subscriptions, top-ups, revenue and accounts in sync. Each event id is claimed
+  before it is handled (a unique row), so concurrent or repeated deliveries run it once; a failed
+  handler releases the claim so Stripe's retry can apply it.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 import stripe
-from sqlmodel import Session, select
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, col, select
 
 from app import accounts, email
 from app.config import get_settings
-from app.db.models import Account, Order, StripeEvent, Subscription, utcnow
+from app.db.models import Account, Order, RevenueEvent, StripeEvent, Subscription, TopUp, utcnow
+from app.plan import get_plan
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +97,107 @@ def create_checkout(currency: str, customer_email: str | None = None) -> str:
     return session["url"]
 
 
+def _app_base() -> str:
+    s = get_settings()
+    return (s.app_url or f"http://localhost:{s.port}").rstrip("/")
+
+
+def _stripe_customer(account: Account) -> dict[str, Any]:
+    return {"customer": account.stripe_customer_id} if account.stripe_customer_id else {"customer_email": account.email}
+
+
+def create_subscription_checkout(db: Session, account: Account) -> str:
+    """ola Care for an existing account (no watch in the basket), paid from the first month: the
+    free trial belongs to the watch + Care bundle sold in the shop. Returns the Checkout URL."""
+    s = get_settings()
+    if not s.billing_enabled or not s.stripe_price_care_gbp:
+        raise BillingError(503, "subscriptions are not available yet")
+    current = active_subscription(db, account.id)
+    if current is not None and is_entitled(current) and current.source == "stripe":
+        raise BillingError(409, "this account already has ola Care")
+    params: dict[str, Any] = {
+        "mode": "subscription",
+        "line_items": [{"price": s.stripe_price_care_gbp, "quantity": 1}],
+        "client_reference_id": str(account.id),
+        "metadata": {"kind": "subscription", "account_id": str(account.id)},
+        "subscription_data": {"metadata": {"account_id": str(account.id)}},
+        "automatic_tax": {"enabled": True},
+        "success_url": f"{_app_base()}/my/account?subscribed=1",
+        "cancel_url": f"{_app_base()}/my/account",
+        **_stripe_customer(account),
+    }
+    try:
+        session = stripe.checkout.Session.create(api_key=s.stripe_secret_key, **params)
+    except stripe.StripeError as exc:
+        log.warning("subscription checkout failed: %s", exc)
+        raise BillingError(502, "payment provider unavailable, please try again") from exc
+    return session["url"]
+
+
+def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
+    """One-time purchase of extra allowance for the current period. Nothing is granted here."""
+    from app import allowance as allowance_mod  # avoid an import cycle
+
+    s = get_settings()
+    if not s.billing_enabled:
+        raise BillingError(503, "extra usage cannot be bought yet")
+    sub = active_subscription(db, account.id)
+    if sub is None or not is_entitled(sub):
+        raise BillingError(409, "extra usage needs an active ola Care plan")
+    plan = get_plan(db)
+    period = allowance_mod.period_for(sub)
+    topup = TopUp(
+        account_id=account.id,
+        amount_pence=plan.topup_price_pence,
+        allowance_pence=plan.topup_allowance_pence,
+        period_start=period.start,
+        period_end=period.end,
+    )
+    db.add(topup)
+    db.commit()
+    db.refresh(topup)
+    meta = {"kind": "topup", "topup_id": str(topup.id), "account_id": str(account.id)}
+    params: dict[str, Any] = {
+        "mode": "payment",  # one-time: never a recurring charge
+        "line_items": [
+            {
+                "price_data": {
+                    "currency": "gbp",
+                    "unit_amount": plan.topup_price_pence,
+                    "tax_behavior": "inclusive",
+                    "product_data": {
+                        "name": "ola extra usage",
+                        "description": "One-off extra AI usage for your current ola Care period. Not recurring.",
+                    },
+                },
+                "quantity": 1,
+            }
+        ],
+        "client_reference_id": str(account.id),
+        "metadata": meta,
+        "payment_intent_data": {"metadata": meta},
+        "automatic_tax": {"enabled": True},
+        "success_url": f"{_app_base()}/my/account?topup=success",
+        "cancel_url": f"{_app_base()}/my/account?topup=cancel",
+        **_stripe_customer(account),
+    }
+    if account.stripe_customer_id:
+        params["customer_update"] = {"address": "auto"}
+    try:
+        session = stripe.checkout.Session.create(api_key=s.stripe_secret_key, **params)
+    except stripe.StripeError as exc:
+        topup.status = "expired"
+        db.add(topup)
+        db.commit()
+        log.warning("top-up checkout failed: %s", exc)
+        raise BillingError(502, "payment provider unavailable, please try again") from exc
+    topup.stripe_session_id = session["id"]
+    db.add(topup)
+    db.commit()
+    db.refresh(topup)
+    return topup, session["url"]
+
+
 def portal_url(account: Account) -> str:
     s = get_settings()
     if not (s.billing_enabled and account.stripe_customer_id):
@@ -119,22 +231,35 @@ def _fetch_subscription(sub_id: str) -> dict[str, Any]:
     return stripe.Subscription.retrieve(sub_id, api_key=s.stripe_secret_key).to_dict()
 
 
-def _period_end(sub: dict[str, Any]) -> datetime | None:
-    if sub.get("current_period_end"):
-        return _ts(sub["current_period_end"])
+def _period(sub: dict[str, Any], field: str) -> datetime | None:
+    if sub.get(field):
+        return _ts(sub[field])
     items = (sub.get("items") or {}).get("data") or []  # newer API versions keep it on the item
-    return _ts(items[0].get("current_period_end")) if items else None
+    return _ts(items[0].get(field)) if items else None
+
+
+def _period_end(sub: dict[str, Any]) -> datetime | None:
+    return _period(sub, "current_period_end")
 
 
 def upsert_subscription(db: Session, sub: dict[str, Any]) -> Subscription:
     row = db.exec(select(Subscription).where(Subscription.stripe_subscription_id == sub["id"])).first()
     customer = sub.get("customer") or ""
     acc = db.exec(select(Account).where(Account.stripe_customer_id == customer)).first() if customer else None
+    if acc is None and (sub.get("metadata") or {}).get("account_id"):  # subscribed from the app
+        acc = db.get(Account, int(sub["metadata"]["account_id"]))
+        if acc is not None and customer and not acc.stripe_customer_id:
+            acc.stripe_customer_id = customer  # billing portal + invoices find the account from now on
+            db.add(acc)
+            db.commit()
+            db.refresh(acc)
     row = row or Subscription(stripe_subscription_id=sub["id"], stripe_customer_id=customer, status=sub.get("status", ""))
+    row.source = "stripe"
     row.stripe_customer_id = customer or row.stripe_customer_id
     row.account_id = acc.id if acc else row.account_id
     row.status = sub.get("status", row.status)
     row.trial_end = _ts(sub.get("trial_end"))
+    row.current_period_start = _period(sub, "current_period_start")
     row.current_period_end = _period_end(sub)
     row.cancel_at_period_end = bool(sub.get("cancel_at_period_end"))
     row.updated_at = utcnow()
@@ -178,6 +303,7 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
     )
     db.add(order)
     db.commit()
+    _revenue(db, cs["id"], acc.id, "watch", order.amount_total, order.currency, order.amount_tax)
     if cs.get("subscription"):
         upsert_subscription(db, fetch_subscription(cs["subscription"]))
 
@@ -187,16 +313,164 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
     await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency))
 
 
+def _revenue(
+    db: Session, source_id: str, account_id: int | None, kind: str, amount: int, currency: str, tax: int = 0
+) -> None:
+    """Record money received (or refunded, negative) once per Stripe object. Amounts are gross; `tax` is
+    the VAT included, so the operator's contribution uses net revenue."""
+    if db.exec(select(RevenueEvent).where(RevenueEvent.source_id == source_id)).first():
+        return
+    db.add(RevenueEvent(source_id=source_id, account_id=account_id, kind=kind, amount_pence=int(amount),
+                        tax_pence=int(tax or 0), currency=(currency or "gbp").lower()))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+def _topup_for_session(db: Session, cs: dict[str, Any]) -> TopUp | None:
+    meta = cs.get("metadata") or {}
+    try:
+        topup = db.get(TopUp, int(meta.get("topup_id") or 0))
+    except (TypeError, ValueError):
+        return None
+    if topup is None or topup.stripe_session_id not in (None, cs.get("id")):
+        return None
+    if str(topup.account_id) != str(meta.get("account_id")):
+        log.warning("top-up %s: session account %s does not match", topup.id, meta.get("account_id"))
+        return None
+    return topup
+
+
+def _topup_paid(db: Session, cs: dict[str, Any]) -> bool:
+    """Grant a top-up for a paid session, exactly once. Returns True if this call granted it."""
+    topup = _topup_for_session(db, cs)
+    if topup is None:
+        return False
+    if cs.get("payment_status") != "paid":
+        return False  # e.g. a delayed payment method: wait for async_payment_succeeded
+    if int(cs.get("amount_total") or 0) < topup.amount_pence or (cs.get("currency") or "").lower() != "gbp":
+        log.warning("top-up %s: paid amount %s %s does not match", topup.id, cs.get("amount_total"), cs.get("currency"))
+        return False
+    result = db.exec(  # type: ignore[call-overload]
+        update(TopUp)
+        .where(col(TopUp.id) == topup.id, col(TopUp.status) == "pending")
+        .values(status="paid", paid_at=utcnow(), stripe_session_id=cs.get("id"), stripe_payment_intent=cs.get("payment_intent"))
+    )
+    db.commit()
+    if result.rowcount != 1:
+        return False
+    tax = int((cs.get("total_details") or {}).get("amount_tax") or 0)
+    _revenue(db, cs["id"], topup.account_id, "topup", int(cs.get("amount_total") or 0), "gbp", tax)
+    accounts.audit(db, "system", "topup.paid", topup.account_id, detail=f"top-up {topup.id}: +{topup.allowance_pence}p allowance")
+    return True
+
+
+def _topup_failed(db: Session, cs: dict[str, Any]) -> None:
+    topup = _topup_for_session(db, cs)
+    if topup is not None:
+        db.exec(update(TopUp).where(col(TopUp.id) == topup.id, col(TopUp.status) == "pending").values(status="expired"))  # type: ignore[call-overload]
+        db.commit()
+
+
+def _refund(db: Session, charge: dict[str, Any]) -> None:
+    intent = charge.get("payment_intent")
+    if not intent:
+        return
+    order = db.exec(select(Order).where(Order.stripe_payment_intent == intent)).first()
+    if order and charge.get("refunded"):
+        order.status = "refunded"
+        db.add(order)
+        db.commit()
+    topup = db.exec(select(TopUp).where(TopUp.stripe_payment_intent == intent)).first()
+    if topup and topup.status == "paid":
+        # Policy: a refunded top-up's extra allowance is withdrawn for the period (docs/BILLING.md).
+        topup.status, topup.refunded_at = "refunded", utcnow()
+        db.add(topup)
+        db.commit()
+        accounts.audit(db, "system", "topup.refunded", topup.account_id, detail=f"top-up {topup.id}")
+    account_id = order.account_id if order else (topup.account_id if topup else None)
+    if order or topup:
+        _revenue(db, f"refund:{charge.get('id')}", account_id, "refund", -int(charge.get("amount_refunded") or 0), charge.get("currency") or "gbp")
+
+
+def _invoice_paid(db: Session, inv: dict[str, Any]) -> None:
+    amount = int(inv.get("amount_paid") or 0)
+    if amount <= 0 or not inv.get("id"):
+        return  # trial invoices are £0
+    acc = db.exec(select(Account).where(Account.stripe_customer_id == inv.get("customer"))).first()
+    if acc is None:  # invoice.paid can arrive before the subscription event that links the customer
+        meta = (
+            ((inv.get("parent") or {}).get("subscription_details") or {}).get("metadata")
+            or (inv.get("subscription_details") or {}).get("metadata")
+            or {}
+        )
+        if str(meta.get("account_id") or "").isdigit():
+            acc = db.get(Account, int(meta["account_id"]))
+    tax = int(inv.get("tax") or sum(int(t.get("amount") or 0) for t in inv.get("total_taxes") or []) or 0)
+    _revenue(db, inv["id"], acc.id if acc else None, "subscription", amount, inv.get("currency") or "gbp", tax)
+
+
+async def _checkout_session(db: Session, cs: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
+    kind = (cs.get("metadata") or {}).get("kind")
+    if kind == "topup":
+        _topup_paid(db, cs)
+        return
+    if kind == "subscription":  # an existing account subscribed from the app
+        acc = db.get(Account, int(cs.get("client_reference_id") or 0))
+        if acc and cs.get("customer") and acc.stripe_customer_id != cs["customer"]:
+            acc.stripe_customer_id = cs["customer"]
+            db.add(acc)
+            db.commit()
+        if cs.get("subscription"):
+            upsert_subscription(db, fetch_subscription(cs["subscription"]))
+        return
+    await _checkout_completed(db, cs, fetch_subscription)
+
+
+def _claim(db: Session, event: dict[str, Any]) -> bool:
+    db.add(StripeEvent(id=event["id"], type=event["type"]))
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
+def _release(db: Session, event_id: str) -> None:
+    db.rollback()
+    claimed = db.get(StripeEvent, event_id)
+    if claimed:
+        db.delete(claimed)
+        db.commit()
+
+
 async def handle_event(
     db: Session, event: dict[str, Any], fetch_subscription: Callable[[str], dict] = _fetch_subscription
 ) -> bool:
-    """Apply one webhook event. Returns False if it was already processed."""
-    if db.get(StripeEvent, event["id"]):
+    """Apply one webhook event. Returns False if it was already processed (or is being processed)."""
+    if not _claim(db, event):
         return False
+    try:
+        await _apply(db, event, fetch_subscription)
+    except Exception:
+        _release(db, event["id"])  # let Stripe's retry apply it
+        raise
+    return True
+
+
+async def _apply(db: Session, event: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
     kind = event["type"]
     obj = event["data"]["object"]
     if kind == "checkout.session.completed":
-        await _checkout_completed(db, obj, fetch_subscription)
+        await _checkout_session(db, obj, fetch_subscription)
+    elif kind == "checkout.session.async_payment_succeeded":
+        _topup_paid(db, obj)
+    elif kind in ("checkout.session.expired", "checkout.session.async_payment_failed"):
+        _topup_failed(db, obj)
+    elif kind == "invoice.paid":
+        _invoice_paid(db, obj)
     elif kind == "customer.subscription.trial_will_end":
         # Stripe sends this 3 days before the trial ends. UK subscription rules require a reminder
         # before the first paid period; the subscription terms promise it.
@@ -211,20 +485,101 @@ async def handle_event(
         if acc:
             await email.send(email.payment_failed(acc.email))
     elif kind == "charge.refunded":
-        order = db.exec(select(Order).where(Order.stripe_payment_intent == obj.get("payment_intent"))).first()
-        if order and obj.get("refunded"):
-            order.status = "refunded"
-            db.add(order)
-            db.commit()
-    db.add(StripeEvent(id=event["id"], type=kind))
-    db.commit()
-    return True
+        _refund(db, obj)
 
 
 # --- entitlement ------------------------------------------------------------------------------------
 
 
+def _aware(dt: datetime | None) -> datetime | None:
+    return dt.replace(tzinfo=timezone.utc) if dt is not None and dt.tzinfo is None else dt
+
+
+def is_entitled(sub: Subscription, now: datetime | None = None) -> bool:
+    if sub.source == "complimentary":
+        end = _aware(sub.current_period_end)
+        return sub.status == "active" and (end is None or (now or datetime.now(timezone.utc)) < end)
+    return sub.status in ENTITLED_STATUSES
+
+
 def active_subscription(db: Session, account_id: int) -> Subscription | None:
-    subs = db.exec(select(Subscription).where(Subscription.account_id == account_id)).all()
-    live = [s for s in subs if s.status in ENTITLED_STATUSES]
-    return live[0] if live else (subs[0] if subs else None)
+    """The subscription that counts: an entitled one (latest period end first), else the newest."""
+    subs = db.exec(select(Subscription).where(Subscription.account_id == account_id).order_by(col(Subscription.id).desc())).all()
+    live = [s for s in subs if is_entitled(s)]
+    if live:
+        far = datetime.max.replace(tzinfo=timezone.utc)
+        return max(live, key=lambda s: (_aware(s.current_period_end) or far, s.id or 0))
+    return subs[0] if subs else None
+
+
+# --- complimentary / test access (operator) -----------------------------------------------------------
+
+
+def grant_complimentary(
+    db: Session,
+    account: Account,
+    days: int,
+    actor: str,
+    note: str = "Complimentary pilot - no payment",
+    allowance_pence: int | None = None,
+    extend: bool = False,
+) -> tuple[Subscription, bool]:
+    """Give an account ola Care without payment. Idempotent: an unexpired grant is returned as is
+    (created=False) unless extend=True. Never creates Stripe objects. Refuses when the account already
+    pays for Care (a Stripe subscription is entitled)."""
+    if not 1 <= days <= 366:
+        raise BillingError(422, "days must be between 1 and 366")
+    now = utcnow()
+    current = active_subscription(db, account.id)
+    if current is not None and is_entitled(current, now) and current.source == "stripe":
+        raise BillingError(409, f"account already has a Stripe subscription ({current.status})")
+    if current is not None and current.source == "complimentary" and is_entitled(current, now):
+        if not extend:
+            return current, False
+        current.current_period_end = _aware(current.current_period_end) + timedelta(days=days)  # type: ignore[operator]
+        current.updated_at = now
+        db.add(current)
+        db.commit()
+        db.refresh(current)
+        accounts.audit(db, actor, "subscription.complimentary.extend", account.id, detail=f"+{days} days, until {current.current_period_end:%Y-%m-%d}")
+        db.refresh(current)
+        return current, True
+    sub = Subscription(
+        source="complimentary",
+        account_id=account.id,
+        status="active",
+        current_period_start=now,
+        current_period_end=now + timedelta(days=days),
+        allowance_pence=allowance_pence,
+        granted_by=actor[:80],
+        note=note[:200],
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    accounts.audit(
+        db,
+        actor,
+        "subscription.complimentary",
+        account.id,
+        detail=f"{days} days until {sub.current_period_end:%Y-%m-%d}; allowance "
+        f"{'plan default' if allowance_pence is None else str(allowance_pence) + 'p'}; {note}",
+    )
+    db.refresh(sub)  # the audit commit expired it
+    return sub, True
+
+
+def revoke_complimentary(db: Session, account: Account, actor: str) -> bool:
+    now = utcnow()
+    rows = db.exec(
+        select(Subscription).where(
+            Subscription.account_id == account.id, Subscription.source == "complimentary", Subscription.status == "active"
+        )
+    ).all()
+    for sub in rows:
+        sub.status, sub.current_period_end, sub.updated_at = "canceled", now, now
+        db.add(sub)
+    db.commit()
+    if rows:
+        accounts.audit(db, actor, "subscription.complimentary.revoke", account.id)
+    return bool(rows)

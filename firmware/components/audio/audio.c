@@ -1,5 +1,5 @@
 /*
- * BuddyAI - audio pipeline (capture + playback), see audio.h
+ * ola - audio pipeline (capture + playback), see audio.h
  */
 #include "audio.h"
 

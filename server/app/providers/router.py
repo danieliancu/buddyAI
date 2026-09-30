@@ -143,6 +143,11 @@ class ProviderRouter:
         location = {"type": "approximate", "city": city, "timezone": settings.timezone}
         return {**cfg, "user_location": location}
 
+    @staticmethod
+    def hosted_search_tool(web_search: dict[str, Any]) -> dict[str, Any]:
+        """The provider's hosted-tool fields only (drops our own settings such as cache_ttl_s)."""
+        return {k: v for k, v in web_search.items() if k in ("search_context_size", "user_location")}
+
     def _tts_entry(self, language: str) -> dict[str, Any]:
         tts = self.config["tts"]
         return tts.get("by_language", {}).get(language) or tts["default"]

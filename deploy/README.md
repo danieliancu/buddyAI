@@ -1,6 +1,6 @@
 # Going live: server runbook
 
-This takes BuddyAI from your PC to a rented cloud server with HTTPS, PostgreSQL and daily backups.
+This takes ola from your PC to a rented cloud server with HTTPS, PostgreSQL and daily backups.
 Allow about 2 hours the first time. You need a credit card, a domain name, and this repository.
 
 ```
@@ -15,7 +15,7 @@ Internet ──► Caddy (HTTPS, ports 80/443)
 
 **Recommended: Hetzner Cloud** (EU, cheapest, good latency for the UK and the EU).
 
-1. Create an account at <https://console.hetzner.cloud>, then a project called "BuddyAI".
+1. Create an account at <https://console.hetzner.cloud>, then a project called "ola".
 2. Add your SSH key under **Security → SSH keys**. If you don't have one, run
    `ssh-keygen -t ed25519` in PowerShell and paste the content of `~\.ssh\id_ed25519.pub`.
 3. **Add server**:
@@ -90,14 +90,14 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec server p
 4. Uptime monitoring: add `https://app.<domain>/readyz` to a free monitor (UptimeRobot, Better Stack).
    It alerts you if the server or the database stops answering.
 
-## 6. Stripe (shop + BuddyAI Care subscription)
+## 6. Stripe (shop + ola Care subscription)
 
 Everything below is done in **test mode** first. Switch to live mode only after a full test purchase.
 
 1. **Account:** create it, then complete your business details and bank account.
 2. **Products** (Product catalogue):
-   - **"BuddyAI Watch"**: a *one-off* price in GBP and one in EUR.
-   - **"BuddyAI Care"**: a *recurring monthly* price in GBP and one in EUR. The 90-day trial is added
+   - **"ola Watch"**: a *one-off* price in GBP and one in EUR.
+   - **"ola Care"**: a *recurring monthly* price in GBP and one in EUR. The 90-day trial is added
      by the server at checkout (`BUDDYAI_CARE_TRIAL_DAYS`).
    - Copy the four `price_…` ids into `deploy/.env`.
 3. **Tax:** enable Stripe Tax and add your registrations: UK VAT, and **EU OSS** for EU consumers.

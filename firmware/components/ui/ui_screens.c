@@ -1,5 +1,5 @@
 /*
- * BuddyAI - quick settings screen and message screens (pairing, Wi-Fi setup,
+ * ola - quick settings screen and message screens (pairing, Wi-Fi setup,
  * errors, OTA).
  */
 #include <stdio.h>
@@ -562,7 +562,7 @@ void ui_show_wifi_setup(const char *ap_ssid)
 {
     LOCK();
     char body[160];
-    snprintf(body, sizeof(body), "%s\n\n%s\n\n192.168.4.1", ui_str(STR_WIFI_BODY), ap_ssid ? ap_ssid : "BuddyAI");
+    snprintf(body, sizeof(body), "%s\n\n%s\n\n192.168.4.1", ui_str(STR_WIFI_BODY), ap_ssid ? ap_ssid : "ola");
     ui_msg_show(ICON_WIFI, g_ui_theme.accent, ui_str(STR_WIFI_TITLE), body, NULL, NULL, NULL, false, 0);
     UNLOCK();
 }

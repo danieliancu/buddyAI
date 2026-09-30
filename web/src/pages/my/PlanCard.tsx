@@ -1,92 +1,300 @@
-import { useState } from "react";
-import { CreditCard, ExternalLink, Package } from "lucide-react";
-import { api, ApiError } from "../../api";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
+import { CalendarSync, ChevronDown, CircleCheck, ExternalLink, MessagesSquare, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { api, ApiError, type MyPlan } from "../../api";
 import { fmtDate } from "../../format";
-import { Meter, OrderStatusBadge, planStatus } from "../../components/BillingBits";
+import { carePlanStatus, fmtDayMonth, OrderStatusBadge, pence, UsageGauge } from "../../components/BillingBits";
 import { Button, Card, ErrorBox, cx, useAsync } from "../../components/ui";
+import { useLive } from "../../live";
 
-/** "Plan" section: subscription status, allowance meter, orders, Stripe billing portal. Hidden when billing is off. */
+/** Start a one-off extra-usage purchase (Stripe Checkout). Nothing is added until the payment succeeds. */
+export async function startTopup(): Promise<void> {
+  const { url } = await api.me.topupCheckout();
+  window.location.assign(url);
+}
+
+/**
+ * "ola Care": plan status, how much of this period's AI usage is used (a share, never internal
+ * costs), activity, reset date, fair use, prices, extra usage and orders.
+ */
 export default function PlanCard() {
-  const sub = useAsync(api.me.subscription, []);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  const [noPortal, setNoPortal] = useState(false);
+  const plan = useAsync(api.me.plan, []);
+  const billing = useAsync(api.me.subscription, []); // orders
+  const [params, setParams] = useSearchParams();
+  const returned = params.get("topup") ?? (params.get("subscribed") ? "subscribed" : null);
+  const [waiting, setWaiting] = useState(returned === "success");
+  const topupsBefore = useRef<number | null>(null);
 
-  if (sub.error) return <ErrorBox error={sub.error} onRetry={sub.reload} />;
-  const d = sub.data;
-  if (!d || !d.billing_enabled) return null;
+  useLive((e) => {
+    if (e.type === "turn_end" || e.type === "usage_threshold") plan.reload();
+  });
 
-  const plan = planStatus(d.subscription);
-  const openPortal = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const { url } = await api.me.billingPortal();
-      window.location.assign(url);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404) setNoPortal(true);
-      else setError(e);
-      setBusy(false);
-    }
-  };
+  // Back from Stripe after a top-up: the extra usage appears once the payment webhook arrives.
+  useEffect(() => {
+    if (!waiting) return;
+    let tries = 0;
+    const t = window.setInterval(async () => {
+      tries += 1;
+      const fresh = await api.me.plan().catch(() => null);
+      if (fresh) {
+        plan.setData(fresh);
+        const paid = fresh.topups.filter((x) => x.status === "paid").length;
+        if (topupsBefore.current === null) topupsBefore.current = paid - 1;
+        if (paid > (topupsBefore.current ?? 0) || tries >= 15) {
+          setWaiting(false);
+          window.clearInterval(t);
+        }
+      }
+    }, 2000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
+
+  if (plan.error) return <ErrorBox error={plan.error} onRetry={plan.reload} />;
+  const p = plan.data;
+  if (!p) return null;
+  if (!p.billing_enabled && !p.enforced && (p.status.kind === "none" || p.status.kind === "internal")) return null;
 
   return (
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <CreditCard className="size-4 text-accent" /> Plan
+          <Sparkles className="size-4 text-accent" /> ola Care
         </span>
       }
     >
-      <div className="space-y-4">
-        <div>
-          <p className="text-xs text-muted">BuddyAI Care</p>
-          <p
-            className={cx(
-              "font-semibold",
-              plan.tone === "danger" ? "text-danger" : plan.tone === "warn" ? "text-warn" : plan.tone === "ok" ? "text-ok" : "",
+      <div className="space-y-5">
+        {returned && <ReturnNotice kind={returned} waiting={waiting} onClose={() => setParams({}, { replace: true })} />}
+        <StatusLine plan={p} />
+        {p.enforced && (
+          <>
+            <UsageGauge pct={p.usage.used_pct} />
+            <div className="grid grid-cols-2 gap-3">
+              <Stat icon={<MessagesSquare className="size-4" />} label="Conversations this period" value={String(p.usage.activity_count)} />
+              <Stat icon={<CalendarSync className="size-4" />} label="Usage resets on" value={fmtDayMonth(p.usage.reset_at)} />
+            </div>
+            {p.usage.extra_pct > 0 && (
+              <p className="flex items-center gap-2 text-sm text-ok">
+                <CircleCheck className="size-4" /> Extra usage added this period: +{p.usage.extra_pct}% of a month
+              </p>
             )}
-          >
-            {plan.text}
-          </p>
-        </div>
-        {d.subscription && <Meter pct={d.allowance_used_pct} label="Monthly allowance used" />}
-        {d.subscription && d.allowance_used_pct >= 100 && (
-          <p className="text-sm text-warn">This month's allowance is used up. Buddy answers again from the 1st of next month.</p>
+            <ThresholdHint plan={p} />
+          </>
         )}
-        {d.subscription && !noPortal && (
-          <Button variant={plan.problem ? "primary" : "secondary"} loading={busy} icon={<ExternalLink className="size-4" />} onClick={openPortal}>
-            {plan.problem ? "Update card" : "Manage subscription"}
-          </Button>
-        )}
-        <ErrorBox error={error} />
-
-        {d.orders.length > 0 && (
-          <div className="border-t border-border pt-4">
-            <p className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <Package className="size-4 text-muted" /> Orders
-            </p>
-            <ul className="space-y-2">
-              {d.orders.map((o) => (
-                <li key={o.id} className="rounded-lg bg-surface-2 px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">Order #{o.id}</span>
-                    <span className="text-muted">{fmtDate(o.created_at)}</span>
-                    <span className="ml-auto">
-                      <OrderStatusBadge status={o.status} />
-                    </span>
-                  </div>
-                  {o.tracking_number && (
-                    <p className="mt-1 text-xs text-muted">
-                      Tracking{o.carrier ? ` (${o.carrier})` : ""}: <span className="font-mono text-fg select-all">{o.tracking_number}</span>
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <Actions plan={p} />
+        <FairUse plan={p} />
+        {p.topups.length > 0 && <Topups plan={p} />}
+        {billing.data && billing.data.orders.length > 0 && <Orders orders={billing.data.orders} />}
       </div>
     </Card>
+  );
+}
+
+function StatusLine({ plan }: { plan: MyPlan }) {
+  const s = carePlanStatus(plan);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p
+        className={cx(
+          "font-semibold",
+          s.tone === "danger" ? "text-danger" : s.tone === "warn" ? "text-warn" : s.tone === "ok" ? "text-ok" : s.tone === "accent" ? "text-accent" : "",
+        )}
+      >
+        {s.text}
+      </p>
+      {plan.status.kind !== "complimentary" && plan.status.kind !== "internal" && (
+        <span className="text-sm text-muted">{pence(plan.prices.care_price_pence)} / month</span>
+      )}
+    </div>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-surface-2 px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        {icon}
+        {label}
+      </p>
+      <p className="tabular mt-0.5 text-lg font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function ThresholdHint({ plan }: { plan: MyPlan }) {
+  const pct = plan.usage.used_pct;
+  if (pct >= 100)
+    return (
+      <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
+        This month's AI usage is used up. Ola answers again on {fmtDayMonth(plan.usage.reset_at)}
+        {plan.topup_available ? ", or add extra usage now." : "."}
+      </p>
+    );
+  if (pct >= 80)
+    return (
+      <p className="rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn">
+        {pct}% used. It resets on {fmtDayMonth(plan.usage.reset_at)}.
+      </p>
+    );
+  return null;
+}
+
+function Actions({ plan }: { plan: MyPlan }) {
+  const [busy, setBusy] = useState<"" | "topup" | "subscribe" | "portal">("");
+  const [error, setError] = useState<unknown>(null);
+  const status = carePlanStatus(plan);
+
+  const run = async (kind: "topup" | "subscribe" | "portal") => {
+    setBusy(kind);
+    setError(null);
+    try {
+      if (kind === "topup") await startTopup();
+      else {
+        const { url } = kind === "subscribe" ? await api.me.subscribe() : await api.me.billingPortal();
+        window.location.assign(url);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 404 ? new Error("There is no card on file for this account yet.") : e);
+      setBusy("");
+    }
+  };
+
+  if (!plan.topup_available && !plan.can_subscribe && !plan.can_manage_billing) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {plan.can_subscribe && (
+          <Button variant="primary" loading={busy === "subscribe"} icon={<ShieldCheck className="size-4" />} onClick={() => run("subscribe")}>
+            Subscribe — {pence(plan.prices.care_price_pence)} / month
+          </Button>
+        )}
+        {plan.topup_available && (
+          <Button
+            className="w-full justify-center sm:w-auto"
+            variant={plan.usage.used_pct >= 95 ? "primary" : "secondary"}
+            loading={busy === "topup"}
+            icon={<PlusCircle className="size-4" />}
+            onClick={() => run("topup")}
+          >
+            Add extra usage — {pence(plan.prices.topup_price_pence)}
+          </Button>
+        )}
+        {plan.can_manage_billing && (
+          <Button variant={status.problem ? "primary" : "ghost"} loading={busy === "portal"} icon={<ExternalLink className="size-4" />} onClick={() => run("portal")}>
+            {status.problem ? "Update card" : "Manage billing"}
+          </Button>
+        )}
+      </div>
+      {plan.topup_available && (
+        <p className="text-xs text-muted">
+          One-off payment, never recurring. Adds about {plan.prices.topup_adds_pct}% of a month's usage until{" "}
+          {fmtDayMonth(plan.usage.reset_at)}.
+        </p>
+      )}
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
+function FairUse({ plan }: { plan: MyPlan }) {
+  return (
+    <details className="group rounded-xl border border-border px-4 py-3 text-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
+        How usage works
+        <ChevronDown className="size-4 text-muted transition group-open:rotate-180" />
+      </summary>
+      <div className="mt-3 space-y-2 text-muted">
+        <p>
+          ola Care includes a monthly amount of AI usage, shared by all your watches. The bar shows how much of it you have used
+          this period.
+        </p>
+        <p>
+          <b className="text-fg">Requests use different amounts.</b> A quick question uses a little. Questions that need the internet
+          (weather, opening hours, travel), long answers and long recordings use more. So the number of conversations you can have
+          varies — it is not a fixed count.
+        </p>
+        <p>
+          Usage resets on {fmtDayMonth(plan.usage.reset_at)}. If it runs out before then, Ola pauses its answers until the reset
+          {plan.topup_available || plan.billing_enabled
+            ? `, or you can add extra usage for the rest of the period (${pence(plan.prices.topup_price_pence)}, one-off, never recurring). Extra usage ends with the period.`
+            : "."}
+        </p>
+        <p>
+          Fair use: ola Care is for personal use with your own watches. It is not unlimited. We tell you at{" "}
+          {plan.thresholds.filter((t) => t < 100).join("% and ")}% and when it is used up — we never charge you for more without asking.
+          A refunded extra-usage purchase is removed from your allowance. A question that fails because of a fault on our side does
+          not count.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function Topups({ plan }: { plan: MyPlan }) {
+  return (
+    <div className="border-t border-border pt-4">
+      <p className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <PlusCircle className="size-4 text-muted" /> Extra usage purchases
+      </p>
+      <ul className="space-y-2">
+        {plan.topups.map((t) => (
+          <li key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
+            <span className="font-medium">{pence(t.amount_pence)}</span>
+            <span className="text-muted">{t.paid_at ? fmtDate(t.paid_at) : ""}</span>
+            <span className={cx("ml-auto text-xs", t.status === "refunded" ? "text-warn" : t.current ? "text-ok" : "text-muted")}>
+              {t.status === "refunded" ? "Refunded" : t.current ? `Active until ${fmtDayMonth(t.period_end)}` : `Ended ${fmtDayMonth(t.period_end)}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Orders({ orders }: { orders: { id: number; status: string; created_at: string; tracking_number: string; carrier: string }[] }) {
+  return (
+    <div className="border-t border-border pt-4">
+      <p className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <Package className="size-4 text-muted" /> Orders
+      </p>
+      <ul className="space-y-2">
+        {orders.map((o) => (
+          <li key={o.id} className="rounded-lg bg-surface-2 px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">Order #{o.id}</span>
+              <span className="text-muted">{fmtDate(o.created_at)}</span>
+              <span className="ml-auto">
+                <OrderStatusBadge status={o.status} />
+              </span>
+            </div>
+            {o.tracking_number && (
+              <p className="mt-1 text-xs text-muted">
+                Tracking{o.carrier ? ` (${o.carrier})` : ""}: <span className="font-mono text-fg select-all">{o.tracking_number}</span>
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReturnNotice({ kind, waiting, onClose }: { kind: string; waiting: boolean; onClose: () => void }) {
+  const text =
+    kind === "success"
+      ? waiting
+        ? "Payment received — adding your extra usage…"
+        : "Thank you — your extra usage is ready."
+      : kind === "cancel"
+        ? "Purchase cancelled. Nothing was charged."
+        : "Thank you — your subscription is being set up.";
+  return (
+    <div className={cx("flex items-center gap-3 rounded-lg px-3 py-2 text-sm", kind === "cancel" ? "bg-surface-2 text-muted" : "bg-ok-bg text-ok")}>
+      <CircleCheck className="size-4 shrink-0" />
+      <span className="flex-1">{text}</span>
+      <button className="text-xs underline" onClick={onClose}>
+        Close
+      </button>
+    </div>
   );
 }

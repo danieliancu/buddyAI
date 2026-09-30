@@ -1,5 +1,5 @@
 /*
- * BuddyAI - UI core: watchface, conversation states, theme, screen power
+ * ola - UI core: watchface, conversation states, theme, screen power
  * (dim / off after screen_timeout_s, tap wakes) and AMOLED pixel shift.
  */
 #include <stdio.h>
@@ -68,7 +68,6 @@ static lv_style_t s_st_screen;
 static lv_style_t s_st_clock;
 static lv_style_t s_st_accent_bg;
 static lv_style_t s_st_accent_border;
-static lv_style_t s_st_accent_text;
 static lv_style_t s_st_divider;         /* faded lines around the watchface icons */
 
 static ui_conv_t     s_conv = UI_CONV_IDLE;
@@ -194,18 +193,13 @@ static void update_clock(bool force)
         lv_label_set_text(s_lbl_date, "");
         return;
     }
-    if (g_ui_settings.time_24h) {
-        snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
-    } else {
-        int h = tm.tm_hour % 12;
-        snprintf(buf, sizeof(buf), "%d:%02d", h == 0 ? 12 : h, tm.tm_min);
-    }
+    snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);     /* always 24-hour */
     set_time_text(buf);
     /* "Monday, 28 September" / "Montag, 28. September"; drop the weekday if too wide. */
     char date[64];
     ui_format_date(date, sizeof(date), tm.tm_wday, tm.tm_mday, tm.tm_mon, true);
     lv_point_t sz;
-    lv_text_get_size(&sz, date, &buddy_font_28, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    lv_text_get_size(&sz, date, &buddy_font_20, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
     if (sz.x > DATE_MAX_W) {
         ui_format_date(date, sizeof(date), tm.tm_wday, tm.tm_mday, tm.tm_mon, false);
     }
@@ -525,12 +519,17 @@ static lv_obj_t *add_shortcut(lv_obj_t *parent, const char *icon, int which)
     lv_obj_set_size(b, SHORTCUT_W, SHORTCUT_H);
     lv_obj_set_ext_click_area(b, 6);
     lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_style(b, &s_st_accent_text, LV_STATE_PRESSED);     /* text color inherits to the icon */
+    /* accent circle like the mic button, white icon; shrinks a little while pressed */
+    lv_obj_add_style(b, &s_st_accent_bg, 0);
+    lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_transform_scale(b, 230, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_pivot_x(b, SHORTCUT_W / 2, 0);
+    lv_obj_set_style_transform_pivot_y(b, SHORTCUT_H / 2, 0);
     lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)which);
     lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)which);
     lv_obj_t *l = lv_label_create(b);
-    lv_obj_set_style_text_font(l, &buddy_font_shortcut, 0);
-    lv_obj_set_style_text_opa(l, LV_OPA_80, 0);
+    lv_obj_set_style_text_font(l, &buddy_font_28, 0);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
     lv_label_set_text(l, icon);
     lv_obj_center(l);
 
@@ -613,7 +612,6 @@ static void theme_styles_init(void)
     lv_style_init(&s_st_clock);
     lv_style_init(&s_st_accent_bg);
     lv_style_init(&s_st_accent_border);
-    lv_style_init(&s_st_accent_text);
     lv_style_init(&s_st_divider);
 }
 
@@ -628,7 +626,6 @@ static void theme_styles_apply(void)
     lv_style_set_bg_opa(&s_st_accent_bg, LV_OPA_COVER);
     lv_style_set_border_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_arc_color(&s_st_accent_border, g_ui_theme.accent);
-    lv_style_set_text_color(&s_st_accent_text, g_ui_theme.accent);
     lv_style_set_bg_opa(&s_st_divider, LV_OPA_COVER);
     lv_style_set_bg_color(&s_st_divider, g_ui_theme.text);
     lv_style_set_bg_grad_color(&s_st_divider, g_ui_theme.text);
@@ -698,23 +695,14 @@ static void build_watchface(void)
     lv_obj_add_flag(s_time_box, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_flex_flow(s_time_box, LV_FLEX_FLOW_ROW);
     lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, 58);
-    /* The colon stays in the middle: hours are right-aligned against it, minutes left-aligned,
-     * each in a box two widest digits wide. Digits keep their natural spacing (a "1" gets no
-     * gap) and a change of minutes never moves the hours or the colon. */
-    int32_t digit_w = 0;
-    for (uint32_t c = '0'; c <= '9'; c++) {
-        int32_t w = lv_font_get_glyph_width(&buddy_font_clock, c, 0);
-        digit_w = w > digit_w ? w : digit_w;
-    }
+    /* hours ":" minutes, each as wide as its own digits: the whole time is centred horizontally on
+     * what is actually shown ("11:11" is narrower than "08:48"). The box is aligned TOP_MID with
+     * content size, so LVGL re-centres it whenever the digits change; the height never moves. */
     lv_obj_t *parts[3];
     for (int i = 0; i < 3; i++) {
         lv_obj_t *l = lv_label_create(s_time_box);
         lv_obj_add_style(l, &s_st_clock, 0);
         lv_obj_set_style_text_font(l, &buddy_font_clock, 0);
-        if (i != 1) {
-            lv_obj_set_width(l, 2 * digit_w);
-            lv_obj_set_style_text_align(l, i == 0 ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT, 0);
-        }
         parts[i] = l;
     }
     lv_label_set_text(parts[1], ":");
@@ -724,9 +712,9 @@ static void build_watchface(void)
 
     /* Date */
     s_lbl_date = lv_label_create(s_content);
-    lv_obj_set_style_text_font(s_lbl_date, &buddy_font_28, 0);
+    lv_obj_set_style_text_font(s_lbl_date, &buddy_font_20, 0);
     lv_label_set_text(s_lbl_date, "");
-    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 146);  /* Noto Sans: taller line box, same baseline */
+    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 152);  /* 28 px line box, centred where the 28 px date was */
 
     /* Notes / reminders shortcuts: a centered row between the date and the mic */
     s_shortcuts = lv_obj_create(s_content);
@@ -908,6 +896,59 @@ bool ui_is_watchface(void)
     return lv_screen_active() == s_scr;
 }
 
+/* ---- server notices (usage thresholds): shown only while no conversation runs ---- */
+#define NOTICE_MAX          160
+#define NOTICE_DELAY_MS     2500    /* after the conversation ends: let the last answer be read */
+#define NOTICE_SHOW_MS      5000
+static char        s_notice_text[NOTICE_MAX];
+static char        s_notice_level[12];
+static bool        s_notice_pending;
+static lv_timer_t *s_notice_timer;
+
+static void notice_timer_cb(lv_timer_t *t)
+{
+    s_notice_timer = NULL;
+    if (!s_notice_pending || s_conv != UI_CONV_IDLE) {
+        return;                         /* a new conversation started: wait for the next idle */
+    }
+    s_notice_pending = false;
+    bool limit = strcmp(s_notice_level, "limit") == 0;
+    bool warn = limit || strcmp(s_notice_level, "warning") == 0;
+    lv_color_t color = limit ? lv_palette_main(LV_PALETTE_RED)
+                             : (warn ? lv_palette_main(LV_PALETTE_AMBER) : g_ui_theme.accent);
+    ui_msg_show(ICON_WARNING, color, ui_str(STR_CARE), s_notice_text, NULL, NULL, NULL, true, NOTICE_SHOW_MS);
+}
+
+/* Caller holds the lock. */
+static void notice_schedule(void)
+{
+    if (!s_notice_pending || s_conv != UI_CONV_IDLE) {
+        return;
+    }
+    if (s_notice_timer) {
+        lv_timer_reset(s_notice_timer);
+        return;
+    }
+    s_notice_timer = lv_timer_create(notice_timer_cb, NOTICE_DELAY_MS, NULL);
+    lv_timer_set_repeat_count(s_notice_timer, 1);
+}
+
+void ui_show_notice(const char *json)
+{
+    cJSON *j = cJSON_Parse(json);
+    const cJSON *text = j ? cJSON_GetObjectItemCaseSensitive(j, "text") : NULL;
+    const cJSON *level = j ? cJSON_GetObjectItemCaseSensitive(j, "level") : NULL;
+    if (cJSON_IsString(text) && text->valuestring[0]) {
+        LOCK();
+        strlcpy(s_notice_text, text->valuestring, sizeof(s_notice_text));
+        strlcpy(s_notice_level, cJSON_IsString(level) ? level->valuestring : "info", sizeof(s_notice_level));
+        s_notice_pending = true;
+        notice_schedule();
+        UNLOCK();
+    }
+    cJSON_Delete(j);
+}
+
 void ui_set_conv_state(ui_conv_t st)
 {
     LOCK();
@@ -918,6 +959,7 @@ void ui_set_conv_state(ui_conv_t st)
         }
         s_conv = st;
         ui_chat_set_state(st);      /* a turn opens the conversation screen */
+        notice_schedule();          /* a waiting notice shows once the conversation is over */
         if (st != UI_CONV_IDLE) {
             ui_note_activity();
             if (s_power != POWER_ON) {

@@ -14,6 +14,12 @@ const ACTION_LABEL: Record<string, string> = {
   "account.active": "Reactivated",
   "account.suspended": "Suspended",
   "account.allowance": "Allowance changed",
+  "subscription.complimentary": "Complimentary plan granted",
+  "subscription.complimentary.extend": "Complimentary plan extended",
+  "subscription.complimentary.revoke": "Complimentary plan ended",
+  "topup.checkout": "Extra usage checkout started",
+  "topup.paid": "Extra usage paid",
+  "topup.refunded": "Extra usage refunded",
   "order.shipped": "Order shipped",
   "order.delivered": "Order delivered",
   "order.cancelled": "Order cancelled",
@@ -243,6 +249,56 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Subscription status + monthly allowance with an operator override. */
+/** Complimentary / test access: no payment, no Stripe objects; recorded in the audit log. */
+function ComplimentaryControls({ account: a, onChanged }: { account: AccountDetail; onChanged: () => void }) {
+  const [days, setDays] = useState("30");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [message, setMessage] = useState("");
+  const sub = a.subscription;
+  const stripePaid = sub?.source === "stripe" && a.entitled;
+  const activeComp = sub?.source === "complimentary" && a.entitled;
+  const run = async (fn: () => Promise<string>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setMessage(await fn());
+      onChanged();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (stripePaid) return null;
+  const n = Math.max(1, Math.min(366, Number(days) || 30));
+  return (
+    <div className="mt-4 space-y-2 border-t border-border pt-4">
+      <p className="text-xs font-medium text-muted">Complimentary pilot (no payment)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} className="w-20" aria-label="Days" />
+        <span className="text-sm text-muted">days</span>
+        {activeComp ? (
+          <>
+            <Button size="sm" loading={busy} onClick={() => run(async () => ((await api.accounts.grantComplimentary(a.id, { days: n, extend: true })).created ? `Extended by ${n} days.` : "Unchanged."))}>
+              Extend
+            </Button>
+            <Button size="sm" variant="ghost" loading={busy} onClick={() => run(async () => ((await api.accounts.revokeComplimentary(a.id)).revoked ? "Complimentary access ended." : "Nothing to end."))}>
+              End now
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="primary" loading={busy} onClick={() => run(async () => ((await api.accounts.grantComplimentary(a.id, { days: n })).created ? `Granted for ${n} days.` : "Already granted — unchanged."))}>
+            Grant ola Care
+          </Button>
+        )}
+      </div>
+      {message && <p className="text-xs text-ok">{message}</p>}
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
 function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged: () => void }) {
   const al = a.allowance;
   const [value, setValue] = useState("");
@@ -252,7 +308,12 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
 
   if (!al) return null;
   const sub = a.subscription;
-  const plan = planStatus(sub);
+  const comp = sub?.source === "complimentary";
+  const plan = comp
+    ? a.entitled
+      ? { text: `Complimentary until ${fmtDayMonth(sub?.current_period_end)}`, tone: "accent" as const }
+      : { text: `Complimentary access ended ${fmtDayMonth(sub?.current_period_end)}`, tone: "warn" as const }
+    : planStatus(sub);
   const pct = al.limit > 0 ? (al.used / al.limit) * 100 : 0;
 
   const save = async (override: number | null) => {
@@ -280,8 +341,9 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
     <Card title="Plan & allowance">
       <dl className="space-y-3 text-sm">
         <Row label="Plan">
-          <Badge tone={plan.tone}>{sub ? sub.status : "none"}</Badge>
-          <span className="mt-1 block text-muted">{plan.text}</span>
+          <Badge tone={plan.tone}>{a.internal ? "internal" : comp ? "complimentary" : sub ? sub.status : "none"}</Badge>
+          <span className="mt-1 block text-muted">{a.internal ? "Internal account — never limited, costs still tracked" : plan.text}</span>
+          {comp && sub?.note && <span className="mt-1 block text-xs text-muted">{sub.note} · granted by {sub.granted_by ?? "—"}</span>}
         </Row>
         {sub?.trial_end && <Row label="Trial end">{fmtDayMonth(sub.trial_end)}</Row>}
         {sub?.current_period_end && <Row label="Period end">{fmtDayMonth(sub.current_period_end)}</Row>}
@@ -292,7 +354,14 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
         )}
       </dl>
       <div className="mt-4 border-t border-border pt-4">
-        <Meter pct={pct} label={`This month: ${fmtMoney(al.used, al.currency)} of ${fmtMoney(al.limit, al.currency)}`} />
+        <Meter
+          pct={pct}
+          label={`This period (${fmtDayMonth(al.period_start)} – ${fmtDayMonth(al.period_end)}): ${fmtMoney(al.used, al.currency)} of ${fmtMoney(al.limit, al.currency)}`}
+        />
+        {!!al.unpriced_rows && (
+          <p className="mt-2 text-xs text-warn">{al.unpriced_rows} usage rows have no pricing rule and are not counted.</p>
+        )}
+        {!a.internal && <ComplimentaryControls account={a} onChanged={onChanged} />}
         <form onSubmit={submit} className="mt-4 space-y-2">
           <Field
             label={`Allowance override (${al.currency}/month)`}

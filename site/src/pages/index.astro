@@ -14,7 +14,7 @@ import { languageCountLabel } from "../lib/languages";
 import { privacyLine } from "../data/features";
 import { config, prices } from "../config";
 
-const description = `BuddyAI is a smartwatch with an AI voice assistant built in. Tap the mic, talk naturally, and hear a reply in ${languageCountLabel} languages. Ships to the UK and EU.`;
+const description = `ola is a smartwatch with an AI voice assistant built in. Tap the mic, talk naturally, and hear a reply in ${languageCountLabel} languages. Ships to the UK and EU.`;
 const site = Astro.site!;
 const jsonLd = [
   {
@@ -28,7 +28,7 @@ const jsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: "BuddyAI Watch",
+    name: "ola Watch",
     description,
     brand: { "@type": "Brand", name: config.siteName },
     offers: [
@@ -47,7 +47,7 @@ const jsonLd = [
           Your AI companion,<br /><span class="text-gradient">now on your wrist.</span>
         </h1>
         <p class="mt-6 max-w-xl text-lg text-muted">
-          Just talk. BuddyAI is a smartwatch with an AI voice assistant built in — tap the mic, ask anything, and hear a
+          Just talk. ola is a smartwatch with an AI voice assistant built in — tap the mic, ask anything, and hear a
           natural reply in {languageCountLabel} languages.
         </p>
         <div class="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -55,7 +55,7 @@ const jsonLd = [
           <a href="/how-it-works/" class="btn btn-ghost text-base">See how it works</a>
         </div>
         <p class="mt-4 text-sm text-muted">
-          <Price item="watch" class="font-semibold text-white" /> today, then <Price item="care" />/month for BuddyAI Care
+          <Price item="watch" class="font-semibold text-white" /> today, then <Price item="care" />/month for ola Care
           after {prices.trialMonths} months free. Cancel anytime.
         </p>
         <ul class="mt-6 flex flex-wrap gap-x-6 gap-y-3 text-sm text-muted">
@@ -76,7 +76,7 @@ const jsonLd = [
 
   <!-- How it works -->
   <section class="container-x mt-24" aria-labelledby="how-title">
-    <SectionHeading id="how-title" title="How BuddyAI works" subtitle="Get started in three simple steps." />
+    <SectionHeading id="how-title" title="How ola works" subtitle="Get started in three simple steps." />
     <div class="mt-8"><Steps /></div>
   </section>
 
@@ -86,7 +86,7 @@ const jsonLd = [
       <SectionHeading
         id="uses-title"
         title="A smarter everyday"
-        subtitle="Whether you're curious, learning, busy or brainstorming, BuddyAI is one tap away."
+        subtitle="Whether you're curious, learning, busy or brainstorming, ola is one tap away."
       />
       <a href="/features/" class="link text-sm font-semibold">All features</a>
     </div>
@@ -112,8 +112,8 @@ const jsonLd = [
   <section class="container-x mt-24" aria-labelledby="buy-title">
     <div class="grid items-center gap-10 lg:grid-cols-[1fr_1.15fr]">
       <div>
-        <p class="eyebrow">BuddyAI Watch</p>
-        <h2 id="buy-title" class="mt-1 text-3xl font-bold tracking-tight text-white sm:text-4xl">Get your BuddyAI</h2>
+        <p class="eyebrow">ola Watch</p>
+        <h2 id="buy-title" class="mt-1 text-3xl font-bold tracking-tight text-white sm:text-4xl">Get your ola</h2>
         <p class="mt-4 max-w-md text-muted">
           One price for the watch, then a simple monthly subscription for the AI — with the first {prices.trialMonths}
           months free.

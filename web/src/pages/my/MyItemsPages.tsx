@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CalendarClock, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarClock, Check, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
 import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Spinner, Textarea, useAsync } from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
@@ -91,7 +91,25 @@ export function MyRemindersPage() {
   const q = useItems("reminder");
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Item | null>(null);
-  const reminders = [...q.items].sort((a, b) => (a.due_at ?? "").localeCompare(b.due_at ?? "") || a.number - b.number);
+  const [toggling, setToggling] = useState<number | null>(null);
+  const [toggleError, setToggleError] = useState<unknown>(null);
+  // Open reminders by time, completed ones last (like the watch).
+  const reminders = [...q.items].sort(
+    (a, b) => Number(a.done) - Number(b.done) || (a.due_at ?? "").localeCompare(b.due_at ?? "") || a.number - b.number,
+  );
+
+  const toggleDone = async (r: Item) => {
+    setToggling(r.number);
+    setToggleError(null);
+    try {
+      await api.me.items.setDone(r.number, !r.done);
+      q.reload();
+    } catch (err) {
+      setToggleError(err);
+    } finally {
+      setToggling(null);
+    }
+  };
 
   return (
     <ItemsLayout
@@ -102,6 +120,7 @@ export function MyRemindersPage() {
       onRetry={q.reload}
       loading={q.loading && !q.data}
     >
+      <ErrorBox error={toggleError} />
       {reminders.length === 0 ? (
         <Card>
           <Empty icon={<CalendarClock className="size-7" />} title="No reminders yet" />
@@ -109,17 +128,45 @@ export function MyRemindersPage() {
       ) : (
         <ul className="space-y-3">
           {reminders.map((r) => (
-            <ItemCard key={r.number} item={r} onEdit={() => setEditing(r)} onDelete={() => setDeleting(r)}>
+            <ItemCard
+              key={r.number}
+              item={r}
+              onEdit={() => setEditing(r)}
+              onDelete={() => setDeleting(r)}
+              leading={
+                <button
+                  type="button"
+                  onClick={() => toggleDone(r)}
+                  disabled={toggling === r.number}
+                  aria-pressed={r.done}
+                  aria-label={r.done ? `Reopen reminder #${r.number}` : `Complete reminder #${r.number}`}
+                  title={r.done ? "Reopen" : "Complete"}
+                  className={
+                    r.done
+                      ? "grid size-6 shrink-0 place-items-center rounded-full border border-ok bg-ok text-white transition disabled:opacity-60"
+                      : "grid size-6 shrink-0 place-items-center rounded-full border-2 border-border text-transparent transition hover:border-ok hover:text-ok disabled:opacity-60"
+                  }
+                >
+                  <Check className="size-3.5" strokeWidth={3} />
+                </button>
+              }
+            >
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <CalendarClock className="size-4 text-muted" />
-                <span className="font-medium">{fmtDateTime(r.due_at)}</span>
-                {r.overdue && (
-                  <Badge tone="danger">
-                    <TriangleAlert className="size-3" /> Overdue
+                <span className={r.done ? "font-medium text-muted" : "font-medium"}>{fmtDateTime(r.due_at)}</span>
+                {r.done ? (
+                  <Badge tone="ok">
+                    <CircleCheck className="size-3" /> Completed
                   </Badge>
+                ) : (
+                  r.overdue && (
+                    <Badge tone="danger">
+                      <TriangleAlert className="size-3" /> Overdue
+                    </Badge>
+                  )
                 )}
               </div>
-              <p className="mt-1 text-sm">{r.text}</p>
+              <p className={r.done ? "mt-1 text-sm text-muted line-through" : "mt-1 text-sm"}>{r.text}</p>
             </ItemCard>
           ))}
         </ul>
@@ -212,10 +259,24 @@ function ItemsLayout({
   );
 }
 
-function ItemCard({ item, onEdit, onDelete, children }: { item: Item; onEdit: () => void; onDelete: () => void; children: ReactNode }) {
+function ItemCard({
+  item,
+  onEdit,
+  onDelete,
+  leading,
+  children,
+}: {
+  item: Item;
+  onEdit: () => void;
+  onDelete: () => void;
+  /** Before the number, e.g. the reminder's complete button. */
+  leading?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <li className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-start gap-3">
+        {leading}
         <span className="mt-0.5 font-mono text-sm font-semibold text-accent">#{item.number}</span>
         <div className="min-w-0 flex-1">{children}</div>
         <button

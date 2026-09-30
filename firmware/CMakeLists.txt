@@ -1,4 +1,4 @@
-# BuddyAI watch firmware (ESP-IDF >= 5.4)
+# ola watch firmware (ESP-IDF >= 5.4)
 cmake_minimum_required(VERSION 3.16)
 
 set(PROJECT_VER "0.1.0")

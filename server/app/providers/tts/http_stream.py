@@ -25,6 +25,7 @@ _DONE = object()
 class HTTPStreamingTTS(TTSProvider):
     sample_rate = 24000
     label = "TTS"
+    reports_requests = True  # calls TTSRequest.on_request for every request (usage = what was sent)
 
     def __init__(self, prefetch: int = 2, timeout_s: float = 15.0, hedge_after_s: float | None = 1.5) -> None:
         self.prefetch = prefetch
@@ -40,6 +41,8 @@ class HTTPStreamingTTS(TTSProvider):
         """kwargs for httpx.AsyncClient.stream("POST", ...): url, headers, content/json."""
 
     async def _attempt(self, text: str, request: TTSRequest, out: asyncio.Queue) -> None:
+        if request.on_request is not None:
+            request.on_request(len(text))
         try:
             async with self._client.stream("POST", **self.build_request(text, request)) as r:
                 if r.status_code != 200:

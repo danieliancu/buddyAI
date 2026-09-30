@@ -244,7 +244,7 @@ function DeviceCard({
           )}
           {lastTurn.assistant_text && (
             <p className="truncate">
-              <span className="text-accent">Buddy: </span>
+              <span className="text-accent">Ola: </span>
               {lastTurn.assistant_text}
             </p>
           )}
@@ -316,7 +316,7 @@ function AddWatchDialog({
   onRefresh: () => void;
 }) {
   const [code, setCode] = useState("");
-  const [name, setName] = useState("BuddyAI Watch");
+  const [name, setName] = useState("ola Watch");
   const [accountId, setAccountId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -339,7 +339,7 @@ function AddWatchDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.devices.pair(code, name.trim() || "BuddyAI Watch", accountId);
+      await api.devices.pair(code, name.trim() || "ola Watch", accountId);
       setDone(true);
       onPaired();
       window.setTimeout(onClose, 900);

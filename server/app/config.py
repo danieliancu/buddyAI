@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # Customer app / email
     app_url: str = ""  # public URL of the customer app, used in email links (e.g. https://app.example.com)
     email_backend: str = "console"  # console | smtp
-    email_from: str = "BuddyAI <no-reply@localhost>"
+    email_from: str = "ola <no-reply@localhost>"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -67,12 +67,12 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_watch_gbp: str = ""  # one-time price ids from the Stripe dashboard
     stripe_price_watch_eur: str = ""
-    stripe_price_care_gbp: str = ""  # monthly "BuddyAI Care" price ids
+    stripe_price_care_gbp: str = ""  # monthly "ola Care" price ids
     stripe_price_care_eur: str = ""
     stripe_shipping_rates_gbp: str = ""  # comma-separated shipping rate ids
     stripe_shipping_rates_eur: str = ""
     care_trial_days: int = 90
-    care_allowance: float = 3.0  # monthly fair-use AI cost cap per account, in display currency
+    # Plan prices, allowances and thresholds are operator settings (table billing_settings, app/plan.py).
     site_url: str = ""  # public marketing site, for checkout success/cancel redirects
     # UK + EU (post-Brexit shipping to the EU needs customs/IOSS handling — see deploy/README.md)
     ship_countries: str = (

@@ -44,7 +44,6 @@ class DeviceSettings(BaseModel):
     volume: int = Field(70, ge=0, le=100)
     brightness: int = Field(80, ge=5, le=100)
     screen_timeout_s: int = Field(15, ge=5, le=300)
-    time_24h: bool = True
     timezone: str = "Europe/London"
     theme: Theme = Field(default_factory=Theme)
     max_listen_s: int = Field(15, ge=3, le=60)  # longest question, counted from the first word
@@ -110,7 +109,6 @@ DEVICE_EDITABLE = {
     "volume",
     "brightness",
     "theme",
-    "time_24h",
 }
 
 
@@ -122,7 +120,6 @@ def device_view(s: DeviceSettings) -> dict[str, Any]:
         "volume": s.volume,
         "brightness": s.brightness,
         "screen_timeout_s": s.screen_timeout_s,
-        "time_24h": s.time_24h,
         "tz_posix": posix_tz(s.timezone),
         "theme": s.theme.model_dump(),
         # The watch's whole listening window: waiting for the first word + the longest question.

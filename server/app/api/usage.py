@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from app import accounts
 from app.db.models import utcnow
+from app.db.models import PricingRule
 from app.db.repositories import PricingRepo, TurnRepo, UsageRepo
 from app.db.session import get_session
 from app.pipeline.metrics import percentile
@@ -135,8 +137,12 @@ def currency() -> dict:
 
 
 @router.put("/pricing/currency")
-def update_currency(body: CurrencyBody) -> dict:
-    return set_currency(body.currency, body.usd_rate)
+def update_currency(body: CurrencyBody, request: Request, db: Session = Depends(get_session)) -> dict:
+    before = get_currency()
+    out = set_currency(body.currency, body.usd_rate)
+    accounts.audit(db, request.session.get("admin", "operator"), "pricing.currency",
+                   detail=f"{before['currency']} {before['usd_rate']} -> {out['currency']} {out['usd_rate']}")
+    return out
 
 
 class PriceBody(BaseModel):
@@ -145,8 +151,12 @@ class PriceBody(BaseModel):
 
 
 @router.put("/pricing/{rule_id}")
-def update_price(rule_id: int, body: PriceBody, db: Session = Depends(get_session)) -> dict:
+def update_price(rule_id: int, body: PriceBody, request: Request, db: Session = Depends(get_session)) -> dict:
+    old = PricingRepo(db).s.get(PricingRule, rule_id)
+    old_price = old.price_usd if old else None
     rule = PricingRepo(db).update(rule_id, body.price_usd, body.note)
     if not rule:
         raise HTTPException(404, "rule not found")
+    accounts.audit(db, request.session.get("admin", "operator"), "pricing.rule",
+                   detail=f"{rule.provider}/{rule.model}/{rule.unit}: ${old_price} -> ${rule.price_usd}")
     return {**rule.model_dump(), "price_display": rule.price_usd * get_currency()["usd_rate"]}

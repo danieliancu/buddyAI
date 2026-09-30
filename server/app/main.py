@@ -1,4 +1,4 @@
-"""BuddyAI server entry point: `python -m app.main` (or `uvicorn app.main:app`)."""
+"""ola server entry point: `python -m app.main` (or `uvicorn app.main:app`)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages
-from app.api import accounts_admin, auth, devices, firmware, live, me, shop, system, usage
+from app.api import accounts_admin, auth, devices, finance, firmware, live, me, shop, system, usage
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
 
         mdns = MdnsAdvertiser(lan_ip(), settings.port)
         await mdns.start()
-    log.info("BuddyAI server ready. Device endpoint: ws://<this-host>:%s/ws/device", settings.port)
+    log.info("ola server ready. Device endpoint: ws://<this-host>:%s/ws/device", settings.port)
     if settings.mock_providers:
         log.warning("MOCK providers enabled: no real STT/LLM/TTS calls")
     yield
@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="BuddyAI Server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="ola Server", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -90,6 +90,7 @@ def create_app() -> FastAPI:
         accounts_admin.router,
         devices.router,
         usage.router,
+        finance.router,
         system.router,
         firmware.router,
         live.router,

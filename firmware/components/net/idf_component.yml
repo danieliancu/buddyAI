@@ -1,4 +1,4 @@
-## Optional LAN discovery of the BuddyAI server (_buddyai._tcp)
+## Optional LAN discovery of the ola server (_buddyai._tcp)
 dependencies:
   idf: ">=5.4"
   espressif/mdns: "^1.8.0"

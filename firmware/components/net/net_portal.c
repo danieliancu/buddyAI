@@ -1,7 +1,7 @@
 /*
- * BuddyAI - SoftAP provisioning with captive portal.
+ * ola - SoftAP provisioning with captive portal.
  *
- * AP "BuddyAI-XXXX" (open, XXXX = last MAC bytes). A tiny DNS server answers
+ * AP "ola-XXXX" (open, XXXX = last MAC bytes). A tiny DNS server answers
  * every query with the AP address so phones pop up the portal; unknown HTTP
  * paths (generate_204, hotspot-detect.html, ...) redirect to the form.
  * The form stores SSID / password / optional server_url in NVS.
@@ -163,7 +163,7 @@ static void send_escaped(httpd_req_t *req, const char *s)
 static const char PAGE_HEAD[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>BuddyAI setup</title><style>"
+    "<title>ola setup</title><style>"
     "body{font-family:system-ui,sans-serif;background:#0b0e14;color:#e6e9ef;margin:0;padding:24px}"
     "main{max-width:420px;margin:auto}h1{font-size:1.4em;color:#4F8CFF}"
     "label{display:block;margin:16px 0 6px;font-size:.9em;color:#b0b8c8}"
@@ -179,7 +179,7 @@ static esp_err_t root_get(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
     httpd_resp_sendstr_chunk(req,
-        "<h1>BuddyAI &middot; Wi-Fi</h1>"
+        "<h1>ola &middot; Wi-Fi</h1>"
         "<form method='POST' action='/save'>"
         "<label>Wi-Fi network</label>"
         "<input name='ssid' list='nets' required maxlength='32' autocomplete='off'><datalist id='nets'>");
@@ -320,7 +320,7 @@ const char *net_portal_ssid(void)
     if (!s_ap_ssid[0]) {
         uint8_t mac[6] = {0};
         esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-        snprintf(s_ap_ssid, sizeof(s_ap_ssid), "BuddyAI-%02X%02X", mac[4], mac[5]);
+        snprintf(s_ap_ssid, sizeof(s_ap_ssid), "ola-%02X%02X", mac[4], mac[5]);
     }
     return s_ap_ssid;
 }

@@ -18,6 +18,7 @@ from sqlmodel import Session
 from app import accounts, email
 from app.api.common import (
     ItemBody,
+    ItemDoneBody,
     PersonaBody,
     VoiceSampleBody,
     conversations_out,
@@ -36,12 +37,10 @@ from app.db.repositories import (
     ItemRepo,
     ItemTextError,
     PersonaRepo,
-    UsageRepo,
 )
 from app.db.session import get_session, session_scope
 from app.gateway.hub import PairingError
 from app.items import web_view
-from app.pricing.currency import convert, get_currency
 from app.ratelimit import LOGIN_PER_ACCOUNT, LOGIN_PER_IP, RESET_PER_EMAIL, SIGNUP_PER_IP, client_ip
 from app.security import is_valid_pairing_code
 
@@ -253,7 +252,7 @@ def my_devices(request: Request, acc: Account = Depends(current_account), db: Se
 
 class PairBody(BaseModel):
     code: str
-    name: str = Field("My BuddyAI", min_length=1, max_length=80)
+    name: str = Field("My ola", min_length=1, max_length=80)
 
 
 @router.post("/devices/pair")
@@ -426,6 +425,20 @@ async def update_item(
     return out
 
 
+@router.put("/items/reminder/{number}/done")
+async def set_reminder_done(
+    number: int,
+    body: ItemDoneBody,
+    request: Request,
+    acc: Account = Depends(current_account),
+    db: Session = Depends(get_session),
+) -> dict:
+    it = ItemRepo(db).update(_own_item(db, acc, "reminder", number), done=body.done)
+    out = web_view(it)
+    await _items_changed(request, acc.id)
+    return out
+
+
 @router.delete("/items/{kind}/{number}")
 async def delete_item(
     kind: str, number: int, request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)
@@ -440,18 +453,15 @@ async def delete_item(
 
 @router.get("/usage")
 def usage(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    rows = UsageRepo(db).since(month_start, account_id=acc.id)
-    cur = get_currency()
-    cost_usd = sum(r.cost_usd or 0.0 for r in rows)
-    questions = {r.turn_id for r in rows if r.kind == "llm" and r.turn_id}
+    """Conversations in the current allowance period. Internal costs are never sent to customers."""
+    from app import allowance as allowance_mod
+    from app import entitlements
+
+    a = entitlements.allowance(db, acc)
     return {
-        "period_start": month_start,
-        "questions": len(questions),
-        "cost": convert(cost_usd, cur["usd_rate"]),
-        "currency": cur["currency"],
-        "symbol": cur["symbol"],
+        "period_start": a.period.start,
+        "reset_at": a.period.end,
+        "questions": allowance_mod.activity_count(db, acc.id, a.period),
     }
 
 
@@ -466,7 +476,7 @@ def export(acc: Account = Depends(current_account), db: Session = Depends(get_se
     return Response(
         data,
         media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="buddyai-my-data.json"'},
+        headers={"Content-Disposition": 'attachment; filename="ola-my-data.json"'},
     )
 
 

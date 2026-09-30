@@ -1,4 +1,4 @@
-import type { OrderStatus, SubscriptionInfo, TurnRefusedCode } from "../api";
+import type { MyPlan, OrderStatus, SubscriptionInfo, TurnRefusedCode } from "../api";
 import { parseDate } from "../format";
 import { Badge, cx } from "./ui";
 
@@ -45,6 +45,62 @@ export function planStatus(sub: SubscriptionInfo | null): { text: string; tone: 
   }
 }
 
+/** 799 -> "£7.99". */
+export function pence(p: number): string {
+  return `£${(p / 100).toFixed(2)}`;
+}
+
+/** ola Care state for the customer (GET /api/me/plan). */
+export function carePlanStatus(plan: MyPlan): { text: string; tone: Tone; problem: boolean } {
+  const s = plan.status;
+  switch (s.kind) {
+    case "trial":
+      return {
+        text: s.cancel_at_period_end ? `Free trial — ends ${fmtDayMonth(s.trial_end)}` : `Free trial until ${fmtDayMonth(s.trial_end)}`,
+        tone: "accent",
+        problem: false,
+      };
+    case "active":
+      return {
+        text: s.cancel_at_period_end ? `Active — ends ${fmtDayMonth(s.period_end)}` : `Active — renews ${fmtDayMonth(s.period_end)}`,
+        tone: "ok",
+        problem: false,
+      };
+    case "past_due":
+      return { text: "Payment problem — update your card", tone: "danger", problem: true };
+    case "complimentary":
+      return { text: `Complimentary pilot — until ${fmtDayMonth(s.period_end)}`, tone: "accent", problem: false };
+    case "expired":
+      return { text: `Pilot ended on ${fmtDayMonth(s.period_end)}`, tone: "warn", problem: true };
+    case "canceled":
+      return { text: "Cancelled", tone: "neutral", problem: false };
+    case "internal":
+      return { text: "Internal account — no usage limit", tone: "neutral", problem: false };
+    default:
+      return { text: "No plan yet", tone: "neutral", problem: false };
+  }
+}
+
+/** Large "Monthly AI usage 52 %" with the liquid bar (same colours as the other meters). */
+export function UsageGauge({ pct, label = "Monthly AI usage" }: { pct: number; label?: string }) {
+  const v = Math.max(0, Math.min(100, pct));
+  const tone = v >= 100 ? "danger" : v >= 80 ? "warn" : "";
+  return (
+    <div>
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <span className="text-sm text-muted">{label}</span>
+        <span className={cx("tabular text-3xl font-semibold leading-none tracking-tight", v >= 100 ? "text-danger" : v >= 80 ? "text-warn" : "")}>
+          {Math.round(v)}
+          <span className="ml-0.5 text-lg font-medium text-muted">%</span>
+        </span>
+      </div>
+      <div className="liquid" role="progressbar" aria-label={label} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={cx("liquid-fill", tone)} style={{ width: `${v}%` }} />
+      </div>
+    </div>
+  );
+}
+
 const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
   paid: { label: "Paid — preparing", tone: "accent" },
   shipped: { label: "Shipped", tone: "ok" },
@@ -62,13 +118,15 @@ export function OrderStatusBadge({ status, operator }: { status: OrderStatus; op
 export function turnRefusedText(code: TurnRefusedCode, operator = false): string {
   switch (code) {
     case "subscription_required":
-      return operator ? "Refused: no active subscription" : "Buddy needs an active BuddyAI Care subscription to answer.";
+      return operator ? "Refused: no active subscription" : "Ola needs an active ola Care subscription to answer.";
     case "limit_reached":
-      return operator ? "Refused: monthly allowance used up" : "This month's allowance is used up. Buddy will answer again next month.";
+      return operator
+        ? "Refused: allowance used up"
+        : "This month's AI usage is used up. Ola answers again when it resets — or add extra usage on the Account page.";
     case "account_inactive":
       return operator ? "Refused: account inactive" : "Your account is inactive — please contact support.";
     default:
-      return operator ? `Refused: ${code}` : "Buddy couldn't answer the last question.";
+      return operator ? `Refused: ${code}` : "Ola couldn't answer the last question.";
   }
 }
 

@@ -1,8 +1,8 @@
 /*
- * BuddyAI - networking
+ * ola - networking
  *
  *  - Wi-Fi station with automatic reconnect and exponential backoff
- *  - SoftAP "BuddyAI-XXXX" + captive portal (DNS hijack + HTTP form) for
+ *  - SoftAP "ola-XXXX" + captive portal (DNS hijack + HTTP form) for
  *    SSID / password / optional server_url
  *  - SNTP time sync (system clock; the app mirrors it to the RTC)
  *  - optional mDNS discovery of the server (_buddyai._tcp)
@@ -41,7 +41,7 @@ void      net_wifi_set_power_save(bool enable);
 esp_err_t   net_portal_start(void);
 void        net_portal_stop(void);
 bool        net_portal_active(void);
-const char *net_portal_ssid(void);          /* "BuddyAI-XXXX" */
+const char *net_portal_ssid(void);          /* "ola-XXXX" */
 
 /* ---- time ---- */
 void      net_set_timezone(const char *tz_posix);

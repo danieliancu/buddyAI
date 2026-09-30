@@ -1,6 +1,6 @@
-# BuddyAI watch firmware
+# ola watch firmware
 
-Firmware for the BuddyAI voice assistant watch.
+Firmware for the ola voice assistant watch.
 
 - Board: Waveshare **ESP32-S3-Touch-AMOLED-2.06** (ESP32-S3R8, 8 MB octal PSRAM, 32 MB flash,
   410×502 CO5300 AMOLED, FT3168 touch, ES8311 + ES7210 audio, AXP2101 PMU, PCF85063 RTC)
@@ -28,7 +28,7 @@ the environment:
 
 ```powershell
 . "C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1"
-cd C:\_work\BuddyAI\firmware
+cd C:\_work\ola\firmware
 ```
 
 Component dependencies (LVGL, esp_lvgl_port, codecs, Opus, websocket client, mDNS…) are fetched by
@@ -47,7 +47,7 @@ Uses `sdkconfig.defaults` only (`sdkconfig` is generated and not committed). Dev
 - log at INFO level.
 
 Optional: a default server for your LAN, so you do not have to type it in the portal:
-`idf.py menuconfig` → *BuddyAI* → *Default server URL* (e.g. `ws://192.168.1.10:8765/ws/device`).
+`idf.py menuconfig` → *ola* → *Default server URL* (e.g. `ws://192.168.1.10:8765/ws/device`).
 
 ## 3. Flash and monitor
 
@@ -64,13 +64,13 @@ idf.py -p COM5 flash monitor        # replace COM5 with your port
 
 ## 4. First boot (setup portal)
 
-1. Without Wi-Fi credentials the watch starts a SoftAP **`BuddyAI-XXXX`** and shows the Wi-Fi setup screen.
+1. Without Wi-Fi credentials the watch starts a SoftAP **`ola-XXXX`** and shows the Wi-Fi setup screen.
 2. Join that network with a phone; the captive portal opens (otherwise browse to `http://192.168.4.1`).
 3. Choose the Wi-Fi network, enter the password and optionally a **server URL**:
    - development: `ws://<pc-ip>:8765/ws/device` or `wss://…`; empty = default URL / last server / mDNS;
    - release builds: **`wss://` only**; empty = the built-in default (`CONFIG_BUDDYAI_DEFAULT_SERVER_URL`).
 4. Save → the watch restarts, joins Wi-Fi and connects.
-5. An unpaired watch shows a **6-digit pairing code**. In the BuddyAI web app choose *Add watch* and
+5. An unpaired watch shows a **6-digit pairing code**. In the ola web app choose *Add watch* and
    enter the code. The watch stores its device token and shows the watchface.
 
 The portal can be reopened any time from quick settings (swipe left/up on the watchface → *Wi-Fi setup*).
@@ -85,7 +85,7 @@ The portal can be reopened any time from quick settings (swipe left/up on the wa
    token, settings) and restarts into the setup portal.
 
 This only unpairs the watch **locally**. The owner removes the watch from their account in the
-BuddyAI app (that revokes the token on the server).
+ola app (that revokes the token on the server).
 
 The PWR key is not used for this: it is wired to the AXP2101 PWRON pin, whose long press is a
 hardware power-off.
@@ -94,9 +94,9 @@ hardware power-off.
 
 | Server error | Watch behaviour |
 |---|---|
-| `subscription_required` (reply to `listen_start`) | Mic/uplink stopped at once, "Subscription needed — Open the BuddyAI app to renew BuddyAI Care." for 6 s (tap to dismiss), then idle. No automatic retry. |
+| `subscription_required` (reply to `listen_start`) | Mic/uplink stopped at once, "Subscription needed — Open the ola app to renew ola Care." for 6 s (tap to dismiss), then idle. No automatic retry. |
 | `limit_reached` (reply to `listen_start`) | Same pattern, "Monthly limit reached — Your assistant will be back on the 1st of next month." |
-| `account_inactive` (reply to `hello`, server closes) | "Account inactive — Contact BuddyAI support.", token kept, reconnect every **10 min** until a session succeeds; a mic tap meanwhile shows the screen again. |
+| `account_inactive` (reply to `hello`, server closes) | "Account inactive — Contact ola support.", token kept, reconnect every **10 min** until a session succeeds; a mic tap meanwhile shows the screen again. |
 | `protocol_unsupported` | "Update required", reconnect every 10 min. |
 
 For the two turn-level errors the websocket task marks the turn dead as soon as the frame arrives, so

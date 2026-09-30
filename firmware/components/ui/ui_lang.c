@@ -1,5 +1,5 @@
 /*
- * BuddyAI - language picker ("Other" in quick settings).
+ * ola - language picker ("Other" in quick settings).
  *
  * Full screen in the same style as the notes / reminders lists: title, X in the
  * top-right corner, a search box (on-screen keyboard while it has focus) and

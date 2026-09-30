@@ -4,12 +4,12 @@ import Icon from "../components/Icon.astro";
 import { config } from "../config";
 
 const next = [
-  { icon: "mail" as const, title: "Check your email", text: "Your order confirmation is on its way, with a link to set your BuddyAI account password." },
+  { icon: "mail" as const, title: "Check your email", text: "Your order confirmation is on its way, with a link to set your ola account password." },
   { icon: "truck" as const, title: "Shipping", text: "When your watch ships, we'll email you the tracking details." },
-  { icon: "wifi" as const, title: "When it arrives", text: "Sign in at the BuddyAI app, choose Add watch, and connect it to Wi-Fi. Then tap the mic and say hello." },
+  { icon: "wifi" as const, title: "When it arrives", text: "Sign in at the ola app, choose Add watch, and connect it to Wi-Fi. Then tap the mic and say hello." },
 ];
 ---
-<Base title="Thank you for your order" description="Your BuddyAI order is confirmed." noindex>
+<Base title="Thank you for your order" description="Your ola order is confirmed." noindex>
   <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title">
     <span class="icon-tile !h-14 !w-14 text-ok"><Icon name="check" size={28} /></span>
     <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
@@ -32,7 +32,7 @@ const next = [
     </ol>
 
     <div class="mt-10 flex flex-col gap-3 sm:flex-row">
-      <a class="btn btn-primary" href={config.appUrl}>Go to the BuddyAI app <Icon name="arrow" size={18} /></a>
+      <a class="btn btn-primary" href={config.appUrl}>Go to the ola app <Icon name="arrow" size={18} /></a>
       <a class="btn btn-ghost" href="/">Back to home</a>
     </div>
     <p class="mt-8 text-sm text-muted">

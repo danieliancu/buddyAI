@@ -1,5 +1,5 @@
 /*
- * BuddyAI - audio pipeline
+ * ola - audio pipeline
  *
  * Capture:  ES7210 mic -> 16 kHz mono PCM -> Opus (VOIP, 60 ms / 960 samples)
  *           -> audio_capture_cb_t (one Opus packet per call)

@@ -1,4 +1,4 @@
-# BuddyAI — HTTPS reverse proxy. Caddy obtains and renews Let's Encrypt certificates automatically.
+# ola — HTTPS reverse proxy. Caddy obtains and renews Let's Encrypt certificates automatically.
 # Domains come from deploy/.env (SITE_DOMAIN, APP_DOMAIN, API_DOMAIN, ROOT_DOMAIN).
 {
 	email {$ACME_EMAIL}

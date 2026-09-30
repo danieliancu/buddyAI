@@ -1,9 +1,9 @@
 /*
- * BuddyAI - conversation screen (chat bubbles).
+ * ola - conversation screen (chat bubbles).
  *
  * Opens full screen as soon as a turn starts (mic tap on the watchface). Same
  * visual system as the notes / reminders screens: title top-left, X top-right.
- * The dialog shows as bubbles - the user's words on the right (accent), Buddy's
+ * The dialog shows as bubbles - the user's words on the right (accent), Ola's
  * replies on the left - in a scrollable area that always follows the newest
  * text. A small mic button stays at the bottom (tap = talk / interrupt) and
  * shows the turn state: ring (listening), spinner (thinking), speaker icon
@@ -87,7 +87,7 @@ static void fit_width(lv_obj_t *l)
     lv_obj_set_width(l, w < BUBBLE_MAX_W ? w : BUBBLE_MAX_W);
 }
 
-/* One full-width row holding a bubble aligned right (user) or left (Buddy). Returns the label. */
+/* One full-width row holding a bubble aligned right (user) or left (Ola). Returns the label. */
 static lv_obj_t *add_bubble(bool user, const char *text)
 {
     lv_obj_t *row = lv_obj_create(s_list);
@@ -225,7 +225,7 @@ void ui_chat_init(void)
     s_title = lv_label_create(s_scr);
     lv_obj_set_style_text_font(s_title, &buddy_font_28, 0);
     lv_obj_align(s_title, LV_ALIGN_TOP_LEFT, 36, 42);
-    lv_label_set_text(s_title, "Buddy");
+    lv_label_set_text(s_title, "Ola");
 
     /* X: same as the notes / reminders screens */
     lv_obj_t *x = lv_button_create(s_scr);

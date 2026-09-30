@@ -159,3 +159,7 @@ class ItemBody(BaseModel):
     kind: Literal["note", "reminder"] = "note"
     text: str = Field(min_length=1, max_length=10000)
     due_at: datetime | None = None
+
+
+class ItemDoneBody(BaseModel):
+    done: bool

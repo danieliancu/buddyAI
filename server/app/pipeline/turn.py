@@ -46,6 +46,8 @@ class TurnContext:
     settings_changed: bool = False  # a tool changed the watch settings (volume, language...)
     # What to open on the watch after the turn ends: {"list": kind} or {"item": {...}} (last one wins)
     pending_open: dict[str, Any] | None = None
+    searcher: Any = None  # app.search.WebSearch for this turn (one search per turn)
+    search_city: str = ""  # default location for web searches (from the watch's time zone)
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"

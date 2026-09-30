@@ -169,6 +169,8 @@ class _OpenAISTTSession(STTSession):
             except ProviderError:
                 self._realtime_ok = False  # connection dropped: the fallback will transcribe
 
+    fallback_usage: tuple[str, float] | None = None  # (model, audio seconds) sent to the fallback
+
     async def finish(self) -> str:
         try:
             return await self._finish_realtime()
@@ -198,6 +200,8 @@ class _OpenAISTTSession(STTSession):
             w.setsampwidth(2)
             w.setframerate(self.rate)
             w.writeframes(b"".join(self._audio))
+        # Billed separately by the provider: recorded as its own usage (app/pipeline/conversation.py).
+        self.fallback_usage = (self.p.fallback_model, sum(map(len, self._audio)) / 2 / self.rate)
         data = {"model": self.p.fallback_model}
         if self.language and self.language != "auto":
             data["language"] = self.language

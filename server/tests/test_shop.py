@@ -107,18 +107,20 @@ async def test_subscription_status_drives_entitlement(billing_on):
 
 
 async def test_allowance_warns_then_blocks(billing_on, monkeypatch):
-    monkeypatch.setattr(billing_on, "care_allowance", 1.0)
     addr = f"heavy-{secrets.token_hex(3)}@example.com"
     cus, sub_id = f"cus_{secrets.token_hex(4)}", f"sub_{secrets.token_hex(4)}"
     with session_scope() as db:
         await billing.handle_event(db, _session_event(addr, cus, sub_id), fetch_subscription=lambda sid: _sub(sid, cus))
-        acc_id = db.exec(select(Account).where(Account.email == addr)).one().id
-    rate = billing_on.usd_to_display_rate
+        acc = db.exec(select(Account).where(Account.email == addr)).one()
+        acc.allowance_override = 1.0  # £1 for this account
+        db.add(acc)
+        db.commit()
+        acc_id = acc.id
 
-    def spend(display_amount: float) -> None:
+    def spend(pounds: float) -> None:
         with session_scope() as db:
             db.add(UsageRecord(device_id="d", account_id=acc_id, kind="llm", provider="p", model="m", unit="u",
-                               quantity=1, cost_usd=display_amount / rate))
+                               quantity=1, cost_usd=pounds / 0.75, cost_micro_gbp=round(pounds * 1_000_000)))
             db.commit()
 
     spend(0.85)  # 85% of £1

@@ -8,6 +8,7 @@ import { useLanguages } from "../languages";
 import { KIND_LABEL, STATUS_LABEL, langLabel, langName, langNative, UNIT_LABEL, fmtDateTime, fmtMoney, fmtMs, fmtQty, fmtUsd } from "../format";
 import { DevicePicker, TurnStatusBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, cx, useAsync } from "../components/ui";
+import { FinanceTab, PlanSettingsTab } from "./FinanceTabs";
 
 const PERIODS = [
   { days: 1, label: "24 h" },
@@ -18,8 +19,10 @@ const PERIODS = [
 
 const TABS = [
   { id: "cost", label: "Cost" },
+  { id: "finance", label: "Finance" },
   { id: "diag", label: "Diagnostics" },
   { id: "pricing", label: "Pricing" },
+  { id: "plan", label: "Plan settings" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -54,7 +57,7 @@ export default function UsagePage() {
             </button>
           ))}
         </div>
-        {tab !== "pricing" && (
+        {tab !== "pricing" && tab !== "plan" && (
           <>
             <div className="flex rounded-lg border border-border bg-surface p-0.5">
               {PERIODS.map((p) => (
@@ -67,13 +70,17 @@ export default function UsagePage() {
                 </button>
               ))}
             </div>
-            <DevicePicker devices={devices.data ?? []} value={deviceId} onChange={(id) => setParam("device", id)} allowAll />
+            {tab !== "finance" && (
+              <DevicePicker devices={devices.data ?? []} value={deviceId} onChange={(id) => setParam("device", id)} allowAll />
+            )}
           </>
         )}
       </div>
       {tab === "cost" && <CostTab days={days} deviceId={deviceId} />}
       {tab === "diag" && <DiagTab days={days} deviceId={deviceId} devices={devices.data ?? []} />}
       {tab === "pricing" && <PricingTab />}
+      {tab === "finance" && <FinanceTab days={days} />}
+      {tab === "plan" && <PlanSettingsTab />}
     </>
   );
 }

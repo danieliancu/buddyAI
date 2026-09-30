@@ -1,5 +1,5 @@
 /*
- * BuddyAI - board core: shared I2C bus, AXP2101 PMU, PCF85063 RTC.
+ * ola - board core: shared I2C bus, AXP2101 PMU, PCF85063 RTC.
  *
  * AXP2101 register usage follows the XPowersLib register map (MIT, used by the
  * Waveshare 01_AXP2101 example) and the xiaozhi-esp32 board definition (MIT):

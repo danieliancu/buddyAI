@@ -16,7 +16,7 @@ export const features: Feature[] = [
     icon: "mic",
     title: "Natural voice conversation",
     short: "Talk to an AI assistant, and hear it answer out loud.",
-    long: "Ask questions, think out loud, or just chat. BuddyAI listens and answers in a natural voice through the watch speaker — a conversation, not a list of commands.",
+    long: "Ask questions, think out loud, or just chat. ola listens and answers in a natural voice through the watch speaker — a conversation, not a list of commands.",
   },
   {
     icon: "tap",
@@ -28,7 +28,7 @@ export const features: Feature[] = [
     icon: "globe",
     title: `${languageCountLabel} languages`,
     short: "Or choose Auto: it answers in the language you speak.",
-    long: `Pick one of ${languageCountLabel} languages, or choose Auto and BuddyAI replies in whichever language you speak to it.`,
+    long: `Pick one of ${languageCountLabel} languages, or choose Auto and ola replies in whichever language you speak to it.`,
   },
   {
     icon: "persona",
@@ -46,7 +46,7 @@ export const features: Feature[] = [
     icon: "history",
     title: "History you control",
     short: "Your conversations in your account. Export or delete anytime.",
-    long: "Your conversation history lives in your BuddyAI account. You can export it or delete it at any time.",
+    long: "Your conversation history lives in your ola account. You can export it or delete it at any time.",
   },
 ];
 

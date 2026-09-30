@@ -38,7 +38,7 @@ export default function AuthPage({ mode, onDone }: { mode: "setup" | "login"; on
             <Watch className="size-5" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold">BuddyAI</h1>
+            <h1 className="text-lg font-semibold">ola</h1>
             <p className="text-xs text-muted">{setup ? "First-time setup" : "Admin sign-in"}</p>
           </div>
         </div>

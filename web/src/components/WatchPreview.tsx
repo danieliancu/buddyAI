@@ -10,8 +10,6 @@ const BEZEL = 14;
 // Watchface geometry, copied from build_watchface() in firmware/components/ui/ui.c.
 const TEXT_FONT = '"Noto Sans", Inter, ui-sans-serif, system-ui, sans-serif'; // buddy_font_20 / _28
 const CLOCK_FONT = 'Montserrat, "Noto Sans", ui-sans-serif, sans-serif'; // buddy_font_clock, SemiBold 112 px
-const DIGIT_W = 76; // widest clock digit; hours and minutes each sit in a box two digits wide
-const COLON_W = 27;
 const STATUS_X = (W - 300) / 2; // status row: Wi-Fi left, battery right
 const SHORTCUT_Y = (185 + 308) / 2 - 62 / 2;
 const MIC_SIZE = 150;
@@ -67,17 +65,17 @@ function dateLocale(lang: DeviceLanguage, preferred: Language | null | undefined
   }
 }
 
-function formatParts(now: Date, tz: string, locale: string, h24: boolean) {
+function formatParts(now: Date, tz: string, locale: string) {
   let timeZone: string | undefined = tz;
   try {
     new Intl.DateTimeFormat("en", { timeZone: tz });
   } catch {
     timeZone = undefined; // unknown zone while typing: fall back to browser zone
   }
-  const tp = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: !h24, hourCycle: h24 ? "h23" : "h12", timeZone }).formatToParts(now);
+  // Always 24-hour, like the watch.
+  const tp = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).formatToParts(now);
   const hour = tp.find((p) => p.type === "hour")?.value ?? "0";
   const minute = tp.find((p) => p.type === "minute")?.value ?? "00";
-  const period = tp.find((p) => p.type === "dayPeriod")?.value ?? "";
   // "Monday, 28 September" / "Montag, 28. September".
   const dp = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone }).formatToParts(now);
   const part = (t: string) => dp.find((p) => p.type === t)?.value ?? "";
@@ -87,8 +85,7 @@ function formatParts(now: Date, tz: string, locale: string, h24: boolean) {
       ? `${part("weekday")}, ${part("day")} ${part("month")}`
       : dp.map((p) => p.value).join("");
   return {
-    time: `${h24 ? hour.padStart(2, "0") : hour}:${minute}`,
-    period: h24 ? "" : period,
+    time: `${hour.padStart(2, "0")}:${minute}`,
     date: date.charAt(0).toUpperCase() + date.slice(1),
   };
 }
@@ -97,7 +94,6 @@ export default function WatchPreview({
   theme,
   language,
   preferredLanguage,
-  time24h,
   timezone,
   brightness,
   maxWidth = 300,
@@ -105,7 +101,6 @@ export default function WatchPreview({
   theme: Theme;
   language: DeviceLanguage;
   preferredLanguage?: Language | null;
-  time24h: boolean;
   timezone: string;
   brightness: number;
   maxWidth?: number;
@@ -129,7 +124,7 @@ export default function WatchPreview({
     return () => ro.disconnect();
   }, [maxWidth]);
 
-  const { time, date } = formatParts(now, timezone, dateLocale(language, preferredLanguage), time24h);
+  const { time, date } = formatParts(now, timezone, dateLocale(language, preferredLanguage));
   const dim = Math.max(0, Math.min(0.85, (100 - brightness) / 100));
 
   return (
@@ -170,11 +165,10 @@ export default function WatchPreview({
               <Icon g={batteryGlyph(PREVIEW_BATTERY)} size={20} />
             </div>
 
-            {/* time: hours right-aligned against the colon, minutes left-aligned */}
+            {/* time: centred on the digits actually shown (like the watch); the height never changes */}
             <div
-              className="absolute flex"
+              className="absolute inset-x-0 flex justify-center"
               style={{
-                left: (W - 4 * DIGIT_W - COLON_W) / 2,
                 top: 58,
                 height: 82,
                 lineHeight: "82px",
@@ -182,15 +176,14 @@ export default function WatchPreview({
                 fontSize: 112,
                 fontWeight: 600,
                 color: theme.clock,
+                whiteSpace: "pre",
               }}
             >
-              <span style={{ width: 2 * DIGIT_W, textAlign: "right" }}>{time.split(":")[0]}</span>
-              <span style={{ width: COLON_W, textAlign: "center" }}>:</span>
-              <span style={{ width: 2 * DIGIT_W, textAlign: "left" }}>{time.split(":")[1]}</span>
+              {time}
             </div>
 
             {/* date */}
-            <div className="absolute inset-x-0 text-center" style={{ top: 146, lineHeight: "40px", fontSize: 28, whiteSpace: "nowrap" }}>
+            <div className="absolute inset-x-0 text-center" style={{ top: 152, lineHeight: "28px", fontSize: 20, whiteSpace: "nowrap" }}>
               {date}
             </div>
 
@@ -198,8 +191,12 @@ export default function WatchPreview({
             <FadedLine y={SHORTCUT_Y - 10} color={theme.text} />
             <div className="absolute flex" style={{ left: (W - 3 * 62 - 2 * 22) / 2, top: SHORTCUT_Y, gap: 22 }}>
               {[FA.pen, FA.calendar, FA.gear].map((g, i) => (
-                <div key={i} className="flex justify-center" style={{ width: 62, height: 62, paddingTop: 13.75, opacity: 0.8 }}>
-                  <Icon g={g} size={34} style={{ verticalAlign: "top" }} />
+                <div
+                  key={i}
+                  className="flex justify-center rounded-full"
+                  style={{ width: 62, height: 62, paddingTop: 18.5, background: theme.accent, color: "#fff" }}
+                >
+                  <Icon g={g} size={28} style={{ verticalAlign: "top" }} />
                 </div>
               ))}
             </div>

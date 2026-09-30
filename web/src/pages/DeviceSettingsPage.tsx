@@ -303,7 +303,6 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
       theme={draft.theme}
       language={draft.language}
       preferredLanguage={draft.preferred_language}
-      time24h={draft.time_24h}
       timezone={draft.timezone}
       brightness={draft.brightness}
     />
@@ -384,7 +383,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                   <option value="">Default ({defaultPersona?.name ?? "—"})</option>
                   {ownPersonas.length > 0 ? (
                     <>
-                      <optgroup label="BuddyAI personas">
+                      <optgroup label="ola personas">
                         {systemPersonas.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
@@ -572,9 +571,6 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                     ))}
                   </Select>
                 </Field>
-                <div className="sm:col-span-2">
-                  <Toggle checked={draft.time_24h} onChange={(v) => set("time_24h", v)} label="24-hour clock" />
-                </div>
               </div>
             </div>
           </Card>

@@ -48,7 +48,7 @@ def pending(request: Request) -> list[dict]:
 
 class PairBody(BaseModel):
     code: str
-    name: str = Field("BuddyAI Watch", min_length=1, max_length=80)
+    name: str = Field("ola Watch", min_length=1, max_length=80)
     account_id: int | None = None  # None = operator stock (not owned by a customer)
 
 

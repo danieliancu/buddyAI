@@ -26,7 +26,14 @@
       "reasoning_effort": "none"
     },
     "web_search": {
-      "search_context_size": "low"
+      "search_context_size": "low",
+      "cache_ttl_s": {
+        "weather": 900,
+        "transport": 120,
+        "news": 1800,
+        "business": 86400,
+        "other": 3600
+      }
     }
   },
   "tts": {
@@ -103,6 +110,27 @@
       "unit": "character",
       "price_usd": 1.67e-05,
       "note": "Estimate: ~$0.015 per audio minute ≈ 900 characters. Verify."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "unit": "cached_input_token",
+      "price_usd": 1e-08,
+      "note": "Cached input tokens, assumed 10% of $0.10 / 1M (OpenAI prompt caching). Verify."
+    },
+    {
+      "provider": "openai_stt",
+      "model": "gpt-4o-mini-transcribe",
+      "unit": "audio_second",
+      "price_usd": 5e-05,
+      "note": "Fallback transcription: $0.003 per minute (OpenAI). Verify."
+    },
+    {
+      "provider": "buddyai",
+      "model": "search_cache",
+      "unit": "cache_hit",
+      "price_usd": 0.0,
+      "note": "Web search answered from the ola cache: no provider cost (counts hits)."
     }
   ]
 }

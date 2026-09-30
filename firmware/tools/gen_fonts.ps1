@@ -20,7 +20,6 @@
                          superscripts / subscripts, letterlike symbols (℃ Ω ℏ),
                          number forms (⅓) from Noto Sans Medium; arrows, mathematical
                          operators and a few technical symbols from Noto Sans Math.
-    buddy_font_shortcut  FontAwesome 5, 34 px: pen, calendar, gear (watchface icons).
 
     The other fonts (buddy_font_clock / _code / _icon) are unchanged; their
     exact commands are kept in the header comment of each .c file.
@@ -97,6 +96,5 @@ foreach ($size in @(20, 28)) {
     New-Font "buddy_font_$size" $size @("--font", $text, "-r", $textRanges, "--font", $icons, "-r", $iconRanges) "buddy_math_$size"
 }
 New-Font "buddy_font_big" 56 @("--font", $text, "-r", $bigRanges) "buddy_math_56"
-New-Font "buddy_font_shortcut" 34 @("--font", $icons, "-r", "0xF304,0xF073,0xF013")
 
 Write-Host "Done."

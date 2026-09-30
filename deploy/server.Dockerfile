@@ -1,4 +1,4 @@
-# BuddyAI server + admin/customer web app. Build context: repository root.
+# ola server + admin/customer web app. Build context: repository root.
 #   docker compose -f deploy/docker-compose.yml build server
 
 # --- web app (React) -----------------------------------------------------------------------

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
 
@@ -13,6 +13,8 @@ class TTSRequest:
     language: str
     speech_rate: float = 1.0
     instructions: str = ""  # style prompt, for providers that support it
+    # Called with the character count of every synthesis request actually sent (incl. retries/twins).
+    on_request: Callable[[int], None] | None = None
 
 
 @dataclass

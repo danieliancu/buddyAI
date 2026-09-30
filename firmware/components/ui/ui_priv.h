@@ -1,5 +1,5 @@
 /*
- * BuddyAI - UI internals: fonts, icon glyphs, strings, shared state.
+ * ola - UI internals: fonts, icon glyphs, strings, shared state.
  */
 #pragma once
 
@@ -21,10 +21,9 @@ extern lv_font_t buddy_font_28;
 extern lv_font_t buddy_font_clock;
 extern lv_font_t buddy_font_code;
 extern lv_font_t buddy_font_icon;
-extern lv_font_t buddy_font_shortcut;
 extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° µ € (short answers) */
 /* buddy_font_20 / _28 / _big fall back to buddy_math_20 / _28 / _56 for maths and science
- * symbols (x² H₂O √ π ≤ ≠ ∞ ∑ ∫ → ℃ Ω ⅓...); see tools/gen_fonts.ps1. */  /* FontAwesome 5, 34 px: pen + calendar only */
+ * symbols (x² H₂O √ π ≤ ≠ ∞ ∑ ∫ → ℃ Ω ⅓...); see tools/gen_fonts.ps1. */
 
 /* ---- FontAwesome 5 glyphs (UTF-8) present in the fonts above ---- */
 #define ICON_WIFI           "\xEF\x87\xAB"  /* U+F1EB */
@@ -50,7 +49,6 @@ extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° �
 #define ICON_RIGHT          "\xEF\x81\x94"  /* U+F054 */
 #define ICON_PEN            "\xEF\x8C\x84"  /* U+F304 */
 #define ICON_CALENDAR       "\xEF\x81\xB3"  /* U+F073 calendar-alt */
-/* ICON_SETTINGS (U+F013) is also in buddy_font_shortcut (watchface gear). */
 
 /* ---- strings ---- */
 typedef enum {
@@ -115,6 +113,10 @@ typedef enum {
     STR_NO_MATCH,
     STR_TODAY,
     STR_TOMORROW,
+    STR_COMPLETE,
+    STR_CARE,
+    STR_COMPLETED,
+    STR_REOPEN,
     STR__COUNT,
 } ui_str_t;
 
@@ -171,6 +173,7 @@ const char *ui_lang_label(const char *code);
 void ui_chat_init(void);
 void ui_chat_set_state(ui_conv_t st);
 void ui_chat_anim(int level, uint32_t phase);
+
 void ui_chat_refresh_theme(void);
 bool ui_chat_is_active(void);
 

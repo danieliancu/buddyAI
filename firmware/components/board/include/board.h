@@ -1,5 +1,5 @@
 /*
- * BuddyAI - board support for the Waveshare ESP32-S3-Touch-AMOLED-2.06
+ * ola - board support for the Waveshare ESP32-S3-Touch-AMOLED-2.06
  *
  *  board_init()          I2C bus, PMU, RTC (must run first)
  *  board_display_init()  QSPI AMOLED + touch + esp_lvgl_port (LVGL task on core 0)

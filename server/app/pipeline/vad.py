@@ -127,6 +127,11 @@ class EndpointDetector:
         self.speech_start_ms: float | None = None
         self.done = False
 
+    @property
+    def silence_ms(self) -> float:
+        """Length of the current pause after speech (0 while speaking)."""
+        return self._silence_ms if self.speech_started else 0.0
+
     def feed(self, pcm: bytes) -> list[VadEvent]:
         if self.done:
             return []

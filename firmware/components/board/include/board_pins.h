@@ -1,5 +1,5 @@
 /*
- * BuddyAI - Waveshare ESP32-S3-Touch-AMOLED-2.06 pin map
+ * ola - Waveshare ESP32-S3-Touch-AMOLED-2.06 pin map
  *
  * Single source of truth for every GPIO / bus address used by the firmware.
  *
@@ -75,7 +75,7 @@
 #define BOARD_BTN_BOOT              GPIO_NUM_0      /* [XZ] BOOT_BUTTON_GPIO */
 /* PWR key -> AXP2101 PWRON (short press IRQ / long press power-off), no GPIO */
 
-/* ---- microSD (SPI mode, unused by BuddyAI for now) ---- */
+/* ---- microSD (SPI mode, unused by ola for now) ---- */
 #define BOARD_SD_CLK                GPIO_NUM_2      /* [WS-BSP][WS-ARD] */
 #define BOARD_SD_CMD                GPIO_NUM_1
 #define BOARD_SD_D0                 GPIO_NUM_3

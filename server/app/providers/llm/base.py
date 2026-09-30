@@ -19,6 +19,7 @@ class ToolCall:
 class LLMChunk:
     delta: str = ""
     input_tokens: int | None = None  # set on the final chunk when the provider reports usage
+    cached_input_tokens: int = 0  # part of input_tokens served from the provider's prompt cache (cheaper)
     output_tokens: int | None = None
     web_searches: int = 0  # web searches the provider ran (reported with the usage)
     tool_calls: list[ToolCall] | None = None  # function calls the model wants run (emitted once, at the end)

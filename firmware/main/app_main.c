@@ -1,5 +1,5 @@
 /*
- * BuddyAI watch firmware - application entry point.
+ * ola watch firmware - application entry point.
  *
  * Wires the components together:
  *   board (HW) -> settings (NVS) -> ui (LVGL) -> audio -> net -> protocol_client
@@ -245,6 +245,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         ui_reminder_alert(ev->str);
         audio_beep();
         break;
+    case PROTO_EVT_NOTICE:
+        ui_show_notice(ev->str);
+        break;
     }
 }
 
@@ -284,6 +287,11 @@ static void ui_item_open(bool reminder, int number)
 static void ui_item_delete(bool reminder, int number)
 {
     proto_item_delete(reminder, number);
+}
+
+static void ui_item_done(int number, bool done)
+{
+    proto_item_done(number, done);
 }
 
 static void ui_factory_reset(void)
@@ -423,7 +431,7 @@ static void app_loop(void)
 void app_main(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
-    ESP_LOGI(TAG, "BuddyAI watch fw %s (IDF %s)", app->version, app->idf_ver);
+    ESP_LOGI(TAG, "ola watch fw %s (IDF %s)", app->version, app->idf_ver);
 #if CONFIG_BUDDYAI_RELEASE_BUILD
     /* WARN level so it is visible with the release log level. */
     ESP_LOGW(TAG, "release build %s: secure boot %s, flash encryption %s", app->version,
@@ -453,6 +461,7 @@ void app_main(void)
             .on_factory_reset = ui_factory_reset,
             .on_item_open = ui_item_open,
             .on_item_delete = ui_item_delete,
+            .on_item_done = ui_item_done,
             .on_chat_closed = ui_chat_closed,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));

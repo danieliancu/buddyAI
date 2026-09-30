@@ -324,3 +324,43 @@ def test_due_reminder_fires_once_and_waits_for_a_watch() -> None:
     assert [f["item"]["text"] for f in fired] == ["due now"]
     assert any(t == "items" for t, _ in conn.sent)  # list refreshed (reminder now done)
     assert asyncio.run(deliver_due(hub, acc)) == 0  # never twice
+
+
+# --- completed reminders --------------------------------------------------------------------------
+
+
+def test_completed_reminder_is_not_overdue_does_not_fire_and_sorts_last() -> None:
+    acc = _account()
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        repo = ItemRepo(db)
+        past = repo.create(acc, "reminder", "past", due_at=now - timedelta(minutes=5))
+        repo.create(acc, "reminder", "soon", due_at=now + timedelta(minutes=5))
+        repo.update(past, done=True)
+        snap = device_snapshot(repo.list(acc), "Europe/London")
+    assert [(r["text"], r["done"], r["overdue"]) for r in snap["reminders"]] == [
+        ("soon", False, False),
+        ("past", True, False),
+    ]
+    hub = DeviceHub()
+    hub.connections["w1"] = FakeConn(acc)
+    assert asyncio.run(deliver_due(hub, acc)) == 0  # completed early: never fires
+
+    tools = AssistantTools()
+    out = tools.execute(acc, "Europe/London", "item_update", json.dumps({"kind": "reminder", "number": 1, "done": False}))
+    assert json.loads(out.result)["done"] is False and json.loads(out.result)["overdue"] is True
+    with session_scope() as db:
+        repo = ItemRepo(db)
+        it = repo.update(repo.get(acc, "reminder", 1), done=True)
+        assert it.done_at is not None
+        it = repo.update(it, due_at=now + timedelta(days=1))  # rescheduled: open again
+        assert it.done_at is None
+
+
+def test_web_marks_reminder_done() -> None:
+    client, _me = _customer()
+    due = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    client.post("/api/me/items", json={"kind": "reminder", "text": "pay rent", "due_at": due})
+    r = client.put("/api/me/items/reminder/1/done", json={"done": True})
+    assert r.status_code == 200 and r.json()["done"] is True and r.json()["overdue"] is False
+    assert client.put("/api/me/items/reminder/9/done", json={"done": True}).status_code == 404

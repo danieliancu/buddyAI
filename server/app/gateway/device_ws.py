@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import entitlements, languages
+from app import entitlements, languages, usage_notices
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, utcnow
@@ -161,6 +161,7 @@ class DeviceConnection:
             "status": self._on_status,
             "item_open": self._on_item_open,
             "item_delete": self._on_item_delete,
+            "item_done": self._on_item_done,
         }.get(kind)
         if handler is None:
             await self.send_json("error", code="bad_request", message=f"unknown type {kind!r}")
@@ -215,6 +216,7 @@ class DeviceConnection:
             if account_id is not None:
                 await self.hub.push_items(account_id, only=self)
                 await deliver_due(self.hub, account_id)  # reminders that came due while offline
+                await self.hub.push_usage_notice(account_id)  # a threshold reached while this watch was off
             return
         if is_valid_pairing_code(code):
             try:
@@ -225,6 +227,9 @@ class DeviceConnection:
             await self.send_json("pairing_pending", expires_in_s=self.hub.pairing_ttl_s)
             return
         await self.send_json("error", code="bad_request", message="hello needs token or 6-digit pairing_code")
+
+    def _reservation_key(self, turn_id: int) -> str:
+        return f"{self.device_id}:{self.env.session_id}:{turn_id}"
 
     def _client_ip(self) -> str | None:
         return self.ws.client.host if self.ws.client else None
@@ -239,7 +244,9 @@ class DeviceConnection:
         if self.active:
             await self._cancel_active()
         self.last_turn_id = turn_id
-        decision = await entitlements.check(self.account_id)
+        # Checks the plan and reserves a little allowance for this turn (released in _finish_turn), so
+        # several watches of one account cannot start turns past the limit at the same time.
+        decision = await entitlements.begin_turn(self.account_id, self._reservation_key(turn_id))
         if not decision.allowed:
             await self.send_json("error", turn_id, code=decision.code, message=decision.message)
             await self.send_json("turn_end", turn_id, status="error")
@@ -348,6 +355,12 @@ class DeviceConnection:
             else:
                 await self.send_json("item_show", item=turn.pending_open["item"])
         self._persist(turn, result)
+        entitlements.end_turn(turn.account_id, self._reservation_key(turn.turn_id))
+        if turn.account_id is not None:
+            new = await usage_notices.evaluate(turn.account_id)
+            if new:  # a usage threshold was crossed: web banner / dialog, and a short note on the watch
+                self.hub.publish({"type": "usage_threshold", "account_id": turn.account_id, "threshold": max(new)})
+                await self.hub.push_usage_notice(turn.account_id)
         self.hub.publish(
             {
                 "type": "turn_end",
@@ -378,7 +391,18 @@ class DeviceConnection:
                 **turn.marks.as_db_fields(),
             )
             pricing = ProviderPricingConfig.load(db)
-            UsageRepo(db).add_many(pricing.records(turn.usage, self.device_id, turn.db_id, turn.account_id))
+            # A turn that failed on our side (provider/server error) is not charged to the customer's
+            # allowance; its cost stays visible to the operator. Aborted / no-speech turns count.
+            UsageRepo(db).add_many(
+                pricing.records(
+                    turn.usage,
+                    self.device_id,
+                    turn.db_id,
+                    turn.account_id,
+                    turn_status=result.status,
+                    billable=result.status != "error",
+                )
+            )
 
     async def _on_playback_started(self, msg: dict[str, Any]) -> None:
         turn = self.recent.get(msg.get("turn_id"))
@@ -436,6 +460,20 @@ class DeviceConnection:
             it = repo.get(self.account_id, *ref)
             if it is not None:
                 repo.delete(it)
+        await self.hub.push_items(self.account_id)
+        self.hub.items_changed(self.account_id)
+
+    async def _on_item_done(self, msg: dict[str, Any]) -> None:
+        ref = self._item_ref(msg)
+        done = msg.get("done")
+        if ref is None or ref[0] != "reminder" or not isinstance(done, bool):
+            await self.send_json("error", code="bad_request", message="item_done needs a reminder number and done")
+            return
+        with session_scope() as db:
+            repo = ItemRepo(db)
+            it = repo.get(self.account_id, *ref)
+            if it is not None:
+                repo.update(it, done=done)
         await self.hub.push_items(self.account_id)
         self.hub.items_changed(self.account_id)
 

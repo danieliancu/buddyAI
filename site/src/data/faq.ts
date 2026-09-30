@@ -10,15 +10,15 @@ export interface Faq {
 
 const w = prices.watch;
 const c = prices.care;
-const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for BuddyAI Care after ${prices.trialMonths} months free. Cancel anytime.`;
+const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ola Care after ${prices.trialMonths} months free. Cancel anytime.`;
 
 export const faqGroups: { title: string; items: Faq[] }[] = [
   {
     title: "The watch",
     items: [
       {
-        q: "What can BuddyAI do?",
-        a: `BuddyAI is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), pick or write a persona for your assistant, and choose your own screen colours. It is a conversation partner — it doesn't track steps or health, and it doesn't set reminders or manage a calendar.`,
+        q: "What can ola do?",
+        a: `ola is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), pick or write a persona for your assistant, and choose your own screen colours. It is a conversation partner — it doesn't track steps or health, and it doesn't set reminders or manage a calendar.`,
       },
       {
         q: "What's the battery life?",
@@ -26,7 +26,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. BuddyAI connects over Wi-Fi (2.4 GHz) — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection, so it can't answer without Wi-Fi.",
+        a: "Yes. ola connects over Wi-Fi (2.4 GHz) — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection, so it can't answer without Wi-Fi.",
       },
       {
         q: "What does the screen look like?",
@@ -38,7 +38,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can the AI get things wrong?",
-        a: "Yes. Like all AI assistants, BuddyAI can make mistakes. Please double-check anything important, and don't rely on it for medical, legal, financial or emergency advice.",
+        a: "Yes. Like all AI assistants, ola can make mistakes. Please double-check anything important, and don't rely on it for medical, legal, financial or emergency advice.",
       },
     ],
   },
@@ -46,7 +46,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     title: "Languages",
     items: [
       {
-        q: "Which languages does BuddyAI speak?",
+        q: "Which languages does ola speak?",
         a: `${languageCount} languages today, plus Auto, which answers in the language you speak. <a href="/languages/">See the full list</a>. Speech recognition quality varies between languages.`,
       },
     ],
@@ -60,7 +60,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can I see or delete my conversation history?",
-        a: "Yes. Your history is in your BuddyAI account. You can export it or delete it anytime.",
+        a: "Yes. Your history is in your ola account. You can export it or delete it anytime.",
       },
       {
         q: "Do you use cookies or tracking?",
@@ -77,10 +77,10 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Why is there a subscription?",
-        a: "BuddyAI Care pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active BuddyAI Care subscription to work. It includes a monthly fair-use allowance, described in the <a href=\"/legal/subscription-terms/\">subscription terms</a>.",
+        a: "ola Care pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active ola Care subscription to work. It includes a monthly fair-use allowance, described in the <a href=\"/legal/subscription-terms/\">subscription terms</a>.",
       },
       {
-        q: "How do I cancel BuddyAI Care?",
+        q: "How do I cancel ola Care?",
         a: `Anytime, from your account (Plan &amp; usage). If you cancel during the ${prices.trialMonths}-month free period you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],
@@ -102,7 +102,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What happens after I order?",
-        a: `You'll get an order confirmation email with a link to set your account password. When your watch ships, we email you tracking details. When it arrives, sign in at <a href="${config.appUrl}">the BuddyAI app</a> and choose Add watch.`,
+        a: `You'll get an order confirmation email with a link to set your account password. When your watch ships, we email you tracking details. When it arrives, sign in at <a href="${config.appUrl}">the ola app</a> and choose Add watch.`,
       },
     ],
   },

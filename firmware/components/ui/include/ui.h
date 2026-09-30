@@ -1,5 +1,5 @@
 /*
- * BuddyAI - LVGL 9 user interface (410x502 AMOLED)
+ * ola - LVGL 9 user interface (410x502 AMOLED)
  *
  * Screens: watchface (clock, date, mic button, battery / Wi-Fi), conversation
  * states on the watchface (listening / thinking / speaking + caption), quick
@@ -36,7 +36,7 @@ typedef enum {
     UI_ERR_PROTOCOL,            /* protocol_unsupported: update required */
     UI_ERR_LOW_BATTERY,
     UI_ERR_BUSY,
-    UI_ERR_SUBSCRIPTION,        /* subscription_required: no active BuddyAI Care */
+    UI_ERR_SUBSCRIPTION,        /* subscription_required: no active ola Care */
     UI_ERR_LIMIT,               /* limit_reached: monthly allowance used up */
     UI_ERR_ACCOUNT_INACTIVE,    /* account_inactive: owner account suspended/closed */
 } ui_error_t;
@@ -61,6 +61,8 @@ typedef struct {
     /* Notes / reminders: open an item (server answers item_show) or delete it. */
     void (*on_item_open)(bool reminder, int number);
     void (*on_item_delete)(bool reminder, int number);
+    /* Reminder completed (done = true) or opened again. */
+    void (*on_item_done)(int number, bool done);
     /* The user closed the conversation screen (X / swipe). */
     void (*on_chat_closed)(void);
 } ui_callbacks_t;
@@ -100,6 +102,9 @@ void ui_show_resetting(void);
 void ui_items_set(const char *json);
 void ui_item_show(const char *json);
 void ui_reminder_alert(const char *json);
+/* Short server notice (`notice` {level, text}, e.g. 80 % of the monthly AI usage). Kept until no
+ * conversation is running, then shown for a few seconds - it never interrupts one. */
+void ui_show_notice(const char *json);
 /* Open the notes (false) or reminders (true) list (`items_open`). */
 void ui_items_show_list(bool reminder);
 /* Every supported language (`languages` message), for the settings language picker. */

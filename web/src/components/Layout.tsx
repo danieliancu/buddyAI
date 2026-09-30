@@ -28,7 +28,7 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
         <div className="grid size-8 place-items-center rounded-lg bg-accent-bg text-accent">
           <Watch className="size-4" />
         </div>
-        <span className="font-semibold tracking-tight">BuddyAI</span>
+        <span className="font-semibold tracking-tight">ola</span>
         <span className="ml-auto text-[10px] font-medium tracking-wider text-muted uppercase">Admin</span>
       </div>
       <nav className="flex-1 space-y-0.5 px-2">
@@ -73,7 +73,7 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
         <button onClick={() => setOpen(true)} className="rounded p-1 hover:bg-surface-2" aria-label="Menu">
           <Menu className="size-5" />
         </button>
-        <span className="font-semibold">BuddyAI</span>
+        <span className="font-semibold">ola</span>
         <span className={cx("ml-auto size-2 rounded-full", connected ? "bg-ok" : "bg-warn")} />
       </div>
       {open && (

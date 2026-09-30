@@ -21,6 +21,7 @@ from app.audio.codec import OpusEncoder, apply_gain
 from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
 from app.items import AssistantTools
+from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
@@ -37,16 +38,14 @@ log = logging.getLogger(__name__)
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
 PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
+# The end of speech is detected after END_SILENCE_MS of silence (700 ms by default). The first
+# SILENCE_SEND_MS of a pause still go to the STT (word endings); the rest is held back and only sent
+# if the user speaks again, so the silence that merely confirms the end is never billed.
+SILENCE_SEND_MS = 240
 
-# Each web search costs money and adds delay: search only for current or local facts.
-WEB_SEARCH_RULE = (
-    "You can search the web, but only when the answer depends on current or local information you cannot "
-    "know: today's weather, news, live traffic or transport, opening hours, current prices, recent results, "
-    "a specific local business. For those, search instead of saying you have no real-time access. Do NOT "
-    "search for general knowledge, definitions, maths, history, science, advice, jokes, small talk, notes "
-    "or reminders: answer those directly. Search at most once per question. Say the answer only: never "
-    "mention sources, websites or links."
-)
+# Web search is an on-demand tool with a cache (app/search.py): the model decides when current or local
+# information is needed; nothing hidden is attached to every request.
+HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
 MAX_TOOL_ROUNDS = 3  # LLM calls that may end in tool calls; the next one gets no tools and must answer
 
@@ -83,14 +82,18 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 f"at most about {s.max_reply_chars} characters. Plain sentences only: no markdown, no lists, "
                 "no emojis, no URLs. Write numbers, dates and units the way they should be spoken.",
                 DISPLAY_RULE,
-                f"Current local date and time: {now:%A %Y-%m-%d %H:%M} ({s.timezone}).",
                 s.custom_instructions.strip(),
             ],
         )
     )
+    # The system prompt stays byte-identical between turns (provider prompt caching); what changes every
+    # minute - the clock - goes in a short note just before the question.
     messages = [{"role": "system", "content": system}]
     for u, a in past:
+        if len(a) > HISTORY_REPLY_CHARS:
+            a = a[:HISTORY_REPLY_CHARS].rsplit(" ", 1)[0] + " …"
         messages += [{"role": "user", "content": u}, {"role": "assistant", "content": a}]
+    messages.append({"role": "system", "content": f"Now: {now:%A %Y-%m-%d %H:%M} ({s.timezone})."})
     messages.append({"role": "user", "content": user_text})
     return messages
 
@@ -146,6 +149,7 @@ class ConversationPipeline:
         )
         session = None
         preroll: list[bytes] = []
+        held: list[bytes] = []  # pause audio not sent (yet)
         preroll_limit = UPLINK_RATE * 2 * PREROLL_MS // 1000
         timeline_bytes = 0  # all audio received (VAD timeline)
         audio_bytes = 0  # audio sent to the STT (billed)
@@ -182,7 +186,13 @@ class ConversationPipeline:
                             await session.send(chunk)
                             audio_bytes += len(chunk)
                         preroll.clear()
+                elif detector.silence_ms > SILENCE_SEND_MS:
+                    held.append(pcm)  # sent only if speech resumes
                 else:
+                    for chunk in held:
+                        await session.send(chunk)
+                        audio_bytes += len(chunk)
+                    held.clear()
                     await session.send(pcm)
                     audio_bytes += len(pcm)
                 events = [e for e in all_events if e.kind != "speech_start"]
@@ -199,6 +209,9 @@ class ConversationPipeline:
                 return ""
             text = (await session.finish()).strip()
             turn.marks.stt_final = mono_ms()
+            fallback = getattr(session, "fallback_usage", None)  # (model, seconds) when re-transcribed
+            if fallback:
+                turn.usage.append(UsageItem("stt", stt.name, fallback[0], "audio_second", fallback[1]))
             if turn.auto_language and text:
                 detected, _confidence = languages.detect(
                     text, prefer=[turn.fallback_language, turn.settings.preferred_language]
@@ -222,9 +235,23 @@ class ConversationPipeline:
         llm, model = self.router.llm(s)
         tts_sel = self.router.tts(turn.language, s)
         web_search = self.router.web_search(s, llm)
+        searcher = None
+        if web_search is not None and hasattr(llm, "web_search"):
+            hosted = self.router.hosted_search_tool(web_search)
+            city = (hosted.get("user_location") or {}).get("city", "")
+
+            async def run_search(query: str, location: str, language: str):
+                return await llm.web_search(  # type: ignore[attr-defined]
+                    query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
+                    instructions=SEARCH_INSTRUCTIONS, timezone_name=s.timezone,
+                )
+
+            searcher = WebSearch(run_search, web_search.get("cache_ttl_s"), provider=llm.name, model=model)
+            turn.searcher, turn.search_city = searcher, city
         messages = self.messages_builder(turn, turn.user_text)
-        tool_defs = self.tools.definitions(turn.account_id) if self.tools else None
-        extra_rules = [WEB_SEARCH_RULE] if web_search is not None else []
+        tool_defs = (self.tools.definitions(turn.account_id) if self.tools else []) + ([SEARCH_TOOL] if searcher else [])
+        tool_defs = tool_defs or None
+        extra_rules = [SEARCH_RULE] if searcher else []
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
         if extra_rules and messages and messages[0]["role"] == "system":
@@ -234,7 +261,7 @@ class ConversationPipeline:
             model=model,
             max_tokens=max(64, s.max_reply_chars // 2),
             params=self.router.llm_params(),
-            web_search=web_search,
+            web_search=None,  # searching goes through the web_search tool (app/search.py)
         )
         deltas: asyncio.Queue[str | None] = asyncio.Queue()
         fragments: asyncio.Queue[str | None] = asyncio.Queue()
@@ -253,7 +280,7 @@ class ConversationPipeline:
 
         async def pump_llm() -> None:
             turn.marks.llm_request = mono_ms()
-            usage_in = usage_out = searches = 0
+            usage_in = usage_cached = usage_out = searches = 0
             nonlocal tools_used
             msgs = list(messages)
             try:
@@ -281,6 +308,7 @@ class ConversationPipeline:
                             await emit_text(delta)
                         if chunk.input_tokens is not None:
                             usage_in += chunk.input_tokens
+                            usage_cached += min(chunk.cached_input_tokens, chunk.input_tokens)
                             usage_out += chunk.output_tokens or 0
                             searches += chunk.web_searches
                         if chunk.tool_calls:
@@ -297,7 +325,8 @@ class ConversationPipeline:
                             ],
                         }
                     )
-                    tools_used = True  # notes / reminders: no large value on screen
+                    # notes / reminders / settings: no large value on screen (a search answer may have one)
+                    tools_used = tools_used or any(c.name != SEARCH_TOOL["name"] for c in calls)
                     for c in calls:
                         msgs.append(
                             {"role": "tool", "tool_call_id": c.id, "content": await self._run_tool(turn, c)}
@@ -306,9 +335,11 @@ class ConversationPipeline:
                 if rest:
                     await emit_text(rest)
             finally:
-                turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in))
+                turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
+                turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
                 turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
-                turn.usage.append(UsageItem("llm", llm.name, model, "web_search_call", searches))
+                if searches:  # hosted search inside the conversation call (legacy path)
+                    turn.usage.append(UsageItem("llm", llm.name, model, "web_search_call", searches))
                 await deltas.put(None)
 
         async def chunk_text() -> None:
@@ -342,6 +373,12 @@ class ConversationPipeline:
             while (frag := await fragments.get()) is not None:
                 yield frag
 
+        sent_chars = 0  # characters actually sent to the TTS provider (hedged twins included)
+
+        def on_tts_request(chars: int) -> None:
+            nonlocal sent_chars
+            sent_chars += chars
+
         encoder = OpusEncoder(turn.downlink_rate, bitrate=self.downlink_bitrate)
         started = False
         gain = 1.0
@@ -350,7 +387,8 @@ class ConversationPipeline:
                 tg.create_task(pump_llm())
                 tg.create_task(chunk_text())
                 tts_request = TTSRequest(
-                    voice=tts_sel.voice, language=turn.language, speech_rate=s.speech_rate, instructions=tts_sel.instructions
+                    voice=tts_sel.voice, language=turn.language, speech_rate=s.speech_rate, instructions=tts_sel.instructions,
+                    on_request=on_tts_request,
                 )
                 async for pcm in tts_sel.provider.stream(fragment_iter(), tts_request):
                     if turn.marks.tts_first_pcm is None:
@@ -367,7 +405,10 @@ class ConversationPipeline:
             raise _first_error(eg) from None
         finally:
             turn.assistant_text = clean_for_speech("".join(reply_parts))
-            turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", tts_chars))
+            # Providers that report their requests are billed on what was really sent (an aborted reply
+            # is not charged for text never synthesized; a hedged twin request is). Others: text queued.
+            billed = sent_chars if getattr(tts_sel.provider, "reports_requests", False) else tts_chars
+            turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", billed))
         if not reply_parts:
             raise ProviderError("llm", "empty reply")
         if display.value is None and not tools_used and asks_for_value(turn.user_text):
@@ -379,6 +420,17 @@ class ConversationPipeline:
 
 
     async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
+        searcher = turn.searcher
+        if call.name == SEARCH_TOOL["name"] and searcher is not None:
+            # Answers are in English whatever the user's language: the reply model translates, and one
+            # cached answer serves every language.
+            outcome = await searcher.run(
+                call.arguments, account_id=turn.account_id, device_id=turn.device_id, tz=turn.settings.timezone,
+                language="en", default_location=turn.search_city,
+            )
+            turn.usage.extend(outcome.usage)
+            log.info("web_search(%s) -> %s", call.arguments[:120], "cache hit" if outcome.cache_hit else "searched")
+            return outcome.result
         assert self.tools is not None
         out = await asyncio.to_thread(
             self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id

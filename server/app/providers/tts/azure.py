@@ -41,7 +41,7 @@ class AzureTTS(HTTPStreamingTTS):
                 "Ocp-Apim-Subscription-Key": self.key,
                 "Content-Type": "application/ssml+xml",
                 "X-Microsoft-OutputFormat": "raw-24khz-16bit-mono-pcm",
-                "User-Agent": "BuddyAI",
+                "User-Agent": "ola",
             },
             "content": self.ssml(text, request),
         }

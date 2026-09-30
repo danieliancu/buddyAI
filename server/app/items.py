@@ -1,8 +1,8 @@
 """Notes and reminders: views for the watch and the web app, and the assistant's function tools.
 
 Notes are text only (up to 10000 characters). Reminders have a due time and a short text (up to 80
-characters); once the time has passed they are "overdue" until deleted or rescheduled (there is no
-"done" state). Items belong to the account; numbers are per (account, kind) and a new item takes the
+characters); once the time has passed they are "overdue" until completed, deleted or rescheduled. A
+completed reminder (`done`) no longer fires or counts as overdue. Items belong to the account; numbers are per (account, kind) and a new item takes the
 lowest free number (see ItemRepo). The watch gets a light snapshot (`items`); a note's full text is
 sent when it is opened (`item_show`), a due reminder with `reminder_fire`.
 """
@@ -50,8 +50,17 @@ def preview(text: str) -> str:
     return flat[:PREVIEW_CHARS].rstrip() + ("…" if len(flat) > PREVIEW_CHARS else "")
 
 
+def is_done(it: Item) -> bool:
+    return it.kind == "reminder" and it.done_at is not None
+
+
 def is_overdue(it: Item, now: datetime | None = None) -> bool:
-    return it.kind == "reminder" and it.due_at is not None and it.due_at <= (now or datetime.now(timezone.utc))
+    return (
+        it.kind == "reminder"
+        and not is_done(it)
+        and it.due_at is not None
+        and it.due_at <= (now or datetime.now(timezone.utc))
+    )
 
 
 def web_view(it: Item) -> dict[str, Any]:
@@ -61,6 +70,7 @@ def web_view(it: Item) -> dict[str, Any]:
         "text": it.text,
         "due_at": it.due_at.isoformat() if it.due_at else None,
         "overdue": is_overdue(it),
+        "done": is_done(it),
         "created_at": it.created_at.isoformat(),
         "updated_at": it.updated_at.isoformat(),
     }
@@ -72,20 +82,29 @@ def device_full(it: Item, tz: str) -> dict[str, Any]:
     if it.kind == "reminder":
         out["due_local"] = local_time(it.due_at, tz)
         out["overdue"] = is_overdue(it)
+        out["done"] = is_done(it)
     return out
 
 
 def device_snapshot(items: list[Item], tz: str) -> dict[str, list[dict[str, Any]]]:
-    """The `items` message body: note previews by number, reminders by due time."""
+    """The `items` message body: note previews by number, open reminders by due time, then completed ones."""
     now = datetime.now(timezone.utc)
     notes = [
         {"number": it.number, "preview": preview(it.text)}
         for it in sorted(items, key=lambda i: i.number)
         if it.kind == "note"
     ]
-    rems = sorted((it for it in items if it.kind == "reminder"), key=lambda i: (i.due_at or now, i.number))
+    rems = sorted(
+        (it for it in items if it.kind == "reminder"), key=lambda i: (is_done(i), i.due_at or now, i.number)
+    )
     reminders = [
-        {"number": it.number, "text": it.text, "due_local": local_time(it.due_at, tz), "overdue": is_overdue(it, now)}
+        {
+            "number": it.number,
+            "text": it.text,
+            "due_local": local_time(it.due_at, tz),
+            "overdue": is_overdue(it, now),
+            "done": is_done(it),
+        }
         for it in rems
     ]
     return {"notes": notes, "reminders": reminders}
@@ -103,6 +122,10 @@ _SHOW = {
     "type": "boolean",
     "description": "true only when the user explicitly asked to see it. false while you are just looking "
     "something up, e.g. before changing or deleting an item or while asking for confirmation.",
+}
+_DONE = {
+    "type": "boolean",
+    "description": "Reminders only: true = mark it completed (done), false = open it again.",
 }
 _DUE = {
     "type": "string",
@@ -142,10 +165,11 @@ TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "item_update",
-        "description": "Change the text of a note or reminder, or a reminder's time. Pass only what changes.",
+        "description": "Change the text of a note or reminder, a reminder's time, or mark a reminder "
+        "completed (done). Pass only what changes.",
         "parameters": {
             "type": "object",
-            "properties": {"kind": _KIND, "number": _NUMBER, "text": _TEXT, "due_local": _DUE},
+            "properties": {"kind": _KIND, "number": _NUMBER, "text": _TEXT, "due_local": _DUE, "done": _DONE},
             "required": ["kind", "number"],
         },
     },
@@ -167,7 +191,8 @@ TOOLS_RULE = (
     "change or delete something. When they want to see their notes or reminders, call item_list with "
     "show_on_watch=true; while you only look things up or ask for confirmation, leave show_on_watch false "
     "(after a create, change or delete the watch opens that list by itself). Never say something was saved, changed or deleted unless the tool reported success. "
-    "Say the number of a new item. If a reminder's time is unclear, ask."
+    "Say the number of a new item. If a reminder's time is unclear, ask. When the user says a reminder is "
+    "done or completed, call item_update with done=true (do not delete it unless they ask)."
 )
 
 
@@ -216,7 +241,13 @@ class AssistantTools:
             repo = ItemRepo(db)
             if name == "item_list":
                 rows = [
-                    {"number": it.number, "text": it.text, "due_local": local_time(it.due_at, tz), "overdue": is_overdue(it)}
+                    {
+                        "number": it.number,
+                        "text": it.text,
+                        "due_local": local_time(it.due_at, tz),
+                        "overdue": is_overdue(it),
+                        "done": is_done(it),
+                    }
                     if kind == "reminder"
                     else {"number": it.number, "preview": preview(it.text)}
                     for it in repo.list(account_id, kind)
@@ -240,7 +271,8 @@ class AssistantTools:
                 return ToolOutcome(_ok(it, tz, full=True), open=show)
             if name == "item_update":
                 due = parse_local(str(a["due_local"]), tz) if a.get("due_local") and kind == "reminder" else None
-                it = repo.update(it, text=str(a["text"]) if a.get("text") else None, due_at=due)
+                done = a.get("done") if isinstance(a.get("done"), bool) else None
+                it = repo.update(it, text=str(a["text"]) if a.get("text") else None, due_at=due, done=done)
                 return ToolOutcome(_ok(it, tz), changed=True, open={"list": kind})
             if name == "item_delete":
                 repo.delete(it)
@@ -253,7 +285,7 @@ class AssistantTools:
 def _ok(it: Item, tz: str, full: bool = False) -> str:
     body: dict[str, Any] = {"ok": True, "kind": it.kind, "number": it.number}
     if it.kind == "reminder":
-        body.update(text=it.text, due_local=local_time(it.due_at, tz), overdue=is_overdue(it))
+        body.update(text=it.text, due_local=local_time(it.due_at, tz), overdue=is_overdue(it), done=is_done(it))
     else:
         body["text" if full else "preview"] = it.text if full else preview(it.text)
     return json.dumps(body, ensure_ascii=False)
