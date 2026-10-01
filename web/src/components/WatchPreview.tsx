@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FA } from "./watchIcons";
 import type { DeviceLanguage, Language, Theme } from "../api";
+import { WATCH_DATE_LANGS, WATCH_LANG_ALIASES, type WatchDateLang } from "../watchDates";
 
 // Native AMOLED resolution of the Waveshare ESP32-S3 2.06" panel.
 const W = 410;
@@ -11,9 +12,15 @@ const BEZEL = 14;
 const TEXT_FONT = '"Noto Sans", Inter, ui-sans-serif, system-ui, sans-serif'; // buddy_font_20 / _28
 const CLOCK_FONT = 'Montserrat, "Noto Sans", ui-sans-serif, sans-serif'; // buddy_font_clock, SemiBold 112 px
 const STATUS_X = (W - 300) / 2; // status row: Wi-Fi left, battery right
-const SHORTCUT_Y = (185 + 308) / 2 - 62 / 2;
-const MIC_SIZE = 150;
-const MIC_Y = H - 44 - MIC_SIZE;
+const SHORTCUT_Y = 202;
+const SHORTCUT = 70;
+const SHORTCUT_GAP = 30;
+const DIVIDER_GAP = 16; // between the icon row and each faded line
+const MIC_SIZE = 160;
+const MIC_Y = H - 34 - MIC_SIZE;
+const DATE_MAX_W = 380; // longer dates drop the weekday (ui.c)
+/** lv_color_mix(a, b, mix): mix/255 of `a`. */
+const mix = (a: string, b: string, m: number) => `color-mix(in srgb, ${a} ${((m / 255) * 100).toFixed(1)}%, ${b})`;
 const PREVIEW_BATTERY = 76;
 
 type Glyph = { w: number; d: string };
@@ -37,35 +44,45 @@ function batteryGlyph(pct: number): Glyph {
   return pct >= 88 ? FA.battFull : pct >= 63 ? FA.batt3 : pct >= 38 ? FA.batt2 : pct >= 13 ? FA.batt1 : FA.battEmpty;
 }
 
-/** 1 px line fading out over 60 px at both ends (add_faded_line). */
+/** 1 px line, 400 px wide, fading out over 50 px at both ends (add_faded_line). */
 function FadedLine({ y, color }: { y: number; color: string }) {
   return (
     <div
       className="absolute"
       style={{
-        left: STATUS_X,
+        left: (W - 400) / 2,
         top: y,
-        width: 300,
+        width: 400,
         height: 1,
-        opacity: 0.8,
-        background: `linear-gradient(90deg, transparent, ${color} 60px, ${color} 240px, transparent)`,
+        opacity: 0.7,
+        background: `linear-gradient(90deg, transparent, ${color} 50px, ${color} 350px, transparent)`,
       }}
     />
   );
 }
 
-/** Locale for the preview date: the device language; for "auto" the preferred language, else English. */
-function dateLocale(lang: DeviceLanguage, preferred: Language | null | undefined): string {
-  const code = lang === "auto" ? preferred || "en" : lang;
-  if (code === "en") return "en-GB";
-  try {
-    return Intl.DateTimeFormat.supportedLocalesOf([code]).length ? code : "en-GB";
-  } catch {
-    return "en-GB"; // malformed tag
-  }
+/** The watch's date table for a language setting, like ui_i18n.c: the code ("de", "de-at", alias "nb"),
+ * for "auto" the preferred language (the watch uses the last reply's language), else English. */
+function dateLang(lang: DeviceLanguage, preferred: Language | null | undefined): WatchDateLang {
+  const code = (lang === "auto" ? preferred || "en" : lang).split(/[-_]/)[0];
+  return WATCH_DATE_LANGS[WATCH_LANG_ALIASES[code] ?? code] ?? WATCH_DATE_LANGS.en;
 }
 
-function formatParts(now: Date, tz: string, locale: string) {
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/** Width of `text` in the watch's 20 px text font (canvas measurement; 0 if unavailable). */
+function textWidth(text: string): number {
+  if (measureCtx === undefined) measureCtx = document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return 0;
+  measureCtx.font = `500 20px ${TEXT_FONT}`;
+  return measureCtx.measureText(text).width;
+}
+
+function fillDate(pattern: string, t: WatchDateLang, wday: number, day: number, month: number): string {
+  return pattern.replace("{w}", t.wday[wday]).replace("{d}", String(day)).replace("{m}", t.mon[month]);
+}
+
+function formatParts(now: Date, tz: string, t: WatchDateLang) {
   let timeZone: string | undefined = tz;
   try {
     new Intl.DateTimeFormat("en", { timeZone: tz });
@@ -73,20 +90,24 @@ function formatParts(now: Date, tz: string, locale: string) {
     timeZone = undefined; // unknown zone while typing: fall back to browser zone
   }
   // Always 24-hour, like the watch.
-  const tp = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).formatToParts(now);
-  const hour = tp.find((p) => p.type === "hour")?.value ?? "0";
-  const minute = tp.find((p) => p.type === "minute")?.value ?? "00";
-  // "Monday, 28 September" / "Montag, 28. September".
-  const dp = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone }).formatToParts(now);
-  const part = (t: string) => dp.find((p) => p.type === t)?.value ?? "";
-  // en-GB is assembled from parts (its separators differ per ICU version); other locales keep their native order.
-  const date =
-    locale === "en-GB"
-      ? `${part("weekday")}, ${part("day")} ${part("month")}`
-      : dp.map((p) => p.value).join("");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  }).formatToParts(now);
+  const num = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const year = num("year"), month = num("month") - 1, day = num("day");
+  const wday = new Date(Date.UTC(year, month, day)).getUTCDay();
+  // The watch's own weekday / month names and order; without the weekday when it is too wide.
+  let date = fillDate(t.date_wd, t, wday, day, month);
+  if (textWidth(date) > DATE_MAX_W) date = fillDate(t.date, t, wday, day, month);
   return {
-    time: `${hour.padStart(2, "0")}:${minute}`,
-    date: date.charAt(0).toUpperCase() + date.slice(1),
+    time: `${String(num("hour")).padStart(2, "0")}:${String(num("minute")).padStart(2, "0")}`,
+    date,
   };
 }
 
@@ -124,7 +145,7 @@ export default function WatchPreview({
     return () => ro.disconnect();
   }, [maxWidth]);
 
-  const { time, date } = formatParts(now, timezone, dateLocale(language, preferredLanguage));
+  const { time, date } = formatParts(now, timezone, dateLang(language, preferredLanguage));
   const dim = Math.max(0, Math.min(0.85, (100 - brightness) / 100));
 
   return (
@@ -187,25 +208,42 @@ export default function WatchPreview({
               {date}
             </div>
 
-            {/* notes / reminders / settings shortcuts between two faded lines */}
-            <FadedLine y={SHORTCUT_Y - 10} color={theme.text} />
-            <div className="absolute flex" style={{ left: (W - 3 * 62 - 2 * 22) / 2, top: SHORTCUT_Y, gap: 22 }}>
+            {/* notes / reminders / settings: gradient circles with a light rim */}
+            <FadedLine y={SHORTCUT_Y - DIVIDER_GAP} color={theme.accent} />
+            <div className="absolute flex" style={{ left: (W - 3 * SHORTCUT - 2 * SHORTCUT_GAP) / 2, top: SHORTCUT_Y, gap: SHORTCUT_GAP }}>
               {[FA.pen, FA.calendar, FA.gear].map((g, i) => (
                 <div
                   key={i}
                   className="flex justify-center rounded-full"
-                  style={{ width: 62, height: 62, paddingTop: 18.5, background: theme.accent, color: "#fff" }}
+                  style={{
+                    width: SHORTCUT,
+                    height: SHORTCUT,
+                    paddingTop: 20.5,
+                    color: "#fff",
+                    background: `linear-gradient(180deg, ${mix(theme.accent, theme.background, 130)}, ${mix(theme.accent, theme.background, 45)})`,
+                    border: `2px solid ${mix(mix("#ffffff", theme.accent, 90), "transparent", 153)}`,
+                    boxSizing: "border-box",
+                  }}
                 >
                   <Icon g={g} size={28} style={{ verticalAlign: "top" }} />
                 </div>
               ))}
             </div>
-            <FadedLine y={SHORTCUT_Y + 62 + 10} color={theme.text} />
+            <FadedLine y={SHORTCUT_Y + SHORTCUT + DIVIDER_GAP} color={theme.accent} />
 
             {/* mic button */}
             <div
               className="absolute flex items-center justify-center rounded-full"
-              style={{ left: (W - MIC_SIZE) / 2, top: MIC_Y, width: MIC_SIZE, height: MIC_SIZE, background: theme.accent, color: "#fff" }}
+              style={{
+                left: (W - MIC_SIZE) / 2,
+                top: MIC_Y,
+                width: MIC_SIZE,
+                height: MIC_SIZE,
+                color: "#fff",
+                background: `linear-gradient(180deg, ${mix("#ffffff", theme.accent, 110)}, ${mix(theme.accent, "#000000", 215)})`,
+                border: `2px solid ${mix(mix("#ffffff", theme.accent, 140), "transparent", 204)}`,
+                boxSizing: "border-box",
+              }}
             >
               <Icon g={FA.mic} size={80} style={{ verticalAlign: "top" }} />
             </div>

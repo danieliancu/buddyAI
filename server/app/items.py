@@ -1,7 +1,9 @@
 """Notes and reminders: views for the watch and the web app, and the assistant's function tools.
 
-Notes are text only (up to 10000 characters). Reminders have a due time and a short text (up to 80
-characters); once the time has passed they are "overdue" until completed, deleted or rescheduled. A
+Notes are text only (up to 10000 characters). Reminders have a due time, an optional end time (a
+range such as 09:30-10:00), an optional advance notice (notify_before_min: an extra alert that many
+minutes before the start, besides the one at the start), an optional location and participants (taken
+from the text by the assistant) and a short text (up to 80 characters); once the time has passed they are "overdue" until completed, deleted or rescheduled. A
 completed reminder (`done`) no longer fires or counts as overdue. Items belong to the account; numbers are per (account, kind) and a new item takes the
 lowest free number (see ItemRepo). The watch gets a light snapshot (`items`); a note's full text is
 sent when it is opened (`item_show`), a due reminder with `reminder_fire`.
@@ -10,6 +12,7 @@ sent when it is opened (`item_show`), a due reminder with `reminder_fire`.
 from __future__ import annotations
 
 import json
+import re
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -44,6 +47,21 @@ def parse_local(value: str, tz: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+_CLOCK = re.compile(r"\d{1,2}:\d{2}")
+
+
+def parse_local_time(value: Any, tz: str, field: str) -> datetime:
+    """Like parse_local, for the assistant's tools: the value must carry a time of day. A date alone
+    ('2030-05-01') would silently become midnight, so it is refused and the model has to ask."""
+    text = str(value or "").strip()
+    if not _CLOCK.search(text):
+        raise ValueError(
+            f"{field} needs a time of day ('YYYY-MM-DD HH:MM'). Do not guess one: ask the user what time "
+            "(at least the start time)."
+        )
+    return parse_local(text, tz)
+
+
 def preview(text: str) -> str:
     """Start of a note on one line (line breaks become spaces), shortened for list rows."""
     flat = " ".join(text.split())
@@ -69,6 +87,10 @@ def web_view(it: Item) -> dict[str, Any]:
         "number": it.number,
         "text": it.text,
         "due_at": it.due_at.isoformat() if it.due_at else None,
+        "end_at": it.end_at.isoformat() if it.end_at else None,
+        "notify_before_min": it.notify_before_min,
+        "location": it.location,
+        "participants": it.participants,
         "overdue": is_overdue(it),
         "done": is_done(it),
         "created_at": it.created_at.isoformat(),
@@ -81,6 +103,10 @@ def device_full(it: Item, tz: str) -> dict[str, Any]:
     out: dict[str, Any] = {"kind": it.kind, "number": it.number, "text": it.text}
     if it.kind == "reminder":
         out["due_local"] = local_time(it.due_at, tz)
+        out["end_local"] = local_time(it.end_at, tz)
+        out["notify_before"] = it.notify_before_min
+        out["location"] = it.location
+        out["participants"] = it.participants
         out["overdue"] = is_overdue(it)
         out["done"] = is_done(it)
     return out
@@ -102,6 +128,10 @@ def device_snapshot(items: list[Item], tz: str) -> dict[str, list[dict[str, Any]
             "number": it.number,
             "text": it.text,
             "due_local": local_time(it.due_at, tz),
+            "end_local": local_time(it.end_at, tz),
+            "notify_before": it.notify_before_min,
+            "location": it.location,
+            "participants": it.participants,
             "overdue": is_overdue(it, now),
             "done": is_done(it),
         }
@@ -129,8 +159,36 @@ _DONE = {
 }
 _DUE = {
     "type": "string",
-    "description": "Reminders only: local 'YYYY-MM-DD HH:MM' in the user's time zone. Resolve 'tomorrow at 9' etc. "
-    "from the current local date and time.",
+    "description": "Reminders only, required: the start, local 'YYYY-MM-DD HH:MM' in the user's time zone. "
+    "Resolve 'tomorrow at 9' etc. from the current local date and time. The time of day must come from the "
+    "user - never invent one.",
+}
+
+_END = {
+    "type": "string",
+    "description": "Reminders only, optional: when it ends, local 'YYYY-MM-DD HH:MM', for a time range "
+    "('from 9:30 to 10', 'meeting 3 to 4 pm'). Leave it out for a single time. In item_update an empty string "
+    "removes the end time.",
+}
+
+_NOTIFY = {
+    "type": "integer",
+    "description": "Reminders only, optional: when the user wants to be told in advance ('15 minutes before', "
+    "'an hour before'), how many minutes before the start. The watch then alerts at that time and again at the "
+    "start. Leave it out otherwise; in item_update 0 removes it.",
+}
+
+_LOCATION = {
+    "type": "string",
+    "description": "Reminders only, optional: where it happens, as the user said it ('Studio Office', 'the "
+    "dentist on Main Street'). Only from the user's words; leave it out otherwise. In item_update an empty "
+    "string removes it.",
+}
+_PARTICIPANTS = {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "Reminders only, optional: the people involved, as the user named them (['Ana', 'Mihai']). "
+    "Only from the user's words; leave it out otherwise. In item_update an empty list removes them.",
 }
 
 TOOL_DEFS: list[dict[str, Any]] = [
@@ -140,7 +198,15 @@ TOOL_DEFS: list[dict[str, Any]] = [
         "Returns its number.",
         "parameters": {
             "type": "object",
-            "properties": {"kind": _KIND, "text": _TEXT, "due_local": _DUE},
+            "properties": {
+                "kind": _KIND,
+                "text": _TEXT,
+                "due_local": _DUE,
+                "end_local": _END,
+                "notify_before_minutes": _NOTIFY,
+                "location": _LOCATION,
+                "participants": _PARTICIPANTS,
+            },
             "required": ["kind", "text"],
         },
     },
@@ -169,7 +235,17 @@ TOOL_DEFS: list[dict[str, Any]] = [
         "completed (done). Pass only what changes.",
         "parameters": {
             "type": "object",
-            "properties": {"kind": _KIND, "number": _NUMBER, "text": _TEXT, "due_local": _DUE, "done": _DONE},
+            "properties": {
+                "kind": _KIND,
+                "number": _NUMBER,
+                "text": _TEXT,
+                "due_local": _DUE,
+                "end_local": _END,
+                "notify_before_minutes": _NOTIFY,
+                "location": _LOCATION,
+                "participants": _PARTICIPANTS,
+                "done": _DONE,
+            },
             "required": ["kind", "number"],
         },
     },
@@ -186,12 +262,21 @@ TOOL_DEFS: list[dict[str, Any]] = [
 
 TOOLS_RULE = (
     "You keep the user's notes and reminders with the item_* tools. They are separate lists, each numbered "
-    "(note #1, reminder #2). Notes are text only; a reminder has a date and time and a short text (at most 80 "
-    "characters: shorten it yourself). Use the tools whenever the user asks to note, remember, remind, see, "
+    "(note #1, reminder #2). Notes are text only; a reminder has a date and time (for a time range also an "
+    "end time: due_local = start, end_local = end) and a short text (at most 80 characters: shorten it "
+    "yourself). Use the tools whenever the user asks to note, remember, remind, see, "
     "change or delete something. When they want to see their notes or reminders, call item_list with "
     "show_on_watch=true; while you only look things up or ask for confirmation, leave show_on_watch false "
     "(after a create, change or delete the watch opens that list by itself). Never say something was saved, changed or deleted unless the tool reported success. "
-    "Say the number of a new item. If a reminder's time is unclear, ask. When the user says a reminder is "
+    "Say the number of a new item. A reminder always needs a time of day: if the user did not say one (only "
+    "a day, or nothing), do not create it yet - ask what time, and keep asking until you have at least a start "
+    "time; never pick a time yourself. If they give an end time or a range ('from 9:30 to 10', 'between 3 "
+    "and 4'), pass it as end_local; otherwise leave end_local out. If they want to be told in advance "
+    "('remind me 15 minutes before', 'an hour before the meeting at 10'), keep due_local at the real start "
+    "(10:00) and set notify_before_minutes (15, 60): the watch alerts then and again at the start. The "
+    "reminder text is its full short description ('Team sync with Ana at Studio Office'); when it names a "
+    "place or people, also pass them as location / participants (only what the user said, never invented), "
+    "and when you change the text, update them to match. When the user says a reminder is "
     "done or completed, call item_update with done=true (do not delete it unless they ask)."
 )
 
@@ -245,6 +330,10 @@ class AssistantTools:
                         "number": it.number,
                         "text": it.text,
                         "due_local": local_time(it.due_at, tz),
+                        "end_local": local_time(it.end_at, tz),
+                        "notify_before_minutes": it.notify_before_min,
+                        "location": it.location,
+                        "participants": it.participants,
                         "overdue": is_overdue(it),
                         "done": is_done(it),
                     }
@@ -258,9 +347,25 @@ class AssistantTools:
                 due = None
                 if kind == "reminder":
                     if not a.get("due_local"):
-                        return ToolOutcome(_err("a reminder needs due_local"))
-                    due = parse_local(str(a["due_local"]), tz)
-                it = repo.create(account_id, kind, str(a.get("text") or ""), due)
+                        return ToolOutcome(_err(
+                            "a reminder needs due_local with a time of day. Ask the user what time "
+                            "(at least the start time); do not create it without one."
+                        ))
+                    due = parse_local_time(a["due_local"], tz, "due_local")
+                end = parse_local_time(a["end_local"], tz, "end_local") if kind == "reminder" and a.get("end_local") else None
+                notify = (
+                    int(a["notify_before_minutes"]) if kind == "reminder" and a.get("notify_before_minutes") else None
+                )
+                it = repo.create(
+                    account_id,
+                    kind,
+                    str(a.get("text") or ""),
+                    due,
+                    end,
+                    notify,
+                    location=str(a.get("location") or "") if kind == "reminder" else None,
+                    participants=_names(a.get("participants")) if kind == "reminder" else None,
+                )
                 return ToolOutcome(_ok(it, tz), changed=True, open={"list": kind})
             number = int(a.get("number"))
             it = repo.get(account_id, kind, number)
@@ -270,9 +375,20 @@ class AssistantTools:
                 show = {"item": device_full(it, tz)} if a.get("show_on_watch") is True else None
                 return ToolOutcome(_ok(it, tz, full=True), open=show)
             if name == "item_update":
-                due = parse_local(str(a["due_local"]), tz) if a.get("due_local") and kind == "reminder" else None
+                due = parse_local_time(a["due_local"], tz, "due_local") if a.get("due_local") and kind == "reminder" else None
                 done = a.get("done") if isinstance(a.get("done"), bool) else None
-                it = repo.update(it, text=str(a["text"]) if a.get("text") else None, due_at=due, done=done)
+                extra: dict[str, Any] = {}
+                if kind == "reminder" and "end_local" in a:  # "" or null removes the end time
+                    extra["end_at"] = parse_local_time(a["end_local"], tz, "end_local") if a["end_local"] else None
+                if kind == "reminder" and "notify_before_minutes" in a:  # 0 or null removes it
+                    extra["notify_before_min"] = int(a["notify_before_minutes"] or 0) or None
+                if kind == "reminder" and "location" in a:  # "" or null removes it
+                    extra["location"] = str(a["location"] or "")
+                if kind == "reminder" and "participants" in a:  # [] or null removes them
+                    extra["participants"] = _names(a["participants"])
+                it = repo.update(
+                    it, text=str(a["text"]) if a.get("text") else None, due_at=due, done=done, **extra
+                )
                 return ToolOutcome(_ok(it, tz), changed=True, open={"list": kind})
             if name == "item_delete":
                 repo.delete(it)
@@ -285,10 +401,25 @@ class AssistantTools:
 def _ok(it: Item, tz: str, full: bool = False) -> str:
     body: dict[str, Any] = {"ok": True, "kind": it.kind, "number": it.number}
     if it.kind == "reminder":
-        body.update(text=it.text, due_local=local_time(it.due_at, tz), overdue=is_overdue(it), done=is_done(it))
+        body.update(
+            text=it.text,
+            due_local=local_time(it.due_at, tz),
+            end_local=local_time(it.end_at, tz),
+            notify_before_minutes=it.notify_before_min,
+            location=it.location,
+            participants=it.participants,
+            overdue=is_overdue(it),
+            done=is_done(it),
+        )
     else:
         body["text" if full else "preview"] = it.text if full else preview(it.text)
     return json.dumps(body, ensure_ascii=False)
+
+
+def _names(value: Any) -> str:
+    """Participants from the model (a list, or one comma-separated string) -> "Ana, Mihai"."""
+    parts = value if isinstance(value, list) else str(value or "").split(",")
+    return ", ".join(p for p in (" ".join(str(x).split()) for x in parts) if p)
 
 
 def _err(msg: str) -> str:

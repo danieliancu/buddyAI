@@ -110,6 +110,8 @@ void ui_items_show_list(bool reminder);
 /* Every supported language (`languages` message), for the settings language picker. */
 void ui_languages_set(const char *json);
 
+/* Is the screen fully on (not dimmed / off)? */
+bool ui_is_awake(void);
 /* Wake the screen (PWR key, incoming reply). */
 void ui_wake(void);
 /* Keep the screen awake while a turn is active. */

@@ -11,25 +11,54 @@
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
 
-#define CONTENT_W   340
+/* Settings layout: cards on the theme background. Flat fills and 1-2 px borders only - no
+ * shadows, gradients, glows or translucent layers, so scrolling and the screen slide stay cheap. */
+#define CARD_W          386
+#define CARD_PAD        12
+#define CARD_INNER_W    (CARD_W - 2 * CARD_PAD)
+#define ICON_COL_W      32
+#define ROW_H           62
+#define CHIP_H          44
+#define THEME_DOT       48
+#define SLIDER_W        110
+#define SLIDER_TRACK_H  12
+#define VALUE_W         54
+#define LANG_PILL_W     100
 
 /* ---- settings screen ---- */
 static lv_obj_t *s_set_scr;
 static lv_obj_t *s_set_title;
+static lv_obj_t *s_set_wifi;
+static lv_obj_t *s_set_batt;
+static lv_obj_t *s_lbl_theme;
+static lv_obj_t *s_theme_btns[8];
+static int       s_theme_count;
 static lv_obj_t *s_lbl_vol;
 static lv_obj_t *s_lbl_bri;
-static lv_obj_t *s_lbl_lang;
-static lv_obj_t *s_lbl_theme;
+static lv_obj_t *s_val_vol;
+static lv_obj_t *s_val_bri;
 static lv_obj_t *s_sld_vol;
 static lv_obj_t *s_sld_bri;
-static lv_obj_t *s_lang_row;
+static lv_obj_t *s_lbl_timeout;
+static lv_obj_t *s_val_timeout;
+static lv_obj_t *s_lbl_lang;
 static lv_obj_t *s_btn_lang_en;     /* English */
 static lv_obj_t *s_btn_lang_other;  /* "Other" or the chosen foreign language: opens the picker */
 static lv_obj_t *s_lbl_lang_other;
-static lv_obj_t *s_btn_wifi;
 static lv_obj_t *s_lbl_wifi_btn;
-static lv_obj_t *s_theme_btns[8];
-static int       s_theme_count;
+
+/* Colours derived from the theme, refreshed in ui_settings_refresh(). */
+static lv_style_t s_st_card;
+static lv_style_t s_st_card_pressed;
+static lv_style_t s_st_icon;
+static lv_style_t s_st_chip;
+static lv_style_t s_st_chip_on;
+static lv_style_t s_st_track;
+static lv_style_t s_st_fill;
+static lv_style_t s_st_knob;
+
+/* Screen timeout choices, cycled by tapping the row (the server accepts 5..300 s). */
+static const uint16_t s_timeouts[] = { 10, 15, 30, 60, 120, 300 };
 
 /* ---- message screen ---- */
 static lv_obj_t   *s_msg_scr;
@@ -68,6 +97,11 @@ static int slider_setting(lv_obj_t *sld)
     return sld == s_sld_vol ? g_ui_settings.volume : g_ui_settings.brightness;
 }
 
+static void show_slider_value(lv_obj_t *sld, int v)
+{
+    lv_label_set_text_fmt(sld == s_sld_vol ? s_val_vol : s_val_bri, "%d%%", v);
+}
+
 static void slider_cb(lv_event_t *e)
 {
     lv_obj_t *sld = lv_event_get_target(e);
@@ -83,8 +117,11 @@ static void slider_cb(lv_event_t *e)
         }
         break;
     case LV_EVENT_VALUE_CHANGED:
-        if (sld == s_sld_bri && s_slider_dragged) {
-            board_display_set_brightness(v);        /* live preview */
+        if (s_slider_dragged) {
+            show_slider_value(sld, v);
+            if (sld == s_sld_bri) {
+                board_display_set_brightness(v);    /* live preview */
+            }
         }
         break;
     case LV_EVENT_RELEASED:
@@ -93,6 +130,7 @@ static void slider_cb(lv_event_t *e)
             send_change_int(sld == s_sld_vol ? "volume" : "brightness", v);
         } else {
             lv_slider_set_value(sld, slider_setting(sld), LV_ANIM_OFF);
+            show_slider_value(sld, slider_setting(sld));
             if (sld == s_sld_bri) {
                 board_display_set_brightness(g_ui_settings.brightness);
             }
@@ -143,6 +181,19 @@ static void theme_cb(lv_event_t *e)
     cJSON_Delete(c);
 }
 
+static void timeout_cb(lv_event_t *e)
+{
+    const int n = (int)(sizeof(s_timeouts) / sizeof(s_timeouts[0]));
+    int next = s_timeouts[0];
+    for (int i = 0; i < n; i++) {
+        if (s_timeouts[i] > g_ui_settings.screen_timeout_s) {
+            next = s_timeouts[i];
+            break;
+        }
+    }
+    send_change_int("screen_timeout_s", next);
+}
+
 static void wifi_btn_cb(lv_event_t *e)
 {
     if (g_ui_cb.on_wifi_setup) {
@@ -164,88 +215,6 @@ static void back_cb(lv_event_t *e)
     ui_go_watchface();
 }
 
-static lv_obj_t *section_label(lv_obj_t *parent)
-{
-    lv_obj_t *l = lv_label_create(parent);
-    lv_obj_set_style_text_opa(l, LV_OPA_80, 0);
-    lv_obj_set_style_pad_top(l, 10, 0);
-    return l;
-}
-
-#define SLIDER_H       44
-#define SHEEN_W        24
-
-/* A soft light band sweeping left→right across the green fill, so it reads as flowing liquid.
- * It is clamped to the filled part; the slider clips it to the box. */
-static void sheen_anim_cb(void *var, int32_t t)
-{
-    lv_obj_t *sheen = var;
-    lv_obj_t *sld = lv_obj_get_parent(sheen);
-    int32_t min = lv_slider_get_min_value(sld);
-    int32_t max = lv_slider_get_max_value(sld);
-    int32_t fill = max > min ? lv_obj_get_width(sld) * (lv_slider_get_value(sld) - min) / (max - min) : 0;
-    int32_t x = t * (fill + SHEEN_W) / 1000 - SHEEN_W;
-    int32_t x0 = LV_MAX(x, 0);
-    int32_t x1 = LV_MIN(x + SHEEN_W, fill);
-    if (x1 <= x0) {
-        lv_obj_add_flag(sheen, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    lv_obj_remove_flag(sheen, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(sheen, x0, 0);
-    lv_obj_set_width(sheen, x1 - x0);
-}
-
-static lv_obj_t *make_slider(lv_obj_t *parent, int min, int max)
-{
-    lv_obj_t *s = lv_slider_create(parent);
-    lv_obj_set_width(s, CONTENT_W - 30);
-    lv_obj_set_height(s, SLIDER_H);
-    lv_slider_set_range(s, min, max);
-    /* the box */
-    lv_obj_set_style_radius(s, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x1c2230), LV_PART_MAIN);
-    lv_obj_set_style_border_width(s, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s, lv_color_hex(0x303642), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s, 0, LV_PART_MAIN);
-    lv_obj_set_style_clip_corner(s, true, LV_PART_MAIN);
-    /* the green liquid */
-    lv_obj_set_style_radius(s, 0, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x5ee0b0), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_grad_color(s, lv_color_hex(0x1a8f68), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_grad_dir(s, LV_GRAD_DIR_VER, LV_PART_INDICATOR);
-    /* no knob: the fill edge is the handle */
-    lv_obj_set_style_bg_opa(s, LV_OPA_TRANSP, LV_PART_KNOB);
-    lv_obj_set_style_shadow_width(s, 0, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(s, 0, LV_PART_KNOB);
-    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_ext_click_area(s, 8);
-    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_ALL, NULL);
-
-    lv_obj_t *sheen = lv_obj_create(s);
-    lv_obj_remove_style_all(sheen);
-    lv_obj_remove_flag(sheen, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(sheen, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_size(sheen, SHEEN_W, LV_PCT(100));
-    lv_obj_set_style_bg_opa(sheen, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(sheen, lv_color_white(), 0);
-    lv_obj_set_style_bg_main_opa(sheen, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_grad_opa(sheen, LV_OPA_40, 0);
-    lv_obj_set_style_bg_grad_color(sheen, lv_color_white(), 0);
-    lv_obj_set_style_bg_grad_dir(sheen, LV_GRAD_DIR_HOR, 0);
-
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, sheen);
-    lv_anim_set_exec_cb(&a, sheen_anim_cb);
-    lv_anim_set_values(&a, 0, 1000);
-    lv_anim_set_duration(&a, 1400);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&a);
-    return s;
-}
-
 static lv_obj_t *make_pill_button(lv_obj_t *parent, const char *text, lv_obj_t **label_out)
 {
     lv_obj_t *b = lv_button_create(parent);
@@ -264,8 +233,116 @@ static lv_obj_t *make_pill_button(lv_obj_t *parent, const char *text, lv_obj_t *
     return b;
 }
 
+/* A plain container: no style, no scrolling, gestures go to the screen. */
+static lv_obj_t *make_box(lv_obj_t *parent)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_remove_style_all(o);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(o, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_EVENT_BUBBLE);
+    return o;
+}
+
+static lv_obj_t *make_card(lv_obj_t *parent)
+{
+    lv_obj_t *c = make_box(parent);
+    lv_obj_add_style(c, &s_st_card, 0);
+    lv_obj_set_width(c, CARD_W);
+    lv_obj_set_height(c, LV_SIZE_CONTENT);
+    return c;
+}
+
+/* A one-line card: [icon] [name ...] and whatever the caller adds on the right. */
+static lv_obj_t *make_row_card(lv_obj_t *parent, const char *icon, lv_obj_t **name_out)
+{
+    lv_obj_t *c = make_card(parent);
+    lv_obj_set_height(c, ROW_H);
+    lv_obj_set_style_pad_ver(c, 0, 0);
+    lv_obj_set_flex_flow(c, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(c, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(c, 8, 0);
+    lv_obj_t *i = lv_label_create(c);
+    lv_obj_add_style(i, &s_st_icon, 0);
+    lv_obj_set_width(i, ICON_COL_W);
+    lv_obj_set_style_text_align(i, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(i, icon);
+    lv_obj_t *n = lv_label_create(c);
+    lv_obj_set_flex_grow(n, 1);
+    lv_label_set_long_mode(n, LV_LABEL_LONG_DOT);
+    *name_out = n;
+    return c;
+}
+
+/* A row card that reacts to taps (darker while pressed) and ends in a value and a chevron. */
+static lv_obj_t *make_tap_row(lv_obj_t *parent, const char *icon, lv_obj_t **name_out, lv_obj_t **value_out,
+                              lv_event_cb_t cb)
+{
+    lv_obj_t *c = make_row_card(parent, icon, name_out);
+    lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_style(c, &s_st_card_pressed, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(c, cb, LV_EVENT_CLICKED, NULL);
+    if (value_out) {
+        *value_out = lv_label_create(c);
+    }
+    lv_obj_t *chev = lv_label_create(c);
+    lv_obj_add_style(chev, &s_st_icon, 0);
+    lv_label_set_text(chev, SET_ICON_CHEVRON);
+    return c;
+}
+
+static lv_obj_t *make_slider_row(lv_obj_t *parent, const char *icon, lv_obj_t **name_out, lv_obj_t **value_out,
+                                 int min, int max)
+{
+    lv_obj_t *c = make_row_card(parent, icon, name_out);
+    lv_obj_t *s = lv_slider_create(c);
+    lv_obj_remove_style_all(s);
+    lv_obj_set_size(s, SLIDER_W, SLIDER_TRACK_H);
+    lv_slider_set_range(s, min, max);
+    lv_obj_add_style(s, &s_st_track, LV_PART_MAIN);
+    lv_obj_add_style(s, &s_st_fill, LV_PART_INDICATOR);
+    lv_obj_add_style(s, &s_st_knob, LV_PART_KNOB);
+    lv_obj_set_style_margin_hor(s, 10, 0);      /* room for the knob */
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_ext_click_area(s, 18);
+    lv_obj_add_event_cb(s, slider_cb, LV_EVENT_ALL, NULL);
+    lv_obj_t *v = lv_label_create(c);
+    lv_obj_set_width(v, VALUE_W);
+    lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+    *value_out = v;
+    return s;
+}
+
 static void build_settings(void)
 {
+    lv_style_init(&s_st_card);
+    lv_style_set_radius(&s_st_card, 18);
+    lv_style_set_bg_opa(&s_st_card, LV_OPA_COVER);
+    lv_style_set_border_width(&s_st_card, 1);
+    lv_style_set_pad_all(&s_st_card, CARD_PAD);
+    lv_style_init(&s_st_card_pressed);
+    lv_style_init(&s_st_icon);
+    lv_style_set_text_font(&s_st_icon, &buddy_font_set);
+    lv_style_init(&s_st_chip);
+    lv_style_set_radius(&s_st_chip, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&s_st_chip, LV_OPA_COVER);
+    lv_style_set_border_width(&s_st_chip, 1);
+    lv_style_set_pad_left(&s_st_chip, 10);
+    lv_style_set_pad_right(&s_st_chip, 14);
+    lv_style_set_pad_column(&s_st_chip, 8);
+    lv_style_init(&s_st_chip_on);
+    lv_style_set_border_width(&s_st_chip_on, 2);
+    lv_style_init(&s_st_track);
+    lv_style_set_radius(&s_st_track, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&s_st_track, LV_OPA_COVER);
+    lv_style_init(&s_st_fill);
+    lv_style_set_radius(&s_st_fill, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&s_st_fill, LV_OPA_COVER);
+    lv_style_init(&s_st_knob);
+    lv_style_set_radius(&s_st_knob, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&s_st_knob, LV_OPA_COVER);
+    lv_style_set_bg_color(&s_st_knob, lv_color_white());
+    lv_style_set_pad_all(&s_st_knob, 6);            /* knob = track height + 12 px */
+
     s_set_scr = lv_obj_create(NULL);
     lv_obj_add_style(s_set_scr, ui_style_screen(), 0);
     lv_obj_add_event_cb(s_set_scr, settings_gesture_cb, LV_EVENT_GESTURE, NULL);
@@ -273,87 +350,105 @@ static void build_settings(void)
     lv_obj_set_scrollbar_mode(s_set_scr, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(s_set_scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_set_scr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_top(s_set_scr, 26, 0);
+    lv_obj_set_style_pad_top(s_set_scr, 18, 0);
     lv_obj_set_style_pad_bottom(s_set_scr, 40, 0);
     lv_obj_set_style_pad_row(s_set_scr, 10, 0);
 
-    /* Title row with back button */
-    lv_obj_t *row = lv_obj_create(s_set_scr);
-    lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, CONTENT_W, 44);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_t *back = lv_button_create(row);
-    lv_obj_remove_style_all(back);
-    lv_obj_set_size(back, 44, 44);
-    lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_add_event_cb(back, back_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *bl = lv_label_create(back);
-    lv_obj_set_style_text_font(bl, &buddy_font_28, 0);
-    lv_label_set_text(bl, ICON_LEFT);
-    lv_obj_center(bl);
-    s_set_title = lv_label_create(row);
+    /* Header: Wi-Fi status + battery | title | close (back to the watchface; swiping right or
+     * down does the same). */
+    lv_obj_t *hdr = make_box(s_set_scr);
+    lv_obj_set_size(hdr, 350, 48);
+    lv_obj_add_flag(hdr, LV_OBJ_FLAG_OVERFLOW_VISIBLE);    /* the X's touch area reaches past the row */
+    lv_obj_t *status = make_box(hdr);
+    lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(status, 6, 0);
+    lv_obj_align(status, LV_ALIGN_LEFT_MID, 0, 0);
+    s_set_wifi = lv_label_create(status);
+    lv_label_set_text(s_set_wifi, ICON_WIFI);
+    s_set_batt = lv_label_create(status);
+    lv_label_set_text(s_set_batt, "");
+    s_set_title = lv_label_create(hdr);
     lv_obj_set_style_text_font(s_set_title, &buddy_font_28, 0);
     lv_obj_center(s_set_title);
+    lv_obj_t *close = lv_button_create(hdr);
+    lv_obj_remove_style_all(close);
+    lv_obj_set_size(close, 64, 64);
+    lv_obj_set_ext_click_area(close, 28);
+    lv_obj_align(close, LV_ALIGN_RIGHT_MID, 10, 0);
+    lv_obj_add_event_cb(close, back_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *x = lv_label_create(close);
+    lv_obj_set_style_text_font(x, &buddy_font_28, 0);
+    lv_label_set_text(x, ICON_CLOSE);
+    lv_obj_center(x);
 
-    s_lbl_vol = section_label(s_set_scr);
-    s_sld_vol = make_slider(s_set_scr, 0, 100);
-    s_lbl_bri = section_label(s_set_scr);
-    s_sld_bri = make_slider(s_set_scr, 5, 100);
-
-    s_lbl_lang = section_label(s_set_scr);
-    /* Language pills, built from quick_languages in ui_settings_refresh().
-     * Pills size to their label and wrap to a second row if needed. */
-    s_lang_row = lv_obj_create(s_set_scr);
-    lv_obj_remove_style_all(s_lang_row);
-    lv_obj_set_size(s_lang_row, CONTENT_W, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_ver(s_lang_row, 2, 0);
-    lv_obj_set_style_pad_row(s_lang_row, 8, 0);
-    lv_obj_set_style_pad_column(s_lang_row, 8, 0);
-    lv_obj_add_flag(s_lang_row, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_remove_flag(s_lang_row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(s_lang_row, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(s_lang_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    s_btn_lang_en = make_pill_button(s_lang_row, "English", NULL);
-    lv_obj_set_width(s_btn_lang_en, 150);
-    lv_obj_add_flag(s_btn_lang_en, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(s_btn_lang_en, lang_en_cb, LV_EVENT_CLICKED, NULL);
-    s_btn_lang_other = make_pill_button(s_lang_row, "", &s_lbl_lang_other);
-    lv_obj_set_width(s_btn_lang_other, 150);
-    lv_obj_set_style_pad_hor(s_btn_lang_other, 12, 0);
-    lv_obj_set_width(s_lbl_lang_other, 126);
-    lv_obj_set_style_text_align(s_lbl_lang_other, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(s_lbl_lang_other, LV_LABEL_LONG_DOT);
-    lv_obj_add_flag(s_btn_lang_other, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(s_btn_lang_other, lang_other_cb, LV_EVENT_CLICKED, NULL);
-
-    s_lbl_theme = section_label(s_set_scr);
-    lv_obj_t *theme_row = lv_obj_create(s_set_scr);
-    lv_obj_remove_style_all(theme_row);
-    lv_obj_set_size(theme_row, CONTENT_W, 60);
-    lv_obj_set_flex_flow(theme_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(theme_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    /* Theme: preset colour dots */
+    lv_obj_t *card = make_card(s_set_scr);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(card, 10, 0);
+    lv_obj_t *head = make_box(card);
+    lv_obj_set_size(head, CARD_INNER_W, 30);
+    lv_obj_t *hi = lv_label_create(head);
+    lv_obj_add_style(hi, &s_st_icon, 0);
+    lv_obj_set_width(hi, ICON_COL_W);
+    lv_obj_set_style_text_align(hi, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(hi, SET_ICON_PALETTE);
+    lv_obj_align(hi, LV_ALIGN_LEFT_MID, 0, 0);
+    s_lbl_theme = lv_label_create(head);
+    lv_obj_align(s_lbl_theme, LV_ALIGN_LEFT_MID, ICON_COL_W + 8, 0);
     const char *const *names = settings_theme_preset_names();
     s_theme_count = 0;
     for (int i = 0; names[i] && s_theme_count < (int)(sizeof(s_theme_btns) / sizeof(s_theme_btns[0])); i++) {
         settings_theme_t t;
         settings_theme_preset(names[i], &t);
-        lv_obj_t *b = lv_button_create(theme_row);
+        lv_obj_t *b = lv_button_create(card);
         lv_obj_remove_style_all(b);
-        lv_obj_set_size(b, 48, 48);
+        lv_obj_set_size(b, THEME_DOT, THEME_DOT);
         lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(b, lv_color_hex(t.accent), 0);
         lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(b, lv_color_hex(t.background == 0 ? 0x333333 : t.background), 0);
         lv_obj_set_style_border_width(b, 4, 0);
         lv_obj_set_style_border_color(b, lv_color_white(), LV_STATE_CHECKED);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
         lv_obj_add_event_cb(b, theme_cb, LV_EVENT_CLICKED, (void *)names[i]);
         s_theme_btns[s_theme_count++] = b;
     }
 
-    s_btn_wifi = make_pill_button(s_set_scr, "", &s_lbl_wifi_btn);
-    lv_obj_set_width(s_btn_wifi, CONTENT_W - 40);
-    lv_obj_set_style_margin_top(s_btn_wifi, 14, 0);
-    lv_obj_add_event_cb(s_btn_wifi, wifi_btn_cb, LV_EVENT_CLICKED, NULL);
+    s_sld_bri = make_slider_row(s_set_scr, SET_ICON_SUN, &s_lbl_bri, &s_val_bri, 5, 100);
+    s_sld_vol = make_slider_row(s_set_scr, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, 0, 100);
+    make_tap_row(s_set_scr, SET_ICON_POWER, &s_lbl_timeout, &s_val_timeout, timeout_cb);
+
+    /* Language: English | Other (opens the picker) */
+    lv_obj_t *lang = make_row_card(s_set_scr, SET_ICON_GLOBE, &s_lbl_lang);
+    s_btn_lang_en = lv_button_create(lang);
+    s_btn_lang_other = lv_button_create(lang);
+    lv_obj_t *pills[2] = { s_btn_lang_en, s_btn_lang_other };
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *b = pills[i];
+        lv_obj_remove_style_all(b);
+        lv_obj_add_style(b, &s_st_chip, 0);
+        lv_obj_add_style(b, &s_st_chip_on, LV_STATE_CHECKED);
+        lv_obj_add_style(b, &s_st_card_pressed, LV_STATE_PRESSED);
+        lv_obj_set_size(b, LANG_PILL_W, CHIP_H);
+        lv_obj_set_style_pad_hor(b, 8, 0);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+        lv_obj_t *l = lv_label_create(b);
+        lv_obj_set_width(l, LANG_PILL_W - 16);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+        lv_obj_center(l);
+        if (i == 0) {
+            lv_label_set_text(l, "English");
+        } else {
+            s_lbl_lang_other = l;
+        }
+    }
+    lv_obj_add_event_cb(s_btn_lang_en, lang_en_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_lang_other, lang_other_cb, LV_EVENT_CLICKED, NULL);
+
+    make_tap_row(s_set_scr, SET_ICON_WIFI, &s_lbl_wifi_btn, NULL, wifi_btn_cb);
 }
 
 /* Name of the active foreign language: the server's list, else quick_languages. */
@@ -372,20 +467,65 @@ static const char *foreign_label(void)
     return label ? label : lang;
 }
 
+/* Card colours from the theme: tints of the accent over the background. */
+static void settings_styles_apply(void)
+{
+    const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
+    const lv_color_t card = lv_color_mix(a, bg, 22), line = lv_color_mix(a, bg, 70);
+    lv_style_set_bg_color(&s_st_card, card);
+    lv_style_set_border_color(&s_st_card, line);
+    lv_style_set_bg_color(&s_st_card_pressed, lv_color_mix(a, bg, 60));
+    lv_style_set_text_color(&s_st_icon, a);
+    lv_style_set_bg_color(&s_st_chip, lv_color_mix(a, bg, 12));
+    lv_style_set_border_color(&s_st_chip, line);
+    lv_style_set_bg_color(&s_st_chip_on, lv_color_mix(a, bg, 70));
+    lv_style_set_border_color(&s_st_chip_on, a);
+    lv_style_set_bg_color(&s_st_track, lv_color_mix(a, bg, 50));
+    lv_style_set_bg_color(&s_st_fill, a);
+    lv_style_t *all[] = { &s_st_card, &s_st_card_pressed, &s_st_icon, &s_st_chip, &s_st_chip_on,
+                          &s_st_track, &s_st_fill };
+    for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
+        lv_obj_report_style_change(all[i]);
+    }
+}
+
+void ui_settings_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa)
+{
+    if (!s_set_scr) {
+        return;
+    }
+    lv_label_set_text(s_set_batt, batt);
+    lv_obj_set_style_text_color(s_set_batt, batt_color, 0);
+    lv_obj_set_style_text_color(s_set_wifi, wifi_color, 0);
+    lv_obj_set_style_text_opa(s_set_wifi, wifi_opa, 0);
+}
+
 void ui_settings_refresh(void)
 {
     if (!s_set_scr) {
         return;
     }
+    settings_styles_apply();
     lv_label_set_text(s_set_title, ui_str(STR_SETTINGS));
-    lv_label_set_text_fmt(s_lbl_vol, ICON_VOLUME "  %s", ui_str(STR_VOLUME));
-    lv_label_set_text_fmt(s_lbl_bri, ICON_BRIGHTNESS "  %s", ui_str(STR_BRIGHTNESS));
-    lv_label_set_text_fmt(s_lbl_lang, ICON_LANGUAGE "  %s", ui_str(STR_LANGUAGE));
-    lv_label_set_text_fmt(s_lbl_theme, ICON_THEME "  %s", ui_str(STR_THEME));
-    lv_label_set_text_fmt(s_lbl_wifi_btn, ICON_WIFI "  %s", ui_str(STR_WIFI_SETUP));
+    lv_label_set_text(s_lbl_theme, ui_str(STR_THEME));
+    lv_label_set_text(s_lbl_bri, ui_str(STR_BRIGHTNESS));
+    lv_label_set_text(s_lbl_vol, ui_str(STR_VOLUME));
+    lv_label_set_text(s_lbl_timeout, ui_str(STR_SCREEN_TIMEOUT));
+    lv_label_set_text(s_lbl_lang, ui_str(STR_LANGUAGE));
+    lv_label_set_text(s_lbl_wifi_btn, ui_str(STR_WIFI_SETUP));
+
 
     lv_slider_set_value(s_sld_vol, g_ui_settings.volume, LV_ANIM_OFF);
     lv_slider_set_value(s_sld_bri, g_ui_settings.brightness, LV_ANIM_OFF);
+    show_slider_value(s_sld_vol, g_ui_settings.volume);
+    show_slider_value(s_sld_bri, g_ui_settings.brightness);
+
+    int t = g_ui_settings.screen_timeout_s;
+    if (t >= 60 && t % 60 == 0) {
+        lv_label_set_text_fmt(s_val_timeout, "%d %s", t / 60, ui_str(STR_UNIT_MIN));
+    } else {
+        lv_label_set_text_fmt(s_val_timeout, "%d %s", t, ui_str(STR_UNIT_S));
+    }
 
     const char *foreign = foreign_label();
     lv_label_set_text(s_lbl_lang_other, foreign ? foreign : ui_str(STR_OTHER));

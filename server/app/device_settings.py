@@ -108,6 +108,7 @@ DEVICE_EDITABLE = {
     "preferred_language",
     "volume",
     "brightness",
+    "screen_timeout_s",
     "theme",
 }
 

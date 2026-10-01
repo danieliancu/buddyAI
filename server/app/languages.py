@@ -57,6 +57,16 @@ SAMPLES = {
 }
 
 
+# Languages the watch menus, messages and date line are translated into (firmware/tools/i18n/lang_*.py:
+# keep in sync). For any other language the watch shows them in English.
+WATCH_UI_LANGUAGES = frozenset({
+    "en", "ro", "de", "fr", "es", "it", "pt", "nl", "ca", "gl",
+    "sv", "da", "no", "is", "fi", "et", "lv", "lt", "cy",
+    "pl", "cs", "sk", "hu", "sl", "hr", "bs", "sr",
+    "el", "bg", "mk", "uk",
+})
+
+
 @dataclass(frozen=True)
 class Language:
     code: str
@@ -77,6 +87,7 @@ class Language:
             "script": self.script,
             "rtl": self.rtl,
             "captions": self.captions,
+            "watch_menus": self.code in WATCH_UI_LANGUAGES,
         }
 
     @property

@@ -39,6 +39,7 @@ static lang_entry_t *s_langs;   /* PSRAM */
 static int           s_count;
 
 static lv_obj_t *s_scr;
+static lv_obj_t *s_title;
 static lv_obj_t *s_search;
 static lv_obj_t *s_list;
 static lv_obj_t *s_kb;
@@ -173,16 +174,16 @@ void ui_lang_init(void)
     lv_obj_add_style(s_scr, ui_style_screen(), 0);
     lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(title, &buddy_font_28, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 36, 42);
-    lv_label_set_text(title, ui_str(STR_LANGUAGE));
+    s_title = lv_label_create(s_scr);
+    lv_obj_set_style_text_font(s_title, &buddy_font_28, 0);
+    lv_obj_align(s_title, LV_ALIGN_TOP_LEFT, 36, 42);
+    lv_label_set_text(s_title, ui_str(STR_LANGUAGE));
 
     lv_obj_t *x = lv_button_create(s_scr);
     lv_obj_remove_style_all(x);
-    lv_obj_set_size(x, 56, 56);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -30, 10);
-    lv_obj_set_ext_click_area(x, 12);
+    lv_obj_set_size(x, 72, 72);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -22, 2);
+    lv_obj_set_ext_click_area(x, 28);
     lv_obj_add_event_cb(x, close_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *xl = lv_label_create(x);
     lv_obj_set_style_text_font(xl, &buddy_font_28, 0);
@@ -222,10 +223,13 @@ void ui_lang_init(void)
     lv_obj_set_style_text_font(s_kb, &buddy_font_20, LV_PART_ITEMS);
     lv_obj_add_event_cb(s_kb, kb_cb, LV_EVENT_ALL, NULL);
     show_keyboard(false);
+    lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */
 }
 
 void ui_lang_open(void)
 {
+    lv_label_set_text(s_title, ui_str(STR_LANGUAGE));
+    lv_textarea_set_placeholder_text(s_search, ui_str(STR_SEARCH));
     lv_textarea_set_text(s_search, "");
     show_keyboard(false);
     rebuild();

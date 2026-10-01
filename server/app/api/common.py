@@ -159,6 +159,10 @@ class ItemBody(BaseModel):
     kind: Literal["note", "reminder"] = "note"
     text: str = Field(min_length=1, max_length=10000)
     due_at: datetime | None = None
+    end_at: datetime | None = None  # reminders, optional: end of a time range
+    notify_before_min: int | None = None  # reminders, optional: extra alert this many minutes before
+    location: str | None = None  # reminders, optional
+    participants: str | None = None  # reminders, optional: "Ana, Mihai"
 
 
 class ItemDoneBody(BaseModel):

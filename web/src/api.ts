@@ -201,6 +201,8 @@ export interface LanguageInfo {
   rtl: boolean;
   /** Whether the watch can display text in this script. */
   captions: boolean;
+  /** Whether the watch menus, messages and dates are translated into it (otherwise they stay in English). */
+  watch_menus?: boolean;
 }
 
 export interface TtsVoices {
@@ -276,6 +278,14 @@ export interface Item {
   text: string;
   /** Reminders: when it is due (UTC ISO). */
   due_at: string | null;
+  /** Reminders, optional: end of a time range such as 09:30–10:00 (UTC ISO). */
+  end_at: string | null;
+  /** Reminders, optional: also alert this many minutes before the start (besides the alert at the start). */
+  notify_before_min: number | null;
+  /** Reminders, optional: where (taken from the text by the assistant, editable). */
+  location: string | null;
+  /** Reminders, optional: who, comma-separated ("Ana, Mihai"). */
+  participants: string | null;
   /** Reminders: the time has passed and it is not completed (stays until completed, deleted or rescheduled). */
   overdue: boolean;
   /** Reminders: marked completed (no longer fires). */
@@ -290,6 +300,12 @@ export interface ItemInput {
   text: string;
   /** ISO 8601 with offset; required for reminders. */
   due_at: string | null;
+  /** Reminders, optional: ISO 8601 with offset, after due_at. */
+  end_at?: string | null;
+  /** Reminders, optional: advance notice in minutes. */
+  notify_before_min?: number | null;
+  location?: string | null;
+  participants?: string | null;
 }
 
 /** GET /api/me/subscription. */

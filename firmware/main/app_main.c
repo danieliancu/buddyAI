@@ -9,6 +9,8 @@
  * Core usage: LVGL, Wi-Fi, WebSocket and protocol tasks on core 0;
  * audio capture / decode / playback tasks on core 1.
  */
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -19,6 +21,7 @@
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_secure_boot.h"
 #include "esp_flash_encrypt.h"
@@ -251,6 +254,59 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     }
 }
 
+/* ---- Shake to wake ----
+ * While the screen is dimmed or off, the accelerometer is sampled at 25 Hz. A clear shake - three
+ * strong jolts (acceleration more than SHAKE_G_MG away from 1 g) within SHAKE_WINDOW_MS - wakes the
+ * screen, like a tap. Walking and ordinary arm movement stay well below it. Nothing is sent to the
+ * server. While the screen is on, the sensor is not read. */
+#define SHAKE_SAMPLE_MS     40
+#define SHAKE_G_MG          1500
+#define SHAKE_PEAKS         3
+#define SHAKE_WINDOW_MS     1000
+#define SHAKE_PEAK_GAP_MS   100     /* one jolt is counted once */
+#define SHAKE_COOLDOWN_MS   2000
+
+static void shake_task(void *arg)
+{
+    int64_t peaks[SHAKE_PEAKS] = { 0 };
+    int n = 0;
+    int64_t last_peak = 0, cooldown_until = 0;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(SHAKE_SAMPLE_MS));
+        if (ui_is_awake()) {
+            n = 0;
+            continue;
+        }
+        int x, y, z;
+        if (board_imu_read_accel_mg(&x, &y, &z) != ESP_OK) {
+            continue;
+        }
+        int64_t now = esp_timer_get_time() / 1000;
+        int mag = (int)sqrtf((float)x * x + (float)y * y + (float)z * z);
+        if (abs(mag - 1000) < SHAKE_G_MG || now < cooldown_until || now - last_peak < SHAKE_PEAK_GAP_MS) {
+            continue;
+        }
+        last_peak = now;
+        /* keep the peaks of the last SHAKE_WINDOW_MS */
+        int kept = 0;
+        for (int i = 0; i < n; i++) {
+            if (now - peaks[i] <= SHAKE_WINDOW_MS) {
+                peaks[kept++] = peaks[i];
+            }
+        }
+        n = kept;
+        if (n < SHAKE_PEAKS) {
+            peaks[n++] = now;
+        }
+        if (n >= SHAKE_PEAKS) {
+            ESP_LOGI(TAG, "shake: waking the screen");
+            n = 0;
+            cooldown_until = now + SHAKE_COOLDOWN_MS;
+            ui_wake();
+        }
+    }
+}
+
 /* ---- UI callbacks (LVGL task) ---- */
 
 static void ui_mic_tap(void)
@@ -465,6 +521,9 @@ void app_main(void)
             .on_chat_closed = ui_chat_closed,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
+        if (board_imu_available()) {
+            xTaskCreatePinnedToCore(shake_task, "shake", 3072, NULL, 2, NULL, 1);
+        }
     }
 
     if (board_audio_init() == ESP_OK) {

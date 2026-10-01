@@ -230,12 +230,12 @@ void ui_chat_init(void)
     /* X: same as the notes / reminders screens */
     lv_obj_t *x = lv_button_create(s_scr);
     lv_obj_remove_style_all(x);
-    lv_obj_set_size(x, 56, 56);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -30, 10);     /* same place as on the notes / reminders screens */
+    lv_obj_set_size(x, 72, 72);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -22, 2);      /* same place as on the notes / reminders screens */
     lv_obj_set_style_radius(x, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(PILL_BG), 0);
-    lv_obj_set_style_bg_opa(x, LV_OPA_TRANSP, 0);    /* just the X; the 56 px touch area stays */
-    lv_obj_set_ext_click_area(x, 12);
+    lv_obj_set_style_bg_opa(x, LV_OPA_TRANSP, 0);    /* just the X; the 72 px touch area stays */
+    lv_obj_set_ext_click_area(x, 28);
     lv_obj_add_event_cb(x, close_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *xl = lv_label_create(x);
     lv_obj_set_style_text_font(xl, &buddy_font_28, 0);
@@ -289,6 +289,7 @@ void ui_chat_init(void)
     lv_obj_set_style_text_color(s_mic_lbl, lv_color_white(), 0);
     lv_obj_center(s_mic_lbl);
 
+    lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */
     apply_state_visuals();
 }
 

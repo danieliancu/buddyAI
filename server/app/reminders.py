@@ -1,7 +1,9 @@
 """Reminder delivery: a background loop pushes due reminders to the account's connected watches.
 
 A reminder is marked fired only when at least one watch received it; otherwise it is delivered when a
-watch of that account connects (hello), as long as it is less than DELIVERY_WINDOW old.
+watch of that account connects (hello), as long as it is less than DELIVERY_WINDOW old. A reminder with
+an advance notice (notify_before_min) also fires that many minutes before its start (`early`), as long as
+the start is still ahead.
 """
 
 from __future__ import annotations
@@ -28,9 +30,20 @@ async def deliver_due(hub: "DeviceHub", account_id: int | None = None) -> int:
     """Fire every due, undelivered reminder (optionally for one account). Returns how many were delivered."""
     now = utcnow()
     with session_scope() as db:
-        due = ItemRepo(db).due(now, since=now - DELIVERY_WINDOW, account_id=account_id)
+        repo = ItemRepo(db)
+        early = repo.due_early(now, account_id=account_id)
+        due = repo.due(now, since=now - DELIVERY_WINDOW, account_id=account_id)
     delivered = 0
     accounts: set[int] = set()
+    for it in early:
+        if not await hub.fire_reminder(it, early=True):
+            continue
+        with session_scope() as db:
+            row = db.get(Item, it.id)
+            if row is not None:
+                ItemRepo(db).mark_early_fired(row)
+        delivered += 1
+        accounts.add(it.account_id)
     for it in due:
         if not await hub.fire_reminder(it):
             continue

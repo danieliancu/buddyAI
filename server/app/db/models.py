@@ -246,7 +246,7 @@ class Persona(SQLModel, table=True):
 
 
 class Item(SQLModel, table=True):
-    """A note (text only) or a reminder (due time + short text).
+    """A note (text only) or a reminder (due time, optional end time, short text).
 
     Numbered per (account, kind); a deleted number is reused by the next item.
     """
@@ -259,6 +259,11 @@ class Item(SQLModel, table=True):
     number: int
     text: str = Field(default="", max_length=10000)
     due_at: Optional[datetime] = Field(default=None, index=True)  # reminders only (UTC)
+    end_at: Optional[datetime] = None  # reminders only, optional: end of a time range (UTC, after due_at)
+    notify_before_min: Optional[int] = None  # reminders only, optional: also alert this many minutes before
+    early_fired_at: Optional[datetime] = None  # set once a watch received that advance alert
+    location: Optional[str] = Field(default=None, max_length=120)  # reminders, optional: where
+    participants: Optional[str] = Field(default=None, max_length=200)  # reminders, optional: "Ana, Mihai"
     fired_at: Optional[datetime] = None  # set once a watch received the reminder
     done_at: Optional[datetime] = None  # reminders only: marked completed (it no longer fires or counts as overdue)
     created_at: datetime = Field(default_factory=utcnow)

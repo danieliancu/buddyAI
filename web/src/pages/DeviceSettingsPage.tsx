@@ -352,7 +352,11 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
           {/* ---------------- AI ---------------- */}
           <Card title={<SectionTitle icon={<Bot className="size-4" />}>{customer ? "Voice & language" : "AI"}</SectionTitle>}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Language" error={err("language")} hint={<CaptionsNote lang={selectedLang} fallback="Voice and assistant language" />}>
+              <Field
+                label="Language"
+                error={err("language")}
+                hint={<CaptionsNote lang={selectedLang} auto={draft.language === "auto"} fallback="Voice and assistant language" />}
+              >
                 <LanguagePicker
                   ariaLabel="Language"
                   value={draft.language}
@@ -639,13 +643,27 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function CaptionsNote({ lang, fallback }: { lang: LanguageInfo | null | undefined; fallback: string }) {
+/** What the chosen language means for the watch: the voice, the captions and the watch's own menus. */
+function CaptionsNote({ lang, auto, fallback }: { lang: LanguageInfo | null | undefined; auto?: boolean; fallback: string }) {
   if (lang && !lang.captions) {
     return (
       <span className="inline-flex items-start gap-1 text-warn">
         <Captions className="mt-px size-3.5 shrink-0" />
-        The watch will speak this language but can't display its text.
+        The watch will speak this language but can't display its text. Its menus stay in English.
       </span>
+    );
+  }
+  if (auto) {
+    return <>{fallback}. The watch menus follow the language you last spoke (English if they aren't translated into it).</>;
+  }
+  if (lang) {
+    return (
+      <>
+        {fallback}.{" "}
+        {lang.watch_menus === false
+          ? "The watch menus stay in English (not translated into this language yet)."
+          : `The watch menus and dates are in ${lang.name} too.`}
+      </>
     );
   }
   return <>{fallback}</>;

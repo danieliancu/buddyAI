@@ -364,3 +364,104 @@ def test_web_marks_reminder_done() -> None:
     r = client.put("/api/me/items/reminder/1/done", json={"done": True})
     assert r.status_code == 200 and r.json()["done"] is True and r.json()["overdue"] is False
     assert client.put("/api/me/items/reminder/9/done", json={"done": True}).status_code == 404
+
+
+def test_reminder_time_range() -> None:
+    acc = _account()
+    tools = AssistantTools()
+    tz = "Europe/London"
+    out = tools.execute(
+        acc,
+        tz,
+        "item_create",
+        json.dumps({"kind": "reminder", "text": "Team sync", "due_local": "2030-05-01 09:30", "end_local": "2030-05-01 10:00"}),
+    )
+    body = json.loads(out.result)
+    assert body["ok"] and body["end_local"] == "2030-05-01 10:00"
+    # Moving only the start keeps the length of the range.
+    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "due_local": "2030-05-01 11:00"}))
+    assert json.loads(out.result)["end_local"] == "2030-05-01 11:30"
+    # An end before the start is refused; an empty end_local removes it.
+    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "end_local": "2030-05-01 10:00"}))
+    assert json.loads(out.result)["ok"] is False
+    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "end_local": ""}))
+    assert json.loads(out.result)["end_local"] is None
+    with session_scope() as db:
+        snap = device_snapshot(ItemRepo(db).list(acc), tz)
+    assert snap["reminders"][0]["end_local"] is None and snap["reminders"][0]["due_local"] == "2030-05-01 11:00"
+
+
+def test_web_reminder_end_time() -> None:
+    client, _me = _customer()
+    due = datetime(2030, 5, 1, 9, 30, tzinfo=timezone.utc)
+    body = {"kind": "reminder", "text": "dentist", "due_at": due.isoformat(), "end_at": (due + timedelta(minutes=45)).isoformat()}
+    r = client.post("/api/me/items", json=body)
+    assert r.status_code == 200 and r.json()["end_at"].startswith("2030-05-01T10:15")
+    r = client.put("/api/me/items/reminder/1", json={**body, "end_at": (due - timedelta(minutes=5)).isoformat()})
+    assert r.status_code == 422
+    r = client.put("/api/me/items/reminder/1", json={**body, "end_at": None})
+    assert r.status_code == 200 and r.json()["end_at"] is None
+
+
+def test_reminder_needs_a_time_of_day() -> None:
+    acc = _account()
+    tools = AssistantTools()
+    tz = "Europe/London"
+    for args in ({"kind": "reminder", "text": "dentist"}, {"kind": "reminder", "text": "dentist", "due_local": "2030-05-01"}):
+        body = json.loads(tools.execute(acc, tz, "item_create", json.dumps(args)).result)
+        assert body["ok"] is False and "ask the user" in body["error"].lower()
+    with session_scope() as db:
+        assert ItemRepo(db).list(acc, "reminder") == []
+    assert "never pick a time yourself" in tools.rules(acc)[1]
+
+
+def test_advance_notice_fires_before_and_at_the_start() -> None:
+    acc = _account()
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        repo = ItemRepo(db)
+        repo.create(acc, "reminder", "meeting", due_at=now + timedelta(minutes=10), notify_before_min=15)
+        repo.create(acc, "reminder", "later", due_at=now + timedelta(hours=2), notify_before_min=15)
+    hub = DeviceHub()
+    conn = FakeConn(acc)
+    hub.connections["w1"] = conn
+    assert asyncio.run(deliver_due(hub, acc)) == 1  # "meeting": 15 min before is already here
+    fired = [f for t, f in conn.sent if t == "reminder_fire"]
+    assert len(fired) == 1 and fired[0]["early"] is True and fired[0]["item"]["notify_before"] == 15
+    assert asyncio.run(deliver_due(hub, acc)) == 0  # the advance notice is sent once
+    with session_scope() as db:  # at the start it fires again, as before
+        repo = ItemRepo(db)
+        it = repo.get(acc, "reminder", 1)
+        it.due_at = now - timedelta(seconds=5)
+        db.add(it)
+        db.commit()
+    assert asyncio.run(deliver_due(hub, acc)) == 1
+    assert [f["early"] for t, f in conn.sent if t == "reminder_fire"] == [True, False]
+
+    tools = AssistantTools()
+    out = tools.execute(acc, "Europe/London", "item_update", json.dumps({"kind": "reminder", "number": 2, "notify_before_minutes": 0}))
+    assert json.loads(out.result)["notify_before_minutes"] is None
+
+
+def test_reminder_location_and_participants() -> None:
+    acc = _account()
+    tools = AssistantTools()
+    tz = "Europe/London"
+    args = {
+        "kind": "reminder",
+        "text": "Team sync with Ana and Mihai at Studio Office",
+        "due_local": "2030-05-01 09:30",
+        "location": " Studio  Office ",
+        "participants": ["Ana", " Mihai", ""],
+    }
+    body = json.loads(tools.execute(acc, tz, "item_create", json.dumps(args)).result)
+    assert body["location"] == "Studio Office" and body["participants"] == "Ana, Mihai"
+    with session_scope() as db:
+        snap = device_snapshot(ItemRepo(db).list(acc), tz)
+    assert snap["reminders"][0]["location"] == "Studio Office"
+    # Leaving them out of an update keeps them; empty values remove them.
+    body = json.loads(tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "text": "Team sync"})).result)
+    assert body["participants"] == "Ana, Mihai"
+    upd = {"kind": "reminder", "number": 1, "location": "", "participants": []}
+    body = json.loads(tools.execute(acc, tz, "item_update", json.dumps(upd)).result)
+    assert body["location"] is None and body["participants"] is None

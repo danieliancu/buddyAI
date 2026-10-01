@@ -429,6 +429,13 @@ class ItemTextError(ValueError):
     """Empty text, or longer than the kind allows."""
 
 
+class ItemTimeError(ValueError):
+    """A reminder's end time is not after its start, or its advance notice is out of range."""
+
+
+_KEEP: Any = object()  # ItemRepo.update: leave the end time as it is
+
+
 class ItemRepo:
     """Notes and reminders. Numbers are per (account, kind); a new item takes the lowest free number."""
 
@@ -472,8 +479,51 @@ class ItemRepo:
             raise ItemTextError(f"{kind} text is {len(text)} characters; the limit is {cls.TEXT_MAX[kind]}")
         return text
 
-    def create(self, account_id: int, kind: str, text: str, due_at: datetime | None = None) -> Item:
+    @staticmethod
+    def check_end(due_at: datetime | None, end_at: datetime | None) -> datetime | None:
+        if end_at is not None and (due_at is None or end_at <= due_at):
+            raise ItemTimeError("the end time must be after the start time")
+        return end_at
+
+    NOTIFY_MAX_MIN = 7 * 24 * 60
+
+    @classmethod
+    def check_notify(cls, minutes: int | None) -> int | None:
+        """Advance notice in minutes; 0 / None = none."""
+        if not minutes:
+            return None
+        if not 1 <= minutes <= cls.NOTIFY_MAX_MIN:
+            raise ItemTimeError(f"the advance notice must be 1..{cls.NOTIFY_MAX_MIN} minutes")
+        return minutes
+
+    EXTRA_MAX = {"location": 120, "participants": 200}
+
+    @classmethod
+    def check_extra(cls, field: str, value: str | None) -> str | None:
+        """Location / participants: trimmed, "" -> None, length-checked."""
+        value = " ".join((value or "").split())
+        if not value:
+            return None
+        if len(value) > cls.EXTRA_MAX[field]:
+            raise ItemTextError(f"{field} is {len(value)} characters; the limit is {cls.EXTRA_MAX[field]}")
+        return value
+
+    def create(
+        self,
+        account_id: int,
+        kind: str,
+        text: str,
+        due_at: datetime | None = None,
+        end_at: datetime | None = None,
+        notify_before_min: int | None = None,
+        location: str | None = None,
+        participants: str | None = None,
+    ) -> Item:
         text = self.check_text(kind, text)
+        end_at = self.check_end(due_at, end_at) if kind == "reminder" else None
+        notify_before_min = self.check_notify(notify_before_min) if kind == "reminder" else None
+        location = self.check_extra("location", location) if kind == "reminder" else None
+        participants = self.check_extra("participants", participants) if kind == "reminder" else None
         for attempt in range(2):
             it = Item(
                 account_id=account_id,
@@ -481,6 +531,10 @@ class ItemRepo:
                 number=self.next_number(account_id, kind),
                 text=text,
                 due_at=due_at if kind == "reminder" else None,
+                end_at=end_at,
+                notify_before_min=notify_before_min,
+                location=location,
+                participants=participants,
             )
             self.s.add(it)
             try:
@@ -495,13 +549,38 @@ class ItemRepo:
         raise RuntimeError("unreachable")
 
     def update(
-        self, it: Item, text: str | None = None, due_at: datetime | None = None, done: bool | None = None
+        self,
+        it: Item,
+        text: str | None = None,
+        due_at: datetime | None = None,
+        done: bool | None = None,
+        end_at: datetime | None = _KEEP,
+        notify_before_min: int | None = _KEEP,
+        location: str | None = _KEEP,
+        participants: str | None = _KEEP,
     ) -> Item:
+        """`end_at`: a new end time, None to remove it, or leave it out to keep the range's length when
+        only the start moves."""
         if text is not None:
             it.text = self.check_text(it.kind, text)
+        if it.kind == "reminder":
+            new_due = due_at if due_at is not None else it.due_at
+            if end_at is _KEEP:
+                end_at = it.end_at + (new_due - it.due_at) if it.end_at and it.due_at and new_due else it.end_at
+            it.end_at = self.check_end(new_due, end_at)
+            if notify_before_min is not _KEEP:
+                notify = self.check_notify(notify_before_min)
+                if notify != it.notify_before_min:
+                    it.notify_before_min = notify
+                    it.early_fired_at = None  # a new advance notice is delivered again
+            if location is not _KEEP:
+                it.location = self.check_extra("location", location)
+            if participants is not _KEEP:
+                it.participants = self.check_extra("participants", participants)
         if it.kind == "reminder" and due_at is not None and due_at != it.due_at:
             it.due_at = due_at
             it.fired_at = None  # a rescheduled reminder fires again
+            it.early_fired_at = None  # ...its advance notice too
             it.done_at = None  # ...and is open again
         if it.kind == "reminder" and done is not None:
             it.done_at = (it.done_at or utcnow()) if done else None
@@ -530,6 +609,32 @@ class ItemRepo:
             q = q.where(Item.account_id == account_id)
         return [self._fix(it) for it in self.s.exec(q.order_by(Item.due_at)).all()]
 
+    def due_early(self, now: datetime, account_id: int | None = None) -> list[Item]:
+        """Reminders whose advance notice is due: notice time reached, start still ahead, not yet
+        delivered, not completed."""
+        q = select(Item).where(
+            Item.kind == "reminder",
+            col(Item.notify_before_min).is_not(None),
+            col(Item.due_at).is_not(None),
+            Item.due_at > now,
+            Item.due_at <= now + timedelta(minutes=self.NOTIFY_MAX_MIN),
+            col(Item.early_fired_at).is_(None),
+            col(Item.done_at).is_(None),
+        )
+        if account_id is not None:
+            q = q.where(Item.account_id == account_id)
+        out = []
+        for it in self.s.exec(q.order_by(Item.due_at)).all():
+            self._fix(it)
+            if it.due_at - timedelta(minutes=it.notify_before_min or 0) <= now:
+                out.append(it)
+        return out
+
+    def mark_early_fired(self, it: Item) -> None:
+        it.early_fired_at = utcnow()
+        self.s.add(it)
+        self.s.commit()
+
     def mark_fired(self, it: Item) -> None:
         it.fired_at = utcnow()
         self.s.add(it)
@@ -538,6 +643,8 @@ class ItemRepo:
     @staticmethod
     def _fix(it: Item) -> Item:
         it.due_at = _aware(it.due_at)
+        it.end_at = _aware(it.end_at)
+        it.early_fired_at = _aware(it.early_fired_at)
         it.fired_at = _aware(it.fired_at)
         it.done_at = _aware(it.done_at)
         it.created_at = _aware(it.created_at)

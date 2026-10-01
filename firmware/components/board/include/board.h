@@ -48,6 +48,10 @@ void      board_power_off(void);
 bool      board_boot_button_down(void);
 
 /* ---- RTC (PCF85063, stores UTC) ---- */
+/* Accelerometer (QMI8658), in milli-g. Unavailable -> ESP_ERR_INVALID_STATE. */
+bool      board_imu_available(void);
+esp_err_t board_imu_read_accel_mg(int *x, int *y, int *z);
+
 esp_err_t board_rtc_read(struct tm *utc);
 esp_err_t board_rtc_write(const struct tm *utc);
 /* Set the system clock from the RTC if the RTC holds a valid time. */

@@ -184,10 +184,11 @@ class DeviceHub:
         """Tell the account's open web pages to reload notes/reminders."""
         self.publish({"type": "items_changed", "account_id": account_id})
 
-    async def fire_reminder(self, item: Item) -> bool:
+    async def fire_reminder(self, item: Item, early: bool = False) -> bool:
+        """`early`: the advance notice (notify_before_min before the start), not the alert at the start."""
         delivered = False
         for c in self.account_connections(item.account_id):
-            if await c.send_json("reminder_fire", item=device_full(item, c.settings.timezone)):
+            if await c.send_json("reminder_fire", item=device_full(item, c.settings.timezone), early=early):
                 delivered = True
         return delivered
 

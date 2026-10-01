@@ -36,6 +36,7 @@ from app.db.repositories import (
     ItemLimitError,
     ItemRepo,
     ItemTextError,
+    ItemTimeError,
     PersonaRepo,
 )
 from app.db.session import get_session, session_scope
@@ -372,6 +373,17 @@ def _utc_due(body: ItemBody) -> datetime | None:
     return due.astimezone(timezone.utc)
 
 
+def _utc_end(body: ItemBody) -> datetime | None:
+    if body.kind != "reminder" or body.end_at is None:
+        return None
+    end = body.end_at if body.end_at.tzinfo else body.end_at.replace(tzinfo=timezone.utc)
+    return end.astimezone(timezone.utc)
+
+
+def _time_error(exc: ItemTimeError) -> HTTPException:
+    return HTTPException(422, [{"loc": ["end_at"], "msg": str(exc), "type": "value_error"}])
+
+
 def _own_item(db: Session, acc: Account, kind: str, number: int):
     it = ItemRepo(db).get(acc.id, kind, number) if kind in ItemRepo.KINDS else None
     if it is None:
@@ -395,7 +407,18 @@ async def create_item(
     body: ItemBody, request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)
 ) -> dict:
     try:
-        it = ItemRepo(db).create(acc.id, body.kind, body.text, _utc_due(body))
+        it = ItemRepo(db).create(
+            acc.id,
+            body.kind,
+            body.text,
+            _utc_due(body),
+            _utc_end(body),
+            body.notify_before_min,
+            location=body.location,
+            participants=body.participants,
+        )
+    except ItemTimeError as exc:
+        raise _time_error(exc) from None
     except ItemLimitError:
         raise HTTPException(409, f"you can keep at most {ItemRepo.MAX_PER_KIND} of these; delete some first") from None
     except ItemTextError as exc:
@@ -417,7 +440,17 @@ async def update_item(
     it = _own_item(db, acc, kind, number)
     body.kind = it.kind  # the kind of an item never changes
     try:
-        it = ItemRepo(db).update(it, text=body.text, due_at=_utc_due(body))
+        it = ItemRepo(db).update(
+            it,
+            text=body.text,
+            due_at=_utc_due(body),
+            end_at=_utc_end(body),
+            notify_before_min=body.notify_before_min,
+            location=body.location,
+            participants=body.participants,
+        )
+    except ItemTimeError as exc:
+        raise _time_error(exc) from None
     except ItemTextError as exc:
         raise HTTPException(422, [{"loc": ["text"], "msg": str(exc), "type": "value_error"}]) from None
     out = web_view(it)

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CalendarClock, Check, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, CalendarClock, Check, MapPin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
-import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Spinner, Textarea, useAsync } from "../../components/ui";
+import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
 import { useLive } from "../../live";
 
@@ -153,7 +153,15 @@ export function MyRemindersPage() {
             >
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <CalendarClock className="size-4 text-muted" />
-                <span className={r.done ? "font-medium text-muted" : "font-medium"}>{fmtDateTime(r.due_at)}</span>
+                <span className={r.done ? "font-medium text-muted" : "font-medium"}>
+                  {fmtDateTime(r.due_at)}
+                  {r.end_at && ` – ${toLocalInput(r.end_at).slice(11)}`}
+                </span>
+                {r.notify_before_min ? (
+                  <span className="inline-flex items-center gap-1 text-muted" title="Advance notice">
+                    <Bell className="size-3.5" /> {fmtNotice(r.notify_before_min)} before
+                  </span>
+                ) : null}
                 {r.done ? (
                   <Badge tone="ok">
                     <CircleCheck className="size-3" /> Completed
@@ -167,6 +175,20 @@ export function MyRemindersPage() {
                 )}
               </div>
               <p className={r.done ? "mt-1 text-sm text-muted line-through" : "mt-1 text-sm"}>{r.text}</p>
+              {(r.location || r.participants) && (
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+                  {r.location && (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="size-3.5" /> {r.location}
+                    </span>
+                  )}
+                  {r.participants && (
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="size-3.5" /> {r.participants}
+                    </span>
+                  )}
+                </div>
+              )}
             </ItemCard>
           ))}
         </ul>
@@ -175,6 +197,15 @@ export function MyRemindersPage() {
       <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={q.reload} />
     </ItemsLayout>
   );
+}
+
+/** Advance notice choices (minutes); the assistant can set other values. */
+const NOTICE_CHOICES = [5, 10, 15, 30, 60, 120, 1440];
+
+function fmtNotice(min: number): string {
+  if (min % 1440 === 0) return `${min / 1440} day${min === 1440 ? "" : "s"}`;
+  if (min % 60 === 0) return `${min / 60} h`;
+  return min > 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
 }
 
 /** <input type="datetime-local"> value for a UTC ISO string, in the browser's time zone. */
@@ -188,19 +219,37 @@ function toLocalInput(iso: string | null): string {
 function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: () => void; onSaved: () => void }) {
   const [text, setText] = useState("");
   const [due, setDue] = useState("");
+  const [end, setEnd] = useState(""); // "HH:MM" on the same day, optional
+  const [notice, setNotice] = useState(0); // minutes before; 0 = none
+  const [location, setLocation] = useState("");
+  const [participants, setParticipants] = useState("");
   const form = useSave(editing, onClose, onSaved);
 
   useEffect(() => {
     if (!editing) return;
     setText(editing === "new" ? "" : editing.text);
     setDue(editing === "new" ? "" : toLocalInput(editing.due_at));
+    setEnd(editing === "new" ? "" : toLocalInput(editing.end_at).slice(11));
+    setNotice(editing === "new" ? 0 : editing.notify_before_min ?? 0);
+    setLocation(editing === "new" ? "" : editing.location ?? "");
+    setParticipants(editing === "new" ? "" : editing.participants ?? "");
   }, [editing]);
 
   const body = () => {
     if (!due) return "Choose when to be reminded.";
     if (!text.trim()) return "Write what to be reminded of.";
     // datetime-local is the browser's local time; new Date() reads it as local, toISOString gives UTC.
-    return { kind: "reminder" as const, text: text.trim(), due_at: new Date(due).toISOString() };
+    const endAt = end ? `${due.slice(0, 10)}T${end}` : null;
+    if (endAt && endAt <= due) return "The end time must be after the start time.";
+    return {
+      kind: "reminder" as const,
+      text: text.trim(),
+      due_at: new Date(due).toISOString(),
+      end_at: endAt ? new Date(endAt).toISOString() : null,
+      notify_before_min: notice || null,
+      location: location.trim() || null,
+      participants: participants.trim() || null,
+    };
   };
 
   return (
@@ -213,6 +262,27 @@ function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClo
       <form id="reminder-form" className="space-y-4" onSubmit={(e) => form.submit(e, body())}>
         <Field label="When" htmlFor="rdue">
           <Input id="rdue" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+        </Field>
+        <Field label="Until (optional)" htmlFor="rend" hint="For a time range, e.g. 09:30 – 10:00">
+          <Input id="rend" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+        </Field>
+        <Field label="Location (optional)" htmlFor="rloc">
+          <Input id="rloc" maxLength={120} value={location} onChange={(e) => setLocation(e.target.value)} />
+        </Field>
+        <Field label="Participants (optional)" htmlFor="rpeople" hint="Names, separated by commas">
+          <Input id="rpeople" maxLength={200} value={participants} onChange={(e) => setParticipants(e.target.value)} />
+        </Field>
+        <Field label="Notify in advance" htmlFor="rnotice" hint="An extra alert before the start; the watch also alerts at the start.">
+          <Select id="rnotice" value={notice} onChange={(e) => setNotice(Number(e.target.value))}>
+            <option value={0}>No</option>
+            {[...new Set([...NOTICE_CHOICES, notice].filter(Boolean))]
+              .sort((a, b) => a - b)
+              .map((m) => (
+                <option key={m} value={m}>
+                  {fmtNotice(m)} before
+                </option>
+              ))}
+          </Select>
         </Field>
         <Field label="Text" htmlFor="rtext" hint={`${text.length}/${REMINDER_MAX}`}>
           <Textarea id="rtext" rows={3} className="min-h-0!" maxLength={REMINDER_MAX} value={text} onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, " "))} />
@@ -311,7 +381,15 @@ function DialogButtons({ onClose, busy, formId }: { onClose: () => void; busy: b
   );
 }
 
-type ItemBody = { kind: ItemKind; text: string; due_at: string | null };
+type ItemBody = {
+  kind: ItemKind;
+  text: string;
+  due_at: string | null;
+  end_at?: string | null;
+  notify_before_min?: number | null;
+  location?: string | null;
+  participants?: string | null;
+};
 
 /** Create or update; `body` is a string when the form is invalid (shown as the error). */
 function useSave(editing: Editing, onClose: () => void, onSaved: () => void) {

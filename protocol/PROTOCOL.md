@@ -72,7 +72,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
-| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
+| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
 | `items_open` | `kind` | Open the notes or reminders list (the user asked to see them). Sent after `turn_end`. |
 | `item_show` | `item: {kind, number, text, due_local?, overdue?, done?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
@@ -81,8 +81,8 @@ Message-specific fields sit at the top level next to the envelope fields.
 ### 3.3 Notes and reminders
 
 Notes and reminders are separate lists that belong to the account, so every watch of the account gets
-the same lists. A note is text only (up to 10000 characters); a reminder has a due time and a short text
-(up to 80 characters). A reminder whose time has passed is `overdue` until it is completed, deleted or
+the same lists. A note is text only (up to 10000 characters); a reminder has a due time, an optional end time
+(`end_local`, for a range such as 09:30–10:00, otherwise null) and a short text (up to 80 characters). A reminder whose time has passed is `overdue` until it is completed, deleted or
 rescheduled. A completed reminder (`done: true`) is listed after the open ones, never fires and is not
 `overdue`; rescheduling it opens it again. Numbers are per kind (note #1 and reminder #1 can both exist); a new item
 takes the lowest free number, so after deleting #1 from #1, #2, #3 the next item is #1 again.

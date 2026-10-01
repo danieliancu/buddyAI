@@ -19,6 +19,7 @@ static const char *TAG = "board";
 static i2c_master_bus_handle_t s_i2c_bus;
 static i2c_master_dev_handle_t s_pmu;
 static i2c_master_dev_handle_t s_rtc;
+static i2c_master_dev_handle_t s_imu;
 
 #define I2C_TIMEOUT_MS  50
 
@@ -279,6 +280,58 @@ bool board_rtc_restore_system_time(void)
 
 /* ------------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------------------- */
+/* IMU (QMI8658): accelerometer only, polled (its interrupt pins' routing is   */
+/* not confirmed on this board)                                               */
+/* ------------------------------------------------------------------------- */
+
+#define QMI_WHO_AM_I    0x00    /* reads 0x05 */
+#define QMI_CTRL1       0x02    /* b6: register address auto-increment */
+#define QMI_CTRL2       0x03    /* accel: b6..4 full scale, b3..0 output data rate */
+#define QMI_CTRL7       0x08    /* b0: accelerometer enable */
+#define QMI_AX_L        0x35    /* AX, AY, AZ: int16 little endian */
+#define QMI_RESET       0x60
+#define QMI_ACC_4G_125HZ 0x16   /* +-4 g (8192 LSB/g), ~125 Hz */
+#define QMI_LSB_PER_G   8192
+
+static esp_err_t imu_init(void)
+{
+    ESP_RETURN_ON_ERROR(add_device(BOARD_I2C_ADDR_QMI8658, &s_imu), TAG, "imu dev");
+    uint8_t id = 0;
+    ESP_RETURN_ON_ERROR(reg_read(s_imu, QMI_WHO_AM_I, &id, 1), TAG, "QMI8658 not responding");
+    if (id != 0x05) {
+        ESP_LOGW(TAG, "QMI8658 WHO_AM_I = 0x%02x (expected 0x05)", id);
+    }
+    reg_write8(s_imu, QMI_RESET, 0xB0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL1, 0x40), TAG, "imu ctrl1");
+    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL2, QMI_ACC_4G_125HZ), TAG, "imu ctrl2");
+    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x01), TAG, "imu ctrl7");
+    return ESP_OK;
+}
+
+esp_err_t board_imu_read_accel_mg(int *x, int *y, int *z)
+{
+    if (!s_imu) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t d[6];
+    ESP_RETURN_ON_ERROR(reg_read(s_imu, QMI_AX_L, d, sizeof(d)), TAG, "imu read");
+    int16_t raw[3];
+    for (int i = 0; i < 3; i++) {
+        raw[i] = (int16_t)((uint16_t)d[2 * i] | ((uint16_t)d[2 * i + 1] << 8));
+    }
+    *x = raw[0] * 1000 / QMI_LSB_PER_G;
+    *y = raw[1] * 1000 / QMI_LSB_PER_G;
+    *z = raw[2] * 1000 / QMI_LSB_PER_G;
+    return ESP_OK;
+}
+
+bool board_imu_available(void)
+{
+    return s_imu != NULL;
+}
+
 esp_err_t board_init(void)
 {
     i2c_master_bus_config_t bus_cfg = {
@@ -296,6 +349,10 @@ esp_err_t board_init(void)
     }
     if (rtc_init() != ESP_OK) {
         ESP_LOGE(TAG, "RTC init failed");
+    }
+    if (imu_init() != ESP_OK) {
+        ESP_LOGE(TAG, "IMU init failed - shake to wake unavailable");
+        s_imu = NULL;
     }
 
     /* BOOT button (GPIO0, active low, external pull-up on the board). Only
