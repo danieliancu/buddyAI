@@ -282,7 +282,7 @@ TOOLS_RULE = (
     "yourself). Use the tools whenever the user asks to note, remember, remind, see, "
     "change or delete something. When they want to see their notes or reminders, call item_list with "
     "show_on_watch=true; while you only look things up or ask for confirmation, leave show_on_watch false "
-    "(after a create, change or delete the watch opens that list by itself). Never say something was saved, changed or deleted unless the tool reported success. "
+    "(after a create or change the watch opens that item by itself; after a delete it opens the list). Never say something was saved, changed or deleted unless the tool reported success. "
     "Say the number of a new item. A reminder always needs a time of day: if the user did not say one (only "
     "a day, or nothing), do not create it yet - ask what time, and keep asking until you have at least a start "
     "time; never pick a time yourself. If they give an end time or a range ('from 9:30 to 10', 'between 3 "
@@ -381,7 +381,7 @@ class AssistantTools:
                     location=str(a.get("location") or "") if kind == "reminder" else None,
                     participants=_names(a.get("participants")) if kind == "reminder" else None,
                 )
-                return ToolOutcome(_ok(it, tz), changed=True, open={"list": kind})
+                return ToolOutcome(_ok(it, tz), changed=True, open={"item": device_full(it, tz)})
             number = int(a.get("number"))
             it = repo.get(account_id, kind, number)
             if it is None:
@@ -390,21 +390,11 @@ class AssistantTools:
                 show = {"item": device_full(it, tz)} if a.get("show_on_watch") is True else None
                 return ToolOutcome(_ok(it, tz, full=True), open=show)
             if name == "item_update":
-                due = parse_local_time(a["due_local"], tz, "due_local") if a.get("due_local") and kind == "reminder" else None
-                done = a.get("done") if isinstance(a.get("done"), bool) else None
-                extra: dict[str, Any] = {}
-                if kind == "reminder" and "end_local" in a:  # "" or null removes the end time
-                    extra["end_at"] = parse_local_time(a["end_local"], tz, "end_local") if a["end_local"] else None
-                if kind == "reminder" and "notify_before_minutes" in a:  # 0 or null removes it
-                    extra["notify_before_min"] = int(a["notify_before_minutes"] or 0) or None
-                if kind == "reminder" and "location" in a:  # "" or null removes it
-                    extra["location"] = str(a["location"] or "")
-                if kind == "reminder" and "participants" in a:  # [] or null removes them
-                    extra["participants"] = _names(a["participants"])
-                it = repo.update(
-                    it, text=str(a["text"]) if a.get("text") else None, due_at=due, done=done, **extra
-                )
-                return ToolOutcome(_ok(it, tz), changed=True, open={"list": kind})
+                if kind == "reminder":
+                    it = repo.update(it, **reminder_update_kwargs(a, tz))
+                else:
+                    it = repo.update(it, text=str(a["text"]) if a.get("text") else None)
+                return ToolOutcome(_ok(it, tz), changed=True, open={"item": device_full(it, tz)})
             if name == "item_delete":
                 repo.delete(it)
                 return ToolOutcome(
@@ -429,6 +419,27 @@ def _ok(it: Item, tz: str, full: bool = False) -> str:
     else:
         body["text" if full else "preview"] = it.text if full else preview(it.text)
     return json.dumps(body, ensure_ascii=False)
+
+
+def reminder_update_kwargs(a: dict[str, Any], tz: str) -> dict[str, Any]:
+    """The reminder fields of an update ("" / 0 / [] / null remove an optional one) -> ItemRepo.update
+    arguments. Fields left out stay as they are."""
+    kw: dict[str, Any] = {}
+    if a.get("text"):
+        kw["text"] = str(a["text"])
+    if a.get("due_local"):
+        kw["due_at"] = parse_local_time(a["due_local"], tz, "due_local")
+    if isinstance(a.get("done"), bool):
+        kw["done"] = a["done"]
+    if "end_local" in a:
+        kw["end_at"] = parse_local_time(a["end_local"], tz, "end_local") if a["end_local"] else None
+    if "notify_before_minutes" in a:
+        kw["notify_before_min"] = int(a["notify_before_minutes"] or 0) or None
+    if "location" in a:
+        kw["location"] = str(a["location"] or "")
+    if "participants" in a:
+        kw["participants"] = _names(a["participants"])
+    return kw
 
 
 def _names(value: Any) -> str:

@@ -114,6 +114,7 @@ def test_tools_create_show_update_delete() -> None:
     )
     body = json.loads(out.result)
     assert body["ok"] and body["due_local"] == "2030-05-01 09:30"
+    assert out.open["item"]["kind"] == "reminder" and out.open["item"]["number"] == 1  # the new item opens
     with session_scope() as db:
         it = ItemRepo(db).get(acc, "reminder", 1)
         assert it.due_at == datetime(2030, 5, 1, 6, 30, tzinfo=timezone.utc)  # EEST = UTC+3
@@ -125,7 +126,7 @@ def test_tools_create_show_update_delete() -> None:
 
     out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "due_local": "2030-05-01 10:00"}))
     assert json.loads(out.result)["due_local"] == "2030-05-01 10:00"
-    assert out.open == {"list": "reminder"}  # after a real change the watch opens that list
+    assert out.open["item"]["number"] == 1 and out.open["item"]["due_local"] == "2030-05-01 10:00"
 
     out = tools.execute(acc, tz, "item_list", json.dumps({"kind": "note"}))
     assert json.loads(out.result)["items"] == [{"number": 1, "preview": "Cumpără lapte"}]
@@ -137,7 +138,8 @@ def test_tools_create_show_update_delete() -> None:
     long_rem = {"kind": "reminder", "text": "y" * 81, "due_local": "2030-05-01 09:30"}
     assert "limit" in json.loads(tools.execute(acc, tz, "item_create", json.dumps(long_rem)).result)["error"]
 
-    assert json.loads(tools.execute(acc, tz, "item_delete", json.dumps({"kind": "note", "number": 1})).result)["ok"]
+    out = tools.execute(acc, tz, "item_delete", json.dumps({"kind": "note", "number": 1}))
+    assert json.loads(out.result)["ok"] and out.open == {"list": "note"}  # deleted: back to the list
     missing = json.loads(tools.execute(acc, tz, "item_show", json.dumps({"kind": "note", "number": 1})).result)
     assert missing["ok"] is False
     assert json.loads(tools.execute(acc, tz, "item_create", json.dumps({"kind": "reminder", "text": "x"})).result)["ok"] is False

@@ -69,7 +69,7 @@ typedef enum {
     MSG_ITEM_OPEN,          /* a = number, b = 1 for a reminder */
     MSG_ITEM_DELETE,        /* a = number, b = 1 for a reminder */
     MSG_ITEM_DONE,          /* a = reminder number, b = 1 completed / 0 open again */
-    MSG_NOTE_SESSION,       /* a = note number, b = 1 open / 0 close */
+    MSG_NOTE_SESSION,       /* a = item number, b = 1 open / 0 close, | 2 = a reminder */
     MSG_ITEM_PIN,           /* a = note number, b = 1 pinned / 0 not */
 } msg_type_t;
 
@@ -136,8 +136,9 @@ static int64_t          s_turn_deadline_ms;
 /* Note edit mode (proto task only) */
 #define NOTE_IDLE_CLOSE_MS  120000      /* mic closes after 2 min without speech */
 #define NOTE_TURN_LIMIT_MS  70000       /* server: 30 s waiting + 30 s sentence */
-static bool             s_note_open;        /* the note screen's mic is open */
+static bool             s_note_open;        /* the note (or reminder) screen's edit mic is open */
 static int              s_note_number;
+static bool             s_note_reminder;    /* the edit mic is on a reminder, not a note */
 static bool             s_turn_note;        /* the active turn is a note-mode turn */
 static int64_t          s_note_activity_ms; /* last speech heard (transcript) */
 
@@ -436,12 +437,13 @@ static void start_turn(void)
 
     uint32_t turn = s_active_turn;
     s_turn_note = s_note_open;
-    ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn, s_turn_note ? " (note)" : "");
+    ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
+             s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "language", st.language);
     if (s_turn_note) {
-        cJSON_AddStringToObject(m, "mode", "note");
-        cJSON_AddNumberToObject(m, "note", s_note_number);
+        cJSON_AddStringToObject(m, "mode", s_note_reminder ? "reminder" : "note");
+        cJSON_AddNumberToObject(m, s_note_reminder ? "reminder" : "note", s_note_number);
     }
     send_json(m, "listen_start", true, turn);
 
@@ -468,7 +470,7 @@ static void note_close(bool keep)
     emit(PROTO_EVT_NOTE_SESSION, 0, NULL);
 }
 
-static void note_open(int number)
+static void note_open(int number, bool reminder)
 {
     if (s_conn != CONN_SESSION) {
         emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
@@ -481,6 +483,7 @@ static void note_open(int number)
     }
     s_note_open = true;
     s_note_number = number;
+    s_note_reminder = reminder;
     s_note_activity_ms = now_ms();
     emit(PROTO_EVT_NOTE_SESSION, 1, NULL);
     start_turn();
@@ -1115,8 +1118,12 @@ static void start_cycle(void)
 static void session_lost(void)
 {
     bool had_session = (s_conn == CONN_SESSION);
+    bool mid_turn = (s_conv != PROTO_CONV_IDLE);
     local_stop_turn();
     set_conv(PROTO_CONV_IDLE);
+    if (mid_turn) {
+        emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
+    }
     s_session_id[0] = '\0';
     s_seq_out = 0;
     if (had_session) {
@@ -1218,8 +1225,8 @@ static void handle_msg(msg_t *m)
         handle_tap();
         break;
     case MSG_NOTE_SESSION:
-        if (m->b) {
-            note_open((int)m->a);
+        if (m->b & 1) {
+            note_open((int)m->a, (m->b & 2) != 0);
         } else {
             note_close(true);
         }
@@ -1333,6 +1340,7 @@ static void handle_timers(void)
                 ESP_LOGW(TAG, "turn %lu timed out in state %d", (unsigned long)s_active_turn, s_conv);
                 abort_turn("timeout");
                 set_conv(PROTO_CONV_IDLE);
+                emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* no answer in time: "try again later" */
             }
         }
         break;
@@ -1427,6 +1435,12 @@ void proto_item_delete(bool reminder, int number)
 void proto_note_session(bool open, int number)
 {
     msg_t m = { .type = MSG_NOTE_SESSION, .a = (uint32_t)number, .b = open ? 1 : 0 };
+    post(&m);
+}
+
+void proto_reminder_session(bool open, int number)
+{
+    msg_t m = { .type = MSG_NOTE_SESSION, .a = (uint32_t)number, .b = (open ? 1 : 0) | 2 };
     post(&m);
 }
 

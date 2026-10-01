@@ -67,6 +67,8 @@ typedef struct {
     void (*on_chat_closed)(void);
     /* note screen: open / close the note's edit mic; pin a note */
     void (*on_note_session)(bool open, int number);
+    /* reminder screen: open / close the reminder's edit mic */
+    void (*on_reminder_session)(bool open, int number);
     void (*on_item_pin)(int number, bool pinned);
 } ui_callbacks_t;
 

@@ -148,6 +148,7 @@ typedef enum {
     STR_STARTS_IN_FMT,  /* "Starts in %s" (advance alert) */
     STR_NOTE_EMPTY,
     STR_NOTE_HELP,      /* note mic open: how to dictate / edit */
+    STR_REMINDER_HELP,  /* reminder mic open: how to change it */
     STR__COUNT,
 } ui_str_t;
 

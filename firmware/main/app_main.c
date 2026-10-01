@@ -368,6 +368,11 @@ static void ui_note_session_cb(bool open, int number)
     proto_note_session(open, number);
 }
 
+static void ui_reminder_session_cb(bool open, int number)
+{
+    proto_reminder_session(open, number);
+}
+
 static void ui_item_pin(int number, bool pinned)
 {
     proto_item_pin(number, pinned);
@@ -544,6 +549,7 @@ void app_main(void)
             .on_item_done = ui_item_done,
             .on_chat_closed = ui_chat_closed,
             .on_note_session = ui_note_session_cb,
+            .on_reminder_session = ui_reminder_session_cb,
             .on_item_pin = ui_item_pin,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));

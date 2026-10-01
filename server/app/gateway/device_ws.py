@@ -30,6 +30,7 @@ from app.reminders import deliver_due
 from app.security import hash_device_token, is_valid_pairing_code
 
 log = logging.getLogger(__name__)
+TRY_LATER = "Ola can't answer right now. Please try again a little later."
 router = APIRouter()
 
 MAX_RECENT_TURNS = 8
@@ -243,15 +244,19 @@ class DeviceConnection:
         if not isinstance(turn_id, int) or turn_id <= self.last_turn_id:
             await self.send_json("error", code="bad_request", message="turn_id must increase", turn_id=turn_id)
             return
-        note_mode = msg.get("mode") == "note"
-        note_number = msg.get("note")
+        # Edit modes: "note" (+ "note": n) or "reminder" (+ "reminder": n) - one item, edited by voice.
+        edit_kind = msg.get("mode") if msg.get("mode") in ("note", "reminder") else None
+        note_mode = edit_kind is not None
+        note_number = msg.get(edit_kind) if edit_kind else None
         if note_mode:
             ok = self.account_id is not None and isinstance(note_number, int)
             if ok:
                 with session_scope() as db:
-                    ok = ItemRepo(db).get(self.account_id, "note", note_number) is not None
+                    ok = ItemRepo(db).get(self.account_id, edit_kind, note_number) is not None
             if not ok:
-                await self.send_json("error", turn_id, code="bad_request", message="note mode needs an existing note")
+                await self.send_json(
+                    "error", turn_id, code="bad_request", message=f"{edit_kind} mode needs an existing {edit_kind}"
+                )
                 await self.send_json("turn_end", turn_id, status="error")
                 self.last_turn_id = turn_id
                 return
@@ -280,7 +285,7 @@ class DeviceConnection:
         )
         if note_mode:
             # Stored only if something was said (_finish_turn), and outside the chat history.
-            turn.mode, turn.note_number = "note", note_number
+            turn.mode, turn.note_number = edit_kind, note_number
         else:
             with session_scope() as db:
                 conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
@@ -361,7 +366,11 @@ class DeviceConnection:
         if turn.language != languages.AUTO and turn.user_text:
             self.last_language = turn.language
         if result.error_code and live:
-            await self.send_json("error", turn.turn_id, code=result.error_code, message=result.error_message or "")
+            # Provider/internal failures (e.g. no provider credit, timeouts) never reach the user with
+            # their reason: the details stay in the log and the turn record.
+            hidden = result.error_code == "internal" or result.error_code.endswith("_failed")
+            message = TRY_LATER if hidden else result.error_message or ""
+            await self.send_json("error", turn.turn_id, code=result.error_code, message=message)
         if live:
             await self.send(turn, "state", state="idle")
         # turn_end is bookkeeping: always sent (the watch accepts it even for old turns).
@@ -379,8 +388,8 @@ class DeviceConnection:
                 await self.send_json("items_open", kind=turn.pending_open["list"])
             else:
                 await self.send_json("item_show", item=turn.pending_open["item"])
-        if turn.mode == "note" and turn.db_id is None and result.status != "no_speech" and turn.usage:
-            with session_scope() as db:  # note turns: stored only when something was said
+        if turn.mode in ("note", "reminder") and turn.db_id is None and result.status != "no_speech" and turn.usage:
+            with session_scope() as db:  # edit-mode turns: stored only when something was said
                 row = TurnRepo(db).create(
                     device_id=self.device_id,
                     account_id=turn.account_id,

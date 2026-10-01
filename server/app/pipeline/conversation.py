@@ -22,7 +22,7 @@ from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
 from app.db.repositories import ItemRepo, ItemTextError
 from app.items import AssistantTools, device_full
-from app import notes_edit
+from app import notes_edit, reminder_edit
 from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
@@ -129,6 +129,8 @@ class ConversationPipeline:
         await io.send(turn, "state", state="thinking")
         if turn.mode == "note":
             await self._note_reply(turn, io)
+        elif turn.mode == "reminder":
+            await self._reminder_reply(turn, io)
         else:
             await self._reply(turn, io)
         return TurnResult("completed")
@@ -142,7 +144,7 @@ class ConversationPipeline:
         async def on_partial(text: str) -> None:
             await io.send(turn, "stt_result", text=text, final=False)
 
-        note = turn.mode == "note"
+        note = turn.mode in ("note", "reminder")  # edit modes: one short sentence per turn
         detector = EndpointDetector(
             self.vad_factory(),
             sensitivity=s.vad_sensitivity,
@@ -505,6 +507,70 @@ class ConversationPipeline:
         turn.changed_line = highlight
         # changed_line: 0 = the title, n = numbered line n (the watch's numbers), null = none
         turn.pending_open = {"item": {**view, "changed_line": highlight}}
+
+    # --- reminder edit mode: one sentence -> changes to one reminder ----------------------------
+
+    async def _reminder_reply(self, turn: TurnContext, io: TurnIO) -> None:
+        """Apply one sentence to the reminder. Low-cost model, minimal prompt, one tool, no TTS."""
+        if turn.account_id is None or turn.note_number is None:
+            raise ProviderError("llm", "reminder mode needs an owner and a reminder")
+        account_id, number, tz = turn.account_id, turn.note_number, turn.settings.timezone
+        with session_scope() as db:
+            it = ItemRepo(db).get(account_id, "reminder", number)
+            ctx = reminder_edit.context(it, tz) if it else None
+        if ctx is None:
+            await io.send(turn, "llm_display", text="?")
+            return
+        # Always the default (low-cost) model, whatever the watch's chat model is.
+        llm, model = self.router.llm(turn.settings.model_copy(update={"llm_model": ""}))
+        request = LLMRequest(
+            messages=[
+                {"role": "system", "content": reminder_edit.REMINDER_SYSTEM},  # identical every time: cached
+                {"role": "system", "content": ctx},
+                {"role": "user", "content": turn.user_text},
+            ],
+            model=model,
+            max_tokens=NOTE_MAX_TOKENS,
+            params=self.router.llm_params(),
+            tools=[reminder_edit.REMINDER_EDIT_TOOL],
+        )
+        usage_in = usage_cached = usage_out = 0
+        calls: list[ToolCall] = []
+        reply: list[str] = []
+        turn.marks.llm_request = mono_ms()
+        try:
+            async for chunk in llm.stream(request):
+                if chunk.delta:
+                    reply.append(chunk.delta)
+                if chunk.input_tokens is not None:
+                    usage_in += chunk.input_tokens
+                    usage_cached += min(chunk.cached_input_tokens, chunk.input_tokens)
+                    usage_out += chunk.output_tokens or 0
+                if chunk.tool_calls:
+                    calls = chunk.tool_calls
+        finally:
+            turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
+            turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
+            turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
+        call = next((c for c in calls if c.name == reminder_edit.REMINDER_EDIT_TOOL["name"]), None)
+        if call is None:  # an unclear command: a short question on the screen, nothing changed
+            question = strip_emoji("".join(reply)).strip()[:80]
+            turn.assistant_text = question
+            if question:
+                await io.send(turn, "llm_display", text=question)
+            return
+        try:
+            result = await asyncio.to_thread(reminder_edit.apply, account_id, number, call.arguments, tz)
+        except ValueError as exc:
+            log.info("reminder edit refused: %s", exc)
+            turn.assistant_text = f"(not applied: {exc})"
+            await io.send(turn, "llm_display", text="?")
+            return
+        log.info("reminder #%s edit %s", number, call.arguments[:200])
+        turn.assistant_text = f"reminder_edit {call.arguments[:300]}"
+        turn.items_changed = True
+        # deleted: the watch goes back to the reminders list; otherwise it shows the changed reminder
+        turn.pending_open = {"list": "reminder"} if result.deleted else {"item": result.view}
 
     async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
         searcher = turn.searcher

@@ -41,7 +41,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. |
-| `listen_start` | `turn_id`, `language?`, `mode?`, `note?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. A note turn with no speech is not stored or billed. |
+| `listen_start` | `turn_id`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
 | `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
@@ -75,8 +75,8 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
 | `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
-| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them). Sent after `turn_end`. |
-| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. `changed_line` (note mode): the 1-based line just added or changed, to highlight. |
+| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted an item). Sent after `turn_end`. |
+| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent after `turn_end`. `changed_line` (note mode): the 1-based line just added or changed, to highlight. |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
 | `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 
@@ -165,7 +165,7 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `unauthorized` | Token invalid/revoked | Delete token, go to pairing screen. |
 | `pairing_expired` | Code expired | Generate a new code, send new `hello`. |
 | `bad_request` | Malformed message | Log. |
-| `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn | Show error, go idle. |
+| `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn (e.g. no provider credit, timeout) | `message` is a generic "try again later" text; the reason is never shown to the user (server log only). Show "can't answer right now, try again later", go idle. The watch shows the same when a turn times out or the connection drops mid-turn. |
 | `busy` | Server overloaded | Retry later. |
 | `subscription_required` | Owner has no active/trial ola Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the ola app", go idle. |
 | `limit_reached` | The account's AI allowance for the current period is used up (shared by all its watches) | Show "Monthly usage reached — answers again when it resets; extra usage in the app", go idle. |

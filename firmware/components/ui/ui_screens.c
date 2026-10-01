@@ -707,7 +707,7 @@ void ui_show_error(ui_error_t err, const char *detail)
 {
     const lv_color_t red = lv_palette_main(LV_PALETTE_RED);
     const lv_color_t amber = lv_palette_main(LV_PALETTE_AMBER);
-    char body[200];
+    (void)detail;  /* server error texts are never shown */
 
     LOCK();
     switch (err) {
@@ -728,12 +728,9 @@ void ui_show_error(ui_error_t err, const char *detail)
                     NULL, NULL, false, 0);
         break;
     case UI_ERR_AI:
-        if (detail && detail[0]) {
-            snprintf(body, sizeof(body), "%s\n\n%s", ui_str(STR_ERR_AI_B), detail);
-        } else {
-            strlcpy(body, ui_str(STR_ERR_AI_B), sizeof(body));
-        }
-        ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_AI_T), body, NULL, NULL, NULL, true, 4000);
+        /* No money left with a provider, a timeout, a lost connection...: the reason is never shown,
+         * only "try again later" (the server log has the details). */
+        ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_AI_T), ui_str(STR_ERR_AI_B), NULL, NULL, NULL, true, 5000);
         break;
     case UI_ERR_PROTOCOL:
         ui_msg_show(ICON_REFRESH, red, ui_str(STR_ERR_PROTO_T), ui_str(STR_ERR_PROTO_B), NULL,

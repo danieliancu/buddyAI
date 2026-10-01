@@ -111,6 +111,9 @@ void proto_item_done(int number, bool done);
  * with mode "note"), until closed (stop button: the sentence in progress is still processed), the
  * note screen is left, or NOTE_IDLE_CLOSE_MS pass without speech. */
 void proto_note_session(bool open, int number);
+/* Reminder edit mode: the same for reminder `number` (`listen_start` with mode "reminder"); the
+ * events are the note-mode ones (PROTO_EVT_NOTE_SESSION / _STATE / _TEXT). */
+void proto_reminder_session(bool open, int number);
 void proto_item_pin(int number, bool pinned);
 
 /* Force a new connection cycle (e.g. after the server URL changed). */

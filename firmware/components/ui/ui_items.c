@@ -76,11 +76,6 @@ static const char *TAG = "ui_items";
 #define REM_HDR_Y       12
 #define REM_HDR_H       48
 #define REM_BODY_Y      70
-#define REM_BTN_H       56
-#define REM_BTN_W       136         /* narrow and centred: the case covers the bottom corners */
-#define REM_BTN_GAP     14
-#define REM_BTN_BOTTOM  22
-#define REM_BODY_H      (BOARD_LCD_V_RES - REM_BTN_BOTTOM - REM_BTN_H - 12 - REM_BODY_Y)
 #define REM_TITLE_MAX_W 170         /* wider titles use the smaller font */
 
 typedef struct {
@@ -151,10 +146,15 @@ static lv_obj_t   *s_rem_date;
 static lv_obj_t   *s_rem_time;
 static lv_obj_t   *s_rem_status;
 static lv_obj_t   *s_rem_rows;
-static lv_obj_t   *s_rem_done;
-static lv_obj_t   *s_rem_done_lbl;
 static lv_obj_t   *s_rem_del;
-static lv_obj_t   *s_rem_del_lbl;
+static lv_obj_t   *s_rem_del_icon;
+static lv_obj_t   *s_rem_mic;
+static lv_obj_t   *s_rem_mic_icon;
+static lv_obj_t   *s_rem_stop;
+static lv_obj_t   *s_rem_ring;
+static lv_obj_t   *s_rem_check;     /* Completed on / off */
+static lv_obj_t   *s_rem_check_icon;
+static lv_obj_t   *s_rem_live;      /* transcript / question / help, under the rows */
 static item_row_t *s_rem_row;       /* the reminder shown (PSRAM) */
 static bool        s_rem_early;     /* shown by its advance alert */
 static lv_obj_t   *s_rem_cal;       /* calendar icon on the tile */
@@ -195,6 +195,20 @@ static bool        s_note_mic_open;
 static int         s_note_flash = -1;    /* highlight: -1 none, 0 the title, n numbered line n */
 static lv_timer_t *s_note_flash_timer;
 static bool        s_del_icon;       /* the note screen's Delete is an icon */
+/* The edit mic of the item screen shown (note or reminder): one session at a time. */
+static lv_obj_t   *s_mic;
+static lv_obj_t   *s_mic_icon;
+static lv_obj_t   *s_mic_stop;
+static lv_obj_t   *s_mic_ring;
+static lv_obj_t   *s_live;
+static bool        s_mic_reminder;   /* the open session's item */
+static int         s_mic_number;
+static void note_mic_visuals(void);
+static void rem_mic_cb(lv_event_t *e);
+static void item_bar(lv_obj_t *scr, lv_event_cb_t mic_cb, lv_event_cb_t right_cb, const char *right_icon,
+                     const lv_font_t *right_font, lv_obj_t **del, lv_obj_t **del_icon, lv_obj_t **mic,
+                     lv_obj_t **mic_icon, lv_obj_t **stop, lv_obj_t **ring, lv_obj_t **right,
+                     lv_obj_t **right_icon_out);
 static void note_live_reset(void);
 static void note_live_set(const char *text, lv_color_t color);
 static void note_render(void);
@@ -1067,7 +1081,9 @@ static void show_item_json(const cJSON *item, bool alert, bool early)
     const char *text = jstr(item, "text");
     bool done = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "done"));
     if (reminder && s_rem_row) {
-        bool again = !alert && lv_screen_active() == s_rem_scr && s_det_from_list && s_det_number == number;
+        /* the reminder on screen refreshed (e.g. changed by voice): "back" still goes where it did */
+        bool again = !alert && lv_screen_active() == s_rem_scr && s_det_reminder && s_det_from_list &&
+                     s_det_number == number;
         item_row_t *r = heap_caps_calloc(1, sizeof(item_row_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (r) {
             parse_reminder(item, r);
@@ -1249,39 +1265,21 @@ static void rem_render(void)
         add_info_row(SET_ICON_USERS, STR_PARTICIPANTS, r->participants);
     }
 
-    /* buttons: Done / Reopen filled, Delete outlined */
-    lv_obj_set_style_bg_color(s_rem_done, a, 0);
-    lv_obj_set_style_text_color(s_rem_done_lbl, ui_on_color(a), 0);
-    lv_label_set_text(s_rem_done_lbl, ui_str(r->done ? STR_REOPEN : STR_DONE));
-    lv_obj_set_style_border_color(s_rem_del, lv_color_mix(lv_color_white(), a, 90), 0);
+    /* bar: Delete | Mic | Completed (green with a white check when done) */
+    const lv_color_t rim = lv_color_mix(lv_color_white(), a, 90), on_a = ui_on_color(a);
+    lv_obj_set_style_border_color(s_rem_del, rim, 0);
+    lv_obj_set_style_border_color(s_rem_mic, rim, 0);
+    lv_obj_set_style_border_color(s_rem_check, rim, 0);
     if (!s_del_armed) {
-        lv_label_set_text(s_rem_del_lbl, ui_str(STR_DELETE));
+        lv_obj_set_style_bg_color(s_rem_del, a, 0);
     }
-}
-
-static lv_obj_t *rem_button(lv_obj_t *parent, lv_event_cb_t cb, lv_obj_t **label_out)
-{
-    lv_obj_t *b = lv_button_create(parent);
-    lv_obj_remove_style_all(b);
-    lv_obj_set_size(b, REM_BTN_W, REM_BTN_H);
-    lv_obj_set_style_radius(b, REM_BTN_H / 2, 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(b, 2, 0);
-    lv_obj_set_style_border_color(b, lv_color_white(), 0);
-    lv_obj_set_style_border_opa(b, LV_OPA_40, 0);
-    lv_obj_set_style_transform_scale(b, 240, LV_STATE_PRESSED);
-    lv_obj_set_style_transform_pivot_x(b, REM_BTN_W / 2, 0);
-    lv_obj_set_style_transform_pivot_y(b, REM_BTN_H / 2, 0);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *l = lv_label_create(b);
-    lv_obj_set_width(l, REM_BTN_W - 20);
-    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(l, lv_color_white(), 0);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_center(l);
-    *label_out = l;
-    return b;
+    lv_obj_set_style_text_color(s_rem_del_icon, s_del_armed ? lv_color_white() : on_a, 0);
+    lv_obj_set_style_bg_color(s_rem_check, r->done ? lv_color_hex(DONE_GREEN) : a, 0);
+    lv_obj_set_style_text_color(s_rem_check_icon, r->done ? lv_color_white() : on_a, 0);
+    lv_obj_set_style_border_color(s_rem_ring, lv_color_hex(DANGER), 0);
+    if (s_mic == s_rem_mic) {
+        note_mic_visuals();
+    }
 }
 
 static void build_reminder_screen(void)
@@ -1312,7 +1310,7 @@ static void build_reminder_screen(void)
     /* body: one card reaching the buttons; scrolls when taller */
     s_rem_body = lv_obj_create(s_rem_scr);
     lv_obj_remove_style_all(s_rem_body);
-    lv_obj_set_size(s_rem_body, REM_W, REM_BODY_H);
+    lv_obj_set_size(s_rem_body, REM_W, NOTE_BODY_H);
     lv_obj_align(s_rem_body, LV_ALIGN_TOP_MID, 0, REM_BODY_Y);
     lv_obj_set_scroll_dir(s_rem_body, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_rem_body, LV_SCROLLBAR_MODE_OFF);
@@ -1323,7 +1321,7 @@ static void build_reminder_screen(void)
 
     s_rem_card = plain_box(s_rem_body);
     lv_obj_set_size(s_rem_card, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_min_height(s_rem_card, REM_BODY_H, 0);
+    lv_obj_set_style_min_height(s_rem_card, NOTE_BODY_H, 0);
     lv_obj_set_style_radius(s_rem_card, 22, 0);
     lv_obj_set_style_bg_opa(s_rem_card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_rem_card, 1, 0);
@@ -1365,16 +1363,17 @@ static void build_reminder_screen(void)
     lv_obj_set_size(s_rem_rows, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(s_rem_rows, LV_FLEX_FLOW_COLUMN);
 
-    /* fixed buttons */
-    lv_obj_t *bar = plain_box(s_rem_scr);
-    lv_obj_set_size(bar, 2 * REM_BTN_W + REM_BTN_GAP, REM_BTN_H);
-    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, -REM_BTN_BOTTOM);
-    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    s_rem_done = rem_button(bar, rem_btn_done_cb, &s_rem_done_lbl);
-    s_rem_del = rem_button(bar, del_cb, &s_rem_del_lbl);
-    lv_obj_set_style_bg_opa(s_rem_del, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_opa(s_rem_del, LV_OPA_COVER, 0);
+    s_rem_live = lv_label_create(s_rem_card);
+    lv_obj_set_width(s_rem_live, LV_PCT(100));
+    lv_label_set_long_mode(s_rem_live, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_pad_hor(s_rem_live, 6, 0);
+    lv_obj_set_style_pad_bottom(s_rem_live, 8, 0);
+    lv_obj_add_flag(s_rem_live, LV_OBJ_FLAG_HIDDEN);
+
+    /* bar: Delete | Mic | Completed - as on the note screen */
+    item_bar(s_rem_scr, rem_mic_cb, rem_btn_done_cb, ICON_OK, &buddy_font_28,
+             &s_rem_del, &s_rem_del_icon, &s_rem_mic, &s_rem_mic_icon, &s_rem_stop, &s_rem_ring,
+             &s_rem_check, &s_rem_check_icon);
 
     lv_obj_move_foreground(hdr);
     lv_obj_move_foreground(ui_add_close_x(s_rem_scr, det_close_cb));
@@ -1386,14 +1385,22 @@ static void show_reminder(const item_row_t *r, bool from_list, bool alert, bool 
     if (!s_rem_row) {
         return;
     }
+    if (s_note_mic_open && !(s_mic_reminder && s_mic_number == r->number)) {
+        note_close_mic();       /* another item's edit mic */
+    }
     disarm_delete();
     if (r != s_rem_row) {
         memcpy(s_rem_row, r, sizeof(*s_rem_row));
     }
     s_del_btn = s_rem_del;
-    s_del_btn_lbl = s_rem_del_lbl;
-    s_del_outlined = true;
-    s_del_icon = false;
+    s_del_btn_lbl = NULL;
+    s_del_outlined = false;
+    s_del_icon = true;
+    s_mic = s_rem_mic;
+    s_mic_icon = s_rem_mic_icon;
+    s_mic_stop = s_rem_stop;
+    s_mic_ring = s_rem_ring;
+    s_live = s_rem_live;
     s_rem_early = early;
     s_det_reminder = true;
     s_det_number = r->number;
@@ -1402,6 +1409,7 @@ static void show_reminder(const item_row_t *r, bool from_list, bool alert, bool 
     copy_str(s_det_due_str, sizeof(s_det_due_str), r->due);
     copy_str(s_det_end_str, sizeof(s_det_end_str), r->end);
     s_det_notify = r->notify_before;
+    note_live_reset();
     rem_render();
     if (alert) {
         end_alert();
@@ -1438,19 +1446,20 @@ void ui_items_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_co
 
 static void note_live_set(const char *text, lv_color_t color)
 {
-    if (!s_note_live) {
+    if (!s_live) {
         return;
     }
-    lv_obj_set_style_text_color(s_note_live, color, 0);
-    lv_label_set_text(s_note_live, text ? text : "");
-    lv_obj_set_flag(s_note_live, LV_OBJ_FLAG_HIDDEN, !text || !text[0]);
+    lv_obj_set_style_text_color(s_live, color, 0);
+    lv_label_set_text(s_live, text ? text : "");
+    lv_obj_set_flag(s_live, LV_OBJ_FLAG_HIDDEN, !text || !text[0]);
 }
 
-/* What the line under the note says when nothing else is going on. */
+/* What the line under the note / reminder says when nothing else is going on. */
 static void note_live_reset(void)
 {
     if (s_note_mic_open) {
-        note_live_set(ui_str(STR_NOTE_HELP), lv_color_mix(lv_color_white(), g_ui_theme.accent, 110));
+        note_live_set(ui_str(s_det_reminder ? STR_REMINDER_HELP : STR_NOTE_HELP),
+                      lv_color_mix(lv_color_white(), g_ui_theme.accent, 110));
     } else {
         note_live_set(NULL, lv_color_white());
     }
@@ -1469,33 +1478,37 @@ static void note_ring_anim_cb(void *var, int32_t v)
     lv_obj_t *ring = var;
     int32_t size = NOTE_MIC + 4 + v * 26 / 1000;
     lv_obj_set_size(ring, size, size);
-    lv_obj_align_to(ring, s_note_mic, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align_to(ring, s_mic, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_border_opa(ring, (lv_opa_t)(LV_OPA_80 - v * LV_OPA_70 / 1000), 0);
 }
 
 static void note_mic_visuals(void)
 {
     const lv_color_t a = g_ui_theme.accent;
+    if (!s_mic) {
+        return;
+    }
     lv_anim_delete(s_note_ring, note_ring_anim_cb);
+    lv_anim_delete(s_rem_ring, note_ring_anim_cb);
     if (s_note_mic_open) {
-        lv_obj_set_style_bg_color(s_note_mic, lv_color_hex(DANGER), 0);
-        lv_obj_add_flag(s_note_mic_icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_note_stop, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_note_ring, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(s_mic, lv_color_hex(DANGER), 0);
+        lv_obj_add_flag(s_mic_icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_mic_stop, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_mic_ring, LV_OBJ_FLAG_HIDDEN);
         lv_anim_t an;
         lv_anim_init(&an);
-        lv_anim_set_var(&an, s_note_ring);
+        lv_anim_set_var(&an, s_mic_ring);
         lv_anim_set_exec_cb(&an, note_ring_anim_cb);
         lv_anim_set_values(&an, 0, 1000);
         lv_anim_set_duration(&an, 1100);
         lv_anim_set_repeat_count(&an, LV_ANIM_REPEAT_INFINITE);
         lv_anim_start(&an);
     } else {
-        lv_obj_set_style_bg_color(s_note_mic, a, 0);
-        lv_obj_set_style_text_color(s_note_mic_icon, ui_on_color(a), 0);   /* dark mic on a white accent */
-        lv_obj_remove_flag(s_note_mic_icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_note_stop, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_note_ring, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(s_mic, a, 0);
+        lv_obj_set_style_text_color(s_mic_icon, ui_on_color(a), 0);   /* dark mic on a white accent */
+        lv_obj_remove_flag(s_mic_icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_mic_stop, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_mic_ring, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -1580,7 +1593,9 @@ static void note_render(void)
     lv_obj_set_style_bg_color(s_note_pin, s_note_pinned ? on_a : a, 0);
     lv_obj_set_style_text_color(s_note_pin_icon, s_note_pinned ? a : on_a, 0);
     lv_obj_set_style_border_color(s_note_ring, lv_color_hex(DANGER), 0);
-    note_mic_visuals();
+    if (s_mic == s_note_mic) {
+        note_mic_visuals();
+    }
 
     lv_obj_set_style_bg_color(s_note_tile, lv_color_mix(a, bg, 150), 0);
     lv_obj_set_style_text_color(s_note_doc, ui_on_color(lv_color_mix(a, bg, 150)), 0);
@@ -1640,7 +1655,21 @@ static void note_mic_cb(lv_event_t *e)
         return;
     }
     disarm_delete();
+    s_mic_reminder = false;
+    s_mic_number = s_note_number;
     g_ui_cb.on_note_session(!s_note_mic_open, s_note_number);  /* ui_note_session() follows */
+}
+
+/* The reminder screen's mic: edit only this reminder, as the note mic does for a note. */
+static void rem_mic_cb(lv_event_t *e)
+{
+    if (!g_ui_cb.on_reminder_session) {
+        return;
+    }
+    disarm_delete();
+    s_mic_reminder = true;
+    s_mic_number = s_det_number;
+    g_ui_cb.on_reminder_session(!s_note_mic_open, s_det_number);  /* ui_note_session() follows */
 }
 
 static void note_pin_cb(lv_event_t *e)
@@ -1660,11 +1689,17 @@ static void note_pin_cb(lv_event_t *e)
     note_render();
 }
 
-/* Leaving the note screen (or deleting it) closes the edit mic; the sentence in progress is kept. */
+/* Leaving the note / reminder screen (or deleting it) closes the edit mic; the sentence in progress
+ * is kept. */
 static void note_close_mic(void)
 {
-    if (s_note_mic_open && g_ui_cb.on_note_session) {
-        g_ui_cb.on_note_session(false, s_note_number);
+    if (!s_note_mic_open) {
+        return;
+    }
+    if (s_mic_reminder && g_ui_cb.on_reminder_session) {
+        g_ui_cb.on_reminder_session(false, s_mic_number);
+    } else if (!s_mic_reminder && g_ui_cb.on_note_session) {
+        g_ui_cb.on_note_session(false, s_mic_number);
     }
 }
 
@@ -1692,6 +1727,36 @@ static lv_obj_t *note_round_button(lv_obj_t *parent, int32_t size, lv_event_cb_t
         *icon_out = i;
     }
     return b;
+}
+
+/* The bottom bar of the note and reminder screens: Delete | Mic (red with a white square and a
+ * pulsing ring while open) | a screen-specific button on the right. */
+static void item_bar(lv_obj_t *scr, lv_event_cb_t mic_cb, lv_event_cb_t right_cb, const char *right_icon,
+                     const lv_font_t *right_font, lv_obj_t **del, lv_obj_t **del_icon, lv_obj_t **mic,
+                     lv_obj_t **mic_icon, lv_obj_t **stop, lv_obj_t **ring, lv_obj_t **right,
+                     lv_obj_t **right_icon_out)
+{
+    lv_obj_t *bar = plain_box(scr);
+    lv_obj_set_size(bar, 2 * NOTE_BTN + NOTE_MIC + 2 * 22, NOTE_MIC);
+    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, -NOTE_BAR_BOTTOM);
+    lv_obj_add_flag(bar, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    *del = note_round_button(bar, NOTE_BTN, del_cb, SET_ICON_TRASH, &buddy_font_set, del_icon);
+    *ring = plain_box(bar);     /* behind the mic, outside the layout */
+    lv_obj_add_flag(*ring, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_radius(*ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(*ring, 3, 0);
+    *mic = note_round_button(bar, NOTE_MIC, mic_cb, ICON_MIC, &buddy_font_28, mic_icon);
+    lv_obj_set_style_border_width(*mic, 3, 0);
+    *stop = plain_box(*mic);
+    lv_obj_set_size(*stop, 28, 28);
+    lv_obj_set_style_radius(*stop, 5, 0);
+    lv_obj_set_style_bg_opa(*stop, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(*stop, lv_color_white(), 0);
+    lv_obj_center(*stop);
+    lv_obj_add_flag(*stop, LV_OBJ_FLAG_HIDDEN);
+    *right = note_round_button(bar, NOTE_BTN, right_cb, right_icon, right_font, right_icon_out);
 }
 
 static void build_note_screen(void)
@@ -1777,27 +1842,9 @@ static void build_note_screen(void)
     lv_obj_add_flag(s_note_live, LV_OBJ_FLAG_HIDDEN);
 
     /* bar: Delete | Mic | Pin */
-    lv_obj_t *bar = plain_box(s_note_scr);
-    lv_obj_set_size(bar, 2 * NOTE_BTN + NOTE_MIC + 2 * 22, NOTE_MIC);
-    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, -NOTE_BAR_BOTTOM);
-    lv_obj_add_flag(bar, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    s_note_del = note_round_button(bar, NOTE_BTN, del_cb, SET_ICON_TRASH, &buddy_font_set, &s_note_del_icon);
-    s_note_ring = plain_box(bar);     /* behind the mic, outside the layout */
-    lv_obj_add_flag(s_note_ring, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_radius(s_note_ring, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(s_note_ring, 3, 0);
-    s_note_mic = note_round_button(bar, NOTE_MIC, note_mic_cb, ICON_MIC, &buddy_font_28, &s_note_mic_icon);
-    lv_obj_set_style_border_width(s_note_mic, 3, 0);
-    s_note_stop = plain_box(s_note_mic);
-    lv_obj_set_size(s_note_stop, 28, 28);
-    lv_obj_set_style_radius(s_note_stop, 5, 0);
-    lv_obj_set_style_bg_opa(s_note_stop, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(s_note_stop, lv_color_white(), 0);
-    lv_obj_center(s_note_stop);
-    lv_obj_add_flag(s_note_stop, LV_OBJ_FLAG_HIDDEN);
-    s_note_pin = note_round_button(bar, NOTE_BTN, note_pin_cb, SET_ICON_PIN_NOTE, &buddy_font_set, &s_note_pin_icon);
+    item_bar(s_note_scr, note_mic_cb, note_pin_cb, SET_ICON_PIN_NOTE, &buddy_font_set,
+             &s_note_del, &s_note_del_icon, &s_note_mic, &s_note_mic_icon, &s_note_stop, &s_note_ring,
+             &s_note_pin, &s_note_pin_icon);
 
     lv_obj_move_foreground(hdr);
     lv_obj_move_foreground(ui_add_close_x(s_note_scr, det_close_cb));
@@ -1814,6 +1861,11 @@ static void show_note(int number, bool from_list)
     s_del_btn_lbl = NULL;
     s_del_outlined = false;
     s_del_icon = true;
+    s_mic = s_note_mic;
+    s_mic_icon = s_note_mic_icon;
+    s_mic_stop = s_note_stop;
+    s_mic_ring = s_note_ring;
+    s_live = s_note_live;
     s_det_reminder = false;
     s_det_number = number;
     s_det_from_list = from_list;
@@ -1864,20 +1916,18 @@ void ui_note_session(bool open)
     LOCK();
     s_note_mic_open = open;
     ui_hold_awake(open);        /* the screen stays on while the mic is open */
-    if (s_note_scr) {
-        note_live_reset();
-        note_mic_visuals();
-    }
+    note_live_reset();
+    note_mic_visuals();
     UNLOCK();
 }
 
 void ui_note_state(ui_conv_t state)
 {
     LOCK();
-    if (s_note_scr && state == UI_CONV_THINKING && s_note_live) {
-        lv_obj_set_style_text_opa(s_note_live, LV_OPA_60, 0);  /* being applied */
-    } else if (s_note_live) {
-        lv_obj_set_style_text_opa(s_note_live, LV_OPA_COVER, 0);
+    if (state == UI_CONV_THINKING && s_live) {
+        lv_obj_set_style_text_opa(s_live, LV_OPA_60, 0);  /* being applied */
+    } else if (s_live) {
+        lv_obj_set_style_text_opa(s_live, LV_OPA_COVER, 0);
     }
     UNLOCK();
 }
@@ -1885,10 +1935,10 @@ void ui_note_state(ui_conv_t state)
 void ui_note_text(const char *text, bool question)
 {
     LOCK();
-    if (s_note_scr && text && text[0]) {
+    if (s_live && text && text[0]) {
         note_live_set(text, question ? g_ui_theme.accent : lv_color_white());
         if (!question) {
-            lv_obj_scroll_to_view_recursive(s_note_live, LV_ANIM_ON);
+            lv_obj_scroll_to_view_recursive(s_live, LV_ANIM_ON);
         }
     }
     UNLOCK();
@@ -1935,6 +1985,7 @@ void ui_items_refresh_theme(void)
 void ui_items_show_list(bool reminder)
 {
     LOCK();
+    note_close_mic();       /* e.g. a reminder deleted by voice from its own screen */
     open_list(reminder, false);
     UNLOCK();
 }

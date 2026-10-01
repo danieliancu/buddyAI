@@ -48,8 +48,8 @@ class TurnContext:
     pending_open: dict[str, Any] | None = None
     searcher: Any = None  # app.search.WebSearch for this turn (one search per turn)
     search_city: str = ""  # default location for web searches (from the watch's time zone)
-    mode: str = "chat"  # "chat" | "note" (note edit mode, app/notes_edit.py)
-    note_number: int | None = None  # note mode: the note being edited
+    mode: str = "chat"  # "chat" | "note" | "reminder" (edit modes: app/notes_edit.py, app/reminder_edit.py)
+    note_number: int | None = None  # note / reminder mode: the item being edited
     end_requested: bool = False  # the watch's stop button: transcribe what was said so far
     changed_line: int | None = None  # note mode: line to highlight on the watch
 

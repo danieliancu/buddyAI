@@ -30,8 +30,8 @@ LANGS = {
             "ERR_NO_SERVER_B": "Open Wi-Fi setup and enter the\nserver address (ws://…).",
             "ERR_UNPAIRED_T": "Watch not paired",
             "ERR_UNPAIRED_B": "Access was revoked.\nA new pairing code follows.",
-            "ERR_AI_T": "Something went wrong",
-            "ERR_AI_B": "The assistant could not answer.\nPlease try again.",
+            "ERR_AI_T": "Can't answer right now",
+            "ERR_AI_B": "Please try again\na little later.",
             "ERR_PROTO_T": "Update required",
             "ERR_PROTO_B": "This firmware is not compatible\nwith the server.",
             "ERR_BATT_T": "Low battery",
@@ -85,6 +85,7 @@ LANGS = {
             "STARTS_IN_FMT": "Starts in %s",
             "NOTE_EMPTY": "Empty note.\nTap the mic and dictate.",
             "NOTE_HELP": "Say a line to add it, or “delete 2”, “move 3 to the top”.",
+            "REMINDER_HELP": "Say a change: “at 10:30”, “add Ana”, “remove the place”.",
         },
     },
 }
