@@ -82,6 +82,8 @@ LANGS = {
             "PARTICIPANTS": "Participanți",
             "DONE": "Gata",
             "STARTS_IN_FMT": "Începe în %s",
+            "NOTE_EMPTY": "Notiță goală.\nAtinge microfonul și dictează.",
+            "NOTE_HELP": "Spune un rând ca să-l adaugi, sau „șterge 2”, „mută 3 sus”.",
         },
     },
     "de": {
@@ -165,6 +167,8 @@ LANGS = {
             "PARTICIPANTS": "Teilnehmer",
             "DONE": "Fertig",
             "STARTS_IN_FMT": "Beginnt in %s",
+            "NOTE_EMPTY": "Leere Notiz.\nTippe aufs Mikrofon und diktiere.",
+            "NOTE_HELP": "Sag eine Zeile, um sie hinzuzufügen, oder „lösche 2“, „3 nach oben“.",
         },
     },
     "fr": {
@@ -248,6 +252,8 @@ LANGS = {
             "PARTICIPANTS": "Participants",
             "DONE": "Fait",
             "STARTS_IN_FMT": "Commence dans %s",
+            "NOTE_EMPTY": "Note vide.\nTouche le micro et dicte.",
+            "NOTE_HELP": "Dis une ligne pour l’ajouter, ou « supprime 2 », « 3 en haut ».",
         },
     },
     "es": {
@@ -331,6 +337,8 @@ LANGS = {
             "PARTICIPANTS": "Participantes",
             "DONE": "Hecho",
             "STARTS_IN_FMT": "Empieza en %s",
+            "NOTE_EMPTY": "Nota vacía.\nToca el micro y dicta.",
+            "NOTE_HELP": "Di una línea para añadirla, o «borra 2», «sube la 3 arriba».",
         },
     },
     "it": {
@@ -414,6 +422,8 @@ LANGS = {
             "PARTICIPANTS": "Partecipanti",
             "DONE": "Fatto",
             "STARTS_IN_FMT": "Inizia tra %s",
+            "NOTE_EMPTY": "Nota vuota.\nTocca il microfono e detta.",
+            "NOTE_HELP": "Di’ una riga per aggiungerla, o «cancella 2», «sposta 3 in cima».",
         },
     },
     "pt": {
@@ -497,6 +507,8 @@ LANGS = {
             "PARTICIPANTS": "Participantes",
             "DONE": "Feito",
             "STARTS_IN_FMT": "Começa daqui a %s",
+            "NOTE_EMPTY": "Nota vazia.\nToca no microfone e dita.",
+            "NOTE_HELP": "Diz uma linha para a adicionar, ou «apaga 2», «move 3 para cima».",
         },
     },
     "nl": {
@@ -580,6 +592,8 @@ LANGS = {
             "PARTICIPANTS": "Deelnemers",
             "DONE": "Klaar",
             "STARTS_IN_FMT": "Begint over %s",
+            "NOTE_EMPTY": "Lege notitie.\nTik op de microfoon en dicteer.",
+            "NOTE_HELP": "Zeg een regel om hem toe te voegen, of ‘verwijder 2’, ‘3 naar boven’.",
         },
     },
     "ca": {
@@ -663,6 +677,8 @@ LANGS = {
             "PARTICIPANTS": "Participants",
             "DONE": "Fet",
             "STARTS_IN_FMT": "Comença d’aquí a %s",
+            "NOTE_EMPTY": "Nota buida.\nToca el micròfon i dicta.",
+            "NOTE_HELP": "Digues una línia per afegir-la, o «esborra la 2», «puja la 3 a dalt».",
         },
     },
     "gl": {
@@ -746,6 +762,8 @@ LANGS = {
             "PARTICIPANTS": "Participantes",
             "DONE": "Feito",
             "STARTS_IN_FMT": "Comeza en %s",
+            "NOTE_EMPTY": "Nota baleira.\nToca o micrófono e dita.",
+            "NOTE_HELP": "Di unha liña para engadila, ou «borra a 2», «sube a 3 arriba».",
         },
     },
 }

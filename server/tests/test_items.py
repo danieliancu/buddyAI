@@ -156,7 +156,8 @@ def test_device_snapshot_orders_reminders() -> None:
         snap = device_snapshot(repo.list(acc), "Europe/London")
     assert [r["text"] for r in snap["reminders"]] == ["past", "soon", "later"]
     assert [r["overdue"] for r in snap["reminders"]] == [True, False, False]
-    assert snap["notes"] == [{"number": 1, "preview": "a note with a first line and more"}]
+    # title = first line, subtitle = the next one
+    assert snap["notes"] == [{"number": 1, "preview": "a note with a first line", "subtitle": "and more", "pinned": False}]
 
 
 # --- providers: tool calls ------------------------------------------------------------------------

@@ -23,6 +23,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
+#include "debug_snap.h"
 #include "esp_secure_boot.h"
 #include "esp_flash_encrypt.h"
 #include "sdkconfig.h"
@@ -251,6 +252,18 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_NOTICE:
         ui_show_notice(ev->str);
         break;
+    /* note edit mode: its own screen, never the chat screen */
+    case PROTO_EVT_NOTE_SESSION:
+        ui_note_session(ev->num != 0);
+        break;
+    case PROTO_EVT_NOTE_STATE:
+        ui_note_state(ev->num == PROTO_CONV_LISTENING  ? UI_CONV_LISTENING
+                      : ev->num == PROTO_CONV_THINKING ? UI_CONV_THINKING
+                                                       : UI_CONV_IDLE);
+        break;
+    case PROTO_EVT_NOTE_TEXT:
+        ui_note_text(ev->str, ev->num != 0);
+        break;
     }
 }
 
@@ -350,6 +363,16 @@ static void ui_item_done(int number, bool done)
     proto_item_done(number, done);
 }
 
+static void ui_note_session_cb(bool open, int number)
+{
+    proto_note_session(open, number);
+}
+
+static void ui_item_pin(int number, bool pinned)
+{
+    proto_item_pin(number, pinned);
+}
+
 static void ui_factory_reset(void)
 {
     post_app(APP_EV_FACTORY_RESET, 0);
@@ -421,6 +444,7 @@ static void handle_net_event(net_event_t ev)
         ui_set_hint(ui_text_connecting());
         ui_set_status(s_batt_pct, s_charging, UI_LINK_WIFI);
         net_sntp_start();
+        debug_snap_start();     /* development builds: screen snapshots over Wi-Fi */
         if (!net_portal_active()) {
             proto_network_up();
         }
@@ -519,6 +543,8 @@ void app_main(void)
             .on_item_delete = ui_item_delete,
             .on_item_done = ui_item_done,
             .on_chat_closed = ui_chat_closed,
+            .on_note_session = ui_note_session_cb,
+            .on_item_pin = ui_item_pin,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
         if (board_imu_available()) {

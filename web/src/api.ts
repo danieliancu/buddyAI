@@ -286,6 +286,8 @@ export interface Item {
   location: string | null;
   /** Reminders, optional: who, comma-separated ("Ana, Mihai"). */
   participants: string | null;
+  /** Notes: kept at the top of the list. */
+  pinned?: boolean;
   /** Reminders: the time has passed and it is not completed (stays until completed, deleted or rescheduled). */
   overdue: boolean;
   /** Reminders: marked completed (no longer fires). */
@@ -844,6 +846,7 @@ const meApi = {
     update: (kind: ItemKind, number: number, body: ItemInput) => me.put<Item>(`/api/me/items/${kind}/${number}`, body),
     remove: (kind: ItemKind, number: number) => me.del<{ ok: boolean }>(`/api/me/items/${kind}/${number}`),
     setDone: (number: number, done: boolean) => me.put<Item>(`/api/me/items/reminder/${number}/done`, { done }),
+    setPinned: (number: number, pinned: boolean) => me.put<Item>(`/api/me/items/note/${number}/pin`, { pinned }),
   },
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),

@@ -558,6 +558,7 @@ class ItemRepo:
         notify_before_min: int | None = _KEEP,
         location: str | None = _KEEP,
         participants: str | None = _KEEP,
+        pinned: bool | None = None,
     ) -> Item:
         """`end_at`: a new end time, None to remove it, or leave it out to keep the range's length when
         only the start moves."""
@@ -582,8 +583,21 @@ class ItemRepo:
             it.fired_at = None  # a rescheduled reminder fires again
             it.early_fired_at = None  # ...its advance notice too
             it.done_at = None  # ...and is open again
+        if it.kind == "note" and pinned is not None:
+            it.pinned = pinned
         if it.kind == "reminder" and done is not None:
             it.done_at = (it.done_at or utcnow()) if done else None
+        it.updated_at = utcnow()
+        self.s.add(it)
+        self.s.commit()
+        self.s.refresh(it)
+        return self._fix(it)
+
+    def set_note_text(self, it: Item, text: str) -> Item:
+        """Note edit mode: the new text may be empty (every line deleted)."""
+        if len(text) > self.TEXT_MAX["note"]:
+            raise ItemTextError(f"note text is {len(text)} characters; the limit is {self.TEXT_MAX['note']}")
+        it.text = text
         it.updated_at = utcnow()
         self.s.add(it)
         self.s.commit()

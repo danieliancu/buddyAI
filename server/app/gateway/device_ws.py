@@ -154,6 +154,7 @@ class DeviceConnection:
             return
         handler = {
             "listen_start": self._on_listen_start,
+            "listen_end": self._on_listen_end,
             "abort": self._on_abort,
             "playback_started": self._on_playback_started,
             "playback_done": self._on_playback_done,
@@ -162,6 +163,7 @@ class DeviceConnection:
             "item_open": self._on_item_open,
             "item_delete": self._on_item_delete,
             "item_done": self._on_item_done,
+            "item_pin": self._on_item_pin,
         }.get(kind)
         if handler is None:
             await self.send_json("error", code="bad_request", message=f"unknown type {kind!r}")
@@ -241,6 +243,18 @@ class DeviceConnection:
         if not isinstance(turn_id, int) or turn_id <= self.last_turn_id:
             await self.send_json("error", code="bad_request", message="turn_id must increase", turn_id=turn_id)
             return
+        note_mode = msg.get("mode") == "note"
+        note_number = msg.get("note")
+        if note_mode:
+            ok = self.account_id is not None and isinstance(note_number, int)
+            if ok:
+                with session_scope() as db:
+                    ok = ItemRepo(db).get(self.account_id, "note", note_number) is not None
+            if not ok:
+                await self.send_json("error", turn_id, code="bad_request", message="note mode needs an existing note")
+                await self.send_json("turn_end", turn_id, status="error")
+                self.last_turn_id = turn_id
+                return
         if self.active:
             await self._cancel_active()
         self.last_turn_id = turn_id
@@ -264,17 +278,21 @@ class DeviceConnection:
             fallback_language=self.last_language,
             account_id=self.account_id,
         )
-        with session_scope() as db:
-            conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
-            row = TurnRepo(db).create(
-                device_id=self.device_id,
-                account_id=self.account_id,
-                conversation_id=conv.id,
-                session_id=turn.session_id,
-                turn_no=turn_id,
-                language=language,
-            )
-            turn.db_id, turn.conversation_id = row.id, conv.id
+        if note_mode:
+            # Stored only if something was said (_finish_turn), and outside the chat history.
+            turn.mode, turn.note_number = "note", note_number
+        else:
+            with session_scope() as db:
+                conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
+                row = TurnRepo(db).create(
+                    device_id=self.device_id,
+                    account_id=self.account_id,
+                    conversation_id=conv.id,
+                    session_id=turn.session_id,
+                    turn_no=turn_id,
+                    language=language,
+                )
+                turn.db_id, turn.conversation_id = row.id, conv.id
         self._decoder = OpusDecoder(16000)
         self.active = turn
         self.recent[turn_id] = turn
@@ -299,6 +317,13 @@ class DeviceConnection:
             return
         if pcm:
             turn.audio_in.put_nowait((pcm, mono_ms()))
+
+    async def _on_listen_end(self, msg: dict[str, Any]) -> None:
+        """The watch's stop button: end the sentence now and transcribe what was said (not an abort)."""
+        turn = self.active
+        if turn is not None and msg.get("turn_id") == turn.turn_id and turn.listening:
+            turn.end_requested = True
+            turn.audio_in.put_nowait(None)
 
     async def _on_abort(self, msg: dict[str, Any]) -> None:
         if self.active and msg.get("turn_id") == self.active.turn_id:
@@ -354,6 +379,17 @@ class DeviceConnection:
                 await self.send_json("items_open", kind=turn.pending_open["list"])
             else:
                 await self.send_json("item_show", item=turn.pending_open["item"])
+        if turn.mode == "note" and turn.db_id is None and result.status != "no_speech" and turn.usage:
+            with session_scope() as db:  # note turns: stored only when something was said
+                row = TurnRepo(db).create(
+                    device_id=self.device_id,
+                    account_id=turn.account_id,
+                    conversation_id=None,  # not part of the chat history
+                    session_id=turn.session_id,
+                    turn_no=turn.turn_id,
+                    language=turn.language if turn.language != languages.AUTO else "",
+                )
+                turn.db_id = row.id
         self._persist(turn, result)
         entitlements.end_turn(turn.account_id, self._reservation_key(turn.turn_id))
         if turn.account_id is not None:
@@ -460,6 +496,19 @@ class DeviceConnection:
             it = repo.get(self.account_id, *ref)
             if it is not None:
                 repo.delete(it)
+        await self.hub.push_items(self.account_id)
+        self.hub.items_changed(self.account_id)
+
+    async def _on_item_pin(self, msg: dict[str, Any]) -> None:
+        number, pinned = msg.get("number"), msg.get("pinned")
+        if self.account_id is None or not isinstance(number, int) or not isinstance(pinned, bool):
+            await self.send_json("error", code="bad_request", message="item_pin needs number and pinned")
+            return
+        with session_scope() as db:
+            repo = ItemRepo(db)
+            it = repo.get(self.account_id, "note", number)
+            if it is not None:
+                repo.update(it, pinned=pinned)
         await self.hub.push_items(self.account_id)
         self.hub.items_changed(self.account_id)
 

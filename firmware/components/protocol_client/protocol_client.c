@@ -69,6 +69,8 @@ typedef enum {
     MSG_ITEM_OPEN,          /* a = number, b = 1 for a reminder */
     MSG_ITEM_DELETE,        /* a = number, b = 1 for a reminder */
     MSG_ITEM_DONE,          /* a = reminder number, b = 1 completed / 0 open again */
+    MSG_NOTE_SESSION,       /* a = note number, b = 1 open / 0 close */
+    MSG_ITEM_PIN,           /* a = note number, b = 1 pinned / 0 not */
 } msg_type_t;
 
 typedef struct {
@@ -130,6 +132,14 @@ static volatile proto_conv_state_t s_conv = PROTO_CONV_IDLE;
 static bool             s_tts_ended;
 static bool             s_turn_ended;
 static int64_t          s_turn_deadline_ms;
+
+/* Note edit mode (proto task only) */
+#define NOTE_IDLE_CLOSE_MS  120000      /* mic closes after 2 min without speech */
+#define NOTE_TURN_LIMIT_MS  70000       /* server: 30 s waiting + 30 s sentence */
+static bool             s_note_open;        /* the note screen's mic is open */
+static int              s_note_number;
+static bool             s_turn_note;        /* the active turn is a note-mode turn */
+static int64_t          s_note_activity_ms; /* last speech heard (transcript) */
 
 static cJSON           *s_pending_changes;  /* local settings changes not yet sent */
 
@@ -217,11 +227,13 @@ static const char *json_str(const cJSON *obj, const char *key)
     return cJSON_IsString(it) ? it->valuestring : NULL;
 }
 
+static void note_close(bool keep);
+
 static void set_conv(proto_conv_state_t st)
 {
     if (s_conv != st) {
         s_conv = st;
-        emit(PROTO_EVT_CONV_STATE, st, NULL);
+        emit(s_turn_note ? PROTO_EVT_NOTE_STATE : PROTO_EVT_CONV_STATE, st, NULL);
         /* Modem sleep adds latency; keep the radio awake during a turn. */
         net_wifi_set_power_save(st == PROTO_CONV_IDLE);
     }
@@ -423,14 +435,55 @@ static void start_turn(void)
     s_turn_ended = false;
 
     uint32_t turn = s_active_turn;
-    ESP_LOGI(TAG, "listen_start turn %lu", (unsigned long)turn);
+    s_turn_note = s_note_open;
+    ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn, s_turn_note ? " (note)" : "");
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "language", st.language);
+    if (s_turn_note) {
+        cJSON_AddStringToObject(m, "mode", "note");
+        cJSON_AddNumberToObject(m, "note", s_note_number);
+    }
     send_json(m, "listen_start", true, turn);
 
     set_conv(PROTO_CONV_LISTENING);
-    s_turn_deadline_ms = now_ms() + (int64_t)(st.max_listen_s + 2) * 1000;
+    s_turn_deadline_ms = now_ms() + (s_turn_note ? NOTE_TURN_LIMIT_MS : (int64_t)(st.max_listen_s + 2) * 1000);
     audio_capture_start(turn, capture_cb, NULL);
+}
+
+/* Close the note session. `keep`: the sentence being heard is still processed (listen_end). */
+static void note_close(bool keep)
+{
+    if (!s_note_open) {
+        return;
+    }
+    s_note_open = false;
+    if (s_turn_note && s_turn_live && s_conv == PROTO_CONV_LISTENING) {
+        if (keep) {
+            send_turn_msg("listen_end", s_active_turn, NULL);  /* the server finishes the sentence */
+        } else {
+            abort_turn("user_tap");
+            set_conv(PROTO_CONV_IDLE);
+        }
+    }
+    emit(PROTO_EVT_NOTE_SESSION, 0, NULL);
+}
+
+static void note_open(int number)
+{
+    if (s_conn != CONN_SESSION) {
+        emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
+        emit(PROTO_EVT_NOTE_SESSION, 0, NULL);
+        return;
+    }
+    if (s_conv != PROTO_CONV_IDLE) {    /* a chat turn still running: it ends here */
+        abort_turn("user_tap");
+        set_conv(PROTO_CONV_IDLE);
+    }
+    s_note_open = true;
+    s_note_number = number;
+    s_note_activity_ms = now_ms();
+    emit(PROTO_EVT_NOTE_SESSION, 1, NULL);
+    start_turn();
 }
 
 static void handle_tap(void)
@@ -700,6 +753,17 @@ static void handle_text(const char *txt)
                 finish_turn_idle();
             }
         }
+        if (has_turn && turn == s_active_turn && s_turn_note) {
+            bool error = status && strcmp(status, "error") == 0;
+            if (s_turn_live) {
+                finish_turn_idle();
+            }
+            if (s_note_open && error) {
+                note_close(false);      /* refused (limit, no note...): do not loop */
+            } else if (s_note_open && s_conn == CONN_SESSION) {
+                start_turn();           /* mic stays open: next sentence */
+            }
+        }
         goto out;
     }
     if (!has_turn || turn != s_active_turn || !s_turn_live) {
@@ -731,7 +795,12 @@ static void handle_text(const char *txt)
         }
     } else if (strcmp(type, "stt_result") == 0) {
         const char *text = json_str(j, "text");
-        if (text) {
+        if (text && s_turn_note) {
+            if (text[0]) {
+                s_note_activity_ms = now_ms();
+            }
+            emit(PROTO_EVT_NOTE_TEXT, 0, text);
+        } else if (text) {
             emit(PROTO_EVT_TRANSCRIPT, cJSON_IsTrue(cJSON_GetObjectItem(j, "final")), text);
         }
         const char *lang = json_str(j, "language");     /* optional, detected language */
@@ -741,7 +810,7 @@ static void handle_text(const char *txt)
     } else if (strcmp(type, "llm_display") == 0) {
         const char *text = json_str(j, "text");
         if (text && text[0]) {
-            emit(PROTO_EVT_REPLY_DISPLAY, 0, text);
+            emit(s_turn_note ? PROTO_EVT_NOTE_TEXT : PROTO_EVT_REPLY_DISPLAY, s_turn_note ? 1 : 0, text);
         }
     } else if (strcmp(type, "llm_text") == 0) {
         const char *delta = json_str(j, "delta");
@@ -1145,7 +1214,23 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_TAP:
+        note_close(false);
         handle_tap();
+        break;
+    case MSG_NOTE_SESSION:
+        if (m->b) {
+            note_open((int)m->a);
+        } else {
+            note_close(true);
+        }
+        break;
+    case MSG_ITEM_PIN:
+        if (s_conn == CONN_SESSION) {
+            cJSON *msg = cJSON_CreateObject();
+            cJSON_AddNumberToObject(msg, "number", (double)m->a);
+            cJSON_AddBoolToObject(msg, "pinned", m->b != 0);
+            send_json(msg, "item_pin", false, 0);
+        }
         break;
     case MSG_SETTINGS_CHANGED: {
         cJSON *changes = cJSON_Parse(m->str);
@@ -1235,6 +1320,10 @@ static void handle_timers(void)
         if (now - s_last_status_ms >= STATUS_INTERVAL_MS) {
             s_last_status_ms = now;
             send_status();
+        }
+        if (s_note_open && now - s_note_activity_ms >= NOTE_IDLE_CLOSE_MS) {
+            ESP_LOGI(TAG, "note mic closed: no speech for %d s", NOTE_IDLE_CLOSE_MS / 1000);
+            note_close(false);
         }
         /* Turn safety limits (the server VAD is the authority, section 10). */
         if (s_conv != PROTO_CONV_IDLE && now >= s_turn_deadline_ms) {
@@ -1332,6 +1421,18 @@ void proto_item_open(bool reminder, int number)
 void proto_item_delete(bool reminder, int number)
 {
     msg_t m = { .type = MSG_ITEM_DELETE, .a = (uint32_t)number, .b = reminder ? 1 : 0 };
+    post(&m);
+}
+
+void proto_note_session(bool open, int number)
+{
+    msg_t m = { .type = MSG_NOTE_SESSION, .a = (uint32_t)number, .b = open ? 1 : 0 };
+    post(&m);
+}
+
+void proto_item_pin(int number, bool pinned)
+{
+    msg_t m = { .type = MSG_ITEM_PIN, .a = (uint32_t)number, .b = pinned ? 1 : 0 };
     post(&m);
 }
 

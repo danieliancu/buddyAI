@@ -150,6 +150,10 @@ class PersonaBody(BaseModel):
     is_default: bool = False
 
 
+class ItemPinBody(BaseModel):
+    pinned: bool
+
+
 class ItemBody(BaseModel):
     """A note or reminder from the web app. `due_at` is ISO 8601 with an offset (the browser's local time).
 

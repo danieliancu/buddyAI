@@ -264,6 +264,7 @@ class Item(SQLModel, table=True):
     early_fired_at: Optional[datetime] = None  # set once a watch received that advance alert
     location: Optional[str] = Field(default=None, max_length=120)  # reminders, optional: where
     participants: Optional[str] = Field(default=None, max_length=200)  # reminders, optional: "Ana, Mihai"
+    pinned: bool = False  # notes: kept at the top of the notes list
     fired_at: Optional[datetime] = None  # set once a watch received the reminder
     done_at: Optional[datetime] = None  # reminders only: marked completed (it no longer fires or counts as overdue)
     created_at: datetime = Field(default_factory=utcnow)

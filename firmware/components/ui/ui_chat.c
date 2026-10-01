@@ -108,7 +108,7 @@ static lv_obj_t *add_bubble(bool user, const char *text)
     lv_obj_set_style_text_line_space(l, 1, 0);
     if (user) {
         lv_obj_set_style_bg_color(l, g_ui_theme.accent, 0);
-        lv_obj_set_style_text_color(l, lv_color_white(), 0);
+        lv_obj_set_style_text_color(l, ui_on_color(g_ui_theme.accent), 0);
     } else {
         lv_obj_set_style_bg_color(l, lv_color_hex(REPLY_BG), 0);
     }
@@ -228,20 +228,7 @@ void ui_chat_init(void)
     lv_label_set_text(s_title, "Ola");
 
     /* X: same as the notes / reminders screens */
-    lv_obj_t *x = lv_button_create(s_scr);
-    lv_obj_remove_style_all(x);
-    lv_obj_set_size(x, 72, 72);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -22, 2);      /* same place as on the notes / reminders screens */
-    lv_obj_set_style_radius(x, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(x, lv_color_hex(PILL_BG), 0);
-    lv_obj_set_style_bg_opa(x, LV_OPA_TRANSP, 0);    /* just the X; the 72 px touch area stays */
-    lv_obj_set_ext_click_area(x, 28);
-    lv_obj_add_event_cb(x, close_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *xl = lv_label_create(x);
-    lv_obj_set_style_text_font(xl, &buddy_font_28, 0);
-    lv_obj_set_style_text_color(xl, lv_color_white(), 0);
-    lv_label_set_text(xl, ICON_CLOSE);
-    lv_obj_center(xl);
+    lv_obj_t *x = ui_add_close_x(s_scr, close_cb);
 
     s_list = lv_obj_create(s_scr);
     lv_obj_remove_style_all(s_list);
@@ -285,8 +272,7 @@ void ui_chat_init(void)
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_CLICKED, NULL);
     s_mic_lbl = lv_label_create(s_mic);
-    lv_obj_set_style_text_font(s_mic_lbl, &buddy_font_28, 0);
-    lv_obj_set_style_text_color(s_mic_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_mic_lbl, &buddy_font_28, 0);    /* colour: from the accent style */
     lv_obj_center(s_mic_lbl);
 
     lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */

@@ -20,7 +20,7 @@
 #define ROW_H           62
 #define CHIP_H          44
 #define THEME_DOT       48
-#define SLIDER_W        110
+#define SLIDER_W        90
 #define SLIDER_TRACK_H  12
 #define VALUE_W         54
 #define LANG_PILL_W     100
@@ -225,7 +225,7 @@ static lv_obj_t *make_pill_button(lv_obj_t *parent, const char *text, lv_obj_t *
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_t *l = lv_label_create(b);
     lv_label_set_text(l, text);
-    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_obj_set_style_text_color(b, lv_color_white(), 0);    /* the label inherits; accent: see below */
     lv_obj_center(l);
     if (label_out) {
         *label_out = l;
@@ -342,6 +342,7 @@ static void build_settings(void)
     lv_style_set_bg_opa(&s_st_knob, LV_OPA_COVER);
     lv_style_set_bg_color(&s_st_knob, lv_color_white());
     lv_style_set_pad_all(&s_st_knob, 6);            /* knob = track height + 12 px */
+    lv_style_set_border_width(&s_st_knob, 2);
 
     s_set_scr = lv_obj_create(NULL);
     lv_obj_add_style(s_set_scr, ui_style_screen(), 0);
@@ -371,16 +372,7 @@ static void build_settings(void)
     s_set_title = lv_label_create(hdr);
     lv_obj_set_style_text_font(s_set_title, &buddy_font_28, 0);
     lv_obj_center(s_set_title);
-    lv_obj_t *close = lv_button_create(hdr);
-    lv_obj_remove_style_all(close);
-    lv_obj_set_size(close, 64, 64);
-    lv_obj_set_ext_click_area(close, 28);
-    lv_obj_align(close, LV_ALIGN_RIGHT_MID, 10, 0);
-    lv_obj_add_event_cb(close, back_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *x = lv_label_create(close);
-    lv_obj_set_style_text_font(x, &buddy_font_28, 0);
-    lv_label_set_text(x, ICON_CLOSE);
-    lv_obj_center(x);
+    lv_obj_t *close = ui_add_close_x(s_set_scr, back_cb);   /* the same X as on every screen */
 
     /* Theme: preset colour dots */
     lv_obj_t *card = make_card(s_set_scr);
@@ -449,6 +441,7 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_btn_lang_other, lang_other_cb, LV_EVENT_CLICKED, NULL);
 
     make_tap_row(s_set_scr, SET_ICON_WIFI, &s_lbl_wifi_btn, NULL, wifi_btn_cb);
+    lv_obj_move_foreground(close);
 }
 
 /* Name of the active foreign language: the server's list, else quick_languages. */
@@ -482,8 +475,9 @@ static void settings_styles_apply(void)
     lv_style_set_border_color(&s_st_chip_on, a);
     lv_style_set_bg_color(&s_st_track, lv_color_mix(a, bg, 50));
     lv_style_set_bg_color(&s_st_fill, a);
+    lv_style_set_border_color(&s_st_knob, bg);
     lv_style_t *all[] = { &s_st_card, &s_st_card_pressed, &s_st_icon, &s_st_chip, &s_st_chip_on,
-                          &s_st_track, &s_st_fill };
+                          &s_st_track, &s_st_fill, &s_st_knob };
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
         lv_obj_report_style_change(all[i]);
     }
@@ -624,6 +618,8 @@ void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, con
                  const char *code, const char *button, void (*button_cb)(void),
                  bool dismissable, uint32_t auto_close_ms)
 {
+    /* the action button sits on the accent: readable text on it (dark on a white accent) */
+    lv_obj_set_style_text_color(s_msg_btn, ui_on_color(g_ui_theme.accent), 0);
     lv_label_set_text(s_msg_icon, icon ? icon : "");
     lv_obj_set_style_text_color(s_msg_icon, icon_color, 0);
     lv_label_set_text(s_msg_title, title ? title : "");

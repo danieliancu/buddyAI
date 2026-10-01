@@ -77,8 +77,10 @@ static bool       s_mic_dim;             /* mic circle drawn faded (server think
 static lv_obj_t  *s_shortcut_art[3];     /* watchface: shortcut circles, pre-rendered, one shared buffer */
 static uint8_t   *s_shortcut_buf;
 static int        s_shortcut_count;
+static lv_obj_t  *s_shortcut_lbl[3];     /* their icons (dark on a light circle) */
 
 static void mic_render(void);
+static void mic_fg_apply(void);
 static lv_style_t s_st_divider;         /* faded lines around the watchface icons */
 
 static ui_conv_t     s_conv = UI_CONV_IDLE;
@@ -572,6 +574,9 @@ static lv_obj_t *add_shortcut(lv_obj_t *parent, const char *icon, int which)
     lv_obj_set_style_text_color(l, lv_color_white(), 0);
     lv_label_set_text(l, icon);
     lv_obj_center(l);
+    if (s_shortcut_count > 0 && s_shortcut_count <= 3) {
+        s_shortcut_lbl[s_shortcut_count - 1] = l;
+    }
 
     /* Count in the top-right corner, positioned on its own so the icon never moves. */
     lv_obj_t *badge = lv_label_create(b);
@@ -692,6 +697,23 @@ static void mic_render(void)
                 lv_color_mix(a, lv_color_black(), 215), s_mic_dim ? LV_OPA_60 : LV_OPA_COVER,
                 lv_color_mix(white, a, 140), LV_OPA_80);
     lv_canvas_finish_layer(s_mic_art, &layer);
+    mic_fg_apply();
+}
+
+/* The mic icon / speaking bars: dark when the mic circle is light (e.g. the white "mono" accent). */
+static void mic_fg_apply(void)
+{
+    const lv_color_t a = g_ui_theme.accent;
+    const lv_color_t mid = lv_color_mix(lv_color_mix(lv_color_white(), a, 110), lv_color_mix(a, lv_color_black(), 215), 128);
+    const lv_color_t fg = ui_on_color(mid);
+    if (s_lbl_mic) {
+        lv_obj_set_style_text_color(s_lbl_mic, fg, 0);
+    }
+    for (int i = 0; i < NUM_BARS; i++) {
+        if (s_bars[i]) {
+            lv_obj_set_style_bg_color(s_bars[i], fg, 0);
+        }
+    }
 }
 
 /* The three shortcut circles look the same: drawn once into one buffer that all three canvases
@@ -711,6 +733,12 @@ static void shortcuts_render(void)
     for (int i = 1; i < s_shortcut_count; i++) {
         lv_obj_invalidate(s_shortcut_art[i]);
     }
+    const lv_color_t fg = ui_on_color(lv_color_mix(lv_color_mix(a, bg, 130), lv_color_mix(a, bg, 45), 128));
+    for (int i = 0; i < 3; i++) {
+        if (s_shortcut_lbl[i]) {
+            lv_obj_set_style_text_color(s_shortcut_lbl[i], fg, 0);
+        }
+    }
 }
 
 static void theme_styles_apply(void)
@@ -722,6 +750,7 @@ static void theme_styles_apply(void)
     lv_style_set_text_color(&s_st_clock, g_ui_theme.clock);
     lv_style_set_bg_color(&s_st_accent_bg, g_ui_theme.accent);
     lv_style_set_bg_opa(&s_st_accent_bg, LV_OPA_COVER);
+    lv_style_set_text_color(&s_st_accent_bg, ui_on_color(g_ui_theme.accent));
     lv_style_set_border_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_arc_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_bg_opa(&s_st_divider, LV_OPA_COVER);
@@ -732,6 +761,31 @@ static void theme_styles_apply(void)
     mic_render();
     shortcuts_render();
     lv_obj_report_style_change(NULL);
+}
+
+lv_color_t ui_on_color(lv_color_t bg)
+{
+    return lv_color_luminance(bg) > 150 ? lv_color_hex(0x111318) : lv_color_white();
+}
+
+lv_obj_t *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb)
+{
+    lv_obj_t *x = lv_button_create(scr);
+    lv_obj_remove_style_all(x);
+    lv_obj_add_flag(x, LV_OBJ_FLAG_FLOATING);
+    lv_obj_remove_flag(x, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_size(x, 72, 72);
+    /* Alignment is relative to the parent's padded content area: undo its padding, so the X sits 22 px
+     * from the right edge and 2 px from the top on every screen. */
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -22 + lv_obj_get_style_pad_right(scr, 0), 2 - lv_obj_get_style_pad_top(scr, 0));
+    lv_obj_set_ext_click_area(x, 28);
+    lv_obj_add_event_cb(x, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *l = lv_label_create(x);
+    lv_obj_set_style_text_font(l, &buddy_font_28, 0);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_label_set_text(l, ICON_CLOSE);
+    lv_obj_center(l);
+    return x;
 }
 
 /* Shared by the other screens (ui_screens.c) through lv_obj_add_style. */
@@ -870,6 +924,7 @@ static void build_watchface(void)
     lv_obj_set_style_text_color(s_lbl_mic, lv_color_white(), 0);
     lv_label_set_text(s_lbl_mic, ICON_MIC);
     lv_obj_center(s_lbl_mic);
+    mic_fg_apply();
 
     /* Speaking bars (inside the button) */
     s_bars_box = lv_obj_create(s_btn_mic);
@@ -888,6 +943,7 @@ static void build_watchface(void)
         lv_obj_set_style_bg_opa(s_bars[i], LV_OPA_COVER, 0);
         lv_obj_remove_flag(s_bars[i], LV_OBJ_FLAG_CLICKABLE);
     }
+    mic_fg_apply();
     lv_obj_add_flag(s_bars_box, LV_OBJ_FLAG_HIDDEN);
 
     /* Listening ring (behind the button visually: drawn as a border only) */

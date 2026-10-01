@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Bell, CalendarClock, Check, MapPin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, CalendarClock, Check, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
 import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
@@ -25,7 +25,23 @@ export function MyNotesPage() {
   const q = useItems("note");
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Item | null>(null);
-  const notes = [...q.items].sort((a, b) => a.number - b.number);
+  // Pinned first (like the watch), then by number.
+  const notes = [...q.items].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.number - b.number);
+  const [pinning, setPinning] = useState<number | null>(null);
+  const [pinError, setPinError] = useState<unknown>(null);
+
+  const togglePin = async (n: Item) => {
+    setPinning(n.number);
+    setPinError(null);
+    try {
+      await api.me.items.setPinned(n.number, !n.pinned);
+      q.reload();
+    } catch (err) {
+      setPinError(err);
+    } finally {
+      setPinning(null);
+    }
+  };
 
   return (
     <ItemsLayout
@@ -36,6 +52,7 @@ export function MyNotesPage() {
       onRetry={q.reload}
       loading={q.loading && !q.data}
     >
+      <ErrorBox error={pinError} />
       {notes.length === 0 ? (
         <Card>
           <Empty icon={<NotebookPen className="size-7" />} title="No notes yet" />
@@ -43,7 +60,29 @@ export function MyNotesPage() {
       ) : (
         <ul className="space-y-3">
           {notes.map((n) => (
-            <ItemCard key={n.number} item={n} onEdit={() => setEditing(n)} onDelete={() => setDeleting(n)}>
+            <ItemCard
+              key={n.number}
+              item={n}
+              onEdit={() => setEditing(n)}
+              onDelete={() => setDeleting(n)}
+              leading={
+                <button
+                  type="button"
+                  onClick={() => togglePin(n)}
+                  disabled={pinning === n.number}
+                  aria-pressed={!!n.pinned}
+                  aria-label={n.pinned ? `Unpin note #${n.number}` : `Pin note #${n.number}`}
+                  title={n.pinned ? "Unpin" : "Pin to the top"}
+                  className={
+                    n.pinned
+                      ? "grid size-6 shrink-0 place-items-center rounded-full bg-accent text-white transition disabled:opacity-60"
+                      : "grid size-6 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface-2 hover:text-fg disabled:opacity-60"
+                  }
+                >
+                  <Pin className="size-3.5" />
+                </button>
+              }
+            >
               <p className="line-clamp-4 text-sm whitespace-pre-line">{n.text}</p>
             </ItemCard>
           ))}

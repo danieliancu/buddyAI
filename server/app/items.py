@@ -23,6 +23,7 @@ from app import settings_tool
 from app.db.models import Item
 from app.db.repositories import ItemLimitError, ItemRepo, ItemTextError
 from app.db.session import session_scope
+from app.notes_edit import MARKER
 from app.settings_tool import SETTINGS_RULE, SETTINGS_TOOL
 
 log = logging.getLogger(__name__)
@@ -62,10 +63,21 @@ def parse_local_time(value: Any, tz: str, field: str) -> datetime:
     return parse_local(text, tz)
 
 
-def preview(text: str) -> str:
-    """Start of a note on one line (line breaks become spaces), shortened for list rows."""
-    flat = " ".join(text.split())
+def _line(text: str, index: int) -> str:
+    """A note's index-th non-empty line (without a list marker), shortened for list rows."""
+    lines = [ln for ln in (MARKER.sub("", raw).strip() for raw in text.splitlines()) if ln]
+    flat = " ".join(lines[index].split()) if index < len(lines) else ""
     return flat[:PREVIEW_CHARS].rstrip() + ("…" if len(flat) > PREVIEW_CHARS else "")
+
+
+def preview(text: str) -> str:
+    """A note's title for list rows: its first line."""
+    return _line(text, 0)
+
+
+def subtitle(text: str) -> str:
+    """The second line of a note's list row: its first numbered line (the line under the title)."""
+    return _line(text, 1)
 
 
 def is_done(it: Item) -> bool:
@@ -91,6 +103,7 @@ def web_view(it: Item) -> dict[str, Any]:
         "notify_before_min": it.notify_before_min,
         "location": it.location,
         "participants": it.participants,
+        "pinned": it.pinned,
         "overdue": is_overdue(it),
         "done": is_done(it),
         "created_at": it.created_at.isoformat(),
@@ -101,6 +114,8 @@ def web_view(it: Item) -> dict[str, Any]:
 def device_full(it: Item, tz: str) -> dict[str, Any]:
     """One item with its full text, for `item_show` / `reminder_fire`."""
     out: dict[str, Any] = {"kind": it.kind, "number": it.number, "text": it.text}
+    if it.kind == "note":
+        out["pinned"] = it.pinned
     if it.kind == "reminder":
         out["due_local"] = local_time(it.due_at, tz)
         out["end_local"] = local_time(it.end_at, tz)
@@ -116,8 +131,8 @@ def device_snapshot(items: list[Item], tz: str) -> dict[str, list[dict[str, Any]
     """The `items` message body: note previews by number, open reminders by due time, then completed ones."""
     now = datetime.now(timezone.utc)
     notes = [
-        {"number": it.number, "preview": preview(it.text)}
-        for it in sorted(items, key=lambda i: i.number)
+        {"number": it.number, "preview": preview(it.text), "subtitle": subtitle(it.text), "pinned": it.pinned}
+        for it in sorted(items, key=lambda i: (not i.pinned, i.number))
         if it.kind == "note"
     ]
     rems = sorted(

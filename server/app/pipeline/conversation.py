@@ -20,7 +20,9 @@ from app import languages
 from app.audio.codec import OpusEncoder, apply_gain
 from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
-from app.items import AssistantTools
+from app.db.repositories import ItemRepo, ItemTextError
+from app.items import AssistantTools, device_full
+from app import notes_edit
 from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
@@ -48,6 +50,9 @@ SILENCE_SEND_MS = 240
 HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
 MAX_TOOL_ROUNDS = 3  # LLM calls that may end in tool calls; the next one gets no tools and must answer
+NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
+NOTE_SENTENCE_S = 30  # note mode: the longest sentence
+NOTE_MAX_TOKENS = 300
 
 MessagesBuilder = Callable[[TurnContext, str], list[dict[str, Any]]]
 
@@ -122,7 +127,10 @@ class ConversationPipeline:
             return TurnResult("no_speech")
         turn.user_text = user_text
         await io.send(turn, "state", state="thinking")
-        await self._reply(turn, io)
+        if turn.mode == "note":
+            await self._note_reply(turn, io)
+        else:
+            await self._reply(turn, io)
         return TurnResult("completed")
 
     # --- listening: VAD + streaming STT ---------------------------------------------------
@@ -134,11 +142,14 @@ class ConversationPipeline:
         async def on_partial(text: str) -> None:
             await io.send(turn, "stt_result", text=text, final=False)
 
+        note = turn.mode == "note"
         detector = EndpointDetector(
             self.vad_factory(),
             sensitivity=s.vad_sensitivity,
-            no_speech_timeout_ms=s.wait_for_speech_s * 1000,
-            max_duration_ms=s.max_listen_s * 1000,
+            # Note mode: the watch starts the next sentence right away, so a quiet stretch just ends
+            # this (free) turn; one sentence is at most NOTE_SENTENCE_S long.
+            no_speech_timeout_ms=(NOTE_WAIT_S if note else s.wait_for_speech_s) * 1000,
+            max_duration_ms=(NOTE_SENTENCE_S if note else s.max_listen_s) * 1000,
         )
         await io.send(turn, "state", state="listening")
         # Silence before the first word never reaches the (billed) STT: audio is sent only once the
@@ -163,7 +174,7 @@ class ConversationPipeline:
                     item = None
                 if turn.cancelled:
                     raise asyncio.CancelledError()
-                if item is None:
+                if item is None:  # uplink stalled, or the watch's stop button (listen_end)
                     reason = "no_speech" if not detector.speech_started else "vad"
                     turn.marks.speech_end = mono_ms()
                     break
@@ -418,6 +429,82 @@ class ConversationPipeline:
         if started:
             await io.send(turn, "tts_end")
 
+
+    # --- note edit mode: one sentence -> line operations on one note -----------------------------
+
+    async def _note_reply(self, turn: TurnContext, io: TurnIO) -> None:
+        """Apply one sentence to the note. Low-cost model, minimal prompt, one tool, no TTS."""
+        if turn.account_id is None or turn.note_number is None:
+            raise ProviderError("llm", "note mode needs an owner and a note")
+        account_id, number = turn.account_id, turn.note_number
+        with session_scope() as db:
+            it = ItemRepo(db).get(account_id, "note", number)
+            text = it.text if it else None
+        if text is None:
+            await io.send(turn, "llm_display", text="?")
+            return
+        lines = notes_edit.note_lines(text)
+        # Always the default (low-cost) model, whatever the watch's chat model is.
+        llm, model = self.router.llm(turn.settings.model_copy(update={"llm_model": ""}))
+        request = LLMRequest(
+            messages=[
+                {"role": "system", "content": notes_edit.NOTE_SYSTEM},  # identical every time: cached
+                {"role": "system", "content": f"Note #{number}:\n{notes_edit.numbered(lines)}"},
+                {"role": "user", "content": turn.user_text},
+            ],
+            model=model,
+            max_tokens=NOTE_MAX_TOKENS,
+            params=self.router.llm_params(),
+            tools=[notes_edit.NOTE_EDIT_TOOL],
+        )
+        usage_in = usage_cached = usage_out = 0
+        calls: list[ToolCall] = []
+        reply: list[str] = []
+        turn.marks.llm_request = mono_ms()
+        try:
+            async for chunk in llm.stream(request):
+                if chunk.delta:
+                    reply.append(chunk.delta)
+                if chunk.input_tokens is not None:
+                    usage_in += chunk.input_tokens
+                    usage_cached += min(chunk.cached_input_tokens, chunk.input_tokens)
+                    usage_out += chunk.output_tokens or 0
+                if chunk.tool_calls:
+                    calls = chunk.tool_calls
+        finally:
+            turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
+            turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
+            turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
+        call = next((c for c in calls if c.name == notes_edit.NOTE_EDIT_TOOL["name"]), None)
+        if call is None:  # an unclear command: a short question on the screen, nothing changed
+            question = strip_emoji("".join(reply)).strip()[:80]
+            turn.assistant_text = question
+            if question:
+                await io.send(turn, "llm_display", text=question)
+            return
+        try:
+            new_lines, highlight = notes_edit.apply_note_ops(
+                lines, notes_edit.parse_ops(call.arguments), notes_edit.undo_get(account_id, number)
+            )
+            with session_scope() as db:
+                repo = ItemRepo(db)
+                it = repo.get(account_id, "note", number)
+                if it is None:
+                    return
+                it = repo.set_note_text(it, "\n".join(new_lines))
+                view = device_full(it, turn.settings.timezone)
+        except (ValueError, ItemTextError) as exc:
+            log.info("note edit refused: %s", exc)
+            turn.assistant_text = f"(not applied: {exc})"
+            await io.send(turn, "llm_display", text="?")
+            return
+        notes_edit.undo_set(account_id, number, lines)
+        log.info("note #%s edit %s", number, call.arguments[:200])
+        turn.assistant_text = f"note_edit {call.arguments[:300]}"
+        turn.items_changed = True
+        turn.changed_line = highlight
+        # changed_line: 0 = the title, n = numbered line n (the watch's numbers), null = none
+        turn.pending_open = {"item": {**view, "changed_line": highlight}}
 
     async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
         searcher = turn.searcher

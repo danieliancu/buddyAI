@@ -41,7 +41,8 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. |
-| `listen_start` | `turn_id`, `language?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. |
+| `listen_start` | `turn_id`, `language?`, `mode?`, `note?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. A note turn with no speech is not stored or billed. |
+| `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
 | `playback_done` | `turn_id` | Device finished playing the reply. |
@@ -50,6 +51,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `ping` | — | Keepalive. |
 | `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
+| `item_pin` | `number`, `pinned` | Pin / unpin a note (pinned notes are listed first); server replies with a fresh `items` to every watch of the account. |
 | `item_done` | `kind` (`reminder`), `number`, `done` | User completed (`true`) or reopened (`false`) a reminder; server replies with a fresh `items` to every watch of the account. |
 
 ### 3.2 Server → Device
@@ -72,9 +74,9 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
-| `items` | `notes: [{number, preview}]`, `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
+| `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
 | `items_open` | `kind` | Open the notes or reminders list (the user asked to see them). Sent after `turn_end`. |
-| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. |
+| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen. After a voice request it is sent after `turn_end`. `changed_line` (note mode): the 1-based line just added or changed, to highlight. |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
 | `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 

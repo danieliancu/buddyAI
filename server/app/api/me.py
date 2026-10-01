@@ -19,6 +19,7 @@ from app import accounts, email
 from app.api.common import (
     ItemBody,
     ItemDoneBody,
+    ItemPinBody,
     PersonaBody,
     VoiceSampleBody,
     conversations_out,
@@ -453,6 +454,20 @@ async def update_item(
         raise _time_error(exc) from None
     except ItemTextError as exc:
         raise HTTPException(422, [{"loc": ["text"], "msg": str(exc), "type": "value_error"}]) from None
+    out = web_view(it)
+    await _items_changed(request, acc.id)
+    return out
+
+
+@router.put("/items/note/{number}/pin")
+async def set_note_pinned(
+    number: int,
+    body: ItemPinBody,
+    request: Request,
+    acc: Account = Depends(current_account),
+    db: Session = Depends(get_session),
+) -> dict:
+    it = ItemRepo(db).update(_own_item(db, acc, "note", number), pinned=body.pinned)
     out = web_view(it)
     await _items_changed(request, acc.id)
     return out

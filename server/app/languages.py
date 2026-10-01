@@ -140,9 +140,14 @@ def sample_sentence(code: str) -> str:
 
 
 def watch_languages() -> list[dict[str, str]]:
-    """Every supported language for the watch's language picker: renderable label + English name
-    (for search), sorted by label."""
-    items = [{"code": lang.code, "label": lang.watch_label, "name": lang.name} for lang in supported()]
+    """The watch's language picker: the supported languages the watch menus are translated into
+    (WATCH_UI_LANGUAGES - English, the European languages, Ukrainian), with a renderable label + English
+    name (for search), sorted by label. Other languages can still be chosen in the web app."""
+    items = [
+        {"code": lang.code, "label": lang.watch_label, "name": lang.name}
+        for lang in supported()
+        if lang.code in WATCH_UI_LANGUAGES
+    ]
     return sorted(items, key=lambda i: i["label"].casefold())
 
 

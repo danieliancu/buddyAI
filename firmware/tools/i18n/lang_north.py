@@ -82,6 +82,8 @@ LANGS = {
             "PARTICIPANTS": "Deltagare",
             "DONE": "Klar",
             "STARTS_IN_FMT": "Börjar om %s",
+            "NOTE_EMPTY": "Tom anteckning.\nTryck på mikrofonen och diktera.",
+            "NOTE_HELP": "Säg en rad för att lägga till den, eller ”ta bort 2”, ”flytta 3 överst”.",
         },
     },
     "da": {
@@ -165,6 +167,8 @@ LANGS = {
             "PARTICIPANTS": "Deltagere",
             "DONE": "Færdig",
             "STARTS_IN_FMT": "Starter om %s",
+            "NOTE_EMPTY": "Tom note.\nTryk på mikrofonen og dikter.",
+            "NOTE_HELP": "Sig en linje for at tilføje den, eller »slet 2«, »flyt 3 øverst«.",
         },
     },
     "no": {
@@ -248,6 +252,8 @@ LANGS = {
             "PARTICIPANTS": "Deltakere",
             "DONE": "Ferdig",
             "STARTS_IN_FMT": "Starter om %s",
+            "NOTE_EMPTY": "Tomt notat.\nTrykk på mikrofonen og dikter.",
+            "NOTE_HELP": "Si en linje for å legge den til, eller «slett 2», «flytt 3 øverst».",
         },
     },
     "is": {
@@ -331,6 +337,8 @@ LANGS = {
             "PARTICIPANTS": "Þátttakendur",
             "DONE": "Klárað",
             "STARTS_IN_FMT": "Hefst eftir %s",
+            "NOTE_EMPTY": "Tómur minnismiði.\nÝttu á hljóðnemann og lestu fyrir.",
+            "NOTE_HELP": "Segðu línu til að bæta henni við, eða „eyddu 2“, „færðu 3 efst“.",
         },
     },
     "fi": {
@@ -414,6 +422,8 @@ LANGS = {
             "PARTICIPANTS": "Osallistujat",
             "DONE": "Valmis",
             "STARTS_IN_FMT": "Alkaa %s kuluttua",
+            "NOTE_EMPTY": "Tyhjä muistiinpano.\nNapauta mikrofonia ja sanele.",
+            "NOTE_HELP": "Sano rivi lisätäksesi sen, tai ”poista 2”, ”siirrä 3 ylös”.",
         },
     },
     "et": {
@@ -497,6 +507,8 @@ LANGS = {
             "PARTICIPANTS": "Osalejad",
             "DONE": "Valmis",
             "STARTS_IN_FMT": "Algab %s pärast",
+            "NOTE_EMPTY": "Tühi märge.\nPuuduta mikrofoni ja dikteeri.",
+            "NOTE_HELP": "Ütle rida, et see lisada, või „kustuta 2“, „vii 3 üles“.",
         },
     },
     "lv": {
@@ -580,6 +592,8 @@ LANGS = {
             "PARTICIPANTS": "Dalībnieki",
             "DONE": "Gatavs",
             "STARTS_IN_FMT": "Sākas pēc %s",
+            "NOTE_EMPTY": "Tukša piezīme.\nPieskaries mikrofonam un diktē.",
+            "NOTE_HELP": "Pasaki rindu, lai to pievienotu, vai “dzēs 2”, “pārvieto 3 uz augšu”.",
         },
     },
     "lt": {
@@ -663,6 +677,8 @@ LANGS = {
             "PARTICIPANTS": "Dalyviai",
             "DONE": "Atlikta",
             "STARTS_IN_FMT": "Prasideda po %s",
+            "NOTE_EMPTY": "Tuščias užrašas.\nBakstelėk mikrofoną ir diktuok.",
+            "NOTE_HELP": "Pasakyk eilutę, kad ją pridėtum, arba „ištrink 2“, „perkelk 3 į viršų“.",
         },
     },
     "cy": {
@@ -746,6 +762,8 @@ LANGS = {
             "PARTICIPANTS": "Cyfranogwyr",
             "DONE": "Gorffen",
             "STARTS_IN_FMT": "Yn dechrau mewn %s",
+            "NOTE_EMPTY": "Nodyn gwag.\nTapia’r meicroffon ac arddyweda.",
+            "NOTE_HELP": "Dywed linell i’w hychwanegu, neu “dileu 2”, “symud 3 i’r brig”.",
         },
     },
 }

@@ -179,17 +179,7 @@ void ui_lang_init(void)
     lv_obj_align(s_title, LV_ALIGN_TOP_LEFT, 36, 42);
     lv_label_set_text(s_title, ui_str(STR_LANGUAGE));
 
-    lv_obj_t *x = lv_button_create(s_scr);
-    lv_obj_remove_style_all(x);
-    lv_obj_set_size(x, 72, 72);
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, -22, 2);
-    lv_obj_set_ext_click_area(x, 28);
-    lv_obj_add_event_cb(x, close_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *xl = lv_label_create(x);
-    lv_obj_set_style_text_font(xl, &buddy_font_28, 0);
-    lv_obj_set_style_text_color(xl, lv_color_white(), 0);
-    lv_label_set_text(xl, ICON_CLOSE);
-    lv_obj_center(xl);
+    lv_obj_t *x = ui_add_close_x(s_scr, close_cb);
 
     s_search = lv_textarea_create(s_scr);
     lv_obj_set_size(s_search, CONTENT_W, SEARCH_H);

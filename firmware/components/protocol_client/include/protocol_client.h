@@ -61,6 +61,9 @@ typedef enum {
     PROTO_EVT_ITEM_SHOW,            /* str = `item_show` message JSON */
     PROTO_EVT_REMINDER,             /* str = `reminder_fire` message JSON */
     PROTO_EVT_NOTICE,               /* str = `notice` message JSON (usage threshold) */
+    PROTO_EVT_NOTE_SESSION,         /* num = 1 note mic opened, 0 closed */
+    PROTO_EVT_NOTE_STATE,           /* num = proto_conv_state_t of a note-mode turn */
+    PROTO_EVT_NOTE_TEXT,            /* str = live transcript (num 0) or the assistant's question (num 1) */
 } proto_event_type_t;
 
 typedef struct {
@@ -104,6 +107,11 @@ void proto_item_open(bool reminder, int number);
 void proto_item_delete(bool reminder, int number);
 /* Mark a reminder completed (done = true) or open again. */
 void proto_item_done(int number, bool done);
+/* Note edit mode: open = keep the mic open on note `number`, one sentence per turn (`listen_start`
+ * with mode "note"), until closed (stop button: the sentence in progress is still processed), the
+ * note screen is left, or NOTE_IDLE_CLOSE_MS pass without speech. */
+void proto_note_session(bool open, int number);
+void proto_item_pin(int number, bool pinned);
 
 /* Force a new connection cycle (e.g. after the server URL changed). */
 void proto_reconnect(void);

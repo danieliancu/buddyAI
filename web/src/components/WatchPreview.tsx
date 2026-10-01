@@ -23,6 +23,24 @@ const DATE_MAX_W = 380; // longer dates drop the weekday (ui.c)
 const mix = (a: string, b: string, m: number) => `color-mix(in srgb, ${a} ${((m / 255) * 100).toFixed(1)}%, ${b})`;
 const PREVIEW_BATTERY = 76;
 
+/** "#rrggbb" -> [r, g, b] (0 when unparsable). */
+function rgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const n = m ? parseInt(m[1], 16) : 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** lv_color_mix(a, b, m) on hex colours: m/255 of `a`. */
+function mixRgb(a: [number, number, number], b: [number, number, number], m: number): [number, number, number] {
+  return [0, 1, 2].map((i) => Math.round((a[i] * m + b[i] * (255 - m)) / 255)) as [number, number, number];
+}
+
+/** ui_on_color(): text / icon colour readable on a fill - near-black on light fills (e.g. the "mono" theme). */
+function onColor(c: [number, number, number]): string {
+  const lum = (c[0] * 54 + c[1] * 183 + c[2] * 19) >> 8; // LVGL lv_color_luminance
+  return lum > 150 ? "#111318" : "#ffffff";
+}
+
 type Glyph = { w: number; d: string };
 
 /** A FontAwesome glyph at `size` px, sitting on the text baseline like the firmware's font glyphs. */
@@ -147,6 +165,11 @@ export default function WatchPreview({
 
   const { time, date } = formatParts(now, timezone, dateLang(language, preferredLanguage));
   const dim = Math.max(0, Math.min(0.85, (100 - brightness) / 100));
+  const accent = rgb(theme.accent), bgRgb = rgb(theme.background);
+  const white: [number, number, number] = [255, 255, 255];
+  // Same rule as the watch: dark icons on light circles.
+  const shortcutFg = onColor(mixRgb(mixRgb(accent, bgRgb, 130), mixRgb(accent, bgRgb, 45), 128));
+  const micFg = onColor(mixRgb(mixRgb(white, accent, 110), mixRgb(accent, [0, 0, 0], 215), 128));
 
   return (
     <div ref={box} className="w-full">
@@ -219,7 +242,7 @@ export default function WatchPreview({
                     width: SHORTCUT,
                     height: SHORTCUT,
                     paddingTop: 20.5,
-                    color: "#fff",
+                    color: shortcutFg,
                     background: `linear-gradient(180deg, ${mix(theme.accent, theme.background, 130)}, ${mix(theme.accent, theme.background, 45)})`,
                     border: `2px solid ${mix(mix("#ffffff", theme.accent, 90), "transparent", 153)}`,
                     boxSizing: "border-box",
@@ -239,7 +262,7 @@ export default function WatchPreview({
                 top: MIC_Y,
                 width: MIC_SIZE,
                 height: MIC_SIZE,
-                color: "#fff",
+                color: micFg,
                 background: `linear-gradient(180deg, ${mix("#ffffff", theme.accent, 110)}, ${mix(theme.accent, "#000000", 215)})`,
                 border: `2px solid ${mix(mix("#ffffff", theme.accent, 140), "transparent", 204)}`,
                 boxSizing: "border-box",

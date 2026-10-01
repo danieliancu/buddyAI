@@ -65,6 +65,8 @@ extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° �
 #define SET_ICON_DOC        "\xEF\x85\x9C"  /* U+F15C file-alt: description */
 #define SET_ICON_USERS      "\xEF\x83\x80"  /* U+F0C0: participants */
 #define SET_ICON_CALENDAR   "\xEF\x81\xB3"  /* U+F073, in buddy_font_set_lg */
+#define SET_ICON_TRASH      "\xEF\x87\xB8"  /* U+F1F8 */
+#define SET_ICON_PIN_NOTE   "\xEF\x82\x8D"  /* U+F08D thumbtack: pinned note */
 
 /* ---- strings ---- */
 typedef enum {
@@ -144,6 +146,8 @@ typedef enum {
     STR_PARTICIPANTS,
     STR_DONE,
     STR_STARTS_IN_FMT,  /* "Starts in %s" (advance alert) */
+    STR_NOTE_EMPTY,
+    STR_NOTE_HELP,      /* note mic open: how to dictate / edit */
     STR__COUNT,
 } ui_str_t;
 
@@ -208,7 +212,13 @@ void ui_go_watchface(void);
 /* ---- core (ui.c) ---- */
 lv_obj_t *ui_watch_screen(void);
 lv_style_t *ui_style_screen(void);
-lv_style_t *ui_style_accent_bg(void);
+lv_style_t *ui_style_accent_bg(void);       /* accent fill + readable text colour on it */
+/* Text / icon colour readable on `bg`: near-black on light fills (e.g. the white "mono" accent), else white. */
+lv_color_t  ui_on_color(lv_color_t bg);
+/* The X that closes a screen: the same place, size and colour on every screen (white, top right, 72 px
+ * plus a wide touch margin). Floating: outside layouts and scrolling. Bring it to the front once the
+ * screen is built (lv_obj_move_foreground), so nothing covers its touch area. */
+lv_obj_t   *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb);
 lv_style_t *ui_style_accent_border(void);  /* border + arc in the accent color */
 void      ui_load_screen(lv_obj_t *scr, bool to_left);
 void      ui_note_activity(void);

@@ -82,6 +82,8 @@ LANGS = {
             "PARTICIPANTS": "Uczestnicy",
             "DONE": "Gotowe",
             "STARTS_IN_FMT": "Zaczyna się za %s",
+            "NOTE_EMPTY": "Pusta notatka.\nDotknij mikrofonu i dyktuj.",
+            "NOTE_HELP": "Powiedz linijkę, aby ją dodać, albo „usuń 2”, „przenieś 3 na górę”.",
         },
     },
     "cs": {
@@ -165,6 +167,8 @@ LANGS = {
             "PARTICIPANTS": "Účastníci",
             "DONE": "Hotovo",
             "STARTS_IN_FMT": "Začíná za %s",
+            "NOTE_EMPTY": "Prázdná poznámka.\nKlepni na mikrofon a diktuj.",
+            "NOTE_HELP": "Řekni řádek a přidá se, nebo „smaž 2“, „přesuň 3 nahoru“.",
         },
     },
     "sk": {
@@ -248,6 +252,8 @@ LANGS = {
             "PARTICIPANTS": "Účastníci",
             "DONE": "Hotovo",
             "STARTS_IN_FMT": "Začína o %s",
+            "NOTE_EMPTY": "Prázdna poznámka.\nŤukni na mikrofón a diktuj.",
+            "NOTE_HELP": "Povedz riadok a pridá sa, alebo „vymaž 2“, „presuň 3 hore“.",
         },
     },
     "hu": {
@@ -331,6 +337,8 @@ LANGS = {
             "PARTICIPANTS": "Résztvevők",
             "DONE": "Kész",
             "STARTS_IN_FMT": "%s múlva kezdődik",
+            "NOTE_EMPTY": "Üres jegyzet.\nKoppints a mikrofonra, és diktálj.",
+            "NOTE_HELP": "Mondj egy sort a hozzáadáshoz, vagy „töröld a 2-t”, „a 3 legyen felül”.",
         },
     },
     "sl": {
@@ -414,6 +422,8 @@ LANGS = {
             "PARTICIPANTS": "Udeleženci",
             "DONE": "Končano",
             "STARTS_IN_FMT": "Začne se čez %s",
+            "NOTE_EMPTY": "Prazen zapisek.\nTapni mikrofon in nareki.",
+            "NOTE_HELP": "Povej vrstico, da jo dodaš, ali »izbriši 2«, »premakni 3 na vrh«.",
         },
     },
     "hr": {
@@ -497,6 +507,8 @@ LANGS = {
             "PARTICIPANTS": "Sudionici",
             "DONE": "Gotovo",
             "STARTS_IN_FMT": "Počinje za %s",
+            "NOTE_EMPTY": "Prazna bilješka.\nDodirni mikrofon i diktiraj.",
+            "NOTE_HELP": "Izgovori redak da ga dodaš ili „izbriši 2”, „premjesti 3 na vrh”.",
         },
     },
     "bs": {
@@ -580,6 +592,8 @@ LANGS = {
             "PARTICIPANTS": "Učesnici",
             "DONE": "Gotovo",
             "STARTS_IN_FMT": "Počinje za %s",
+            "NOTE_EMPTY": "Prazna bilješka.\nDodirni mikrofon i diktiraj.",
+            "NOTE_HELP": "Izgovori red da ga dodaš ili „izbriši 2”, „premjesti 3 na vrh”.",
         },
     },
     "sr": {
@@ -663,6 +677,8 @@ LANGS = {
             "PARTICIPANTS": "Učesnici",
             "DONE": "Gotovo",
             "STARTS_IN_FMT": "Počinje za %s",
+            "NOTE_EMPTY": "Prazna beleška.\nDodirni mikrofon i diktiraj.",
+            "NOTE_HELP": "Izgovori red da ga dodaš ili „izbriši 2”, „premesti 3 na vrh”.",
         },
     },
 }

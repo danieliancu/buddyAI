@@ -65,6 +65,9 @@ typedef struct {
     void (*on_item_done)(int number, bool done);
     /* The user closed the conversation screen (X / swipe). */
     void (*on_chat_closed)(void);
+    /* note screen: open / close the note's edit mic; pin a note */
+    void (*on_note_session)(bool open, int number);
+    void (*on_item_pin)(int number, bool pinned);
 } ui_callbacks_t;
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);
@@ -107,6 +110,11 @@ void ui_reminder_alert(const char *json);
 void ui_show_notice(const char *json);
 /* Open the notes (false) or reminders (true) list (`items_open`). */
 void ui_items_show_list(bool reminder);
+/* Note edit mode (protocol events). state: ui_conv_t of the current sentence; text: the live
+ * transcript (question = false) or the assistant's short question (question = true). */
+void ui_note_session(bool open);
+void ui_note_state(ui_conv_t state);
+void ui_note_text(const char *text, bool question);
 /* Every supported language (`languages` message), for the settings language picker. */
 void ui_languages_set(const char *json);
 

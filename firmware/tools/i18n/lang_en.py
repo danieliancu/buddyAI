@@ -83,6 +83,8 @@ LANGS = {
             "PARTICIPANTS": "Participants",
             "DONE": "Done",
             "STARTS_IN_FMT": "Starts in %s",
+            "NOTE_EMPTY": "Empty note.\nTap the mic and dictate.",
+            "NOTE_HELP": "Say a line to add it, or “delete 2”, “move 3 to the top”.",
         },
     },
 }
