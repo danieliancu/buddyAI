@@ -8,8 +8,8 @@ import tailwindcss from "@tailwindcss/vite";
 const API_TARGET = process.env.BUDDYAI_API ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
-  // TODO(owner): set the real public URL of the marketing site (used for canonical URLs, sitemap, OG tags).
-  site: "https://www.example.com",
+  // Public URL of the marketing site (canonical URLs, sitemap, Open Graph, structured data).
+  site: "https://www.olawatch.ai",
   output: "static",
   trailingSlash: "ignore",
   build: { format: "directory" },
@@ -17,6 +17,14 @@ export default defineConfig({
     sitemap({
       filter: (page) => !page.includes("/thank-you") && !page.includes("/404"),
       i18n: undefined,
+      lastmod: new Date(),
+      // Home and the product pages first, legal pages last.
+      serialize(item) {
+        const path = new URL(item.url).pathname;
+        if (path === "/") return { ...item, changefreq: "weekly", priority: 1.0 };
+        if (path.startsWith("/legal/")) return { ...item, changefreq: "yearly", priority: 0.3 };
+        return { ...item, changefreq: "monthly", priority: 0.8 };
+      },
     }),
   ],
   vite: {

@@ -19,7 +19,7 @@ const values = [
   },
 ];
 ---
-<Base title="About" description="Why we're building ola: a simple, honest AI voice companion on your wrist, for the UK and Europe.">
+<Base title="About olawatch" crumb="About" description="Why we're building olawatch: a simple, honest AI voice companion on your wrist, designed in the UK by Ola Technologies London Ltd for the UK and Europe.">
   <PageHero
     eyebrow="About"
     title="A companion you can"
@@ -32,14 +32,14 @@ const values = [
       {values.map((v) => (
         <li class="glass p-6">
           <span class="icon-tile"><Icon name={v.icon} /></span>
-          <h3 class="mt-4 font-semibold text-white">{v.title}</h3>
+          <h3 class="mt-4 font-semibold text-fg">{v.title}</h3>
           <p class="mt-1.5 text-sm text-muted">{v.text}</p>
         </li>
       ))}
     </ul>
   </section>
   <section class="container-x mt-16" aria-labelledby="who-title">
-    <h2 id="who-title" class="text-2xl font-bold text-white">Who we are</h2>
+    <h2 id="who-title" class="text-2xl font-bold text-fg">Who we are</h2>
     <p class="mt-3 max-w-3xl text-muted">
       ola is designed and sold by {config.companyName}, {config.address}. We sell directly to customers in the UK
       and the EU.

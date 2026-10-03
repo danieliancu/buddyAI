@@ -100,7 +100,7 @@ class BillingSettings(SQLModel, table=True):
     __tablename__ = "billing_settings"
     id: int = Field(default=1, primary_key=True)
     enforce: bool = False  # check subscriptions/allowances even without Stripe keys
-    care_price_pence: int = 799
+    care_price_pence: int = 790
     care_allowance_pence: int = 250
     topup_price_pence: int = 199
     topup_allowance_pence: int = 65
@@ -227,6 +227,22 @@ class Device(SQLModel, table=True):
     rssi: Optional[int] = None
 
 
+class DeviceIssue(SQLModel, table=True):
+    """Something that went wrong on a watch: a reboot (with the chip's reset reason), a lost
+    connection (reported by the watch on its next hello) or a server-side session problem."""
+
+    __tablename__ = "device_issues"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: str = Field(max_length=64, index=True)
+    account_id: Optional[int] = Field(default=None, index=True)
+    kind: str = Field(max_length=32)  # reboot | disconnect | turn_interrupted | server_timeout
+    severity: str = Field(default="warn", max_length=8)  # error | warn | info
+    reason: str = Field(default="", max_length=64)
+    detail: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    fw_version: str = Field(default="", max_length=32)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class DeviceSettingsRow(SQLModel, table=True):
     __tablename__ = "device_settings"
     device_id: str = Field(primary_key=True, foreign_key="devices.id", max_length=64)
@@ -289,6 +305,9 @@ class Turn(SQLModel, table=True):
     turn_no: int
     language: str = Field(max_length=8)
     status: str = Field(default="active", max_length=16)  # active|completed|aborted|error|no_speech
+    mode: str = Field(default="chat", max_length=16)  # chat | note | reminder (voice edit) | edit (older edit turns)
+    tools: str = Field(default="", max_length=255)  # tools the reply used, comma-separated (web_search, item_create:note...)
+    search_note: str = ""  # web search of the reply: "query -> answer" (kept in the model's history)
     user_text: str = ""
     assistant_text: str = ""
     error: Optional[str] = None

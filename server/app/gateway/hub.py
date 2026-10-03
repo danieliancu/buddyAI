@@ -54,11 +54,11 @@ class DeviceHub:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self._listeners.pop(q, None)
 
-    def publish(self, event: dict[str, Any]) -> None:
+    def publish(self, event: dict[str, Any], operator_only: bool = False) -> None:
         event.setdefault("at", int(time.time() * 1000))
         owner = event["account_id"] if "account_id" in event else self._owner_of(event.get("device_id"))
         for q, account_id in list(self._listeners.items()):
-            if account_id is not None and account_id != owner:
+            if account_id is not None and (operator_only or account_id != owner):
                 continue
             if q.full():
                 continue  # slow browser tab: drop instead of blocking the device path

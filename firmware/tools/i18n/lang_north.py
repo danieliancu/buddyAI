@@ -85,6 +85,8 @@ LANGS = {
             "NOTE_EMPTY": "Tom anteckning.\nTryck på mikrofonen och diktera.",
             "NOTE_HELP": "Säg en rad för att lägga till den, eller ”ta bort 2”, ”flytta 3 överst”.",
             "REMINDER_HELP": "Säg en ändring: ”kl. 10:30”, ”lägg till Ana”, ”ta bort platsen”.",
+            "HELLO": "Hej!",
+            "HELP_PROMPT": "Hur kan jag hjälpa dig i dag?",
         },
     },
     "da": {
@@ -171,6 +173,8 @@ LANGS = {
             "NOTE_EMPTY": "Tom note.\nTryk på mikrofonen og dikter.",
             "NOTE_HELP": "Sig en linje for at tilføje den, eller »slet 2«, »flyt 3 øverst«.",
             "REMINDER_HELP": "Sig en ændring: »kl. 10:30«, »tilføj Ana«, »fjern stedet«.",
+            "HELLO": "Hej!",
+            "HELP_PROMPT": "Hvordan kan jeg hjælpe dig i dag?",
         },
     },
     "no": {
@@ -257,6 +261,8 @@ LANGS = {
             "NOTE_EMPTY": "Tomt notat.\nTrykk på mikrofonen og dikter.",
             "NOTE_HELP": "Si en linje for å legge den til, eller «slett 2», «flytt 3 øverst».",
             "REMINDER_HELP": "Si en endring: «kl. 10:30», «legg til Ana», «fjern stedet».",
+            "HELLO": "Hei!",
+            "HELP_PROMPT": "Hvordan kan jeg hjelpe deg i dag?",
         },
     },
     "is": {
@@ -343,6 +349,8 @@ LANGS = {
             "NOTE_EMPTY": "Tómur minnismiði.\nÝttu á hljóðnemann og lestu fyrir.",
             "NOTE_HELP": "Segðu línu til að bæta henni við, eða „eyddu 2“, „færðu 3 efst“.",
             "REMINDER_HELP": "Segðu breytingu: „klukkan 10:30“, „bættu Önnu við“, „fjarlægðu staðinn“.",
+            "HELLO": "Hæ!",
+            "HELP_PROMPT": "Hvernig get ég aðstoðað þig í dag?",
         },
     },
     "fi": {
@@ -429,6 +437,8 @@ LANGS = {
             "NOTE_EMPTY": "Tyhjä muistiinpano.\nNapauta mikrofonia ja sanele.",
             "NOTE_HELP": "Sano rivi lisätäksesi sen, tai ”poista 2”, ”siirrä 3 ylös”.",
             "REMINDER_HELP": "Sano muutos: ”klo 10.30”, ”lisää Ana”, ”poista paikka”.",
+            "HELLO": "Hei!",
+            "HELP_PROMPT": "Miten voin auttaa sinua tänään?",
         },
     },
     "et": {
@@ -515,6 +525,8 @@ LANGS = {
             "NOTE_EMPTY": "Tühi märge.\nPuuduta mikrofoni ja dikteeri.",
             "NOTE_HELP": "Ütle rida, et see lisada, või „kustuta 2“, „vii 3 üles“.",
             "REMINDER_HELP": "Ütle muudatus: „kell 10:30“, „lisa Ana“, „eemalda koht“.",
+            "HELLO": "Tere!",
+            "HELP_PROMPT": "Kuidas saan sind täna aidata?",
         },
     },
     "lv": {
@@ -601,6 +613,8 @@ LANGS = {
             "NOTE_EMPTY": "Tukša piezīme.\nPieskaries mikrofonam un diktē.",
             "NOTE_HELP": "Pasaki rindu, lai to pievienotu, vai “dzēs 2”, “pārvieto 3 uz augšu”.",
             "REMINDER_HELP": "Pasaki izmaiņas: “10:30”, “pievieno Anu”, “noņem vietu”.",
+            "HELLO": "Sveiki!",
+            "HELP_PROMPT": "Kā es varu tev šodien palīdzēt?",
         },
     },
     "lt": {
@@ -687,6 +701,8 @@ LANGS = {
             "NOTE_EMPTY": "Tuščias užrašas.\nBakstelėk mikrofoną ir diktuok.",
             "NOTE_HELP": "Pasakyk eilutę, kad ją pridėtum, arba „ištrink 2“, „perkelk 3 į viršų“.",
             "REMINDER_HELP": "Pasakyk pakeitimą: „10:30“, „pridėk Aną“, „pašalink vietą“.",
+            "HELLO": "Labas!",
+            "HELP_PROMPT": "Kuo galiu tau šiandien padėti?",
         },
     },
     "cy": {
@@ -773,6 +789,8 @@ LANGS = {
             "NOTE_EMPTY": "Nodyn gwag.\nTapia’r meicroffon ac arddyweda.",
             "NOTE_HELP": "Dywed linell i’w hychwanegu, neu “dileu 2”, “symud 3 i’r brig”.",
             "REMINDER_HELP": "Dywed newid: “am 10:30”, “ychwanega Ana”, “tynna’r lle”.",
+            "HELLO": "Helo!",
+            "HELP_PROMPT": "Sut alla i dy helpu di heddiw?",
         },
     },
 }

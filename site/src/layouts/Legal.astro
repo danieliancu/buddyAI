@@ -37,7 +37,7 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
               href={l.href}
               class:list={[
                 "block rounded-lg px-3 py-2 text-sm",
-                path === l.href ? "bg-white/10 text-white" : "text-muted hover:text-white",
+                path === l.href ? "bg-bg-2 text-fg" : "text-muted hover:text-fg",
               ]}
               aria-current={path === l.href ? "page" : undefined}
             >
@@ -49,7 +49,7 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
     </nav>
 
     <article class="prose-legal min-w-0 max-w-3xl">
-      <h1 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{title}</h1>
+      <h1 class="text-3xl font-extrabold tracking-tight text-fg sm:text-4xl">{title}</h1>
       <p class="mt-2 text-sm text-muted">Last updated: TODO(owner): date of the reviewed version</p>
 
       <slot />
@@ -58,8 +58,8 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
       <p>
         {config.companyName}<br />
         {config.address}<br />
-        Company number: {config.companyNumber}<br />
-        VAT number: {config.vatNumber}<br />
+        {config.companyNumber && <>Company number: {config.companyNumber}<br /></>}
+        {config.vatNumber && <>VAT number: {config.vatNumber}<br /></>}
         Email: <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>
       </p>
     </article>

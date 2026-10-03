@@ -81,9 +81,12 @@ export const UNIT_LABEL: Record<string, string> = {
   input_token: "input tokens",
   output_token: "output tokens",
   character: "characters",
+  cached_input_token: "cached input tokens",
+  web_search_call: "web searches",
+  cache_hit: "cached searches",
 };
 
-export const KIND_LABEL: Record<string, string> = { stt: "STT", llm: "LLM", tts: "TTS" };
+export const KIND_LABEL: Record<string, string> = { stt: "STT", llm: "LLM", tts: "TTS", search: "Search" };
 
 export const STATE_LABEL: Record<string, string> = {
   idle: "Idle",

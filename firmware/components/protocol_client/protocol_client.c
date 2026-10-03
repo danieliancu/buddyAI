@@ -12,6 +12,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_random.h"
@@ -121,6 +122,20 @@ static int64_t          s_ping_sent_ms;
 
 static char             s_pairing_code[8];
 static bool             s_paired_token;     /* hello was sent with a token */
+
+/* Issue reports (PROTOCOL.md section 3.1): sent with the next token hello, cleared by hello_ack.
+ * The uptime lives in RTC memory, which survives crashes, watchdogs and software restarts. */
+#define RTC_MAGIC               0x6F6C6131u
+static RTC_NOINIT_ATTR uint32_t s_rtc_magic;
+static RTC_NOINIT_ATTR uint32_t s_rtc_uptime_s;
+static bool             s_boot_pending = true;  /* restart not reported yet */
+static uint32_t         s_prev_uptime_s;        /* uptime before this restart, 0 = unknown */
+static const char      *s_drop_reason;          /* why the last session ended, NULL = nothing to report */
+static int64_t          s_drop_ms;
+static bool             s_drop_mid_turn;
+static int              s_drop_wifi_reason;
+static int              s_drop_rssi;
+static int64_t          s_session_start_ms;
 
 /* Turn state. s_turn_lock guards the fields the ws task reads for binary frames. */
 static SemaphoreHandle_t s_turn_lock;
@@ -305,6 +320,55 @@ static void new_pairing_code(void)
     snprintf(s_pairing_code, sizeof(s_pairing_code), "%06lu", (unsigned long)(esp_random() % 1000000UL));
 }
 
+static const char *reset_reason_str(esp_reset_reason_t r)
+{
+    switch (r) {
+    case ESP_RST_POWERON:   return "power_on";
+    case ESP_RST_EXT:       return "external";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    case ESP_RST_USB:       return "usb";
+    case ESP_RST_JTAG:      return "jtag";
+    case ESP_RST_EFUSE:     return "efuse";
+    case ESP_RST_PWR_GLITCH: return "pwr_glitch";
+    case ESP_RST_CPU_LOCKUP: return "cpu_lockup";
+    default:                return "unknown";
+    }
+}
+
+/* "boot" / "link" members of a token hello: the restart and the lost session not reported yet. */
+static void add_issue_reports(cJSON *m)
+{
+    if (s_boot_pending) {
+        cJSON *boot = cJSON_AddObjectToObject(m, "boot");
+        cJSON_AddStringToObject(boot, "reset_reason", reset_reason_str(esp_reset_reason()));
+        if (s_prev_uptime_s) {
+            cJSON_AddNumberToObject(boot, "prev_uptime_s", s_prev_uptime_s);
+        }
+    }
+    if (s_drop_reason) {
+        cJSON *link = cJSON_AddObjectToObject(m, "link");
+        cJSON_AddStringToObject(link, "drop", s_drop_reason);
+        cJSON_AddNumberToObject(link, "offline_ms", (double)(now_ms() - s_drop_ms));
+        cJSON_AddBoolToObject(link, "mid_turn", s_drop_mid_turn);
+        if (s_drop_wifi_reason) {
+            cJSON_AddNumberToObject(link, "wifi_reason", s_drop_wifi_reason);
+        }
+        if (s_drop_rssi) {
+            cJSON_AddNumberToObject(link, "rssi", s_drop_rssi);
+        }
+        if (s_session_start_ms) {
+            cJSON_AddNumberToObject(link, "session_s", (double)((s_drop_ms - s_session_start_ms) / 1000));
+        }
+    }
+}
+
 static void send_hello(void)
 {
     char token[SETTINGS_TOKEN_MAX];
@@ -315,6 +379,7 @@ static void send_hello(void)
     if (settings_get_token(token, sizeof(token))) {
         cJSON_AddStringToObject(m, "token", token);
         s_paired_token = true;
+        add_issue_reports(m);
     } else {
         if (!s_pairing_code[0]) {
             new_pairing_code();
@@ -561,6 +626,11 @@ static void on_hello_ack(const cJSON *j)
     s_account_inactive = false;
     s_last_ping_ms = s_last_status_ms = now_ms();
     s_pairing_code[0] = '\0';
+    if (s_paired_token) {
+        s_boot_pending = false;     /* the server has the issue reports now */
+        s_drop_reason = NULL;
+    }
+    s_session_start_ms = now_ms();
     settings_set_last_server(s_url);
     ota_mark_app_valid();
     ESP_LOGI(TAG, "session %s established with %s", s_session_id, s_url);
@@ -921,6 +991,7 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
     case WEBSOCKET_EVENT_CLOSED:
     case WEBSOCKET_EVENT_ERROR:
         m.type = MSG_WS_CLOSED;
+        m.b = id;
         post(&m);
         break;
     case WEBSOCKET_EVENT_DATA: {
@@ -1115,10 +1186,17 @@ static void start_cycle(void)
     try_next_candidate();
 }
 
-static void session_lost(void)
+static void session_lost(const char *why)
 {
     bool had_session = (s_conn == CONN_SESSION);
     bool mid_turn = (s_conv != PROTO_CONV_IDLE);
+    if (had_session && !s_drop_reason) {
+        s_drop_reason = why;
+        s_drop_ms = now_ms();
+        s_drop_mid_turn = mid_turn;
+        s_drop_rssi = net_wifi_rssi();
+        s_drop_wifi_reason = strcmp(why, "wifi_lost") == 0 ? net_wifi_last_disconnect_reason() : 0;
+    }
     local_stop_turn();
     set_conv(PROTO_CONV_IDLE);
     if (mid_turn) {
@@ -1145,11 +1223,12 @@ static void on_ws_connected(void)
     send_hello();
 }
 
-static void on_ws_closed(void)
+static void on_ws_closed(int32_t ev)
 {
-    ESP_LOGW(TAG, "websocket closed (%s)", s_url);
+    ESP_LOGW(TAG, "websocket closed (%s, event %ld)", s_url, (long)ev);
     conn_state_t prev = s_conn;
-    session_lost();
+    session_lost(ev == WEBSOCKET_EVENT_ERROR ? "ws_error"
+                 : ev == WEBSOCKET_EVENT_CLOSED ? "ws_closed" : "ws_disconnected");
     if (prev == CONN_CONNECTING) {
         try_next_candidate();
     } else if (prev == CONN_HELLO || prev == CONN_SESSION) {
@@ -1169,13 +1248,13 @@ static void handle_msg(msg_t *m)
         break;
     case MSG_NET_DOWN:
         if (s_conn != CONN_NO_NET) {
-            session_lost();
+            session_lost("wifi_lost");
             ws_destroy();
             s_conn = CONN_NO_NET;
         }
         break;
     case MSG_RECONNECT:
-        session_lost();
+        session_lost("reconnect");
         ws_destroy();
         if (net_wifi_connected()) {
             s_backoff_ms = BACKOFF_MIN_MS;
@@ -1191,7 +1270,7 @@ static void handle_msg(msg_t *m)
         break;
     case MSG_WS_CLOSED:
         if (m->a == s_conn_id && s_conn >= CONN_CONNECTING) {
-            on_ws_closed();
+            on_ws_closed(m->b);
         }
         break;
     case MSG_TEXT:
@@ -1242,7 +1321,7 @@ static void handle_msg(msg_t *m)
     case MSG_SETTINGS_CHANGED: {
         cJSON *changes = cJSON_Parse(m->str);
         if (changes) {
-            settings_apply_local(changes);
+            /* already applied on the watch by proto_settings_changed(): only queue and send */
             if (!s_pending_changes) {
                 s_pending_changes = changes;
             } else {
@@ -1357,6 +1436,7 @@ static void proto_task(void *arg)
             handle_msg(&m);
         }
         handle_timers();
+        s_rtc_uptime_s = (uint32_t)(now_ms() / 1000);
     }
 }
 
@@ -1367,6 +1447,12 @@ static void proto_task(void *arg)
 esp_err_t proto_init(const proto_config_t *cfg)
 {
     s_cfg = *cfg;
+    if (s_rtc_magic == RTC_MAGIC) {
+        s_prev_uptime_s = s_rtc_uptime_s;   /* survived the restart: crash, watchdog, software */
+    }
+    s_rtc_magic = RTC_MAGIC;
+    s_rtc_uptime_s = 0;
+    ESP_LOGI(TAG, "reset reason: %s", reset_reason_str(esp_reset_reason()));
     s_q = xQueueCreate(32, sizeof(msg_t));
     s_send_lock = xSemaphoreCreateMutex();
     s_turn_lock = xSemaphoreCreateMutex();
@@ -1403,6 +1489,9 @@ void proto_mic_tap(void)
 
 void proto_settings_changed(const cJSON *changes)
 {
+    /* Apply on the watch right away (the caller's task), not after whatever the protocol task is
+     * busy with (a send, a reconnect): the change shows at once; sending to the server follows. */
+    settings_apply_local(changes);
     char *s = cJSON_PrintUnformatted(changes);
     if (!s) {
         return;

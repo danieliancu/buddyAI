@@ -19,13 +19,13 @@
  * Notes list: like the reminders list without days - one box per note: a
  * coloured "#n" badge, the note's first line, a pin on pinned notes (they come
  * first), a chevron.
- * Note screen: header (Wi-Fi + battery | "Note #n" | X), the note's lines
+ * Note screen: header (battery | "Note #n" | X), the note's lines
  * numbered 1. 2. 3. in a scrolling card, and a fixed bar: Delete (tap twice),
  * the mic and Pin. The mic opens the note edit mode: it stays open (red, white
  * stop square, pulsing ring) until tapped again, the screen is left or 2 min
  * pass without speech (protocol_client.c); every sentence is applied to this
  * note by the server and the changed line flashes.
- * Reminder detail: header like quick settings (Wi-Fi + battery | "Reminder #n"
+ * Reminder detail: header like quick settings (battery | "Reminder #n"
  * | X); one card from the header down to the buttons (it scrolls when taller):
  * a calendar tile with the date, the time ("09:30 – 10:15") and a status line
  * (Overdue / Completed / "Starts in 10 min" for the advance alert), then rows
@@ -76,6 +76,7 @@ static const char *TAG = "ui_items";
 #define REM_HDR_Y       12
 #define REM_HDR_H       48
 #define REM_BODY_Y      70
+#define REM_STATUS_X    40          /* battery clear of the rounded corner */
 #define REM_TITLE_MAX_W 170         /* wider titles use the smaller font */
 
 typedef struct {
@@ -137,7 +138,6 @@ static bool        s_del_outlined;  /* reminder screen: outlined Delete */
 /* ---- reminder detail ---- */
 static lv_obj_t   *s_rem_scr;
 static lv_obj_t   *s_rem_title;
-static lv_obj_t   *s_rem_wifi;
 static lv_obj_t   *s_rem_batt;
 static lv_obj_t   *s_rem_body;      /* scrolls */
 static lv_obj_t   *s_rem_card;
@@ -169,7 +169,6 @@ static lv_obj_t   *s_rem_cal;       /* calendar icon on the tile */
 #define NOTE_FLASH_MS   1400
 static lv_obj_t   *s_note_scr;
 static lv_obj_t   *s_note_title;
-static lv_obj_t   *s_note_wifi;
 static lv_obj_t   *s_note_batt;
 static lv_obj_t   *s_note_body;
 static lv_obj_t   *s_note_card;
@@ -1290,7 +1289,7 @@ static void build_reminder_screen(void)
     lv_obj_remove_flag(s_rem_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_rem_scr, det_gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    /* header: Wi-Fi + battery | title | X (as in quick settings) */
+    /* header: battery | title | X (Wi-Fi only on the watchface and quick settings) */
     lv_obj_t *hdr = plain_box(s_rem_scr);
     lv_obj_set_size(hdr, 350, REM_HDR_H);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, REM_HDR_Y);
@@ -1299,9 +1298,7 @@ static void build_reminder_screen(void)
     lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(status, 6, 0);
-    lv_obj_align(status, LV_ALIGN_LEFT_MID, 0, 0);
-    s_rem_wifi = lv_label_create(status);
-    lv_label_set_text(s_rem_wifi, ICON_WIFI);
+    lv_obj_align(status, LV_ALIGN_LEFT_MID, REM_STATUS_X, 0);
     s_rem_batt = lv_label_create(status);
     lv_label_set_text(s_rem_batt, "");
     s_rem_title = lv_label_create(hdr);
@@ -1423,20 +1420,16 @@ static void show_reminder(const item_row_t *r, bool from_list, bool alert, bool 
     ui_load_screen(s_rem_scr, true);
 }
 
-void ui_items_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa)
+void ui_items_status(const char *batt, lv_color_t batt_color)
 {
     if (!s_rem_scr) {
         return;
     }
     lv_label_set_text(s_rem_batt, batt);
     lv_obj_set_style_text_color(s_rem_batt, batt_color, 0);
-    lv_obj_set_style_text_color(s_rem_wifi, wifi_color, 0);
-    lv_obj_set_style_text_opa(s_rem_wifi, wifi_opa, 0);
     if (s_note_scr) {
         lv_label_set_text(s_note_batt, batt);
         lv_obj_set_style_text_color(s_note_batt, batt_color, 0);
-        lv_obj_set_style_text_color(s_note_wifi, wifi_color, 0);
-        lv_obj_set_style_text_opa(s_note_wifi, wifi_opa, 0);
     }
 }
 
@@ -1771,7 +1764,7 @@ static void build_note_screen(void)
     lv_obj_remove_flag(s_note_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_note_scr, det_gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    /* header: Wi-Fi + battery | "Note #n" | X */
+    /* header: battery | "Note #n" | X */
     lv_obj_t *hdr = plain_box(s_note_scr);
     lv_obj_set_size(hdr, 350, REM_HDR_H);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, REM_HDR_Y);
@@ -1780,9 +1773,7 @@ static void build_note_screen(void)
     lv_obj_set_size(status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(status, 6, 0);
-    lv_obj_align(status, LV_ALIGN_LEFT_MID, 0, 0);
-    s_note_wifi = lv_label_create(status);
-    lv_label_set_text(s_note_wifi, ICON_WIFI);
+    lv_obj_align(status, LV_ALIGN_LEFT_MID, REM_STATUS_X, 0);
     s_note_batt = lv_label_create(status);
     lv_label_set_text(s_note_batt, "");
     s_note_title = lv_label_create(hdr);

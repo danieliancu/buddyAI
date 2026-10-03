@@ -1,16 +1,17 @@
 ---
+import Brand from "../../components/Brand.astro";
 import Legal from "../../layouts/Legal.astro";
 import { config, prices, formatPrice } from "../../config";
 ---
-<Legal title="Subscription terms" description="Terms for ola Care, the subscription that powers the AI assistant (DRAFT, needs legal review).">
+<Legal title="Subscription terms" description="Terms for olacare, the subscription that powers the AI assistant (DRAFT, needs legal review).">
   <p>
-    ola Care is the subscription that powers the AI voice assistant on your ola watch. The watch's assistant
-    does not answer without an active ola Care subscription.
+    <Brand name="care" /> is the subscription that powers the AI voice assistant on your <Brand name="watch" />. The watch's assistant
+    does not answer without an active <Brand name="care" /> subscription.
   </p>
 
   <h2>1. Price and free period</h2>
   <p>
-    ola Care costs {formatPrice(prices.care.GBP, "GBP")} per month (UK) or {formatPrice(prices.care.EUR, "EUR")} per
+    <Brand name="care" /> costs {formatPrice(prices.care.GBP, "GBP")} per month (UK) or {formatPrice(prices.care.EUR, "EUR")} per
     month (EU), including VAT. The first {prices.trialMonths} months are free. Your subscription starts when you buy
     the watch; after the free period it renews automatically every month and your card is charged, unless you cancel
     before the free period ends.

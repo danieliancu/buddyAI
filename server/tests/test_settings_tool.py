@@ -57,15 +57,15 @@ def test_language_change_also_sets_the_preferred_language() -> None:
     assert not changed and json.loads(result)["ok"] is False
 
 
-def test_theme_and_accent_colour() -> None:
+def test_theme_blue_or_white_only() -> None:
     dev = _device()
-    apply(dev, {"theme": "ocean"})
-    assert _settings(dev).theme.preset == "ocean" and _settings(dev).theme.accent == "#00C2D1"
-    apply(dev, {"accent_color": "#ff3b30"})  # "make it red": keeps the ocean background
-    t = _settings(dev).theme
-    assert t.accent == "#FF3B30" and t.background == "#001A26" and t.preset == "custom"
-    result, changed = apply(dev, {"accent_color": "red"})
-    assert not changed and "RRGGBB" in json.loads(result)["error"]
+    result, changed = apply(dev, {"theme": "mono"})
+    assert changed and json.loads(result)["theme"] == "white"
+    assert _settings(dev).theme.preset == "mono" and _settings(dev).theme.accent == "#FFFFFF"
+    apply(dev, {"theme": "midnight"})
+    assert _settings(dev).theme.accent == "#4F8CFF"
+    result, changed = apply(dev, {"theme": "ocean"})  # the other themes are gone
+    assert not changed and json.loads(result)["ok"] is False
 
 
 def test_nothing_to_change() -> None:

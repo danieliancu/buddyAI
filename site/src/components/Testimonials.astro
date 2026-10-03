@@ -1,28 +1,85 @@
 ---
-// Renders ONLY when src/content/testimonials.json has real entries (ships empty on purpose).
+// Customer stories from src/content/testimonials.json (the section is hidden when the file is empty).
+// "photo" names an image in src/assets/home (e.g. "person-1"); without one an initials avatar is shown.
+import { Image } from "astro:assets";
+import Icon from "./Icon.astro";
 import testimonials from "../content/testimonials.json";
+
 interface Testimonial {
   quote: string;
   name: string;
   context?: string;
+  photo?: string;
+  rating?: number;
 }
 const items = testimonials as Testimonial[];
+const photos = import.meta.glob<{ default: ImageMetadata }>("../assets/home/person-*.png", { eager: true });
+const photoFor = (key?: string) => (key ? photos[`../assets/home/${key}.png`]?.default : undefined);
+const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 ---
 {items.length > 0 && (
-  <section class="container-x mt-24" aria-labelledby="stories-title">
-    <h2 id="stories-title" class="text-2xl font-bold tracking-tight text-white sm:text-3xl">Real people. Real stories.</h2>
-    <ul class="mt-8 grid gap-4 md:grid-cols-3">
-      {items.map((t) => (
-        <li class="glass p-6">
-          <figure>
-            <blockquote class="text-fg">“{t.quote}”</blockquote>
-            <figcaption class="mt-4 text-sm">
-              <span class="font-semibold text-white">{t.name}</span>
-              {t.context && <span class="block text-muted">{t.context}</span>}
-            </figcaption>
-          </figure>
-        </li>
-      ))}
+  <section class="container-x py-14" aria-labelledby="stories-title" data-stories>
+    <div class="flex items-end justify-between gap-4">
+      <div>
+        <h2 id="stories-title" class="text-2xl font-extrabold tracking-tight text-fg sm:text-3xl">Real People. Real Stories.</h2>
+        <p class="mt-2 text-muted">See how ola is making everyday life easier.</p>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" class="grid h-10 w-10 place-items-center rounded-full border border-line bg-white text-fg shadow-sm hover:bg-bg-2" aria-label="Previous stories" data-stories-prev>
+          <Icon name="chevronLeft" size={18} />
+        </button>
+        <button type="button" class="grid h-10 w-10 place-items-center rounded-full border border-line bg-white text-fg shadow-sm hover:bg-bg-2" aria-label="Next stories" data-stories-next>
+          <Icon name="chevronRight" size={18} />
+        </button>
+      </div>
+    </div>
+    <ul class="no-scrollbar mt-6 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2" data-stories-track>
+      {items.map((t) => {
+        const photo = photoFor(t.photo);
+        const rating = t.rating ?? 5;
+        return (
+          <li class="glass flex w-[85%] shrink-0 snap-start items-start gap-4 p-5 sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.667rem)]">
+            {photo ? (
+              <Image src={photo} alt="" width={128} class="h-16 w-16 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span class="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-[#e8ebff] font-display text-lg font-bold text-accent" aria-hidden="true">{initials(t.name)}</span>
+            )}
+            <figure class="min-w-0">
+              <blockquote class="text-sm leading-relaxed text-fg">“{t.quote}”</blockquote>
+              <figcaption class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span class="flex text-amber-400" role="img" aria-label={`${rating} out of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((n) => {
+                    const fill = Math.max(0, Math.min(1, rating - (n - 1)));
+                    return (
+                      <span class="relative inline-block h-4 w-4">
+                        <Icon name="star" size={16} class="absolute inset-0" />
+                        {fill > 0 && (
+                          <span class="absolute inset-y-0 left-0 overflow-hidden" style={`width:${fill * 100}%`}>
+                            <Icon name="star" size={16} class="fill-current" />
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </span>
+                <span class="text-sm">
+                  <span class="block font-semibold text-fg">{t.name}</span>
+                  {t.context && <span class="block text-xs text-muted">{t.context}</span>}
+                </span>
+              </figcaption>
+            </figure>
+          </li>
+        );
+      })}
     </ul>
   </section>
 )}
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-stories]").forEach((root) => {
+    const track = root.querySelector<HTMLElement>("[data-stories-track]")!;
+    const step = () => (track.firstElementChild as HTMLElement | null)?.offsetWidth ?? track.clientWidth;
+    root.querySelector("[data-stories-prev]")?.addEventListener("click", () => track.scrollBy({ left: -step(), behavior: "smooth" }));
+    root.querySelector("[data-stories-next]")?.addEventListener("click", () => track.scrollBy({ left: step(), behavior: "smooth" }));
+  });
+</script>

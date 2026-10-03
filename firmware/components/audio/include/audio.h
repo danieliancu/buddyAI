@@ -61,6 +61,12 @@ void      audio_set_volume(int percent);
  * open. Uses the playback path, so volume and speaker muting behave as usual. */
 void      audio_beep(void);
 
+/* Soft "someone is typing" clicks while a reply is awaited (generated on the
+ * device). Stopped by audio_typing_stop() and by anything that starts or
+ * flushes playback or opens the mic, so they never overlap the reply. */
+void      audio_typing_start(void);
+void      audio_typing_stop(void);
+
 #ifdef __cplusplus
 }
 #endif

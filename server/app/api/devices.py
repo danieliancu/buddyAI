@@ -181,7 +181,7 @@ def conversations(device_id: str, request: Request, db: Session = Depends(get_se
         raise HTTPException(404, "device not found")
     if dev.account_id is not None:
         accounts.audit(db, request.session["admin"], "history.view", dev.account_id, device_id)
-    return conversations_out(db, device_id, dev.account_id)
+    return conversations_out(db, device_id, dev.account_id, details=True)
 
 
 @router.delete("/devices/{device_id}/conversations")

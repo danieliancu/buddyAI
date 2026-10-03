@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
@@ -47,6 +48,7 @@ SILENCE_SEND_MS = 240
 
 # Web search is an on-demand tool with a cache (app/search.py): the model decides when current or local
 # information is needed; nothing hidden is attached to every request.
+SEARCH_NOTE_CHARS = 350  # search answer kept with a turn for the history
 HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
 MAX_TOOL_ROUNDS = 3  # LLM calls that may end in tool calls; the next one gets no tools and must answer
@@ -55,6 +57,17 @@ NOTE_SENTENCE_S = 30  # note mode: the longest sentence
 NOTE_MAX_TOKENS = 300
 
 MessagesBuilder = Callable[[TurnContext, str], list[dict[str, Any]]]
+
+
+def search_note(arguments: str, result: str) -> str:
+    """'query -> answer' of a web_search call, kept with the turn for the next questions' context."""
+    try:
+        query = str(json.loads(arguments or "{}").get("query") or "")
+        r = json.loads(result)
+    except (ValueError, AttributeError):
+        return ""
+    answer = r.get("answer") if r.get("ok") else "nothing reliable found"
+    return f"{query[:150]} -> {str(answer)[:SEARCH_NOTE_CHARS]}"
 
 
 def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, Any]]:
@@ -67,7 +80,7 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
             else []
         )
         persona_prompt = persona.system_prompt if persona else "You are a helpful voice assistant."
-        past = [(t.user_text, t.assistant_text) for t in history]
+        past = [(t.user_text, t.assistant_text, t.search_note) for t in history]
     now = datetime.now(ZoneInfo(s.timezone))
     lang = languages.display_name(turn.language)
     if turn.auto_language:
@@ -94,10 +107,12 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
     # The system prompt stays byte-identical between turns (provider prompt caching); what changes every
     # minute - the clock - goes in a short note just before the question.
     messages = [{"role": "system", "content": system}]
-    for u, a in past:
+    for u, a, found in past:
         if len(a) > HISTORY_REPLY_CHARS:
             a = a[:HISTORY_REPLY_CHARS].rsplit(" ", 1)[0] + " …"
         messages += [{"role": "user", "content": u}, {"role": "assistant", "content": a}]
+        if found:  # what the search found, not only what was said aloud ("... in the UEFA Nations League")
+            messages.append({"role": "system", "content": f"Web search behind that reply: {found}"})
     messages.append({"role": "system", "content": f"Now: {now:%A %Y-%m-%d %H:%M} ({s.timezone})."})
     messages.append({"role": "user", "content": user_text})
     return messages
@@ -573,6 +588,15 @@ class ConversationPipeline:
         turn.pending_open = {"list": "reminder"} if result.deleted else {"item": result.view}
 
     async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
+        label = call.name
+        try:
+            kind = json.loads(call.arguments or "{}").get("kind")
+            if isinstance(kind, str) and kind:
+                label = f"{call.name}:{kind[:16]}"
+        except (ValueError, AttributeError):
+            pass
+        if label not in turn.tools_used:
+            turn.tools_used.append(label)
         searcher = turn.searcher
         if call.name == SEARCH_TOOL["name"] and searcher is not None:
             # Answers are in English whatever the user's language: the reply model translates, and one
@@ -582,6 +606,7 @@ class ConversationPipeline:
                 language="en", default_location=turn.search_city,
             )
             turn.usage.extend(outcome.usage)
+            turn.search_note = search_note(call.arguments, outcome.result)
             log.info("web_search(%s) -> %s", call.arguments[:120], "cache hit" if outcome.cache_hit else "searched")
             return outcome.result
         assert self.tools is not None

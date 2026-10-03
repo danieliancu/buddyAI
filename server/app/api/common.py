@@ -9,14 +9,14 @@ from __future__ import annotations
 import io
 import wave
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, Field, ValidationError
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from app import languages
-from app.db.models import Device
+from app.db.models import Device, Turn, UsageRecord
 from app.db.repositories import ConversationRepo, PersonaRepo, SettingsRepo
 from app.device_settings import THEME_PRESETS, DeviceSettings
 from app.gateway.hub import DeviceHub
@@ -64,6 +64,8 @@ async def patch_settings(
     except ValidationError as exc:
         # include_context=False: the context may hold exception objects that are not JSON-serializable
         raise HTTPException(422, exc.errors(include_url=False, include_context=False, include_input=False)) from exc
+    except ValueError as exc:  # merge(): e.g. a theme other than the two presets
+        raise HTTPException(422, [{"loc": ["theme"], "msg": str(exc), "type": "value_error"}]) from exc
     await hub.push_settings(device_id)
     return {"settings": settings.model_dump(), "version": version}
 
@@ -80,33 +82,83 @@ def options(request: Request) -> dict[str, Any]:
     }
 
 
-def conversations_out(db: Session, device_id: str, account_id: int | None) -> list[dict[str, Any]]:
-    """History of one watch. With account_id, only that owner's turns are returned."""
+def conversations_out(
+    db: Session, device_id: str, account_id: int | None, details: bool = False
+) -> list[dict[str, Any]]:
+    """History of one watch. With account_id, only that owner's turns are returned.
+
+    details (operator only): each turn also carries its type, tools, stage timings and the usage
+    records with their cost; voice-edit turns (notes / reminders, outside any conversation) are
+    added as one group per day."""
     repo = ConversationRepo(db)
-    out = []
+    groups: list[tuple[dict[str, Any], Sequence[Turn]]] = []
     for c in repo.list_for_device(device_id):
         turns = repo.turns(c.id, account_id)
-        if not turns:
-            continue
-        out.append(
+        if turns:
+            groups.append(({"id": c.id, "started_at": c.started_at, "last_activity_at": c.last_activity_at}, turns))
+    if details:
+        q = select(Turn).where(Turn.device_id == device_id, col(Turn.conversation_id).is_(None))
+        if account_id is not None:
+            q = q.where(Turn.account_id == account_id)
+        by_day: dict[str, list[Turn]] = {}
+        for t in db.exec(q.order_by(col(Turn.id))).all():
+            by_day.setdefault(t.created_at.strftime("%Y-%m-%d"), []).append(t)
+        for n, day_turns in enumerate(by_day.values(), start=1):
+            meta = {"id": -n, "edits": True, "started_at": day_turns[0].created_at, "last_activity_at": day_turns[-1].created_at}
+            groups.append((meta, day_turns))
+    usage = _usage_by_turn(db, [t.id for _, ts in groups for t in ts]) if details else {}
+    return [{**meta, "turns": [_turn_out(t, usage, details) for t in turns]} for meta, turns in groups]
+
+
+def _usage_by_turn(db: Session, turn_ids: list[int | None]) -> dict[int, list[UsageRecord]]:
+    out: dict[int, list[UsageRecord]] = {}
+    ids = [i for i in turn_ids if i is not None]
+    for start in range(0, len(ids), 500):  # keep the IN list short
+        rows = db.exec(select(UsageRecord).where(col(UsageRecord.turn_id).in_(ids[start : start + 500]))).all()
+        for u in rows:
+            out.setdefault(u.turn_id, []).append(u)  # type: ignore[arg-type]
+    return out
+
+
+def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "id": t.id,
+        "status": t.status,
+        "language": t.language,
+        "user_text": t.user_text,
+        "assistant_text": t.assistant_text,
+        "ttfa_ms": t.ttfa_device_ms or t.ttfa_server_ms,
+        "created_at": t.created_at,
+    }
+    if not details:
+        return out
+    records = usage.get(t.id or 0, [])
+    priced = [u.cost_micro_gbp for u in records if u.cost_micro_gbp is not None]
+    out.update(
+        mode=t.mode,
+        tools=[x for x in t.tools.split(",") if x],
+        search=t.search_note or None,
+        error=t.error,
+        stt_ms=t.stt_ms,
+        llm_first_token_ms=t.llm_first_token_ms,
+        tts_first_audio_ms=t.tts_first_audio_ms,
+        cost_gbp=sum(priced) / 1_000_000 if priced else (0.0 if not records else None),
+        unpriced=sum(1 for u in records if u.cost_micro_gbp is None and not u.mock),
+        billable=any(u.billable for u in records) if records else None,
+        mock=bool(records) and all(u.mock for u in records),
+        usage=[
             {
-                "id": c.id,
-                "started_at": c.started_at,
-                "last_activity_at": c.last_activity_at,
-                "turns": [
-                    {
-                        "id": t.id,
-                        "status": t.status,
-                        "language": t.language,
-                        "user_text": t.user_text,
-                        "assistant_text": t.assistant_text,
-                        "ttfa_ms": t.ttfa_device_ms or t.ttfa_server_ms,
-                        "created_at": t.created_at,
-                    }
-                    for t in turns
-                ],
+                "kind": u.kind,
+                "provider": u.provider,
+                "model": u.model,
+                "unit": u.unit,
+                "quantity": u.quantity,
+                "cost_gbp": None if u.cost_micro_gbp is None else u.cost_micro_gbp / 1_000_000,
+                "billable": u.billable,
             }
-        )
+            for u in records
+        ],
+    )
     return out
 
 

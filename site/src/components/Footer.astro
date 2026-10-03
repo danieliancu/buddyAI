@@ -2,6 +2,7 @@
 import { config } from "../config";
 import Logo from "./Logo.astro";
 import Icon from "./Icon.astro";
+import PaymentLogos from "./PaymentLogos.astro";
 
 const year = new Date().getFullYear();
 const cols = [
@@ -36,11 +37,12 @@ const cols = [
   },
 ];
 ---
-<footer class="mt-24 border-t border-line bg-[#05070f]">
+<footer class="site-footer mt-24 bg-[#0b1028] text-[#aab3cc]">
   <div class="container-x grid gap-10 py-14 md:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1fr_1fr_1.6fr]">
     <div>
-      <a href="/" aria-label="ola home" class="inline-block rounded-lg"><Logo size="lg" /></a>
-      <p class="mt-4 max-w-xs text-sm text-muted">An AI voice companion on your wrist. Designed for the UK and Europe.</p>
+      <a href="/" aria-label="ola home" class="inline-block rounded-lg"><Logo size="lg" light /></a>
+      <p class="mt-4 max-w-xs text-sm">An AI voice companion on your wrist. Designed for the UK and Europe.</p>
+      <PaymentLogos class="mt-5" align="start" dark />
     </div>
 
     {cols.map((col) => (
@@ -48,7 +50,7 @@ const cols = [
         <h2 class="text-sm font-semibold text-white">{col.title}</h2>
         <ul class="mt-3 space-y-2">
           {col.links.map((l) => (
-            <li><a href={l.href} class="text-sm text-muted hover:text-white">{l.label}</a></li>
+            <li><a href={l.href} class="text-sm hover:text-white">{l.label}</a></li>
           ))}
         </ul>
       </nav>
@@ -58,8 +60,8 @@ const cols = [
       <h2 class="text-sm font-semibold text-white">Join our journey</h2>
       {config.newsletterAction ? (
         <form action={config.newsletterAction} method="post" class="mt-3">
-          <label for="nl-email" class="text-sm text-muted">Get launch news by email. Unsubscribe anytime.</label>
-          <div class="mt-2 flex rounded-xl border border-line-strong bg-white/5 p-1 focus-within:ring-2 focus-within:ring-blue-300">
+          <label for="nl-email" class="text-sm">Get launch news by email. Unsubscribe anytime.</label>
+          <div class="mt-2 flex rounded-xl border border-white/15 bg-white/5 p-1 focus-within:ring-2 focus-within:ring-blue-300">
             <input
               id="nl-email"
               name="email"
@@ -67,34 +69,34 @@ const cols = [
               required
               autocomplete="email"
               placeholder="Enter your email"
-              class="min-w-0 flex-1 bg-transparent px-3 text-sm text-white placeholder:text-slate-400 focus:outline-none"
+              class="min-w-0 flex-1 bg-transparent px-3 text-sm text-white placeholder:text-[#7e88a3] focus:outline-none"
             />
             <button type="submit" class="btn btn-primary !min-h-10 !px-3" aria-label="Subscribe">
               <Icon name="arrow" size={18} />
             </button>
           </div>
-          <p class="mt-2 text-xs text-muted">See our <a class="link" href="/legal/privacy/">privacy notice</a>.</p>
+          <p class="mt-2 text-xs">See our <a class="link" href="/legal/privacy/">privacy notice</a>.</p>
         </form>
       ) : (
-        <div class="mt-3 text-sm text-muted">
+        <div class="mt-3 text-sm">
           <p>Sales open soon. Check back here for launch news, or write to us at
-            <a class="link" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.</p>
+            <a class="text-white underline underline-offset-2" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.</p>
         </div>
       )}
       {config.social.length > 0 && (
         <ul class="mt-5 flex flex-wrap gap-3">
           {config.social.map((s) => (
-            <li><a class="text-sm text-muted hover:text-white" href={s.href} rel="noopener">{s.label}</a></li>
+            <li><a class="text-sm hover:text-white" href={s.href} rel="noopener">{s.label}</a></li>
           ))}
         </ul>
       )}
     </div>
   </div>
 
-  <div class="border-t border-line">
-    <div class="container-x flex flex-col gap-2 py-6 text-xs text-muted md:flex-row md:items-center md:justify-between">
+  <div class="border-t border-white/10">
+    <div class="container-x flex flex-col gap-2 py-6 text-xs md:flex-row md:items-center md:justify-between">
       <p>© {year} {config.companyName}. All rights reserved.</p>
-      <p>Company no. {config.companyNumber} · VAT {config.vatNumber}</p>
+      <p>{config.address} · <a class="hover:text-white" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>{config.companyNumber && <> · Company no. {config.companyNumber}</>}{config.vatNumber && <> · VAT {config.vatNumber}</>}</p>
     </div>
   </div>
 </footer>

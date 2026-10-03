@@ -4,7 +4,8 @@ import { MessagesSquare, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useLive } from "../live";
 import { DevicePicker } from "../components/DeviceBits";
-import ConversationList from "../components/ConversationList";
+import ConversationList, { totalCost } from "../components/ConversationList";
+import { fmtMoney } from "../format";
 import { Button, Card, ConfirmDialog, Empty, ErrorBox, PageHeader, Spinner, useAsync } from "../components/ui";
 
 export default function ConversationsPage() {
@@ -27,21 +28,27 @@ export default function ConversationsPage() {
   const device = devices.data?.find((d) => d.id === deviceId);
   const list = convs.data ?? [];
   const turnCount = list.reduce((n, c) => n + c.turns.length, 0);
+  const chats = list.filter((c) => !c.edits).length;
+  const cost = list.reduce((n, c) => n + totalCost(c.turns), 0);
 
   return (
     <>
       <PageHeader
         title="Conversations"
-        subtitle={device ? `${list.length} ${list.length === 1 ? "conversation" : "conversations"} • ${turnCount} turns` : undefined}
+        subtitle={
+          device ? `${chats} ${chats === 1 ? "conversation" : "conversations"} • ${turnCount} turns • ${fmtMoney(cost)} total` : undefined
+        }
         actions={
-          <>
+          <div className="flex items-center gap-2">
             {devices.data && devices.data.length > 0 && (
-              <DevicePicker devices={devices.data} value={deviceId} onChange={(id) => setParams({ device: id })} />
+              <div className="w-56">
+                <DevicePicker devices={devices.data} value={deviceId} onChange={(id) => setParams({ device: id })} />
+              </div>
             )}
             <Button variant="danger" icon={<Trash2 className="size-4" />} disabled={!deviceId || turnCount === 0} onClick={() => setConfirm(true)}>
               Delete history
             </Button>
-          </>
+          </div>
         }
       />
       <ErrorBox error={devices.error ?? convs.error} />
@@ -58,7 +65,7 @@ export default function ConversationsPage() {
           </Empty>
         </Card>
       ) : (
-        <ConversationList conversations={list} technical />
+        <ConversationList conversations={list} technical newestFirst />
       )}
 
       <ConfirmDialog

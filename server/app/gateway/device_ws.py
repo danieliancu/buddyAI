@@ -11,10 +11,10 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import entitlements, languages, usage_notices
+from app import entitlements, issues, languages, usage_notices
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
-from app.db.models import Account, utcnow
+from app.db.models import Account, DeviceIssue, utcnow
 from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, SettingsRepo, TurnRepo, UsageRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
@@ -55,6 +55,8 @@ class DeviceConnection:
         self._send_lock = asyncio.Lock()
         self._decoder: OpusDecoder | None = None
         self._closed = False
+        self._fw = ""
+        self._timed_out = False  # the session ended because the watch went silent
 
     # --- sending (TurnIO + generic) --------------------------------------------------------
 
@@ -122,7 +124,9 @@ class DeviceConnection:
                     self._on_binary(msg["bytes"])
                 elif msg.get("text") is not None:
                     await self._on_text(msg["text"])
-        except (asyncio.TimeoutError, WebSocketDisconnect):
+        except asyncio.TimeoutError:
+            self._timed_out = True
+        except WebSocketDisconnect:
             pass
         except _Close:
             pass
@@ -130,10 +134,31 @@ class DeviceConnection:
             await self._teardown()
 
     async def _teardown(self) -> None:
+        if self.authenticated:
+            self._record_session_issues()
         if self.active:
             await self._cancel_active()
         self.hub.unregister(self)
         await self.close()
+
+    def _record_session_issues(self) -> None:
+        found = []
+        if self.active is not None and not self.active.cancelled:
+            found.append(DeviceIssue(kind="turn_interrupted", detail={"turn_id": self.active.turn_id}))
+        if self._timed_out:
+            found.append(DeviceIssue(kind="server_timeout", detail={"timeout_s": get_settings().session_idle_timeout_s}))
+        self._publish_issues(found)
+
+    def _publish_issues(self, found: list[DeviceIssue]) -> None:
+        if not found:
+            return
+        try:
+            saved = issues.record(self.device_id, self.account_id, self._fw, found)
+        except Exception:  # noqa: BLE001 - diagnostics must never break the session
+            log.exception("could not store issues for %s", self.device_id)
+            return
+        for issue in saved:
+            self.hub.publish({"type": "device_issue", "device_id": self.device_id, "issue": issue}, operator_only=True)
 
     async def _on_text(self, text: str) -> None:
         try:
@@ -203,11 +228,13 @@ class DeviceConnection:
             self.account_id = account_id
             self.settings = settings
             self.authenticated = True
+            self._fw = fw
             self.env.session_id = uuid.uuid4().hex
             rates = (msg.get("audio") or {}).get("downlink_rates") or [16000]
             preferred = load_providers_config()["audio"]["downlink_rate_preferred"]
             self.downlink_rate = preferred if preferred in rates else 16000
             await self.hub.register(self)
+            self._publish_issues(issues.from_hello(msg))  # restart / lost connection before this hello
             await self.send_json(
                 "hello_ack",
                 server_time=int(utcnow().timestamp() * 1000),
@@ -425,6 +452,9 @@ class DeviceConnection:
             TurnRepo(db).update(
                 turn.db_id,
                 status=result.status,
+                mode=turn.mode,
+                tools=",".join(turn.tools_used)[:255],
+                search_note=turn.search_note,
                 language=turn.language,
                 user_text=turn.user_text,
                 assistant_text=turn.assistant_text,

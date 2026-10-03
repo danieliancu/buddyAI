@@ -14,11 +14,23 @@
  *                      U+2010-2027, € + FontAwesome 5 symbols below
  *                      (regenerate with tools/gen_fonts.ps1)
  * buddy_font_clock   : Montserrat SemiBold 112 px, digits, ':' '-' ' '
+ * buddy_font_clock_md: Montserrat SemiBold 76 px, the same glyphs (watchface clock)
+ * buddy_font_mic     : FontAwesome 5, 64 px, the mic only (watchface mic button)
  * buddy_font_code    : Montserrat SemiBold 64 px, digits, '-' ' '
  * buddy_font_icon    : FontAwesome 5, 80 px, a few large icons              */
 extern lv_font_t buddy_font_20;
 extern lv_font_t buddy_font_28;
+extern lv_font_t buddy_font_28b;      /* Noto Sans Bold 28 px, text only (watchface greeting) */
 extern lv_font_t buddy_font_clock;
+extern lv_font_t buddy_font_clock_md;
+extern lv_font_t buddy_font_mic;
+/* Watchface wave artwork (ui_wave_img.c, from wave.png): RGB565 + alpha per pixel, row by row. */
+extern const uint16_t g_wave_img_w, g_wave_img_h, g_wave_img_low_y;
+extern const uint16_t g_wave_img_rgb565[];
+extern const uint8_t  g_wave_img_alpha[];
+extern const uint16_t g_wave_white_rgb565[];   /* the white theme's wave (wave-white.png), same size */
+extern const uint8_t  g_wave_white_alpha[];
+extern lv_font_t buddy_font_shortcut; /* FontAwesome 5, 34 px: pen, calendar, gear (watchface shortcuts) */
 extern lv_font_t buddy_font_code;
 extern lv_font_t buddy_font_icon;
 extern lv_font_t buddy_font_set;       /* FontAwesome 5, 24 px: the SET_ICON_* glyphs (settings, reminder) */
@@ -149,6 +161,8 @@ typedef enum {
     STR_NOTE_EMPTY,
     STR_NOTE_HELP,      /* note mic open: how to dictate / edit */
     STR_REMINDER_HELP,  /* reminder mic open: how to change it */
+    STR_HELLO,          /* watchface greeting: "Hi there!" */
+    STR_HELP_PROMPT,    /* watchface, under the greeting: "How can I help you today?" */
     STR__COUNT,
 } ui_str_t;
 
@@ -202,7 +216,7 @@ void ui_settings_refresh(void);
 /* Settings header: battery text / colour and Wi-Fi icon colour, mirrored from the watchface. */
 void ui_settings_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa);
 /* The same for the reminder screen header (ui_items.c). */
-void ui_items_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa);
+void ui_items_status(const char *batt, lv_color_t batt_color);
 void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, const char *body,
                  const char *code, const char *button, void (*button_cb)(void),
                  bool dismissable, uint32_t auto_close_ms);

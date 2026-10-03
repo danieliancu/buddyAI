@@ -27,6 +27,7 @@ static void            *s_cb_ctx;
 static esp_timer_handle_t s_reconnect_timer;
 static uint32_t         s_backoff_ms = BACKOFF_MIN_MS;
 static volatile bool    s_connected;
+static volatile int     s_last_disc_reason;    /* wifi_err_reason_t of the last drop, 0 = none */
 static bool             s_sta_configured;
 static bool             s_mdns_ready;
 static bool             s_sntp_started;
@@ -78,6 +79,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             ESP_LOGW(TAG, "STA disconnected (reason %d)", d ? d->reason : -1);
             bool was = s_connected;
             s_connected = false;
+            if (was && d) {
+                s_last_disc_reason = d->reason;
+            }
             if (was) {
                 net_emit(NET_EVT_STA_DISCONNECTED);
             }
@@ -162,6 +166,11 @@ esp_err_t net_wifi_connect(const char *ssid, const char *pass)
 bool net_wifi_connected(void)
 {
     return s_connected;
+}
+
+int net_wifi_last_disconnect_reason(void)
+{
+    return s_last_disc_reason;
 }
 
 int net_wifi_rssi(void)

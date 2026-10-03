@@ -1,0 +1,132 @@
+---
+// Hero: an example conversation that types itself out, styled like the watch's chat screen (dark
+// screen, the user's words in accent bubbles on the right, ola's replies in dark bubbles on the left).
+// It opens mid-conversation and loops; older bubbles fade out at the top (level with the top of the
+// watch). Desktop only. The whole dialog stays in the page as text (for search engines and
+// screen readers, visually hidden once the animation starts); the animated copy is aria-hidden. Without JS
+// or with reduced motion the whole dialog is simply shown.
+interface Props {
+  class?: string;
+}
+const { class: cls = "" } = Astro.props;
+
+const dialog: [string, string][] = [
+  ["What's the weather like this afternoon?", "Mostly dry and mild: around 18°C with light cloud. Rain is unlikely before 8 pm."],
+  ["Is the pharmacy on High Street open now?", "Yes, it's open until 7 pm today."],
+  ["Remind me to call Mum at 6.", "Done. I'll remind you at 18:00 to call Mum."],
+  ["Any big news this morning?", "The top story is the Bank of England holding interest rates. Want the business headlines too?"],
+  ["How long to King's Cross by Tube?", "About 25 minutes on the Victoria line. Trains are running normally."],
+  ["Add milk and eggs to my shopping note.", "Added milk and eggs to your shopping list."],
+  ["Will I need an umbrella in Manchester tomorrow?", "Probably: showers are likely from mid-morning, around 14°C."],
+  ["How do you say “thank you” in Romanian?", "“Mulțumesc.” Want me to answer in Romanian from now on?"],
+];
+---
+<div class={`relative ${cls}`} data-hero-chat>
+  <div class="h-full">
+    <div
+      class="relative h-full overflow-hidden"
+      style="-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%); mask-image: linear-gradient(to bottom, transparent 0, #000 22%);"
+    >
+      <!-- the whole dialog, shown as is without JS or with reduced motion -->
+      <ul class="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-4 pb-6" data-chat-list aria-label="Example conversation with the ola assistant">
+        {dialog.flatMap(([q, a]) => [
+          <li class="flex justify-end"><span class="max-w-[85%] rounded-[18px] bg-[#4F8CFF] px-3.5 py-2 text-sm leading-snug text-white shadow-[0_6px_16px_rgba(15,21,51,.18)]">{q}</span></li>,
+          <li class="flex justify-start"><span class="max-w-[85%] rounded-[18px] bg-[#1f2530] px-3.5 py-2 text-sm leading-snug text-[#e6e9ef] shadow-[0_6px_16px_rgba(15,21,51,.18)]">{a}</span></li>,
+        ])}
+      </ul>
+    </div>
+  </div>
+  <script type="application/json" data-chat-dialog set:html={JSON.stringify(dialog)} />
+</div>
+
+<script>
+  const USER = "max-w-[85%] rounded-[18px] bg-[#4F8CFF] px-3.5 py-2 text-sm leading-snug text-white shadow-[0_6px_16px_rgba(15,21,51,.18)]";
+  const OLA = "max-w-[85%] rounded-[18px] bg-[#1f2530] px-3.5 py-2 text-sm leading-snug text-[#e6e9ef] shadow-[0_6px_16px_rgba(15,21,51,.18)]";
+  const KEEP = 16; // bubbles kept in the list (older ones have moved up out of view)
+  const OPEN_WITH = 3; // exchanges already on screen when the page opens
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  document.querySelectorAll<HTMLElement>("[data-hero-chat]").forEach((root) => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const transcript = root.querySelector<HTMLElement>("[data-chat-list]")!;
+    const list = document.createElement("ul");
+    list.className = transcript.className;
+    list.setAttribute("aria-hidden", "true");
+    transcript.after(list);
+    transcript.classList.add("sr-only");     /* stays in the page as text */
+    const dialog: [string, string][] = JSON.parse(root.querySelector("[data-chat-dialog]")!.textContent || "[]");
+    let visible = true;
+    new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(root);
+    const waitVisible = async () => {
+      while (!visible || document.hidden) await sleep(400);
+    };
+
+    const bubble = (cls: string, side: "end" | "start", text?: string) => {
+      const li = document.createElement("li");
+      li.className = `flex justify-${side}`;
+      li.style.transition = "opacity .25s, transform .25s";
+      li.style.opacity = "0";
+      li.style.transform = "translateY(6px)";
+      const span = document.createElement("span");
+      span.className = cls;
+      li.append(span);
+      list.append(li);
+      while (list.children.length > KEEP) list.firstElementChild!.remove();
+      if (text !== undefined) {
+        span.textContent = text;     /* already there when the page opens: no animation */
+        li.style.opacity = "1";
+        li.style.transform = "none";
+        return span;
+      }
+      requestAnimationFrame(() => {
+        li.style.opacity = "1";
+        li.style.transform = "none";
+      });
+      return span;
+    };
+
+    const type = async (el: HTMLElement, text: string, msPerChar: number) => {
+      for (const ch of Array.from(text)) {
+        await waitVisible();
+        el.textContent += ch;
+        await sleep(ch === " " ? msPerChar * 0.6 : msPerChar);
+      }
+    };
+
+    // "typing" dots in a reply bubble while ola "thinks"
+    const dots = (el: HTMLElement) => {
+      el.innerHTML =
+        '<span class="inline-flex gap-1 py-1">' +
+        [0, 1, 2]
+          .map((i) => `<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a93a6]" style="animation-delay:${i * 0.15}s"></span>`)
+          .join("") +
+        "</span>";
+    };
+
+    const run = async () => {
+      /* open mid-conversation: the first exchanges are already there, typing goes on from the next */
+      for (const [q, a] of dialog.slice(0, OPEN_WITH)) {
+        bubble(USER, "end", q);
+        bubble(OLA, "start", a);
+      }
+      let start = OPEN_WITH;
+      for (;;) {
+        for (const [q, a] of dialog.slice(start)) {
+          await waitVisible();
+          const qEl = bubble(USER, "end");
+          await type(qEl, q, 42);
+          await sleep(450);
+          const aEl = bubble(OLA, "start");
+          dots(aEl);
+          await sleep(900);
+          aEl.textContent = "";
+          await type(aEl, a, 26);
+          await sleep(1800);
+        }
+        start = 0;
+      }
+    };
+    run();
+  });
+</script>

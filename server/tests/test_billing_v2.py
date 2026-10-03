@@ -379,7 +379,7 @@ def test_customer_plan_api_hides_costs(enforce):
     body = client.get("/api/me/plan").json()
     assert body["status"]["kind"] == "complimentary" and body["enforced"] is True
     assert body["usage"]["used_pct"] == 52 and body["usage"]["activity_count"] == 1
-    assert body["prices"] == {"currency": "GBP", "care_price_pence": 799, "topup_price_pence": 199, "topup_adds_pct": 26}
+    assert body["prices"] == {"currency": "GBP", "care_price_pence": 790, "topup_price_pence": 199, "topup_adds_pct": 26}
     def walk(node):
         if isinstance(node, dict):
             for k, v in node.items():

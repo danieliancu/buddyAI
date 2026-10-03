@@ -13,6 +13,7 @@ from app.db.models import (
     AdminUser,
     Conversation,
     Device,
+    DeviceIssue,
     DeviceSettingsRow,
     FirmwareRelease,
     Item,
@@ -419,6 +420,39 @@ class FirmwareRepo:
 
     def get(self, rel_id: int) -> FirmwareRelease | None:
         return self.s.get(FirmwareRelease, rel_id)
+
+
+class IssueRepo:
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def add(self, issue: DeviceIssue) -> DeviceIssue:
+        self.s.add(issue)
+        self.s.commit()
+        self.s.refresh(issue)
+        return issue
+
+    def list(
+        self, device_id: str | None = None, kind: str | None = None, problems_only: bool = False, limit: int = 200
+    ) -> Sequence[DeviceIssue]:
+        q = select(DeviceIssue)
+        if device_id:
+            q = q.where(DeviceIssue.device_id == device_id)
+        if kind:
+            q = q.where(DeviceIssue.kind == kind)
+        if problems_only:
+            q = q.where(DeviceIssue.severity != "info")
+        return self.s.exec(q.order_by(col(DeviceIssue.id).desc()).limit(limit)).all()
+
+    def clear(self, device_id: str | None = None) -> int:
+        q = select(DeviceIssue)
+        if device_id:
+            q = q.where(DeviceIssue.device_id == device_id)
+        rows = self.s.exec(q).all()
+        for r in rows:
+            self.s.delete(r)
+        self.s.commit()
+        return len(rows)
 
 
 class ItemLimitError(Exception):

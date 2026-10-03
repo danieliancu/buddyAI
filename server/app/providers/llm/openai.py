@@ -23,6 +23,18 @@ from app.providers.llm.base import (
     chat_tools,
 )
 from app.providers.llm.citations import CitationFilter
+from app.search import MAX_PROVIDER_SEARCHES
+
+
+def count_searches(output: Any) -> int:
+    """Billed searches in a Responses output: web_search_call items whose action is a search. Opening a
+    result page (open_page / find_in_page) is part of the same search and is not counted."""
+    n = 0
+    for item in output or []:
+        if item.type == "web_search_call":
+            action = getattr(getattr(item, "action", None), "type", None)
+            n += action in (None, "search")
+    return n
 
 
 class OpenAILLM(LLMProvider):
@@ -81,8 +93,9 @@ class OpenAILLM(LLMProvider):
         params: dict[str, Any],
         instructions: str,
         timezone_name: str = "",
-    ) -> tuple[str, int, int, int]:
-        """One compact web search: (answer, input tokens, output tokens, searches run)."""
+    ) -> tuple[str, int, int, int, bool]:
+        """One compact web search: (answer, input tokens, output tokens, searches run, complete).
+        complete is False when the answer was cut off by the length limit (not cached)."""
         if not self.api_key:
             raise ProviderError("llm", "OpenAI API key is not configured")
         p: dict[str, Any] = dict(params)
@@ -98,16 +111,21 @@ class OpenAILLM(LLMProvider):
                 instructions=instructions,
                 input=query,
                 tools=[hosted],
-                max_output_tokens=220,
+                max_tool_calls=MAX_PROVIDER_SEARCHES,
+                max_output_tokens=400,
                 **p,
             )
         except OpenAIError as exc:
             raise ProviderError("llm", f"web search failed: {exc}") from exc
         citations = CitationFilter()
         text = (citations.feed(getattr(r, "output_text", "") or "") + citations.flush()).strip()
-        searches = sum(1 for item in r.output or [] if item.type == "web_search_call")
+        searches = count_searches(r.output)
+        complete = getattr(r, "status", "completed") != "incomplete"
+        if not complete:  # keep whole sentences only
+            cut = max(text.rfind(". "), text.rfind("! "), text.rfind("? "))
+            text = text[: cut + 1] if cut > 0 else ""
         usage = r.usage
-        return text, (usage.input_tokens if usage else 0), (usage.output_tokens if usage else 0), searches
+        return text, (usage.input_tokens if usage else 0), (usage.output_tokens if usage else 0), searches, complete
 
     async def _stream_responses(self, request: LLMRequest) -> AsyncIterator[LLMChunk]:
         params: dict[str, Any] = dict(request.params)
@@ -135,7 +153,7 @@ class OpenAILLM(LLMProvider):
                 if text:
                     yield LLMChunk(delta=text)
                 r = event.response
-                searches = sum(1 for item in r.output or [] if item.type == "web_search_call")
+                searches = count_searches(r.output)
                 calls = [
                     ToolCall(item.call_id, item.name, item.arguments or "{}")
                     for item in r.output or []

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
-import { Activity, Cpu, LogOut, Menu, MessagesSquare, Package, Server, Sparkles, Users, Watch, X } from "lucide-react";
+import { Activity, AlertTriangle, Cpu, LogOut, Menu, MessagesSquare, Package, Server, Sparkles, Users, Watch, X } from "lucide-react";
 import { useLive } from "../live";
 import { cx } from "./ui";
 
@@ -11,6 +11,7 @@ const NAV = [
   { to: "/admin/conversations", label: "Conversations", icon: MessagesSquare },
   { to: "/admin/personas", label: "Personas", icon: Sparkles },
   { to: "/admin/usage", label: "Usage & diagnostics", icon: Activity },
+  { to: "/admin/issues", label: "Issues", icon: AlertTriangle },
   { to: "/admin/firmware", label: "Firmware", icon: Cpu },
   { to: "/admin/system", label: "System", icon: Server },
 ];

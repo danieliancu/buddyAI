@@ -1,50 +1,102 @@
 ---
+import { Image } from "astro:assets";
 import Icon from "./Icon.astro";
-import WatchMock from "./WatchMock.astro";
-import { hardware } from "../data/features";
+import watch from "../assets/home/designed-watch.png";
 
 interface Props {
   cta?: boolean;
 }
 const { cta = true } = Astro.props;
-const left = hardware.slice(0, 2);
-const right = hardware.slice(2);
+
+/*
+ * Desktop: callouts around the watch, each joined by a line to the part it describes. The diagram box is
+ * 2:1 and the SVG uses a 200 x 100 viewBox over it, so units are square. The watch image (1230 x 1278 px)
+ * is 92% of the box height, centred: x 55.7..144.3, y 4..96 (0.072 units per image pixel). Targets are
+ * image pixels mapped into that area: the screen (330,420), the mic button (760,610) for the AI assistant,
+ * the left side of the case (290,640) for the microphone, the lower case (900,880) for the speaker.
+ */
+const callouts = [
+  {
+    icon: "display" as const, side: "left", top: "14%",
+    title: "AMOLED Touch Display", text: "Bright, crisp and easy to read: 410 × 502 pixels.",
+    path: "M48 21 H66 L79.5 34.2", dot: [79.5, 34.2],
+  },
+  {
+    icon: "sparkle" as const, side: "right", top: "14%",
+    title: "AI Voice Assistant", text: "Powered by advanced AI for natural conversation.",
+    path: "M152 21 H134 L110.4 47.9", dot: [110.4, 47.9],
+  },
+  {
+    icon: "mic" as const, side: "left", top: "60%",
+    title: "Built-in Microphone", text: "Tap the mic and talk naturally.",
+    path: "M48 67 H64 L76.6 50.1", dot: [76.6, 50.1],
+  },
+  {
+    icon: "speaker" as const, side: "right", top: "60%",
+    title: "Built-in Speaker", text: "Hear clear, natural replies straight from your watch.",
+    path: "M152 67 H136 L120.5 67.4", dot: [120.5, 67.4],
+  },
+];
+const alt = "olawatch home screen: time, “Hi there! How can I help you today?” and the mic button (illustration)";
 ---
-<section class="relative mt-24 overflow-hidden border-y border-line bg-bg-2/60 py-16" aria-labelledby="designed-title">
-  <div class="container-x grid items-center gap-10 lg:grid-cols-[1fr_1.6fr]">
+<section class="relative overflow-hidden bg-bg-2 py-14" aria-labelledby="designed-title">
+  <div class="container-x grid items-center gap-10 lg:grid-cols-[1fr_1.9fr]">
     <div>
-      <h2 id="designed-title" class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-        Thoughtfully designed.<br /><span class="text-gradient">Powered by AI.</span>
+      <h2 id="designed-title" class="text-3xl font-extrabold tracking-tight text-fg sm:text-4xl">
+        Thoughtfully Designed.<br />Powered by AI.
       </h2>
       <p class="mt-4 max-w-md text-muted">
-        A rectangular AMOLED touch display, built-in microphones and speaker, and an AI assistant that's ready when you
-        tap.
+        An AMOLED touch display, a built-in microphone and speaker, and a powerful AI that's ready when you tap.
       </p>
       {cta && (
-        <a href="/features/" class="btn btn-primary mt-6">Explore features <Icon name="arrow" size={18} /></a>
+        <a href="/features/" class="btn btn-primary mt-6">Explore Features <Icon name="arrow" size={18} /></a>
       )}
     </div>
 
-    <div class="grid items-center gap-6 sm:grid-cols-[1fr_auto_1fr]">
-      <ul class="order-2 space-y-6 sm:order-1">
-        {left.map((h) => (
-          <li class="flex gap-3 sm:flex-row-reverse sm:text-right">
-            <span class="icon-tile !h-10 !w-10 shrink-0"><Icon name={h.icon} size={20} /></span>
-            <div>
-              <h3 class="text-sm font-semibold text-white">{h.title}</h3>
-              <p class="mt-1 text-sm text-muted">{h.text}</p>
+    <!-- Desktop / tablet: diagram -->
+    <div class="relative hidden aspect-[2/1] w-full sm:block">
+      <Image
+        src={watch}
+        alt={alt}
+        widths={[300, 460, 640]}
+        sizes="340px"
+        class="absolute left-1/2 top-[4%] h-[92%] w-auto -translate-x-1/2"
+      />
+      <svg class="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 200 100" aria-hidden="true">
+        {callouts.map((c) => (
+          <>
+            <path d={c.path} fill="none" stroke="#8f9cff" stroke-width="0.45" />
+            <circle cx={c.dot[0]} cy={c.dot[1]} r="2.2" fill="#5b4cf0" fill-opacity="0.18" />
+            <circle cx={c.dot[0]} cy={c.dot[1]} r="1.1" fill="#5b4cf0" />
+          </>
+        ))}
+      </svg>
+      <ul>
+        {callouts.map((c) => (
+          <li
+            class:list={["absolute flex w-[24%] items-start gap-2", c.side === "left" ? "left-0" : "right-0"]}
+            style={`top:${c.top}`}
+          >
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e8ebff] text-accent"><Icon name={c.icon} size={16} /></span>
+            <div class="min-w-0">
+              <h3 class="text-sm font-bold leading-snug text-fg">{c.title}</h3>
+              <p class="mt-1 text-xs text-muted">{c.text}</p>
             </div>
           </li>
         ))}
       </ul>
-      <WatchMock id="designed-watch" class="order-1 w-44 sm:order-2 sm:w-48 lg:w-52" />
-      <ul class="order-3 space-y-6">
-        {right.map((h) => (
-          <li class="flex gap-3">
-            <span class="icon-tile !h-10 !w-10 shrink-0"><Icon name={h.icon} size={20} /></span>
+    </div>
+
+    <!-- Mobile: watch, then the list -->
+    <div class="sm:hidden">
+      <Image src={watch} alt={alt} widths={[300, 460]} sizes="70vw" class="mx-auto w-56" />
+      <ul class="mt-6 space-y-5">
+        {callouts.map((c) => (
+          <li class="flex items-start gap-3">
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e8ebff] text-accent"><Icon name={c.icon} size={16} /></span>
             <div>
-              <h3 class="text-sm font-semibold text-white">{h.title}</h3>
-              <p class="mt-1 text-sm text-muted">{h.text}</p>
+              <h3 class="text-sm font-bold text-fg">{c.title}</h3>
+              <p class="mt-1 text-xs text-muted">{c.text}</p>
             </div>
           </li>
         ))}

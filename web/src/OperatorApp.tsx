@@ -12,6 +12,7 @@ import PersonasPage from "./pages/PersonasPage";
 import ConversationsPage from "./pages/ConversationsPage";
 import SystemPage from "./pages/SystemPage";
 import FirmwarePage from "./pages/FirmwarePage";
+import IssuesPage from "./pages/IssuesPage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import OrdersPage from "./pages/OrdersPage";
@@ -86,6 +87,7 @@ export default function OperatorApp() {
                 </Suspense>
               }
             />
+            <Route path="issues" element={<IssuesPage />} />
             <Route path="firmware" element={<FirmwarePage />} />
             <Route path="system" element={<SystemPage />} />
             <Route path="*" element={<Navigate to="/admin/devices" replace />} />

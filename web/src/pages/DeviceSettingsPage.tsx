@@ -20,7 +20,7 @@ import WatchPreview from "../components/WatchPreview";
 import { LanguagePicker, VoiceSampleButton } from "../components/LanguageBits";
 import { primeLanguages } from "../languages";
 import WatchHeader from "./my/WatchHeader";
-import { Button, Card, ErrorBox, Field, Input, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
+import { Button, Card, ErrorBox, Field, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
 const COMMON_TIMEZONES = [
   "Europe/Bucharest",
@@ -86,21 +86,9 @@ const TZ_GROUPS: [string, string[]][] = (() => {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 })();
 
-const THEME_KEYS = ["accent", "background", "clock", "text"] as const;
-const COLOR_LABEL: Record<(typeof THEME_KEYS)[number], string> = {
-  accent: "Accent",
-  background: "Background",
-  clock: "Clock",
-  text: "Text",
-};
-const PRESET_LABEL: Record<string, string> = {
-  midnight: "Midnight",
-  ocean: "Ocean",
-  forest: "Forest",
-  sunset: "Sunset",
-  mono: "Mono",
-  custom: "Custom",
-};
+/* The watch has two themes, blue ("midnight") and white ("mono"), with fixed colours. */
+const THEME_BLUE = "midnight";
+const THEME_WHITE = "mono";
 const VAD_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
 
 /** Voice that will be used for `lang` (mirrors the server: override > default voice, within the language's voice set). */
@@ -114,25 +102,19 @@ function effectiveVoice(s: DeviceSettings, o: Options, lang: string): string {
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
-/** Only the fields that differ; theme is diffed per key (the server merges partial themes). */
+/** Only the fields that differ; the theme is sent as its preset (the server applies the colours). */
 function diff(orig: DeviceSettings, draft: DeviceSettings): SettingsPatch {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(draft) as (keyof DeviceSettings)[]) {
     if (k === "theme") continue;
     if (!same(draft[k], orig[k])) out[k] = draft[k];
   }
-  const theme: Partial<Theme> = {};
-  for (const k of ["preset", ...THEME_KEYS] as (keyof Theme)[]) {
-    if (draft.theme[k].toUpperCase() !== orig.theme[k].toUpperCase()) theme[k] = draft.theme[k];
-  }
-  // If only colors changed, still send the preset so the server never re-applies preset colors.
-  if (Object.keys(theme).length) out.theme = { ...theme, preset: draft.theme.preset };
+  if (draft.theme.preset !== orig.theme.preset) out.theme = { preset: draft.theme.preset };
   return out as SettingsPatch;
 }
 
 function validateLocal(s: DeviceSettings): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const k of THEME_KEYS) if (!/^#[0-9A-Fa-f]{6}$/.test(s.theme[k])) out[`theme.${k}`] = "Use #RRGGBB";
   try {
     new Intl.DateTimeFormat("en", { timeZone: s.timezone });
     if (!s.timezone) throw new Error();
@@ -246,18 +228,11 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
   if (!draft || !orig || !options) return <Spinner />;
 
   const set = <K extends keyof DeviceSettings>(k: K, v: DeviceSettings[K]) => setDraft((d) => d && { ...d, [k]: v });
-  const setTheme = (t: Partial<Theme>) => setDraft((d) => d && { ...d, theme: { ...d.theme, ...t } });
   const pickPreset = (name: string) => {
     const colors = options.theme_presets[name];
-    if (colors) setTheme({ preset: name, ...colors });
+    if (colors) setDraft((d) => d && { ...d, theme: { ...d.theme, preset: name, ...colors } as Theme });
   };
-  const setColor = (k: (typeof THEME_KEYS)[number], v: string) => {
-    const next = { ...draft.theme, [k]: v.toUpperCase() };
-    const match = Object.entries(options.theme_presets).find(([, c]) =>
-      THEME_KEYS.every((key) => c[key].toUpperCase() === next[key].toUpperCase()),
-    );
-    setTheme({ [k]: v.toUpperCase(), preset: match ? match[0] : "custom" });
-  };
+  const white = draft.theme.preset === THEME_WHITE;
   const err = (k: string) => fieldErr[k];
 
   const save = async () => {
@@ -495,53 +470,31 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
           <Card title={<SectionTitle icon={<Palette className="size-4" />}>Appearance</SectionTitle>}>
             <div className="mb-6 lg:hidden">{preview}</div>
             <div className="space-y-5">
-              <Field label="Theme" error={err("theme.preset")}>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(options.theme_presets).map(([name, c]) => (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => pickPreset(name)}
-                      className={cx(
-                        "flex h-6 items-center gap-1.5 rounded-full border pr-2.5 pl-0.5 text-xs transition",
-                        draft.theme.preset === name ? "border-accent bg-accent-bg" : "border-border hover:bg-surface-2",
-                      )}
-                    >
-                      <span className="relative size-4.5 overflow-hidden rounded-full border border-border" style={{ background: c.background }}>
-                        <span className="absolute inset-1 rounded-full" style={{ background: c.accent }} />
-                      </span>
-                      {PRESET_LABEL[name] ?? name}
-                    </button>
-                  ))}
-                  {!(draft.theme.preset in options.theme_presets) && (
-                    <span className="flex h-6 items-center rounded-full border border-accent bg-accent-bg px-2.5 text-xs">
-                      {PRESET_LABEL[draft.theme.preset] ?? draft.theme.preset}
-                    </span>
-                  )}
+              <Field label="Theme" error={err("theme")}>
+                <div className="inline-flex items-center gap-3 text-sm select-none">
+                  <button type="button" onClick={() => pickPreset(THEME_BLUE)} className={cx("flex items-center gap-1.5", white ? "text-muted" : "font-medium")}>
+                    <span className="size-3.5 rounded-full border border-border" style={{ background: options.theme_presets[THEME_BLUE]?.accent }} />
+                    Blue
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={white}
+                    aria-label="White theme"
+                    onClick={() => pickPreset(white ? THEME_BLUE : THEME_WHITE)}
+                    className="relative h-6 w-11 shrink-0 rounded-full border border-border bg-surface-2 transition"
+                  >
+                    <span
+                      className={cx("absolute top-0.5 size-[18px] rounded-full shadow transition-all", white ? "left-[22px]" : "left-0.5")}
+                      style={{ background: options.theme_presets[white ? THEME_WHITE : THEME_BLUE]?.accent }}
+                    />
+                  </button>
+                  <button type="button" onClick={() => pickPreset(THEME_WHITE)} className={cx("flex items-center gap-1.5", white ? "font-medium" : "text-muted")}>
+                    <span className="size-3.5 rounded-full border border-border" style={{ background: options.theme_presets[THEME_WHITE]?.accent }} />
+                    White
+                  </button>
                 </div>
               </Field>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {THEME_KEYS.map((k) => (
-                  <Field key={k} label={COLOR_LABEL[k]} error={err(`theme.${k}`)}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={/^#[0-9a-f]{6}$/i.test(draft.theme[k]) ? draft.theme[k].toLowerCase() : "#000000"}
-                        onChange={(e) => setColor(k, e.target.value)}
-                        className="h-6 w-8 shrink-0"
-                        aria-label={COLOR_LABEL[k]}
-                      />
-                      <Input
-                        value={draft.theme[k]}
-                        maxLength={7}
-                        onChange={(e) => setColor(k, e.target.value)}
-                        className="h-6! min-w-0 px-2 font-mono text-xs uppercase"
-                        aria-label={`${COLOR_LABEL[k]} hex`}
-                      />
-                    </div>
-                  </Field>
-                ))}
-              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Brightness" error={err("brightness")}>
                   <Slider value={draft.brightness} min={5} max={100} onChange={(v) => set("brightness", v)} format={(v) => `${v}%`} />

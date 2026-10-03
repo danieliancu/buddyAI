@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages
-from app.api import accounts_admin, auth, devices, finance, firmware, live, me, shop, system, usage
+from app.api import accounts_admin, auth, devices, finance, firmware, issues, live, me, shop, system, usage
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
         finance.router,
         system.router,
         firmware.router,
+        issues.router,
         live.router,
         device_ws.router,
     ):

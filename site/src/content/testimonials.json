@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "quote": "ola keeps me on track with my schedule and reminders. It's like having a personal assistant on my wrist.",
+    "name": "Sarah M.",
+    "context": "Parent of two",
+    "photo": "person-1",
+    "rating": 5
+  },
+  {
+    "quote": "The voice AI is incredibly natural. I use it every day for notes, meetings, and quick answers.",
+    "name": "James T.",
+    "context": "Product Manager",
+    "photo": "person-2",
+    "rating": 4.5
+  },
+  {
+    "quote": "My son loves his ola watch. It helps him stay organised and feel more independent.",
+    "name": "Emily R.",
+    "context": "Parent",
+    "rating": 5
+  }
+]

@@ -3,20 +3,21 @@ import Base from "../layouts/Base.astro";
 import PageHero from "../components/PageHero.astro";
 import Steps from "../components/Steps.astro";
 import SectionHeading from "../components/SectionHeading.astro";
-import WatchMock from "../components/WatchMock.astro";
+import { Image } from "astro:assets";
+import watch from "../assets/home/designed-watch.png";
 import Icon from "../components/Icon.astro";
 import { config, prices } from "../config";
 import { privacyLine } from "../data/features";
 
 const journey = [
-  { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. ola Care starts with " + prices.trialMonths + " months free." },
+  { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. olacare starts with " + prices.trialMonths + " months free." },
   { icon: "mail" as const, title: "Set your password", text: "Your confirmation email has a link to set your ola account password." },
   { icon: "truck" as const, title: "Delivery", text: "We email you tracking details when your watch ships." },
   { icon: "wifi" as const, title: "Add watch", text: "Sign in at the ola app, choose Add watch and connect it to Wi-Fi." },
   { icon: "mic" as const, title: "Start talking", text: "Tap the mic button. That's it." },
 ];
 ---
-<Base title="How it works" description="Tap the mic, talk, and hear ola answer. Here's how the watch works, from ordering to your first conversation.">
+<Base title="How the olawatch AI smartwatch works" crumb="How it works" description="Tap the mic, talk, and hear the AI answer out loud. How the olawatch voice assistant works, from ordering and Wi-Fi setup to your first conversation.">
   <PageHero eyebrow="How it works" title="Tap. Talk." gradient="Listen." lead="No wake words, no menus to learn. One button on your wrist starts a conversation with your AI assistant." />
 
   <section class="container-x mt-6" aria-labelledby="steps-title">
@@ -35,7 +36,7 @@ const journey = [
       </ol>
       <p class="mt-6 text-sm text-muted">{privacyLine}</p>
     </div>
-    <WatchMock id="how-watch" class="w-56 sm:w-64" />
+    <Image src={watch} alt="The olawatch (illustration)" widths={[260, 420, 560]} sizes="(min-width: 640px) 280px, 70vw" class="mx-auto w-60 sm:w-72 lg:h-[500px] lg:object-cover" />
   </section>
 
   <section class="container-x mt-20" aria-labelledby="journey-title">
@@ -44,7 +45,7 @@ const journey = [
       {journey.map((j, i) => (
         <li class="glass p-5">
           <span class="icon-tile !h-10 !w-10"><Icon name={j.icon} size={20} /></span>
-          <h3 class="mt-3 font-semibold text-white"><span class="text-muted">{i + 1}.</span> {j.title}</h3>
+          <h3 class="mt-3 font-semibold text-fg"><span class="text-muted">{i + 1}.</span> {j.title}</h3>
           <p class="mt-1 text-sm text-muted">{j.text}</p>
         </li>
       ))}

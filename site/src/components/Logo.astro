@@ -1,8 +1,10 @@
 ---
 interface Props {
   size?: "md" | "lg";
+  /** White text, for dark backgrounds. */
+  light?: boolean;
 }
-const { size = "md" } = Astro.props;
+const { size = "md", light = false } = Astro.props;
 const h = size === "lg" ? 32 : 26;
 ---
 <span class="inline-flex items-center gap-2">
@@ -17,5 +19,14 @@ const h = size === "lg" ? 32 : 26;
       <path d="M4 13v6M10 9v14M16 5v22M22 9v14M28 13v6" />
     </g>
   </svg>
-  <span class:list={["font-bold tracking-tight text-white", size === "lg" ? "text-2xl" : "text-xl"]}>ola</span>
+  <span class:list={["font-bold tracking-tight", light ? "text-white" : "text-fg", size === "lg" ? "text-2xl" : "text-xl"]}>ol<span class="relative">a<svg
+      viewBox="0 0 16 16"
+      class:list={["absolute -top-[2px] left-[2px] h-[0.55em] w-[0.55em]", light ? "text-[#a5b4fc]" : "text-accent"]}
+      aria-hidden="true"
+    ><path d="M2.5 13.5C2.5 7 6.8 2.6 14 2c.4 7-4.2 11.5-11.5 11.5z" fill="currentColor" /><path
+        d="M2.5 13.5 9.5 6.5"
+        stroke={light ? "#0b1028" : "#fff"}
+        stroke-width="1.1"
+        stroke-linecap="round"
+      /></svg></span><span class={light ? "text-[#a5b4fc]" : "text-accent"}>watch</span></span>
 </span>

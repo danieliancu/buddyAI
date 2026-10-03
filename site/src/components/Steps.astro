@@ -1,34 +1,42 @@
 ---
+import { Image } from "astro:assets";
 import Icon from "./Icon.astro";
+import watch from "../assets/home/hero-watch.png";
+
 const steps = [
   {
-    icon: "wifi" as const,
-    title: "Set it up",
-    text: "Sign in to your ola account, choose Add watch, and connect the watch to Wi-Fi.",
+    title: "Wear It",
+    text: "Connect your ola to Wi-Fi and link it to your account with a 6-digit code.",
   },
   {
-    icon: "mic" as const,
-    title: "Tap and talk",
-    text: "Tap the big mic button and speak naturally — ask a question or just start chatting.",
+    title: "Talk Naturally",
+    text: "Tap the mic and ask a question, set a reminder or dictate a note.",
   },
   {
-    icon: "wave" as const,
-    title: "Hear the answer",
-    text: "ola replies out loud in your language. Tap again anytime to interrupt.",
+    title: "Get Things Done",
+    text: "ola answers out loud, in your language, right from your wrist.",
   },
 ];
 ---
-<ol class="grid gap-4 md:grid-cols-3">
+<ol class="grid gap-6 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
   {steps.map((s, i) => (
-    <li class="glass relative flex items-start gap-4 p-5">
-      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-violet/50 bg-violet/15 text-sm font-bold text-white" aria-hidden="true">{i + 1}</span>
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <Icon name={s.icon} size={20} class="text-violet" />
-          <h3 class="font-semibold text-white"><span class="sr-only">Step {i + 1}: </span>{s.title}</h3>
+    <>
+      <li class="flex items-center gap-5">
+        <span class="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-[0_4px_16px_rgba(40,50,120,.1)]" aria-hidden="true">
+          {i === 0 && <Image src={watch} alt="" width={160} class="h-20 w-20 object-contain" />}
+          {i === 1 && <Icon name="wave" size={44} class="text-accent" />}
+          {i === 2 && (
+            <span class="grid h-16 w-16 place-items-center rounded-full bg-accent text-white"><Icon name="check" size={34} /></span>
+          )}
+        </span>
+        <div class="min-w-0">
+          <h3 class="text-base font-bold text-fg"><span class="sr-only">Step {i + 1}: </span>{s.title}</h3>
+          <p class="mt-1 text-sm text-muted">{s.text}</p>
         </div>
-        <p class="mt-1.5 text-sm text-muted">{s.text}</p>
-      </div>
-    </li>
+      </li>
+      {i < steps.length - 1 && (
+        <li aria-hidden="true" class="hidden text-[#a9b4ff] md:block"><Icon name="chevronRight" size={28} /></li>
+      )}
+    </>
   ))}
 </ol>

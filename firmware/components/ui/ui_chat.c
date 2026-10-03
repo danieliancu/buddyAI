@@ -14,6 +14,7 @@
  */
 #include <string.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "board.h"
 #include "ui_priv.h"
 
@@ -37,6 +38,12 @@
 #define DOT_BOUNCE          7           /* px up */
 #define DOT_BOUNCE_MS       300
 #define DOT_STAGGER_MS      150
+/* Reply text is revealed with the voice rather than as it streams in: it starts
+ * REVEAL_DELAY_MS after speaking starts (the audio prebuffer) at ~15 chars/s
+ * (TTS pace) and speeds up to ~30 chars/s when text piles up. */
+#define PEND_MAX            4096
+#define REVEAL_TICK_MS      60
+#define REVEAL_DELAY_MS     300
 
 static lv_obj_t  *s_scr;
 static lv_obj_t  *s_title;
@@ -46,11 +53,19 @@ static lv_obj_t  *s_mic_lbl;
 static lv_obj_t  *s_ring;
 static lv_obj_t  *s_spinner;
 static lv_obj_t  *s_cur_user;       /* label of this turn's user bubble (NULL until words arrive) */
-static lv_obj_t  *s_typing;         /* bouncing dots while listening, before the first words */
+static lv_obj_t  *s_typing;         /* bouncing dots: the user's side while listening (before the first
+                                     * words), ola's side while the answer is awaited */
+static bool       s_typing_ai;      /* s_typing is on ola's side */
 static lv_obj_t  *s_cur_reply;      /* label of this turn's reply bubble */
 static bool       s_cur_display;    /* the reply bubble shows a short value: ignore the text */
 static ui_conv_t  s_state = UI_CONV_IDLE;
 static bool       s_mic_swallow;
+static char      *s_pend;           /* reply text received but not shown yet (PSRAM) */
+static size_t     s_pend_pos;       /* next byte to show */
+static size_t     s_pend_len;
+static bool       s_reveal_on;      /* speaking: the timer reveals s_pend */
+static uint32_t   s_reveal_since;
+static uint32_t   s_reveal_ticks;
 
 /* ------------------------------------------------------------------------- */
 /* Bubbles                                                                    */
@@ -119,13 +134,77 @@ static lv_obj_t *add_bubble(bool user, const char *text)
     return l;
 }
 
+static void hide_typing(void);
+
+/* Show `text` at the end of this turn's reply bubble (created on first use, replacing ola's dots). */
+static void reply_append(const char *text)
+{
+    if (!s_cur_reply) {
+        hide_typing();
+        s_cur_reply = add_bubble(false, text);
+    } else {
+        lv_label_ins_text(s_cur_reply, LV_LABEL_POS_LAST, text);
+        fit_width(s_cur_reply);
+    }
+    scroll_to_end();
+}
+
+/* Show everything still pending at once (end of reply, new turn, errors). */
+static void reveal_flush(void)
+{
+    if (s_pend && s_pend_pos < s_pend_len && !s_cur_display) {
+        s_pend[s_pend_len] = '\0';
+        reply_append(s_pend + s_pend_pos);
+    }
+    s_pend_pos = s_pend_len = 0;
+    s_reveal_on = false;
+}
+
+static size_t pending_chars(void)
+{
+    size_t n = 0;
+    for (size_t i = s_pend_pos; i < s_pend_len; i++) {
+        n += ((unsigned char)s_pend[i] & 0xC0) != 0x80;
+    }
+    return n;
+}
+
+/* LVGL timer (lock held): a few UTF-8 characters per tick, more when text piles up. */
+static void reveal_cb(lv_timer_t *t)
+{
+    if (!s_reveal_on || s_pend_pos >= s_pend_len || lv_tick_elaps(s_reveal_since) < REVEAL_DELAY_MS) {
+        return;
+    }
+    if (s_cur_display) {
+        s_pend_pos = s_pend_len = 0;
+        return;
+    }
+    size_t waiting = pending_chars();
+    s_reveal_ticks++;
+    int n = waiting < 60 ? 1 : waiting < 120 ? 1 + (int)(s_reveal_ticks & 1) : 2;
+    size_t end = s_pend_pos;
+    for (int c = 0; c < n && end < s_pend_len; c++) {
+        end++;
+        while (end < s_pend_len && ((unsigned char)s_pend[end] & 0xC0) == 0x80) {
+            end++;
+        }
+    }
+    char piece[16];
+    size_t len = end - s_pend_pos;
+    memcpy(piece, s_pend + s_pend_pos, len);
+    piece[len] = '\0';
+    s_pend_pos = end;
+    reply_append(piece);
+}
+
 static void dot_y_cb(void *dot, int32_t v)
 {
     lv_obj_set_style_translate_y(dot, v, 0);
 }
 
-/* WhatsApp-style "typing": three dots bouncing in turn, on the user's side, no background. */
-static void show_typing(void)
+/* WhatsApp-style "typing": three dots bouncing in turn, no background. On the user's side (accent) while
+ * listening; on ola's side (text colour) from the end of the question until the answer shows. */
+static void show_typing(bool ai)
 {
     s_typing = lv_obj_create(s_list);
     lv_obj_remove_style_all(s_typing);
@@ -133,16 +212,18 @@ static void show_typing(void)
     lv_obj_remove_flag(s_typing, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(s_typing, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_flex_flow(s_typing, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(s_typing, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_flex_align(s_typing, ai ? LV_FLEX_ALIGN_START : LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_END);
     lv_obj_set_style_pad_column(s_typing, DOT_GAP, 0);
-    lv_obj_set_style_pad_right(s_typing, 14, 0);
+    lv_obj_set_style_pad_hor(s_typing, 14, 0);
+    s_typing_ai = ai;
     lv_obj_set_style_pad_bottom(s_typing, 4, 0);
     for (int i = 0; i < 3; i++) {
         lv_obj_t *dot = lv_obj_create(s_typing);
         lv_obj_remove_style_all(dot);
         lv_obj_set_size(dot, DOT_SIZE, DOT_SIZE);
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(dot, g_ui_theme.accent, 0);
+        lv_obj_set_style_bg_color(dot, ai ? g_ui_theme.text : g_ui_theme.accent, 0);
         lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
         lv_anim_t a;
         lv_anim_init(&a);
@@ -277,6 +358,9 @@ void ui_chat_init(void)
 
     lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */
     apply_state_visuals();
+
+    s_pend = heap_caps_malloc(PEND_MAX + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    lv_timer_create(reveal_cb, REVEAL_TICK_MS, NULL);
 }
 
 /* Caller holds the lock. */
@@ -285,12 +369,24 @@ void ui_chat_set_state(ui_conv_t st)
     if (!s_scr || st == s_state) {
         return;
     }
+    if (st == UI_CONV_SPEAKING) {
+        s_reveal_on = true;
+        s_reveal_since = lv_tick_get();
+    } else {
+        reveal_flush();     /* the old bubble keeps its whole text */
+    }
     if (st == UI_CONV_LISTENING) {
         hide_typing();
         s_cur_user = NULL;
         s_cur_reply = NULL;
         s_cur_display = false;
-        show_typing();
+        show_typing(false);
+    } else if (st == UI_CONV_THINKING) {
+        /* the question is done: ola's dots dance on the left until the answer shows */
+        hide_typing();
+        if (!s_cur_reply) {
+            show_typing(true);
+        }
     } else if (st == UI_CONV_IDLE) {
         hide_typing();      /* nothing was heard */
         s_cur_user = NULL;
@@ -326,8 +422,10 @@ void ui_chat_refresh_theme(void)
     uint32_t n = lv_obj_get_child_count(s_list);
     for (uint32_t i = 0; i < n; i++) {
         lv_obj_t *row = lv_obj_get_child(s_list, i);
-        if (lv_obj_get_style_flex_main_place(row, 0) == LV_FLEX_ALIGN_END) {
-            lv_obj_set_style_bg_color(lv_obj_get_child(row, 0), g_ui_theme.accent, 0);
+        lv_obj_t *l = lv_obj_get_child(row, 0);
+        if (l && lv_obj_get_style_flex_main_place(row, 0) == LV_FLEX_ALIGN_END && lv_obj_check_type(l, &lv_label_class)) {
+            lv_obj_set_style_bg_color(l, g_ui_theme.accent, 0);
+            lv_obj_set_style_text_color(l, ui_on_color(g_ui_theme.accent), 0);
         }
     }
 }
@@ -339,12 +437,17 @@ void ui_chat_user(const char *text)
     }
     LOCK();
     if (s_scr) {
+        /* the user's dots give way to the words; ola's dots (a late transcript) stay below the question */
+        const bool ai_dots = s_typing && s_typing_ai;
         hide_typing();
         if (!s_cur_user) {
             s_cur_user = add_bubble(true, text);
         } else {
             lv_label_set_text(s_cur_user, text);
             fit_width(s_cur_user);
+        }
+        if (ai_dots) {
+            show_typing(true);
         }
         scroll_to_end();
     }
@@ -358,13 +461,24 @@ void ui_chat_reply(const char *delta)
     }
     LOCK();
     if (s_scr && !s_cur_display) {
-        if (!s_cur_reply) {
-            s_cur_reply = add_bubble(false, delta);
+        size_t len = strlen(delta);
+        if (!s_pend || s_state == UI_CONV_IDLE) {
+            reply_append(delta);        /* nothing will speak it: show it as it comes */
         } else {
-            lv_label_ins_text(s_cur_reply, LV_LABEL_POS_LAST, delta);
-            fit_width(s_cur_reply);
+            if (s_pend_len + len > PEND_MAX) {
+                reveal_flush();         /* very long reply: catch up rather than drop text */
+                s_reveal_on = s_state == UI_CONV_SPEAKING;
+            }
+            if (len > PEND_MAX) {
+                reply_append(delta);
+            } else {
+                if (s_pend_pos == s_pend_len) {
+                    s_pend_pos = s_pend_len = 0;
+                }
+                memcpy(s_pend + s_pend_len, delta, len);
+                s_pend_len += len;
+            }
         }
-        scroll_to_end();
     }
     UNLOCK();
 }
@@ -416,7 +530,9 @@ void ui_chat_display(const char *text)
     }
     LOCK();
     if (s_scr) {
+        s_pend_pos = s_pend_len = 0;    /* the value replaces any text */
         if (!s_cur_reply) {
+            hide_typing();
             s_cur_reply = add_bubble(false, text);
         } else {
             lv_label_set_text(s_cur_reply, text);

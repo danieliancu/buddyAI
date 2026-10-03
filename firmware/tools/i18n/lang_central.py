@@ -85,6 +85,8 @@ LANGS = {
             "NOTE_EMPTY": "Pusta notatka.\nDotknij mikrofonu i dyktuj.",
             "NOTE_HELP": "Powiedz linijkę, aby ją dodać, albo „usuń 2”, „przenieś 3 na górę”.",
             "REMINDER_HELP": "Powiedz zmianę: „na 10:30”, „dodaj Anę”, „usuń miejsce”.",
+            "HELLO": "Cześć!",
+            "HELP_PROMPT": "W czym mogę ci dziś pomóc?",
         },
     },
     "cs": {
@@ -171,6 +173,8 @@ LANGS = {
             "NOTE_EMPTY": "Prázdná poznámka.\nKlepni na mikrofon a diktuj.",
             "NOTE_HELP": "Řekni řádek a přidá se, nebo „smaž 2“, „přesuň 3 nahoru“.",
             "REMINDER_HELP": "Řekni změnu: „na 10:30“, „přidej Anu“, „smaž místo“.",
+            "HELLO": "Ahoj!",
+            "HELP_PROMPT": "S čím ti dnes můžu pomoct?",
         },
     },
     "sk": {
@@ -257,6 +261,8 @@ LANGS = {
             "NOTE_EMPTY": "Prázdna poznámka.\nŤukni na mikrofón a diktuj.",
             "NOTE_HELP": "Povedz riadok a pridá sa, alebo „vymaž 2“, „presuň 3 hore“.",
             "REMINDER_HELP": "Povedz zmenu: „na 10:30“, „pridaj Anu“, „vymaž miesto“.",
+            "HELLO": "Ahoj!",
+            "HELP_PROMPT": "S čím ti dnes môžem pomôcť?",
         },
     },
     "hu": {
@@ -343,6 +349,8 @@ LANGS = {
             "NOTE_EMPTY": "Üres jegyzet.\nKoppints a mikrofonra, és diktálj.",
             "NOTE_HELP": "Mondj egy sort a hozzáadáshoz, vagy „töröld a 2-t”, „a 3 legyen felül”.",
             "REMINDER_HELP": "Mondj egy változtatást: „10:30-ra”, „add hozzá Annát”, „töröld a helyet”.",
+            "HELLO": "Szia!",
+            "HELP_PROMPT": "Miben segíthetek ma?",
         },
     },
     "sl": {
@@ -429,6 +437,8 @@ LANGS = {
             "NOTE_EMPTY": "Prazen zapisek.\nTapni mikrofon in nareki.",
             "NOTE_HELP": "Povej vrstico, da jo dodaš, ali »izbriši 2«, »premakni 3 na vrh«.",
             "REMINDER_HELP": "Povej spremembo: »ob 10:30«, »dodaj Ano«, »odstrani kraj«.",
+            "HELLO": "Živjo!",
+            "HELP_PROMPT": "Kako ti lahko danes pomagam?",
         },
     },
     "hr": {
@@ -515,6 +525,8 @@ LANGS = {
             "NOTE_EMPTY": "Prazna bilješka.\nDodirni mikrofon i diktiraj.",
             "NOTE_HELP": "Izgovori redak da ga dodaš ili „izbriši 2”, „premjesti 3 na vrh”.",
             "REMINDER_HELP": "Reci promjenu: „u 10:30”, „dodaj Anu”, „makni mjesto”.",
+            "HELLO": "Bok!",
+            "HELP_PROMPT": "Kako ti danas mogu pomoći?",
         },
     },
     "bs": {
@@ -601,6 +613,8 @@ LANGS = {
             "NOTE_EMPTY": "Prazna bilješka.\nDodirni mikrofon i diktiraj.",
             "NOTE_HELP": "Izgovori red da ga dodaš ili „izbriši 2”, „premjesti 3 na vrh”.",
             "REMINDER_HELP": "Reci promjenu: „u 10:30”, „dodaj Anu”, „ukloni mjesto”.",
+            "HELLO": "Zdravo!",
+            "HELP_PROMPT": "Kako ti danas mogu pomoći?",
         },
     },
     "sr": {
@@ -687,6 +701,8 @@ LANGS = {
             "NOTE_EMPTY": "Prazna beleška.\nDodirni mikrofon i diktiraj.",
             "NOTE_HELP": "Izgovori red da ga dodaš ili „izbriši 2”, „premesti 3 na vrh”.",
             "REMINDER_HELP": "Reci promenu: „u 10:30”, „dodaj Anu”, „ukloni mesto”.",
+            "HELLO": "Zdravo!",
+            "HELP_PROMPT": "Kako ti danas mogu pomoći?",
         },
     },
 }

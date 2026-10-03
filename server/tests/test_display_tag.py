@@ -218,3 +218,22 @@ def test_pipeline_sends_display_value_and_speaks_the_rest() -> None:
     assert turn.assistant_text == "In Chelmsford it's 21 degrees."
     captions = "".join(f["delta"] for t, f in io.sent if t == "llm_text")
     assert "[[" not in captions
+
+
+@pytest.mark.parametrize("size", [1, 2, 3, 7, 100])
+def test_tag_inside_the_reply_loses_its_brackets(size: int) -> None:
+    text = "În Southend-on-Sea, următoarea maree înaltă este la [[17:39]] azi."
+    assert run(text, size) == ("În Southend-on-Sea, următoarea maree înaltă este la 17:39 azi.", "17:39")
+
+
+@pytest.mark.parametrize("size", [1, 4, 100])
+def test_leading_tag_wins_and_later_tags_lose_brackets(size: int) -> None:
+    assert run("[[17:39]] High tide at [[17:39]], low at [[23:50]].", size) == (
+        "High tide at 17:39, low at 23:50.",
+        "17:39",
+    )
+
+
+@pytest.mark.parametrize("size", [1, 100])
+def test_single_brackets_inside_the_reply_stay(size: int) -> None:
+    assert run("Say [yes] or [no] [", size) == ("Say [yes] or [no] [", None)

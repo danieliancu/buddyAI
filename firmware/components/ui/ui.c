@@ -2,6 +2,7 @@
  * ola - UI core: watchface, conversation states, theme, screen power
  * (dim / off after screen_timeout_s, tap wakes) and AMOLED pixel shift.
  */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -19,10 +20,19 @@ ui_callbacks_t   g_ui_cb;
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
 
-#define MIC_BTN_SIZE        160
-#define MIC_BOTTOM          34      /* px between the mic and the bottom edge */
-#define RING_BASE_SIZE      184
-#define SPINNER_SIZE        200
+#define MIC_BTN_SIZE        140
+#define MIC_CX              300     /* mic centre on the screen: right of the greeting, its top above the text's */
+#define MIC_CY              256
+#define RING_BASE_SIZE      164
+#define SPINNER_SIZE        176
+#define HERO_Y              158     /* pre-rendered art (halo, wave, mic circle): full width, y 158..419 */
+#define HERO_H              262
+#define WAVE_BLUE           0x4F8CFF /* the blue theme's accent: the greeting prompt's tint */
+#define WAVE_LOW_Y          360     /* screen y of the wave's lowest point (under the mic, just below its halo) */
+#define HALO_R              94      /* outer halo ring around the mic */
+#define GREET_X             24      /* "Hi there!" / "How can I help you today?" left of the mic */
+#define GREET_Y             196
+#define GREET_W             184
 #define SLIDE_MS            350     /* screen slide, slowing down towards the end */
 #define NUM_BARS            5
 #define DIM_BRIGHTNESS      30      /* % while dimmed */
@@ -34,15 +44,11 @@ ui_callbacks_t   g_ui_cb;
 #define DATE_MAX_W          380     /* longer dates drop the weekday */
 #define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
 #define STATUS_HINT_W       170
-#define SHORTCUT_W          70      /* notes / reminders / settings icons */
-#define SHORTCUT_H          70
-#define SHORTCUT_GAP        30
-#define DIVIDER_W           400     /* faded lines above and below the icon row */
-#define DIVIDER_GAP         16      /* between the icon row and each line */
-#define DIVIDER_FADE_W      50      /* the line fades out over its last 50 px at each end */
-#define DIVIDER_OPA         LV_OPA_70
+#define SHORTCUT_W          80      /* notes / reminders / settings icons */
+#define SHORTCUT_H          80
+#define SHORTCUT_GAP        22
 /* Centered vertically between the date line (ends ~y 185) and the mic button (starts at y 308). */
-#define SHORTCUT_Y          202
+#define SHORTCUT_Y          394     /* centred between the wave and the bottom edge */
 
 typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_state_t;
 
@@ -71,8 +77,11 @@ static lv_style_t s_st_screen;
 static lv_style_t s_st_clock;
 static lv_style_t s_st_accent_bg;
 static lv_style_t s_st_accent_border;
-static lv_obj_t  *s_mic_art;             /* watchface: mic circle, pre-rendered */
-static uint8_t   *s_mic_buf;             /* its pixels (PSRAM), redrawn on theme / thinking changes */
+static lv_obj_t  *s_hero_art;            /* watchface: wave, halo and mic circle, pre-rendered */
+static uint8_t   *s_hero_buf;            /* its pixels (PSRAM), redrawn on theme / thinking changes */
+static lv_obj_t  *s_greet;               /* "Hi there!" + "How can I help you today?" */
+static lv_obj_t  *s_lbl_hello;
+static lv_obj_t  *s_lbl_help;
 static bool       s_mic_dim;             /* mic circle drawn faded (server thinking) */
 static lv_obj_t  *s_shortcut_art[3];     /* watchface: shortcut circles, pre-rendered, one shared buffer */
 static uint8_t   *s_shortcut_buf;
@@ -80,8 +89,8 @@ static int        s_shortcut_count;
 static lv_obj_t  *s_shortcut_lbl[3];     /* their icons (dark on a light circle) */
 
 static void mic_render(void);
+static void update_greeting(void);
 static void mic_fg_apply(void);
-static lv_style_t s_st_divider;         /* faded lines around the watchface icons */
 
 static ui_conv_t     s_conv = UI_CONV_IDLE;
 static power_state_t s_power = POWER_ON;
@@ -276,7 +285,7 @@ static void update_status(void)
     lv_obj_set_style_text_color(s_lbl_wifi, wc, 0);
     lv_obj_set_style_text_opa(s_lbl_wifi, opa, 0);
     ui_settings_status(batt, batt_color, wc, opa);
-    ui_items_status(batt, batt_color, wc, opa);
+    ui_items_status(batt, batt_color);
 }
 
 static void update_hint(void)
@@ -377,10 +386,12 @@ static void show_caption(void)
     if (!s_caption_visible) {
         lv_label_set_text(s_lbl_caption, "");
         lv_obj_add_flag(s_lbl_caption, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_greet, LV_OBJ_FLAG_HIDDEN);
         update_hint();
         return;
     }
     lv_obj_remove_flag(s_lbl_caption, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_greet, LV_OBJ_FLAG_HIDDEN);      /* the caption takes the greeting's place */
 
     /* Show the tail: the last CAPTION_SHOW code points (UTF-8 safe), starting
      * at a word boundary, trimmed further until it fits the caption box. */
@@ -559,7 +570,7 @@ static lv_obj_t *add_shortcut(lv_obj_t *parent, const char *icon, int which)
      * little while pressed */
     if (s_shortcut_buf && s_shortcut_count < 3) {
         lv_obj_t *art = lv_canvas_create(b);
-        lv_canvas_set_buffer(art, s_shortcut_buf, SHORTCUT_W, SHORTCUT_H, LV_COLOR_FORMAT_RGB565);
+        lv_canvas_set_buffer(art, s_shortcut_buf, SHORTCUT_W, SHORTCUT_H, LV_COLOR_FORMAT_ARGB8888);
         lv_obj_remove_flag(art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(art, LV_OBJ_FLAG_GESTURE_BUBBLE);
         s_shortcut_art[s_shortcut_count++] = art;
@@ -570,7 +581,7 @@ static lv_obj_t *add_shortcut(lv_obj_t *parent, const char *icon, int which)
     lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)which);
     lv_obj_add_event_cb(b, shortcut_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)which);
     lv_obj_t *l = lv_label_create(b);
-    lv_obj_set_style_text_font(l, &buddy_font_28, 0);
+    lv_obj_set_style_text_font(l, &buddy_font_shortcut, 0);
     lv_obj_set_style_text_color(l, lv_color_white(), 0);
     lv_label_set_text(l, icon);
     lv_obj_center(l);
@@ -616,28 +627,6 @@ void ui_shortcut_counts(int notes, int reminders)
     }
 }
 
-/* A 1 px horizontal line that fades out towards both ends (two halves: gradients have 2 stops). */
-static void add_faded_line(lv_obj_t *parent, int32_t y)
-{
-    /* fade in | solid middle | fade out */
-    const int32_t solid = DIVIDER_W - 2 * DIVIDER_FADE_W;
-    const int32_t widths[3] = { DIVIDER_FADE_W, solid, DIVIDER_FADE_W };
-    const lv_opa_t from[3] = { LV_OPA_TRANSP, DIVIDER_OPA, DIVIDER_OPA };
-    const lv_opa_t to[3] = { DIVIDER_OPA, DIVIDER_OPA, LV_OPA_TRANSP };
-    int32_t x = -DIVIDER_W / 2;
-    for (int i = 0; i < 3; i++) {
-        lv_obj_t *l = lv_obj_create(parent);
-        lv_obj_remove_style_all(l);
-        lv_obj_set_size(l, widths[i], 1);
-        lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_style(l, &s_st_divider, 0);
-        lv_obj_set_style_bg_main_opa(l, from[i], 0);
-        lv_obj_set_style_bg_grad_opa(l, to[i], 0);
-        lv_obj_align(l, LV_ALIGN_TOP_MID, x + widths[i] / 2, y);
-        x += widths[i];
-    }
-}
-
 static void screen_gesture_cb(lv_event_t *e)
 {
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
@@ -657,7 +646,6 @@ static void theme_styles_init(void)
     lv_style_init(&s_st_clock);
     lv_style_init(&s_st_accent_bg);
     lv_style_init(&s_st_accent_border);
-    lv_style_init(&s_st_divider);
 }
 
 /* A circle of diameter d centred on (cx, cy): vertical gradient top -> bottom, then a 2 px rim. */
@@ -680,31 +668,108 @@ static void draw_circle(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t d, lv
     lv_draw_rect(layer, &r, &area);
 }
 
-/* The mic circle (light-to-accent gradient, light rim) is too costly to redraw on every animation
- * frame (listening ring, screen slides): it is drawn once into a canvas inside the mic button and
- * then only copied. It sits on the plain background, so the corners are filled with it. Caller
- * holds the lock. */
-static void mic_render(void)
+/* A filled circle of radius r centred on (cx, cy), with a rim. Colours are opaque: the art is drawn on
+ * the plain background, so "faint" means mixed towards the background, not transparent. */
+static void fill_circle(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t r, lv_color_t fill, int32_t rim_w,
+                        lv_color_t rim)
 {
-    if (!s_mic_art) {
+    lv_draw_rect_dsc_t d;
+    lv_draw_rect_dsc_init(&d);
+    d.radius = LV_RADIUS_CIRCLE;
+    d.bg_color = fill;
+    d.bg_opa = LV_OPA_COVER;
+    d.border_width = rim_w;
+    d.border_color = rim;
+    d.border_opa = LV_OPA_COVER;
+    const lv_area_t area = { cx - r, cy - r, cx + r - 1, cy + r - 1 };
+    lv_draw_rect(layer, &d, &area);
+}
+
+/* The white theme ("mono"): its own wave artwork and white greeting text. */
+static bool theme_is_white(void)
+{
+    return strcmp(g_ui_settings.theme.preset, "mono") == 0;
+}
+
+/* Blend the wave artwork (ui_wave_img.c: wave.png, or wave-white.png in the white theme) into the art's
+ * pixels, its lowest point at WAVE_LOW_Y. Drawn over the background and the halo, under the mic circle. */
+static void wave_paint(void)
+{
+    const uint16_t *img_rgb = theme_is_white() ? g_wave_white_rgb565 : g_wave_img_rgb565;
+    const uint8_t *img_alpha = theme_is_white() ? g_wave_white_alpha : g_wave_img_alpha;
+    lv_draw_buf_t *buf = lv_canvas_get_draw_buf(s_hero_art);
+    const uint32_t stride = buf->header.stride / 2;
+    uint16_t *px = (uint16_t *)buf->data;
+    const int32_t top = WAVE_LOW_Y - g_wave_img_low_y - HERO_Y;     /* first band row, in art rows */
+
+    for (int32_t r = 0; r < g_wave_img_h; r++) {
+        const int32_t y = top + r;
+        if (y < 0 || y >= HERO_H) {
+            continue;
+        }
+        for (int32_t x = 0; x < g_wave_img_w && x < BOARD_LCD_H_RES; x++) {
+            const uint32_t i = (uint32_t)r * g_wave_img_w + x;
+            const uint8_t al = img_alpha[i];
+            if (!al) {
+                continue;
+            }
+            uint16_t *p = &px[y * stride + x];
+            const uint16_t w = img_rgb[i];
+            if (al == 255) {
+                *p = w;
+                continue;
+            }
+            const lv_color_t under = lv_color_make((uint8_t)(((*p >> 11) & 0x1F) << 3),
+                                                   (uint8_t)(((*p >> 5) & 0x3F) << 2), (uint8_t)((*p & 0x1F) << 3));
+            const lv_color_t over = lv_color_make((uint8_t)(((w >> 11) & 0x1F) << 3),
+                                                  (uint8_t)(((w >> 5) & 0x3F) << 2), (uint8_t)((w & 0x1F) << 3));
+            *p = lv_color_to_u16(lv_color_mix(over, under, al));
+        }
+    }
+}
+
+/* The watchface art behind the greeting and the mic: halo rings, the wave (wave_paint) and the
+ * mic circle. Too costly to draw every frame (listening ring, screen slides), so it is drawn once into a
+ * canvas and then only copied; redrawn on theme changes and when the mic dims (server thinking). The
+ * mic button on top of it is transparent. Colours are opaque, mixed towards the plain background.
+ * Caller holds the lock. */
+static void hero_render(void)
+{
+    if (!s_hero_art) {
         return;
     }
-    const lv_color_t a = g_ui_theme.accent, white = lv_color_white();
-    lv_canvas_fill_bg(s_mic_art, g_ui_theme.background, LV_OPA_COVER);
+    const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background, white = lv_color_white();
+    const int32_t cx = MIC_CX, cy = MIC_CY - HERO_Y;
+    lv_canvas_fill_bg(s_hero_art, bg, LV_OPA_COVER);
+
+    /* halo around the mic: a soft glow disc and a ring */
     lv_layer_t layer;
-    lv_canvas_init_layer(s_mic_art, &layer);
-    draw_circle(&layer, MIC_BTN_SIZE / 2, MIC_BTN_SIZE / 2, MIC_BTN_SIZE, lv_color_mix(white, a, 110),
-                lv_color_mix(a, lv_color_black(), 215), s_mic_dim ? LV_OPA_60 : LV_OPA_COVER,
-                lv_color_mix(white, a, 140), LV_OPA_80);
-    lv_canvas_finish_layer(s_mic_art, &layer);
+    lv_canvas_init_layer(s_hero_art, &layer);
+    fill_circle(&layer, cx, cy, HALO_R, lv_color_mix(a, bg, 22), 2, lv_color_mix(a, bg, 60));
+    fill_circle(&layer, cx, cy, HALO_R - 14, lv_color_mix(a, bg, 38), 2, lv_color_mix(a, bg, 105));
+    lv_canvas_finish_layer(s_hero_art, &layer);
+
+    wave_paint();
+
+    /* the mic circle: light accent at the top to the accent at the bottom, light rim */
+    lv_canvas_init_layer(s_hero_art, &layer);
+    draw_circle(&layer, cx, cy, MIC_BTN_SIZE, lv_color_mix(white, a, 80), lv_color_mix(a, lv_color_black(), 230),
+                s_mic_dim ? LV_OPA_60 : LV_OPA_COVER, lv_color_mix(white, a, 110), LV_OPA_80);
+    lv_canvas_finish_layer(s_hero_art, &layer);
+    lv_obj_invalidate(s_hero_art);
     mic_fg_apply();
+}
+
+static void mic_render(void)
+{
+    hero_render();
 }
 
 /* The mic icon / speaking bars: dark when the mic circle is light (e.g. the white "mono" accent). */
 static void mic_fg_apply(void)
 {
     const lv_color_t a = g_ui_theme.accent;
-    const lv_color_t mid = lv_color_mix(lv_color_mix(lv_color_white(), a, 110), lv_color_mix(a, lv_color_black(), 215), 128);
+    const lv_color_t mid = lv_color_mix(lv_color_mix(lv_color_white(), a, 80), lv_color_mix(a, lv_color_black(), 230), 128);
     const lv_color_t fg = ui_on_color(mid);
     if (s_lbl_mic) {
         lv_obj_set_style_text_color(s_lbl_mic, fg, 0);
@@ -724,16 +789,17 @@ static void shortcuts_render(void)
         return;
     }
     const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
-    lv_canvas_fill_bg(s_shortcut_art[0], bg, LV_OPA_COVER);
+    lv_canvas_fill_bg(s_shortcut_art[0], bg, LV_OPA_TRANSP);
     lv_layer_t layer;
     lv_canvas_init_layer(s_shortcut_art[0], &layer);
-    draw_circle(&layer, SHORTCUT_W / 2, SHORTCUT_H / 2, SHORTCUT_W, lv_color_mix(a, bg, 130),
-                lv_color_mix(a, bg, 45), LV_OPA_COVER, lv_color_mix(lv_color_white(), a, 90), LV_OPA_60);
+    /* solid dark-blue circle (the accent towards the background), rim in a slightly paler accent */
+    draw_circle(&layer, SHORTCUT_W / 2, SHORTCUT_H / 2, SHORTCUT_W, lv_color_mix(a, bg, 95),
+                lv_color_mix(a, bg, 60), LV_OPA_COVER, lv_color_mix(lv_color_white(), a, 60), LV_OPA_COVER);
     lv_canvas_finish_layer(s_shortcut_art[0], &layer);
     for (int i = 1; i < s_shortcut_count; i++) {
         lv_obj_invalidate(s_shortcut_art[i]);
     }
-    const lv_color_t fg = ui_on_color(lv_color_mix(lv_color_mix(a, bg, 130), lv_color_mix(a, bg, 45), 128));
+    const lv_color_t fg = ui_on_color(lv_color_mix(lv_color_mix(a, bg, 95), lv_color_mix(a, bg, 60), 128));
     for (int i = 0; i < 3; i++) {
         if (s_shortcut_lbl[i]) {
             lv_obj_set_style_text_color(s_shortcut_lbl[i], fg, 0);
@@ -753,10 +819,6 @@ static void theme_styles_apply(void)
     lv_style_set_text_color(&s_st_accent_bg, ui_on_color(g_ui_theme.accent));
     lv_style_set_border_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_arc_color(&s_st_accent_border, g_ui_theme.accent);
-    lv_style_set_bg_opa(&s_st_divider, LV_OPA_COVER);
-    lv_style_set_bg_color(&s_st_divider, g_ui_theme.accent);
-    lv_style_set_bg_grad_color(&s_st_divider, g_ui_theme.accent);
-    lv_style_set_bg_grad_dir(&s_st_divider, LV_GRAD_DIR_HOR);
 
     mic_render();
     shortcuts_render();
@@ -857,7 +919,7 @@ static void build_watchface(void)
     for (int i = 0; i < 3; i++) {
         lv_obj_t *l = lv_label_create(s_time_box);
         lv_obj_add_style(l, &s_st_clock, 0);
-        lv_obj_set_style_text_font(l, &buddy_font_clock, 0);
+        lv_obj_set_style_text_font(l, &buddy_font_clock_md, 0);
         parts[i] = l;
     }
     lv_label_set_text(parts[1], ":");
@@ -869,10 +931,10 @@ static void build_watchface(void)
     s_lbl_date = lv_label_create(s_content);
     lv_obj_set_style_text_font(s_lbl_date, &buddy_font_20, 0);
     lv_label_set_text(s_lbl_date, "");
-    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 152);  /* 28 px line box, centred where the 28 px date was */
+    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 120);
 
-    /* Notes / reminders shortcuts: a centered row between the date and the mic */
-    s_shortcut_buf = heap_caps_malloc(SHORTCUT_W * SHORTCUT_H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    /* Notes / reminders / settings shortcuts: a centred row at the bottom */
+    s_shortcut_buf = heap_caps_malloc(SHORTCUT_W * SHORTCUT_H * 4, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_shortcuts = lv_obj_create(s_content);
     lv_obj_remove_style_all(s_shortcuts);
     lv_obj_set_size(s_shortcuts, SHORTCUT_W * 3 + SHORTCUT_GAP * 2, SHORTCUT_H);
@@ -885,10 +947,38 @@ static void build_watchface(void)
     add_shortcut(s_shortcuts, ICON_CALENDAR, SHORTCUT_REMINDERS);
     add_shortcut(s_shortcuts, ICON_SETTINGS, SHORTCUT_SETTINGS);
     shortcuts_render();
-    add_faded_line(s_content, SHORTCUT_Y - DIVIDER_GAP);
-    add_faded_line(s_content, SHORTCUT_Y + SHORTCUT_H + DIVIDER_GAP);
 
-    /* Caption (transcript / reply) */
+    /* Art behind the greeting and the mic: wave, halo, mic circle (see hero_render) */
+    s_hero_buf = heap_caps_malloc(BOARD_LCD_H_RES * HERO_H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_hero_buf) {
+        s_hero_art = lv_canvas_create(s_content);
+        lv_canvas_set_buffer(s_hero_art, s_hero_buf, BOARD_LCD_H_RES, HERO_H, LV_COLOR_FORMAT_RGB565);
+        lv_obj_remove_flag(s_hero_art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_hero_art, LV_OBJ_FLAG_GESTURE_BUBBLE);
+        lv_obj_set_pos(s_hero_art, 0, HERO_Y);
+    }
+
+    /* Greeting, left of the mic */
+    s_greet = lv_obj_create(s_content);
+    lv_obj_remove_style_all(s_greet);
+    lv_obj_set_size(s_greet, GREET_W, LV_SIZE_CONTENT);
+    lv_obj_remove_flag(s_greet, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_greet, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_flex_flow(s_greet, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s_greet, 4, 0);
+    lv_obj_set_pos(s_greet, GREET_X, GREET_Y);
+    s_lbl_hello = lv_label_create(s_greet);
+    lv_obj_set_width(s_lbl_hello, GREET_W);
+    lv_obj_set_style_text_font(s_lbl_hello, &buddy_font_28b, 0);
+    lv_label_set_long_mode(s_lbl_hello, LV_LABEL_LONG_DOT);
+    s_lbl_help = lv_label_create(s_greet);
+    lv_obj_set_width(s_lbl_help, GREET_W);
+    lv_obj_set_style_text_font(s_lbl_help, &buddy_font_20, 0);
+    lv_obj_set_style_text_line_space(s_lbl_help, -2, 0);
+    lv_label_set_long_mode(s_lbl_help, LV_LABEL_LONG_WRAP);
+    update_greeting();
+
+    /* Caption (transcript / reply), in the greeting's place */
     s_lbl_caption = lv_label_create(s_content);
     lv_obj_set_width(s_lbl_caption, CAPTION_W);
     lv_obj_set_height(s_lbl_caption, CAPTION_H);
@@ -896,31 +986,27 @@ static void build_watchface(void)
     lv_label_set_long_mode(s_lbl_caption, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(s_lbl_caption, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_lbl_caption, "");
-    lv_obj_align(s_lbl_caption, LV_ALIGN_TOP_MID, 0, 222);
+    lv_obj_set_pos(s_lbl_caption, GREET_X, GREET_Y);
+    lv_obj_set_width(s_lbl_caption, GREET_W);
+    lv_obj_set_style_text_align(s_lbl_caption, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_add_flag(s_lbl_caption, LV_OBJ_FLAG_HIDDEN);
 
-    /* Mic button: its circle is pre-rendered (see mic_render); shrinks a little while pressed */
+    /* Mic button: transparent over its circle in the art (see hero_render); lightens while pressed */
     s_btn_mic = lv_button_create(s_content);
     lv_obj_remove_style_all(s_btn_mic);
     lv_obj_set_size(s_btn_mic, MIC_BTN_SIZE, MIC_BTN_SIZE);
-    lv_obj_set_style_transform_scale(s_btn_mic, 240, LV_STATE_PRESSED);
-    lv_obj_set_style_transform_pivot_x(s_btn_mic, MIC_BTN_SIZE / 2, 0);
-    lv_obj_set_style_transform_pivot_y(s_btn_mic, MIC_BTN_SIZE / 2, 0);
-    lv_obj_align(s_btn_mic, LV_ALIGN_BOTTOM_MID, 0, -MIC_BOTTOM);
+    lv_obj_set_style_radius(s_btn_mic, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_btn_mic, lv_color_white(), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(s_btn_mic, LV_OPA_20, LV_STATE_PRESSED);
+    lv_obj_set_pos(s_btn_mic, MIC_CX - MIC_BTN_SIZE / 2, MIC_CY - MIC_BTN_SIZE / 2);
+    lv_obj_set_ext_click_area(s_btn_mic, 10);
     lv_obj_add_flag(s_btn_mic, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_CLICKED, NULL);
-
-    s_mic_buf = heap_caps_malloc(MIC_BTN_SIZE * MIC_BTN_SIZE * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (s_mic_buf) {
-        s_mic_art = lv_canvas_create(s_btn_mic);
-        lv_canvas_set_buffer(s_mic_art, s_mic_buf, MIC_BTN_SIZE, MIC_BTN_SIZE, LV_COLOR_FORMAT_RGB565);
-        lv_obj_remove_flag(s_mic_art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(s_mic_art, LV_OBJ_FLAG_GESTURE_BUBBLE);
-        mic_render();
-    }
+    hero_render();
 
     s_lbl_mic = lv_label_create(s_btn_mic);
-    lv_obj_set_style_text_font(s_lbl_mic, &buddy_font_icon, 0);
+    lv_obj_set_style_text_font(s_lbl_mic, &buddy_font_mic, 0);
     lv_obj_set_style_text_color(s_lbl_mic, lv_color_white(), 0);
     lv_label_set_text(s_lbl_mic, ICON_MIC);
     lv_obj_center(s_lbl_mic);
@@ -929,7 +1015,7 @@ static void build_watchface(void)
     /* Speaking bars (inside the button) */
     s_bars_box = lv_obj_create(s_btn_mic);
     lv_obj_remove_style_all(s_bars_box);
-    lv_obj_set_size(s_bars_box, 110, 90);
+    lv_obj_set_size(s_bars_box, 84, 70);
     lv_obj_center(s_bars_box);
     lv_obj_remove_flag(s_bars_box, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(s_bars_box, LV_FLEX_FLOW_ROW);
@@ -937,8 +1023,8 @@ static void build_watchface(void)
     for (int i = 0; i < NUM_BARS; i++) {
         s_bars[i] = lv_obj_create(s_bars_box);
         lv_obj_remove_style_all(s_bars[i]);
-        lv_obj_set_size(s_bars[i], 12, 20);
-        lv_obj_set_style_radius(s_bars[i], 6, 0);
+        lv_obj_set_size(s_bars[i], 10, 18);
+        lv_obj_set_style_radius(s_bars[i], 5, 0);
         lv_obj_set_style_bg_color(s_bars[i], lv_color_white(), 0);
         lv_obj_set_style_bg_opa(s_bars[i], LV_OPA_COVER, 0);
         lv_obj_remove_flag(s_bars[i], LV_OBJ_FLAG_CLICKABLE);
@@ -970,6 +1056,7 @@ static void build_watchface(void)
     lv_obj_align_to(s_spinner, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
 
+    lv_obj_move_foreground(s_shortcuts);     /* above the art, which reaches down to them */
     lv_obj_move_foreground(s_btn_mic);
 }
 
@@ -1015,24 +1102,50 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
 void ui_apply_settings(const buddy_settings_t *s)
 {
     LOCK();
+    /* Only redo what changed: a new theme restyles every screen and redraws the watchface art, a new
+     * language re-texts them; a volume or brightness change (or the server echoing a change the watch
+     * already applied) only updates the settings screen. */
+    const bool theme_changed = memcmp(&s->theme, &g_ui_settings.theme, sizeof(s->theme)) != 0;
+    const bool lang_changed = strcmp(s->language, g_ui_settings.language) != 0;
     g_ui_settings = *s;
-    ui_i18n_set_language(s->language);
-    g_ui_theme.accent = hex(s->theme.accent);
-    g_ui_theme.background = hex(s->theme.background);
-    g_ui_theme.clock = hex(s->theme.clock);
-    g_ui_theme.text = hex(s->theme.text);
-    theme_styles_apply();
-    update_clock(true);
-    update_status();
-    update_hint();
+    if (lang_changed) {
+        ui_i18n_set_language(s->language);
+    }
+    if (theme_changed) {
+        g_ui_theme.accent = hex(s->theme.accent);
+        g_ui_theme.background = hex(s->theme.background);
+        g_ui_theme.clock = hex(s->theme.clock);
+        g_ui_theme.text = hex(s->theme.text);
+        theme_styles_apply();
+        update_status();
+    }
+    if (theme_changed || lang_changed) {
+        update_clock(true);
+        update_hint();
+        update_greeting();
+        ui_msg_refresh_theme();
+        ui_items_refresh_theme();
+        ui_chat_refresh_theme();
+    }
     ui_settings_refresh();
-    ui_msg_refresh_theme();
-    ui_items_refresh_theme();
-    ui_chat_refresh_theme();
     if (s_power == POWER_ON) {
         board_display_set_brightness(s->brightness);
     }
     UNLOCK();
+}
+
+static void update_greeting(void)
+{
+    if (!s_greet) {
+        return;
+    }
+    lv_label_set_text(s_lbl_hello, ui_str(STR_HELLO));
+    lv_label_set_text(s_lbl_help, ui_str(STR_HELP_PROMPT));
+    /* white title; the prompt is light blue in the blue theme, white in the white one (like its wave) */
+    lv_obj_set_style_text_color(s_lbl_hello, lv_color_white(), 0);
+    lv_obj_set_style_text_color(s_lbl_help, theme_is_white() ? lv_color_white()
+                                : lv_color_mix(lv_color_white(), lv_color_hex(WAVE_BLUE), 110), 0);
+    lv_obj_set_style_text_color(s_lbl_date, lv_color_mix(lv_color_white(), g_ui_theme.accent, 190), 0);
 }
 
 void ui_set_reply_language(const char *lang)
@@ -1041,6 +1154,7 @@ void ui_set_reply_language(const char *lang)
     if (ui_i18n_set_reply_language(lang)) {    /* "auto": menus and date follow the reply */
         update_clock(true);
         update_hint();
+        update_greeting();
         ui_settings_refresh();
         ui_items_refresh_theme();
     }

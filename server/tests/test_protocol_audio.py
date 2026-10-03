@@ -53,8 +53,14 @@ def test_encoder_resamples_input():
 
 def test_settings_tz_and_theme_preset():
     assert posix_tz("Europe/Bucharest") == "EET-2EEST,M3.5.0/3,M10.5.0/4"
-    s = merge(DeviceSettings(), {"theme": {"preset": "forest"}})
-    assert s.theme.accent == "#3DDC84"
+    s = merge(DeviceSettings(), {"theme": {"preset": "mono"}})
+    assert s.theme.accent == "#FFFFFF"
+    # Colours always come from the preset; old themes and custom colours become the blue one.
+    with pytest.raises(ValueError):
+        merge(s, {"theme": {"preset": "mono", "accent": "#FF0000"}})
+    with pytest.raises(ValueError):
+        merge(s, {"theme": {"preset": "forest"}})
+    assert DeviceSettings.model_validate({"theme": {"preset": "custom", "accent": "#123456"}}).theme.accent == "#4F8CFF"
     view = device_view(s)
     assert set(view) == {
         "language", "quick_languages", "volume", "brightness", "screen_timeout_s", "tz_posix", "theme",

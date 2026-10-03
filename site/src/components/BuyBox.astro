@@ -1,65 +1,74 @@
 ---
+import Brand from "./Brand.astro";
 import { prices } from "../config";
 import Icon from "./Icon.astro";
 import Price from "./Price.astro";
 import CurrencyToggle from "./CurrencyToggle.astro";
 import LegalFacts from "./LegalFacts.astro";
+import PaymentLogos from "./PaymentLogos.astro";
 
 interface Props {
   headingLevel?: "h2" | "h3";
+  /** Home page card: the short version (no consumer-law list, which the pricing page shows). */
+  compact?: boolean;
+  /** Put id="buy" on the card (off when the surrounding section carries it). */
+  anchor?: boolean;
 }
-const { headingLevel = "h2" } = Astro.props;
+const { headingLevel = "h2", compact = false, anchor = true } = Astro.props;
 const H = headingLevel;
 const trial = `${prices.trialMonths} months`;
 ---
-<div id="buy" class="glass relative overflow-hidden p-6 sm:p-8" data-buybox>
-  <div
-    class="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full opacity-60 blur-3xl"
-    style="background: radial-gradient(circle, rgba(110,80,255,.5), transparent 70%)"
-    aria-hidden="true"
-  >
-  </div>
-
-  <div class="relative flex flex-wrap items-start justify-between gap-4">
+<div id={anchor ? "buy" : undefined} class="glass relative p-6 sm:p-7" data-buybox>
+  <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
-      <H class="text-xl font-bold text-white">ola Watch + ola Care</H>
-      <p class="mt-1 text-sm text-muted">AMOLED touch display · Voice AI · Wi-Fi</p>
+      <H class="text-xl font-bold text-fg"><Brand name="watch" bold /></H>
+      <p class="mt-1 text-sm text-muted">AMOLED display · Voice AI · Built for everyday life</p>
     </div>
     <CurrencyToggle />
   </div>
 
-  <div class="relative mt-6 flex items-end gap-3">
-    <Price item="watch" class="text-5xl font-extrabold tracking-tight text-white" />
-    <span class="pb-1.5 text-sm text-muted">for the watch, one-off</span>
+  <div class="mt-5 flex items-end gap-3">
+    <Price item="watch" class="font-display text-5xl font-extrabold tracking-tight text-fg" />
+    <span class="pb-1.5 text-sm text-muted">one-off, VAT included</span>
   </div>
 
-  <p class="relative mt-3 text-base text-fg" data-price-sentence>
-    <strong><Price item="watch" /> today</strong>, then <strong><Price item="care" />/month</strong> for ola Care
-    after {trial} free. Cancel anytime.
+  <p class="mt-3 text-sm text-fg" data-price-sentence>
+    Then <strong><Price item="care" />/month</strong> for <Brand name="care" /> after <strong>{trial} free</strong>. Cancel anytime.
   </p>
-  <p class="relative mt-2 text-sm text-muted">
-    ola Care is the subscription that powers the AI assistant: it is needed for the watch to answer you. It
-    includes a monthly fair-use allowance. See the <a class="link" href="/legal/subscription-terms/">subscription terms</a>.
-  </p>
+  {!compact && (
+    <p class="mt-2 text-sm text-muted">
+      <Brand name="care" /> is the subscription that powers the AI assistant: it is needed for the watch to answer you. It
+      includes a monthly fair-use allowance. See the <a class="link" href="/legal/subscription-terms/">subscription terms</a>.
+    </p>
+  )}
 
-  <div class="relative mt-6">
-    <button type="button" class="btn btn-primary w-full text-base sm:w-auto sm:min-w-64" data-buy-btn>
+  <div class="mt-5">
+    <button type="button" class="btn btn-primary w-full text-base" data-buy-btn>
       <span data-buy-label>Buy now</span>
       <Icon name="arrow" size={18} />
     </button>
-    <div class="mt-3 min-h-6 text-sm" role="status" aria-live="polite" data-buy-status></div>
-    <div id="notify-panel" class="mt-3 hidden rounded-xl border border-line-strong bg-white/5 p-4" data-notify-panel>
-      <p class="font-semibold text-white">Sales open soon</p>
+    <PaymentLogos class="mt-3" />
+    <div class="mt-2 min-h-5 text-sm" role="status" aria-live="polite" data-buy-status></div>
+    <div id="notify-panel" class="mt-2 hidden rounded-xl border border-line-strong bg-bg-2 p-4" data-notify-panel>
+      <p class="font-semibold text-fg">Sales open soon</p>
       <p class="mt-1 text-sm text-muted">We're getting ready to ship. Check back here soon — this button will turn into
         "Buy now" the moment sales open.</p>
     </div>
   </div>
 
-  <LegalFacts class="relative mt-6 border-t border-line pt-6" />
+  {compact ? (
+    <p class="mt-1 text-xs text-muted">
+      Ships to the UK &amp; EU · 14-day right to cancel ·
+      <a class="link" href="/pricing/">Delivery, returns &amp; guarantee</a>
+    </p>
+  ) : (
+    <LegalFacts class="mt-6 border-t border-line pt-6" />
+  )}
 </div>
 
 <script>
   import { getCurrency } from "../lib/currency";
+  import { shopStatus } from "../lib/shop";
 
   const box = document.querySelector<HTMLElement>("[data-buybox]");
   if (box) {
@@ -77,20 +86,17 @@ const trial = `${prices.trialMonths} months`;
       status.append(p);
     };
 
+    // Sales not open yet: the button keeps saying "Buy now" and opens the "Sales open soon" note.
     const setNotify = () => {
       mode = "notify";
-      label.textContent = "Get notified";
       btn.setAttribute("aria-expanded", "false");
       btn.setAttribute("aria-controls", "notify-panel");
     };
 
-    const statusPromise = fetch("/api/shop/status", { headers: { Accept: "application/json" }, cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((s: { open?: boolean }) => {
-        if (s && s.open) mode = "buy";
-        else setNotify();
-      })
-      .catch(() => setNotify());
+    const statusPromise = shopStatus().then((s) => {
+      if (s.open) mode = "buy";
+      else setNotify();
+    });
 
     btn.addEventListener("click", async () => {
       if (mode === "loading") await statusPromise;

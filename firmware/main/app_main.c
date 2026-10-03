@@ -59,6 +59,8 @@ static bool          s_wifi_configured;
 static bool          s_server_error_shown;
 static bool          s_low_batt_warned;
 static bool          s_reply_started;
+static esp_timer_handle_t s_typing_timer;   /* starts the typing clicks shortly into THINKING */
+static volatile bool s_typing_wanted;
 static int           s_batt_pct = -1;
 static bool          s_charging;
 
@@ -133,6 +135,40 @@ static void on_status_request(int *battery_pct, bool *charging)
     *charging = s_charging;
 }
 
+/* ---- Typing clicks while a reply is awaited ----
+ * They start TYPING_DELAY_US into THINKING, so a quick answer does not leave a
+ * lone click, and stop on any other state (the voice, a new turn, idle, errors). */
+#define TYPING_DELAY_US     (400 * 1000)
+
+static void typing_timer_cb(void *arg)
+{
+    if (s_typing_wanted) {
+        audio_typing_start();
+    }
+}
+
+static void typing_begin(void)
+{
+    if (!s_typing_timer) {
+        const esp_timer_create_args_t args = { .callback = typing_timer_cb, .name = "typing" };
+        if (esp_timer_create(&args, &s_typing_timer) != ESP_OK) {
+            return;
+        }
+    }
+    s_typing_wanted = true;
+    esp_timer_stop(s_typing_timer);
+    esp_timer_start_once(s_typing_timer, TYPING_DELAY_US);
+}
+
+static void typing_end(void)
+{
+    s_typing_wanted = false;
+    if (s_typing_timer) {
+        esp_timer_stop(s_typing_timer);
+    }
+    audio_typing_stop();
+}
+
 static void on_proto_event(const proto_event_t *ev, void *ctx)
 {
     switch (ev->type) {
@@ -163,6 +199,11 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         ui_show_watchface();
         break;
     case PROTO_EVT_CONV_STATE:
+        if ((proto_conv_state_t)ev->num == PROTO_CONV_THINKING) {
+            typing_begin();
+        } else {
+            typing_end();
+        }
         switch ((proto_conv_state_t)ev->num) {
         case PROTO_CONV_LISTENING:
             s_reply_started = false;
@@ -195,6 +236,7 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         ui_set_reply_language(ev->str);
         break;
     case PROTO_EVT_ERROR:
+        typing_end();
         switch ((proto_error_t)ev->num) {
         case PROTO_ERR_NOT_CONNECTED:
             if (!net_wifi_connected()) {

@@ -46,15 +46,13 @@ typedef struct {
     settings_theme_t theme;
 } preset_t;
 
+/* The two themes, with fixed colours: blue ("midnight", the default) and white ("mono"). */
 static const preset_t s_presets[] = {
     { "midnight", { "midnight", 0x4F8CFF, 0x000000, 0xFFFFFF, 0xB0B8C8 } },
-    { "ocean",    { "ocean",    0x2EC4B6, 0x001219, 0xE0FBFC, 0x94D2BD } },
-    { "sunset",   { "sunset",   0xFF7A45, 0x120A06, 0xFFE8D6, 0xE0B8A0 } },
-    { "forest",   { "forest",   0x52B788, 0x050F0A, 0xD8F3DC, 0x95B8A2 } },
     { "mono",     { "mono",     0xFFFFFF, 0x000000, 0xFFFFFF, 0x9A9A9A } },
 };
 
-static const char *const s_preset_names[] = { "midnight", "ocean", "sunset", "forest", "mono", NULL };
+static const char *const s_preset_names[] = { "midnight", "mono", NULL };
 
 bool settings_theme_preset(const char *name, settings_theme_t *out)
 {
@@ -226,31 +224,11 @@ static void merge_json(buddy_settings_t *s, const cJSON *j)
     }
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive(j, "theme");
     if (cJSON_IsObject(theme)) {
+        /* Only the preset counts and its colours are fixed; any other theme (an older one, custom
+         * colours) becomes the default blue one. */
         it = cJSON_GetObjectItemCaseSensitive(theme, "preset");
-        if (cJSON_IsString(it)) {
-            /* A preset name alone expands to the preset colors; explicit colors win. */
-            settings_theme_t p;
-            if (settings_theme_preset(it->valuestring, &p)) {
-                s->theme = p;
-            }
-            strlcpy(s->theme.preset, it->valuestring, sizeof(s->theme.preset));
-        }
-        uint32_t c;
-        it = cJSON_GetObjectItemCaseSensitive(theme, "accent");
-        if (cJSON_IsString(it) && settings_parse_color(it->valuestring, &c)) {
-            s->theme.accent = c;
-        }
-        it = cJSON_GetObjectItemCaseSensitive(theme, "background");
-        if (cJSON_IsString(it) && settings_parse_color(it->valuestring, &c)) {
-            s->theme.background = c;
-        }
-        it = cJSON_GetObjectItemCaseSensitive(theme, "clock");
-        if (cJSON_IsString(it) && settings_parse_color(it->valuestring, &c)) {
-            s->theme.clock = c;
-        }
-        it = cJSON_GetObjectItemCaseSensitive(theme, "text");
-        if (cJSON_IsString(it) && settings_parse_color(it->valuestring, &c)) {
-            s->theme.text = c;
+        if (!cJSON_IsString(it) || !settings_theme_preset(it->valuestring, &s->theme)) {
+            settings_theme_preset("midnight", &s->theme);
         }
     }
 }

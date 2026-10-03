@@ -14,14 +14,15 @@ from typing import Any
 from app import languages
 from app.db.repositories import SettingsRepo
 from app.db.session import session_scope
-from app.device_settings import HEX_COLOR, THEME_PRESETS, DeviceSettings
+from app.device_settings import THEME_PRESETS, DeviceSettings
 
 VOLUME_RANGE = (0, 100)
 BRIGHTNESS_RANGE = (5, 100)
 
 SETTINGS_TOOL: dict[str, Any] = {
     "name": "watch_settings",
-    "description": "Change the watch's volume, screen brightness, language or colour theme. Pass only what "
+    "description": "Change the watch's volume, screen brightness, language or colour theme (blue or white). "
+    "Pass only what "
     "changes. Use volume / brightness for an exact level (0-100, e.g. 'maximum' = 100, 'minimum' = 0) and "
     "volume_change / brightness_change for relative requests: +/-10 for 'a bit', +/-15 when no amount is "
     "given ('louder', 'dimmer'), +/-30 for 'much'. Returns the new values.",
@@ -37,10 +38,10 @@ SETTINGS_TOOL: dict[str, Any] = {
                 "description": "Language to speak: its name in any language ('Romanian', 'română') or ISO "
                 "code ('ro'), or 'auto' to answer in whatever language the user speaks",
             },
-            "theme": {"type": "string", "enum": list(THEME_PRESETS), "description": "Colour theme preset"},
-            "accent_color": {
+            "theme": {
                 "type": "string",
-                "description": "Accent colour as #RRGGBB (convert colour names, e.g. red -> #FF3B30)",
+                "enum": list(THEME_PRESETS),
+                "description": "Colour theme: 'midnight' = blue, 'mono' = white. There are no other colours.",
             },
         },
     },
@@ -102,12 +103,6 @@ def apply(device_id: str, args: dict[str, Any]) -> tuple[str, bool]:
             if args["theme"] not in THEME_PRESETS:
                 return _err(f"unknown theme {args['theme']!r}; choose from {', '.join(THEME_PRESETS)}"), False
             theme = {"preset": args["theme"]}
-        if args.get("accent_color"):
-            color = str(args["accent_color"]).strip()
-            if not HEX_COLOR.match(color):
-                return _err("accent_color must be #RRGGBB"), False
-            base = THEME_PRESETS[theme["preset"]] if theme else current.theme.model_dump()
-            theme = {**{k: base[k] for k in ("background", "clock", "text")}, "accent": color, "preset": "custom"}
         if theme:
             changes["theme"] = theme
         if not changes:
@@ -122,8 +117,7 @@ def _view(s: DeviceSettings) -> dict[str, Any]:
         "volume": s.volume,
         "brightness": s.brightness,
         "language": lang.name if lang else s.language,
-        "theme": s.theme.preset,
-        "accent_color": s.theme.accent,
+        "theme": "blue" if s.theme.preset == "midnight" else "white",
     }
 
 

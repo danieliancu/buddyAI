@@ -7,6 +7,7 @@ import SectionHeading from "../components/SectionHeading.astro";
 import Icon from "../components/Icon.astro";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "../data/features";
+import { prices } from "../config";
 
 const specs: [string, string][] = [
   ["Display", "AMOLED touch screen, 410 × 502 pixels, rectangular"],
@@ -16,18 +17,19 @@ const specs: [string, string][] = [
   ["Languages", `${languageCount} languages + Auto (answers in the language you speak)`],
   ["Battery life", "We'll publish measured figures before shipping"],
   ["Size, weight & water resistance", "To be confirmed before shipping"],
-  ["What you need", "Wi-Fi, a ola account and a ola Care subscription (first 3 months free)"],
+  ["What you need", `Wi-Fi, an ola account and an olacare subscription (first ${prices.trialMonths} months free)`],
 ];
 ---
 <Base
-  title="Features"
-  description={`Natural voice conversation, tap to talk and interrupt, ${languageCountLabel} languages, personas, custom colours and a history you control — on a rectangular AMOLED watch.`}
+  title="Features: AI voice assistant, reminders, notes & live answers"
+  crumb="Features"
+  description={`What the olawatch AI smartwatch does: natural voice conversation, reminders and notes by voice, live answers from the web, ${languageCountLabel} languages, personas and a blue or white theme.`}
 >
   <PageHero
     eyebrow="Features"
     title="Everything it does,"
     gradient="honestly explained."
-    lead="ola does one thing and does it well: it's an AI you can talk to, right on your wrist. Here's exactly what it can do today."
+    lead="ola is an AI you can talk to, right on your wrist — with reminders, notes and live answers built in. Here's exactly what it can do today."
   />
 
   <section class="container-x mt-6" aria-labelledby="core-title">
@@ -39,21 +41,21 @@ const specs: [string, string][] = [
     <div class="glass grid gap-6 p-6 sm:p-8 md:grid-cols-[auto_1fr]">
       <span class="icon-tile"><Icon name="lock" /></span>
       <div>
-        <h2 id="privacy-title" class="text-xl font-semibold text-white">Privacy, in plain words</h2>
+        <h2 id="privacy-title" class="text-xl font-semibold text-fg">Privacy, in plain words</h2>
         <p class="mt-2 text-muted">{privacyLine}</p>
         <p class="mt-2 text-sm text-muted">AI can make mistakes — please double-check anything important.</p>
       </div>
     </div>
   </section>
 
-  <Designed cta={false} />
+  <div class="mt-20"><Designed cta={false} /></div>
 
   <section class="container-x mt-20" aria-labelledby="specs-title">
     <SectionHeading id="specs-title" title="Specifications" subtitle="Figures we haven't measured yet are marked — we'll publish them before shipping." />
     <dl class="mt-8 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
       {specs.map(([k, v]) => (
         <div class="grid gap-1 p-4 sm:grid-cols-[14rem_1fr] sm:gap-6 sm:px-6">
-          <dt class="font-semibold text-white">{k}</dt>
+          <dt class="font-semibold text-fg">{k}</dt>
           <dd class="text-muted">{v}</dd>
         </div>
       ))}

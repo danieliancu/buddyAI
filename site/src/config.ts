@@ -7,26 +7,40 @@
 
 export type Currency = "GBP" | "EUR";
 
-// TODO(owner): must match the Stripe prices (products "ola Watch" and "ola Care", GBP + EUR, trial length).
+// Prices are set in pounds; euro prices are converted at GBP_TO_EUR and rounded to clean figures.
+// Must match the Stripe prices (products "olawatch" and "olacare", GBP + EUR, trial length):
+// STRIPE_PRICE_WATCH_GBP/EUR and STRIPE_PRICE_CARE_GBP/EUR in server/.env. After changing a price or
+// the rate, create Stripe prices with the new amounts.
 // Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
+const PRICE_GBP = { watch: 79, care: 7.9 };
+
+// TODO(owner): review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
+export const GBP_TO_EUR = 1.17;
+
+/** A converted price rounded to a clean figure: whole euros from €20 up, else to the nearest €0.50. */
+export function toEur(gbp: number): number {
+  const eur = gbp * GBP_TO_EUR;
+  return eur >= 20 ? Math.round(eur) : Math.round(eur * 2) / 2;
+}
+
 export const prices = {
-  watch: { GBP: 199, EUR: 229 },
-  care: { GBP: 4.99, EUR: 5.99 },
+  watch: { GBP: PRICE_GBP.watch, EUR: toEur(PRICE_GBP.watch) },
+  care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
   trialMonths: 3,
   currencyDefault: "GBP" as Currency,
 } as const;
 
 export const config = {
-  siteName: "ola",
+  siteName: "olawatch",
   tagline: "Your AI companion, now on your wrist.",
 
-  // TODO(owner): company details shown in the footer, contact page and legal pages.
-  companyName: "TODO(owner): Company Name Ltd",
-  address: "TODO(owner): Registered office address, City, Postcode, United Kingdom",
-  companyNumber: "TODO(owner): Company number",
-  vatNumber: "TODO(owner): VAT number",
-  // TODO(owner): real support mailbox (used for mailto: links).
-  supportEmail: "support@example.com",
+  // Company details shown in the footer, contact page and legal pages.
+  companyName: "Ola Technologies London Ltd",
+  address: "Essex, United Kingdom",
+  // TODO(owner): company and VAT numbers. Empty = the line is not shown.
+  companyNumber: "",
+  vatNumber: "",
+  supportEmail: "ola@olawatch.ai",
 
   // TODO(owner): URL of the customer web app (sign in / "Add watch").
   appUrl: "https://app.example.com",
@@ -65,8 +79,7 @@ export const config = {
 
 export function formatPrice(amount: number, currency: Currency): string {
   const symbol = currency === "GBP" ? "£" : "€";
-  const fixed = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  return `${symbol}${fixed}`;
+  return `${symbol}${amount.toFixed(2)}`;
 }
 
 export function deliveryText(value: string): string {

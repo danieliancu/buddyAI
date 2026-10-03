@@ -30,6 +30,7 @@
       "cache_ttl_s": {
         "weather": 900,
         "transport": 120,
+        "sport": 600,
         "news": 1800,
         "business": 86400,
         "other": 3600

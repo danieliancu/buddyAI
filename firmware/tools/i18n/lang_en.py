@@ -86,6 +86,8 @@ LANGS = {
             "NOTE_EMPTY": "Empty note.\nTap the mic and dictate.",
             "NOTE_HELP": "Say a line to add it, or “delete 2”, “move 3 to the top”.",
             "REMINDER_HELP": "Say a change: “at 10:30”, “add Ana”, “remove the place”.",
+            "HELLO": "Hi there!",
+            "HELP_PROMPT": "How can I help you today?",
         },
     },
 }

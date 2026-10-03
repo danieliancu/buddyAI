@@ -1,4 +1,4 @@
-// Client-side currency preference (GBP default; EUR for EU locales). Shared by the price islands.
+// Client-side currency: GBP in the UK, EUR in the rest of Europe (by time zone, then browser language). Shared by the price islands.
 export type Cur = "GBP" | "EUR";
 
 const KEY = "buddyai.currency";
@@ -7,7 +7,30 @@ const EU_REGIONS = new Set(
 );
 const EU_LANGS = new Set("de fr it es nl fi el sv da pl cs sk sl hu ro bg hr et lv lt mt ga lb".split(" "));
 
+// Where the visitor is, from the device's time zone: the UK (and the Crown dependencies) pay in pounds,
+// the rest of Europe in euros. EU territories outside the "Europe/" zones are listed too.
+const UK_ZONES = new Set("Europe/London Europe/Belfast Europe/Isle_of_Man Europe/Jersey Europe/Guernsey GB".split(" "));
+const EUR_ZONES_OUTSIDE_EUROPE = new Set(
+  "Atlantic/Canary Atlantic/Madeira Atlantic/Azores Africa/Ceuta Asia/Nicosia Asia/Famagusta".split(" "),
+);
+
+/** GBP in the UK, EUR anywhere else in Europe, null outside Europe (then the browser language decides). */
+function detectZone(): Cur | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (UK_ZONES.has(tz)) return "GBP";
+    if (tz.startsWith("Europe/") || EUR_ZONES_OUTSIDE_EUROPE.has(tz)) return "EUR";
+  } catch {
+    /* Intl unavailable */
+  }
+  return null;
+}
+
 function detect(): Cur | null {
+  return detectZone() ?? detectLanguage();
+}
+
+function detectLanguage(): Cur | null {
   try {
     const tag = (navigator.languages?.[0] || navigator.language || "").trim();
     if (!tag) return null;

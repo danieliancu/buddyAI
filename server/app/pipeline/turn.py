@@ -46,6 +46,8 @@ class TurnContext:
     settings_changed: bool = False  # a tool changed the watch settings (volume, language...)
     # What to open on the watch after the turn ends: {"list": kind} or {"item": {...}} (last one wins)
     pending_open: dict[str, Any] | None = None
+    tools_used: list[str] = field(default_factory=list)  # tool calls of the reply ("item_create:note", "web_search")
+    search_note: str = ""  # "query -> answer" of this turn's web search (history + admin)
     searcher: Any = None  # app.search.WebSearch for this turn (one search per turn)
     search_city: str = ""  # default location for web searches (from the watch's time zone)
     mode: str = "chat"  # "chat" | "note" | "reminder" (edit modes: app/notes_edit.py, app/reminder_edit.py)

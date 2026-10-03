@@ -1,44 +1,44 @@
 ---
-import Icon from "./Icon.astro";
-// No people photos and no children's use case: icons and gradients only.
+import { Image } from "astro:assets";
+import parents from "../assets/home/use-parents.png";
+import kids from "../assets/home/use-kids.png";
+import professionals from "../assets/home/use-professionals.png";
+import productivity from "../assets/home/use-productivity.png";
+
 const cases = [
   {
-    icon: "bulb" as const,
-    title: "For curious minds",
-    text: "Ask the question that just popped into your head and get a clear, spoken answer.",
-    bg: "linear-gradient(135deg, rgba(124,92,255,.45), rgba(35,88,224,.15))",
+    img: parents,
+    alt: "A mother and daughter smiling at the watch",
+    title: "For Busy Parents",
+    text: "Stay organised, set reminders, and get quick answers on the go.",
   },
   {
-    icon: "globe" as const,
-    title: "For language practice",
-    text: "Hold a conversation in another language — or let Auto follow whichever you speak.",
-    bg: "linear-gradient(135deg, rgba(35,120,224,.45), rgba(20,184,166,.15))",
+    img: kids,
+    alt: "A boy tapping the watch on his wrist",
+    title: "For Curious Minds",
+    text: "Ask anything together and hear a clear, spoken answer.",
   },
   {
-    icon: "home" as const,
-    title: "Around the house",
-    text: "Hands full in the kitchen? One tap on your wrist, then just talk.",
-    bg: "linear-gradient(135deg, rgba(168,85,247,.4), rgba(236,72,153,.12))",
+    img: professionals,
+    alt: "A man in a suit checking the watch",
+    title: "For Professionals",
+    text: "Reminders, notes and live answers, hands-free.",
   },
   {
-    icon: "chat" as const,
-    title: "For thinking out loud",
-    text: "Brainstorm ideas or talk a problem through with an assistant whose persona you choose.",
-    bg: "linear-gradient(135deg, rgba(59,130,246,.45), rgba(124,92,255,.15))",
+    img: productivity,
+    alt: "A woman resting her arms, the watch on her wrist",
+    title: "For Everyday Productivity",
+    text: "Notes, reminders, answers and more — right on your wrist.",
   },
 ];
 ---
 <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {cases.map((c) => (
-    <li class="glass relative overflow-hidden p-0">
-      <div class="relative grid h-36 place-items-center" style={`background:${c.bg}`}>
-        <span class="grid h-16 w-16 place-items-center rounded-2xl border border-white/20 bg-black/25 text-white shadow-[0_0_40px_rgba(124,92,255,.45)]">
-          <Icon name={c.icon} size={32} />
-        </span>
-      </div>
-      <div class="p-5">
-        <h3 class="font-semibold text-white">{c.title}</h3>
-        <p class="mt-1.5 text-sm text-muted">{c.text}</p>
+    <li class="relative h-56 overflow-hidden rounded-xl bg-bg-2 shadow-[0_8px_24px_rgba(40,50,120,.1)]">
+      <Image src={c.img} alt={c.alt} widths={[360, 560, 720]} sizes="(min-width: 1024px) 280px, (min-width: 640px) 50vw, 100vw" class="absolute inset-0 h-full w-full object-cover" />
+      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent p-4 pt-14">
+        <h3 class="text-base font-bold text-white">{c.title}</h3>
+        <p class="mt-1 text-sm leading-snug text-white/90">{c.text}</p>
       </div>
     </li>
   ))}

@@ -52,6 +52,12 @@ static const char *TAG = "audio";
 #define REBUFFER_MS             1500
 #define REBUFFER_BYTES          (PLAY_RATE * 2 * REBUFFER_MS / 1000)
 #define REBUFFER_MAX_WAIT_MS    2500
+/* "Typing" clicks while a reply is awaited: short groups of soft ticks with
+ * longer pauses, much sparser once the wait gets long (web search). */
+#define CLICK_VARIANTS          3
+#define CLICK_SAMPLES           (PLAY_RATE * 6 / 1000)      /* 6 ms */
+#define CLICK_AMP               0.12f                       /* beep: 0.4 */
+#define TYPING_LONG_WAIT_MS     9000
 
 /* ------------------------------------------------------------------------- */
 /* PCM ring buffer (PSRAM)                                                    */
@@ -186,6 +192,10 @@ static volatile uint32_t s_cap_turn;
 static audio_capture_cb_t s_cap_cb;
 static void             *s_cap_ctx;
 static volatile int      s_cap_level;
+
+static int16_t           s_clicks[CLICK_VARIANTS][CLICK_SAMPLES];
+static volatile bool     s_typing;          /* typing clicks wanted (cleared by any flush) */
+static volatile uint32_t s_typing_gen;      /* bumped on each start: the pattern restarts */
 
 static int pcm_level(const int16_t *pcm, size_t samples)
 {
@@ -365,6 +375,82 @@ static bool prebuffer_ready(uint32_t gen, int64_t *since_us, bool rebuffer)
            esp_timer_get_time() - *since_us >= max_wait_us;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Typing clicks                                                              */
+/* ------------------------------------------------------------------------- */
+
+static uint32_t xorshift(uint32_t *x)
+{
+    *x ^= *x << 13;
+    *x ^= *x >> 17;
+    *x ^= *x << 5;
+    return *x;
+}
+
+static uint32_t rand_ms(uint32_t *x, uint32_t lo, uint32_t hi)
+{
+    return (lo + xorshift(x) % (hi - lo + 1)) * (PLAY_RATE / 1000);    /* -> samples */
+}
+
+/* A few soft ticks: decaying 2.6 / 3.0 / 3.4 kHz bursts with a little noise. */
+static void make_clicks(void)
+{
+    static const float freq[CLICK_VARIANTS] = { 2600.0f, 3000.0f, 3400.0f };
+    static const float amp[CLICK_VARIANTS] = { 1.0f, 0.85f, 0.92f };
+    uint32_t seed = 0x1234567;
+    for (int v = 0; v < CLICK_VARIANTS; v++) {
+        for (int i = 0; i < CLICK_SAMPLES; i++) {
+            float env = expf(-(float)i / (PLAY_RATE * 0.0012f));       /* ~1.2 ms decay */
+            float noise = (float)(int32_t)xorshift(&seed) / 2147483648.0f;
+            float tone = sinf(2.0f * (float)M_PI * freq[v] * i / PLAY_RATE);
+            s_clicks[v][i] = (int16_t)(CLICK_AMP * amp[v] * 32767.0f * env * (0.75f * tone + 0.25f * noise));
+        }
+    }
+}
+
+typedef struct {
+    uint32_t gen;           /* s_typing_gen this pattern belongs to */
+    uint32_t rng;
+    uint32_t t;             /* samples since start */
+    uint32_t next_at;       /* sample of the next click */
+    int      group_left;    /* clicks left in the current group */
+    int      var;
+    int      off;           /* sample inside the playing click, -1 = none */
+} typing_t;
+
+/* Delay before the next click: short gaps inside a group, a longer pause after it.
+ * After TYPING_LONG_WAIT_MS the groups get smaller and the pauses much longer. */
+static uint32_t typing_next_gap(typing_t *ty)
+{
+    bool long_wait = ty->t >= (uint32_t)TYPING_LONG_WAIT_MS * (PLAY_RATE / 1000);
+    if (ty->group_left > 0) {
+        ty->group_left--;
+        return rand_ms(&ty->rng, 80, 160);
+    }
+    ty->group_left = long_wait ? (int)(xorshift(&ty->rng) % 2) : 1 + (int)(xorshift(&ty->rng) % 3);
+    return long_wait ? rand_ms(&ty->rng, 3000, 5000) : rand_ms(&ty->rng, 1000, 2000);
+}
+
+/* One chunk of the pattern: silence with the clicks that fall inside it. */
+static void typing_render(typing_t *ty, int16_t *out, size_t samples)
+{
+    for (size_t i = 0; i < samples; i++, ty->t++) {
+        if (ty->off < 0 && ty->t >= ty->next_at) {
+            ty->off = 0;
+            ty->var = (int)(xorshift(&ty->rng) % CLICK_VARIANTS);
+        }
+        int16_t v = 0;
+        if (ty->off >= 0) {
+            v = s_clicks[ty->var][ty->off++];
+            if (ty->off >= CLICK_SAMPLES) {
+                ty->off = -1;
+                ty->next_at = ty->t + typing_next_gap(ty);
+            }
+        }
+        out[i] = v;
+    }
+}
+
 static void writer_task(void *arg)
 {
     const size_t chunk_bytes = WRITE_CHUNK_SAMPLES * 2;
@@ -380,8 +466,36 @@ static void writer_task(void *arg)
     bool buffering = true;                  /* waiting to (re)start: new reply or ran dry */
     bool rebuffer = false;                  /* the wait is after running dry mid-reply */
     int64_t buffer_since_us = 0;
+    typing_t ty = { .gen = UINT32_MAX };
 
     for (;;) {
+        /* Typing clicks while nothing else is queued; the first reply frame
+         * (audio_playback_begin -> flush) stops them within one chunk. */
+        if (s_typing && ring_count(&s_ring) == 0 && uxQueueMessagesWaiting(s_pkt_q) == 0) {
+            uint32_t tgen = s_typing_gen;
+            if (ty.gen != tgen) {
+                ty = (typing_t){ .gen = tgen, .rng = (uint32_t)esp_timer_get_time() | 1, .off = -1,
+                                 .group_left = 1 + (int)(esp_timer_get_time() % 3) };
+            }
+            typing_render(&ty, buf, WRITE_CHUNK_SAMPLES);
+            xSemaphoreTake(s_play_lock, portMAX_DELAY);
+            bool on = s_typing && tgen == s_typing_gen;
+            if (on) {
+                board_audio_pa_enable(true);
+                if (s_muted) {
+                    esp_codec_dev_set_out_mute(spk, false);
+                    s_muted = false;
+                }
+            }
+            xSemaphoreGive(s_play_lock);
+            if (on) {
+                esp_codec_dev_write(spk, buf, chunk_bytes);
+                last_audio_us = esp_timer_get_time();
+                pa_on = true;
+            }
+            continue;
+        }
+
         uint32_t gen = s_play_gen;
         if (played_gen != gen) {
             buffering = true;
@@ -469,6 +583,7 @@ static void flush_locked(void)
         s_muted = true;
     }
     board_audio_pa_enable(false);
+    s_typing = false;
     s_play_gen++;
     s_end_seen = false;
     ring_clear(&s_ring);
@@ -585,6 +700,22 @@ void audio_beep(void)
     xSemaphoreGive(s_play_lock);
 }
 
+void audio_typing_start(void)
+{
+    if (!s_ring.buf || audio_capture_active() || audio_playback_active()) {
+        return;
+    }
+    xSemaphoreTake(s_play_lock, portMAX_DELAY);
+    s_typing_gen++;
+    s_typing = true;
+    xSemaphoreGive(s_play_lock);
+}
+
+void audio_typing_stop(void)
+{
+    s_typing = false;
+}
+
 bool audio_playback_active(void)
 {
     return s_play_turn_valid && (ring_count(&s_ring) > 0 || uxQueueMessagesWaiting(s_pkt_q) > 0);
@@ -637,6 +768,7 @@ esp_err_t audio_init(void)
                         ESP_FAIL, TAG, "opus dec open");
 
     ESP_RETURN_ON_ERROR(ring_init(&s_ring, PCM_RING_BYTES), TAG, "ring");
+    make_clicks();
     esp_codec_dev_set_out_mute(board_audio_speaker(), true);
     s_muted = true;
     s_play_lock = xSemaphoreCreateMutex();

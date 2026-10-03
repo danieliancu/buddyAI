@@ -1,3 +1,4 @@
+import { brandHtml } from "../lib/brand";
 import { config, prices, formatPrice, deliveryText } from "../config";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "./features";
@@ -10,7 +11,7 @@ export interface Faq {
 
 const w = prices.watch;
 const c = prices.care;
-const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ola Care after ${prices.trialMonths} months free. Cancel anytime.`;
+const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after ${prices.trialMonths} months free. Cancel anytime.`;
 
 export const faqGroups: { title: string; items: Faq[] }[] = [
   {
@@ -18,7 +19,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What can ola do?",
-        a: `ola is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), pick or write a persona for your assistant, and choose your own screen colours. It is a conversation partner — it doesn't track steps or health, and it doesn't set reminders or manage a calendar.`,
+        a: `ola is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
       },
       {
         q: "What's the battery life?",
@@ -77,10 +78,10 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Why is there a subscription?",
-        a: "ola Care pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active ola Care subscription to work. It includes a monthly fair-use allowance, described in the <a href=\"/legal/subscription-terms/\">subscription terms</a>.",
+        a: `${brandHtml("care")} pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active ${brandHtml("care")} subscription to work. It includes a monthly fair-use allowance, described in the <a href=\"/legal/subscription-terms/\">subscription terms</a>.`,
       },
       {
-        q: "How do I cancel ola Care?",
+        q: `How do I cancel ${brandHtml("care")}?`,
         a: `Anytime, from your account (Plan &amp; usage). If you cancel during the ${prices.trialMonths}-month free period you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],

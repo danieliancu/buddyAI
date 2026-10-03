@@ -50,7 +50,7 @@ async def _paired_watch(host: str, device_id: str) -> tuple[FakeWatch, str]:
             await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
         w = FakeWatch(f"ws://{host}/ws/device", device_id)
         await w.connect()
-        code = {"e2e-1": "424242", "e2e-2": "737373", "e2e-auto": "515151"}[device_id]
+        code = {"e2e-1": "424242", "e2e-2": "737373", "e2e-auto": "515151", "e2e-issues": "626262"}[device_id]
         await w.send("hello", device_id=device_id, fw_version="t", hw_model="t", pairing_code=code)
         await w.expect("pairing_pending")
         assert (await http.post("/api/devices/pair", json={"code": code, "name": "t"})).status_code == 200
@@ -107,3 +107,42 @@ async def test_auto_language_is_detected_and_reported(server):
     await w.close()
     assert tl.status == "completed"
     assert tl.language == "en"  # mock STT returns English text in auto mode
+
+
+async def test_hello_boot_and_link_reports_become_issues(server):
+    w, token = await _paired_watch(server, "e2e-issues")
+    await w.close()
+    w = FakeWatch(f"ws://{server}/ws/device", "e2e-issues")
+    await w.connect()
+    await w.send(
+        "hello",
+        device_id="e2e-issues",
+        fw_version="t",
+        hw_model="t",
+        token=token,
+        boot={"reset_reason": "brownout", "prev_uptime_s": 95},
+        link={"drop": "wifi_lost", "wifi_reason": 201, "mid_turn": True, "offline_ms": 4200},
+    )
+    await w.expect("hello_ack")
+    await w.close()
+    async with httpx.AsyncClient(base_url=f"http://{server}") as http:
+        await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+        rows = (await http.get("/api/issues", params={"device_id": "e2e-issues"})).json()
+        by_kind = {r["kind"]: r for r in rows}
+        assert by_kind["reboot"]["severity"] == "error"
+        assert "brownout" in by_kind["reboot"]["summary"] and "1 min 35 s" in by_kind["reboot"]["summary"]
+        assert by_kind["disconnect"]["detail"]["mid_turn"] is True
+        assert "network not found" in by_kind["disconnect"]["summary"]
+        assert (await http.delete("/api/issues", params={"device_id": "e2e-issues"})).json()["deleted"] == len(rows)
+        assert (await http.get("/api/issues", params={"device_id": "e2e-issues"})).json() == []
+
+
+async def test_operator_history_has_type_resources_and_cost(server):
+    # e2e-1 had a completed turn in test_turn_completes_with_audio_and_ttfa
+    async with httpx.AsyncClient(base_url=f"http://{server}") as http:
+        await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+        convs = (await http.get("/api/devices/e2e-1/conversations")).json()
+    turn = next(t for c in convs for t in c["turns"] if t["status"] == "completed")
+    assert turn["mode"] == "chat" and turn["tools"] == []
+    assert {u["kind"] for u in turn["usage"]} >= {"stt", "llm", "tts"}
+    assert "cost_gbp" in turn and "stt_ms" in turn

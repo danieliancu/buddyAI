@@ -423,6 +423,33 @@ export interface ConversationTurn {
   assistant_text: string;
   ttfa_ms: number | null;
   created_at: string;
+  /** Operator view only (GET /api/devices/{id}/conversations): type, tools, timings, resources and cost. */
+  mode?: "chat" | "note" | "reminder" | "edit";
+  tools?: string[];
+  /** Web search of the turn: "query -> answer" ("-> nothing reliable found" when it found nothing). */
+  search?: string | null;
+  error?: string | null;
+  stt_ms?: number | null;
+  llm_first_token_ms?: number | null;
+  tts_first_audio_ms?: number | null;
+  /** Total in GBP; null when no usage record is priced. */
+  cost_gbp?: number | null;
+  /** Usage records without a pricing rule (cost not known). */
+  unpriced?: number;
+  billable?: boolean | null;
+  /** Only mock (development) providers. */
+  mock?: boolean;
+  usage?: TurnUsage[];
+}
+
+export interface TurnUsage {
+  kind: string;
+  provider: string;
+  model: string;
+  unit: string;
+  quantity: number;
+  cost_gbp: number | null;
+  billable: boolean;
 }
 
 export interface Conversation {
@@ -430,6 +457,8 @@ export interface Conversation {
   started_at: string;
   last_activity_at: string;
   turns: ConversationTurn[];
+  /** Operator view: voice edits of notes / reminders on one day (not a conversation). */
+  edits?: boolean;
 }
 
 export interface UsageItem {
@@ -741,6 +770,11 @@ const operatorApi = {
     setKeys: (keys: Partial<Record<KeyName, string>>) => put<SystemInfo>("/api/system/keys", keys),
     test: (target: TestTarget) => post<TestResult>(`/api/system/test/${target}`),
   },
+  issues: {
+    list: (f: { deviceId?: string; kind?: IssueKind; problemsOnly?: boolean } = {}) =>
+      get<DeviceIssue[]>(`/api/issues${q({ device_id: f.deviceId, kind: f.kind, problems_only: f.problemsOnly ? "true" : undefined })}`),
+    clear: (deviceId?: string) => del<{ deleted: number }>(`/api/issues${q({ device_id: deviceId })}`),
+  },
   firmware: {
     list: () => get<FirmwareRelease[]>("/api/firmware"),
     upload: (file: File, version: string, notes: string) => {
@@ -864,6 +898,26 @@ const meApi = {
 /** Operator endpoints at the top level, customer accounts under `api.accounts`, the customer API under `api.me`. */
 export const api = { ...operatorApi, accounts: accountsApi, orders: ordersApi, me: meApi };
 
+// ---------- watch issues (/api/issues) ----------
+
+export type IssueKind = "reboot" | "disconnect" | "turn_interrupted" | "server_timeout";
+export type IssueSeverity = "error" | "warn" | "info";
+
+export interface DeviceIssue {
+  id: number;
+  device_id: string;
+  device_name: string | null;
+  account_id: number | null;
+  kind: IssueKind;
+  severity: IssueSeverity;
+  reason: string;
+  /** One readable sentence built by the server. */
+  summary: string;
+  detail: Record<string, unknown>;
+  fw_version: string;
+  created_at: string;
+}
+
 // ---------- live events (/api/live, /api/me/live) ----------
 
 interface LiveBase {
@@ -889,6 +943,8 @@ export type LiveEvent =
       ttfa_device_ms: number | null;
     } & LiveBase)
   | ({ type: "playback_done"; turn_id: number | string } & LiveBase)
+  /** Operator only: a watch reported a restart / lost connection, or the server saw a session problem. */
+  | ({ type: "device_issue"; issue: DeviceIssue } & LiveBase)
   | ({ type: "pairing_pending" } & LiveBase)
   | ({ type: "device_paired" } & LiveBase)
   | ({ type: "settings_changed" } & LiveBase)

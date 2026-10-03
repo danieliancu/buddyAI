@@ -34,6 +34,7 @@ esp_err_t net_init(net_event_cb_t cb, void *ctx);
 esp_err_t net_wifi_connect(const char *ssid, const char *pass);
 bool      net_wifi_connected(void);
 int       net_wifi_rssi(void);              /* dBm, 0 if not connected */
+int       net_wifi_last_disconnect_reason(void);  /* wifi_err_reason_t of the last lost connection, 0 = none */
 /* Modem sleep while idle; disabled during a conversation turn for latency. */
 void      net_wifi_set_power_save(bool enable);
 

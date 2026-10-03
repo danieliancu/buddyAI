@@ -182,7 +182,7 @@ def test_system_prompt_is_stable_and_history_trimmed(monkeypatch) -> None:
     from app.pipeline import conversation as conv
 
     long_reply = "word " * 200
-    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [NS(user_text="q", assistant_text=long_reply)]))
+    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [NS(user_text="q", assistant_text=long_reply, search_note="")]))
     turn = _turn(None, "and now?")
     turn.conversation_id = 1
     a = build_messages_from_db(turn, "and now?")
@@ -190,6 +190,32 @@ def test_system_prompt_is_stable_and_history_trimmed(monkeypatch) -> None:
     assert a[0] == b[0] and "Now:" not in a[0]["content"]  # no clock in the cached prefix
     assert a[-2]["role"] == "system" and a[-2]["content"].startswith("Now:")
     assert len(a[2]["content"]) <= 302 and a[2]["content"].endswith("…")
+
+
+def test_history_keeps_what_the_search_found(monkeypatch) -> None:
+    # The spoken reply dropped "Nations League"; the next question must still know it.
+    from app.pipeline import conversation as conv
+
+    past = NS(
+        user_text="Last Romania match score?",
+        assistant_text="Romania lost 6-0 to Poland on 2 October.",
+        search_note="Romania latest match result -> Poland beat Romania 6-0 on 2 October 2026 in the UEFA Nations League.",
+    )
+    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [past]))
+    turn = _turn(None, "Where are they in the standings?")
+    turn.conversation_id = 1
+    msgs = build_messages_from_db(turn, "Where are they in the standings?")
+    assert msgs[3] == {"role": "system", "content": "Web search behind that reply: " + past.search_note}
+
+
+def test_search_note_records_query_and_answer() -> None:
+    from app.pipeline.conversation import search_note
+
+    args = json.dumps({"query": "Romania UEFA Nations League standings", "category": "sport"})
+    assert search_note(args, json.dumps({"ok": True, "answer": "Romania are 4th."})) == (
+        "Romania UEFA Nations League standings -> Romania are 4th."
+    )
+    assert search_note(args, json.dumps({"ok": False, "error": "x"})).endswith("-> nothing reliable found")
 
 
 # --- STT: end-of-speech silence is not sent -----------------------------------------------------------------

@@ -133,10 +133,14 @@ _MAX_WAIT = 60  # give up looking for "]]" after this many characters
 
 
 class DisplayTagFilter:
-    """Streaming filter: strips a leading [[value]] from the reply deltas and captures the value."""
+    """Streaming filter: strips a leading [[value]] from the reply deltas and captures the value.
+
+    A tag later in the reply ("high tide is at [[17:39]] today") keeps its value in the text without
+    the brackets; the first value found this way is still shown large if the reply had none."""
 
     def __init__(self) -> None:
         self._buf = ""
+        self._tail = ""  # held back after the start: a "[" or an unfinished "[[…" tag
         self._done = False
         self._trim = False
         self.value: str | None = None
@@ -147,7 +151,7 @@ class DisplayTagFilter:
             if self._trim:  # the spoken reply starts after the tag: drop the space in between
                 delta = delta.lstrip()
                 self._trim = not delta
-            return delta
+            return self._inline(delta)
         self._buf += delta
         s = self._buf.lstrip()
         if not s or s == "[":
@@ -157,19 +161,53 @@ class DisplayTagFilter:
         end = s.find("]]")
         if end < 0:
             return "" if len(s) < _MAX_WAIT else self._release()
-        value = to_display(s[2:end].strip())
         self._done = True
-        if value and len(value) <= MAX_VALUE:
-            self.value = value
+        self._capture(s[2:end])
         rest = s[end + 2 :].lstrip()
         self._trim = not rest
-        return rest
+        return self._inline(rest)
 
     def flush(self) -> str:
         """End of the reply: whatever was held back (an unterminated tag is passed through)."""
-        return "" if self._done else self._release()
+        if not self._done:
+            self._done = True
+            out, self._buf = self._buf, ""
+            return out
+        out, self._tail = self._tail, ""
+        return out
 
     def _release(self) -> str:
         self._done = True
         out, self._buf = self._buf, ""
-        return out
+        return self._inline(out)
+
+    def _capture(self, inner: str) -> None:
+        if self.value is None:
+            value = to_display(inner.strip())
+            if value and len(value) <= MAX_VALUE:
+                self.value = value
+
+    def _inline(self, delta: str) -> str:
+        """Brackets removed from tags inside the reply; an incomplete tag waits for the next delta."""
+        text, self._tail = self._tail + delta, ""
+        out: list[str] = []
+        while True:
+            start = text.find("[[")
+            if start < 0:
+                if text.endswith("["):
+                    text, self._tail = text[:-1], "["
+                out.append(text)
+                break
+            out.append(text[:start])
+            end = text.find("]]", start + 2)
+            if end < 0:
+                if len(text) - start < _MAX_WAIT:
+                    self._tail = text[start:]
+                else:
+                    out.append(text[start:])  # not a tag after all
+                break
+            inner = text[start + 2 : end]
+            self._capture(inner)
+            out.append(inner.strip())
+            text = text[end + 2 :]
+        return "".join(out)

@@ -12,7 +12,7 @@ const next = [
 <Base title="Thank you for your order" description="Your ola order is confirmed." noindex>
   <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title">
     <span class="icon-tile !h-14 !w-14 text-ok"><Icon name="check" size={28} /></span>
-    <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
+    <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-fg sm:text-5xl">
       Thank you — <span class="text-gradient">your order is confirmed.</span>
     </h1>
     <p class="mt-4 max-w-2xl text-lg text-muted">
@@ -20,12 +20,12 @@ const next = [
       password.
     </p>
 
-    <h2 class="mt-12 text-xl font-bold text-white">What happens next</h2>
+    <h2 class="mt-12 text-xl font-bold text-fg">What happens next</h2>
     <ol class="mt-6 grid gap-4 md:grid-cols-3">
       {next.map((n, i) => (
         <li class="glass p-5">
           <span class="icon-tile !h-10 !w-10"><Icon name={n.icon} size={20} /></span>
-          <h3 class="mt-3 font-semibold text-white"><span class="text-muted">{i + 1}.</span> {n.title}</h3>
+          <h3 class="mt-3 font-semibold text-fg"><span class="text-muted">{i + 1}.</span> {n.title}</h3>
           <p class="mt-1 text-sm text-muted">{n.text}</p>
         </li>
       ))}

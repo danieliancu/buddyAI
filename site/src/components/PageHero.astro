@@ -9,7 +9,7 @@ const { title, gradient, lead, eyebrow } = Astro.props;
 ---
 <section class="container-x pb-6 pt-14 sm:pt-20" aria-labelledby="page-title">
   {eyebrow && <p class="eyebrow">{eyebrow}</p>}
-  <h1 id="page-title" class="mt-2 max-w-4xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl">
+  <h1 id="page-title" class="mt-2 max-w-4xl text-4xl font-extrabold leading-tight tracking-tight text-fg sm:text-5xl">
     {title}{gradient && <><br /><span class="text-gradient">{gradient}</span></>}
   </h1>
   {lead && <p class="mt-5 max-w-2xl text-lg text-muted">{lead}</p>}

@@ -1,33 +1,37 @@
 ---
 import Icon from "./Icon.astro";
 import Logo from "./Logo.astro";
+import { config } from "../config";
 
 const nav = [
+  { href: "/", label: "Home" },
   { href: "/features/", label: "Features" },
-  { href: "/how-it-works/", label: "How it works" },
+  { href: "/how-it-works/", label: "How It Works" },
   { href: "/pricing/", label: "Pricing" },
+  { href: "/about/", label: "About" },
+];
+const mobileExtra = [
   { href: "/languages/", label: "Languages" },
   { href: "/faq/", label: "FAQ" },
-  { href: "/about/", label: "About" },
 ];
 const path = Astro.url.pathname.replace(/\/?$/, "/");
 const isActive = (href: string) => path === href;
 ---
-<header class="sticky top-0 z-40 border-b border-line bg-[#060913]/85 backdrop-blur-md">
+<header class="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-md">
   <div class="container-x flex h-16 items-center justify-between gap-4">
     <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="ola home">
       <Logo />
     </a>
 
     <nav aria-label="Main" class="hidden lg:block">
-      <ul class="flex items-center gap-1">
+      <ul class="flex items-center gap-2">
         {nav.map((item) => (
           <li>
             <a
               href={item.href}
               class:list={[
-                "rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:text-white",
-                isActive(item.href) ? "text-white" : "text-muted",
+                "rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:text-accent",
+                isActive(item.href) ? "text-accent" : "text-fg",
               ]}
               aria-current={isActive(item.href) ? "page" : undefined}
             >
@@ -38,9 +42,17 @@ const isActive = (href: string) => path === href;
       </ul>
     </nav>
 
-    <div class="flex items-center gap-2">
-      <a href="/pricing/#buy" class="btn btn-primary hidden !min-h-10 !px-4 !py-2 text-sm sm:inline-flex">
-        Buy now <Icon name="arrow" size={16} />
+    <div class="flex items-center gap-3">
+      <a
+        href={config.appUrl}
+        class="hidden h-10 w-10 place-items-center rounded-full text-fg hover:bg-bg-2 sm:grid"
+        aria-label="Sign in to the ola app"
+        title="Sign in"
+      >
+        <Icon name="user" size={20} />
+      </a>
+      <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" >
+        Buy now
       </a>
       <button
         type="button"
@@ -56,15 +68,15 @@ const isActive = (href: string) => path === href;
     </div>
   </div>
 
-  <nav id="mobile-nav" aria-label="Mobile" class="border-t border-line lg:hidden" hidden>
+  <nav id="mobile-nav" aria-label="Mobile" class="border-t border-line bg-white lg:hidden" hidden>
     <ul class="container-x flex flex-col py-3">
-      {nav.map((item) => (
+      {[...nav, ...mobileExtra].map((item) => (
         <li>
           <a
             href={item.href}
             class:list={[
               "block rounded-lg px-2 py-3 text-base font-medium",
-              isActive(item.href) ? "text-white" : "text-muted",
+              isActive(item.href) ? "text-accent" : "text-fg",
             ]}
             aria-current={isActive(item.href) ? "page" : undefined}
           >
@@ -72,9 +84,7 @@ const isActive = (href: string) => path === href;
           </a>
         </li>
       ))}
-      <li class="pt-2">
-        <a href="/pricing/#buy" class="btn btn-primary w-full">Buy now <Icon name="arrow" size={16} /></a>
-      </li>
+      <li><a href={config.appUrl} class="block rounded-lg px-2 py-3 text-base font-medium text-fg">Sign in</a></li>
     </ul>
   </nav>
 </header>

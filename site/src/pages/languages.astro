@@ -4,8 +4,9 @@ import PageHero from "../components/PageHero.astro";
 import { languages, languageCount, languageCountLabel } from "../lib/languages";
 ---
 <Base
-  title="Languages"
-  description={`ola talks in ${languageCountLabel} languages — ${languageCount} in total — plus Auto, which answers in the language you speak.`}
+  title={`Languages: an AI smartwatch that speaks ${languageCount} languages`}
+  crumb="Languages"
+  description={`The olawatch voice assistant talks in ${languageCount} languages — English, the European languages and Ukrainian — plus Auto, which answers in the language you speak.`}
 >
   <PageHero
     eyebrow="Languages"
@@ -18,12 +19,12 @@ import { languages, languageCount, languageCountLabel } from "../lib/languages";
     <h2 id="lang-title" class="sr-only">All supported languages</h2>
     <ul class="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
       <li class="glass !border-violet/50 p-4">
-        <p class="font-semibold text-white">Auto</p>
+        <p class="font-semibold text-fg">Auto</p>
         <p class="text-sm text-muted">Answers in the language you speak</p>
       </li>
       {languages.map((l) => (
         <li class="glass p-4">
-          <p class="font-semibold text-white" lang={l.code} dir={l.rtl ? "rtl" : "ltr"}>{l.native_name}</p>
+          <p class="font-semibold text-fg" lang={l.code} dir={l.rtl ? "rtl" : "ltr"}>{l.native_name}</p>
           <p class="text-sm text-muted">{l.name}</p>
         </li>
       ))}

@@ -13,21 +13,32 @@ from app import languages
 
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
+# The two watch themes, exactly as they are: "midnight" (blue) and "mono" (white). No custom colours.
 THEME_PRESETS: dict[str, dict[str, str]] = {
     "midnight": {"accent": "#4F8CFF", "background": "#000000", "clock": "#FFFFFF", "text": "#B0B8C8"},
-    "ocean": {"accent": "#00C2D1", "background": "#001A26", "clock": "#E6FBFF", "text": "#8FC9D6"},
-    "forest": {"accent": "#3DDC84", "background": "#04140A", "clock": "#EFFFF4", "text": "#9CC9AA"},
-    "sunset": {"accent": "#FF7A45", "background": "#1A0A05", "clock": "#FFF3EC", "text": "#E0B09A"},
     "mono": {"accent": "#FFFFFF", "background": "#000000", "clock": "#FFFFFF", "text": "#9A9A9A"},
 }
+DEFAULT_THEME = "midnight"
 
 
 class Theme(BaseModel):
-    preset: str = "midnight"
-    accent: str = THEME_PRESETS["midnight"]["accent"]
-    background: str = THEME_PRESETS["midnight"]["background"]
-    clock: str = THEME_PRESETS["midnight"]["clock"]
-    text: str = THEME_PRESETS["midnight"]["text"]
+    preset: str = DEFAULT_THEME
+    accent: str = THEME_PRESETS[DEFAULT_THEME]["accent"]
+    background: str = THEME_PRESETS[DEFAULT_THEME]["background"]
+    clock: str = THEME_PRESETS[DEFAULT_THEME]["clock"]
+    text: str = THEME_PRESETS[DEFAULT_THEME]["text"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _preset_colors(cls, data: Any) -> Any:
+        # The colours always come from the preset. Older themes (ocean, forest, sunset, custom colours)
+        # become the default blue one.
+        if isinstance(data, dict):
+            preset = data.get("preset")
+            if preset not in THEME_PRESETS:
+                preset = DEFAULT_THEME
+            data = {"preset": preset, **THEME_PRESETS[preset]}
+        return data
 
     @field_validator("accent", "background", "clock", "text")
     @classmethod
@@ -132,12 +143,14 @@ def merge(current: DeviceSettings, changes: dict[str, Any]) -> DeviceSettings:
     data = current.model_dump()
     for key, value in changes.items():
         if key == "theme" and isinstance(value, dict):
-            theme = {**data["theme"], **value}
-            preset = value.get("preset")
-            # Choosing a preset without explicit colors applies the preset colors.
-            if preset in THEME_PRESETS and not (set(value) - {"preset"}):
-                theme.update(THEME_PRESETS[preset])
-            data["theme"] = theme
+            # Only the two presets exist and their colours are fixed: refuse anything else.
+            preset = value.get("preset", data["theme"]["preset"])
+            if preset not in THEME_PRESETS:
+                raise ValueError(f"unknown theme {preset!r}; choose from {', '.join(THEME_PRESETS)}")
+            for k, v in value.items():
+                if k != "preset" and str(v).upper() != THEME_PRESETS[preset].get(k):
+                    raise ValueError("custom theme colours are not supported")
+            data["theme"] = {"preset": preset}
         else:
             data[key] = value
     return DeviceSettings.model_validate(data)

@@ -85,6 +85,8 @@ LANGS = {
             "NOTE_EMPTY": "Notiță goală.\nAtinge microfonul și dictează.",
             "NOTE_HELP": "Spune un rând ca să-l adaugi, sau „șterge 2”, „mută 3 sus”.",
             "REMINDER_HELP": "Spune o schimbare: „la 10:30”, „adaugă pe Ana”, „șterge locul”.",
+            "HELLO": "Salut!",
+            "HELP_PROMPT": "Cu ce te pot ajuta azi?",
         },
     },
     "de": {
@@ -171,6 +173,8 @@ LANGS = {
             "NOTE_EMPTY": "Leere Notiz.\nTippe aufs Mikrofon und diktiere.",
             "NOTE_HELP": "Sag eine Zeile, um sie hinzuzufügen, oder „lösche 2“, „3 nach oben“.",
             "REMINDER_HELP": "Sag eine Änderung: „um 10:30“, „Ana hinzufügen“, „Ort löschen“.",
+            "HELLO": "Hallo!",
+            "HELP_PROMPT": "Wie kann ich dir heute helfen?",
         },
     },
     "fr": {
@@ -257,6 +261,8 @@ LANGS = {
             "NOTE_EMPTY": "Note vide.\nTouche le micro et dicte.",
             "NOTE_HELP": "Dis une ligne pour l’ajouter, ou « supprime 2 », « 3 en haut ».",
             "REMINDER_HELP": "Dis un changement : « à 10 h 30 », « ajoute Ana », « enlève le lieu ».",
+            "HELLO": "Salut !",
+            "HELP_PROMPT": "Comment puis-je t’aider aujourd’hui ?",
         },
     },
     "es": {
@@ -343,6 +349,8 @@ LANGS = {
             "NOTE_EMPTY": "Nota vacía.\nToca el micro y dicta.",
             "NOTE_HELP": "Di una línea para añadirla, o «borra 2», «sube la 3 arriba».",
             "REMINDER_HELP": "Di un cambio: «a las 10:30», «añade a Ana», «quita el lugar».",
+            "HELLO": "¡Hola!",
+            "HELP_PROMPT": "¿En qué puedo ayudarte hoy?",
         },
     },
     "it": {
@@ -429,6 +437,8 @@ LANGS = {
             "NOTE_EMPTY": "Nota vuota.\nTocca il microfono e detta.",
             "NOTE_HELP": "Di’ una riga per aggiungerla, o «cancella 2», «sposta 3 in cima».",
             "REMINDER_HELP": "Di’ una modifica: «alle 10:30», «aggiungi Ana», «togli il luogo».",
+            "HELLO": "Ciao!",
+            "HELP_PROMPT": "Come posso aiutarti oggi?",
         },
     },
     "pt": {
@@ -515,6 +525,8 @@ LANGS = {
             "NOTE_EMPTY": "Nota vazia.\nToca no microfone e dita.",
             "NOTE_HELP": "Diz uma linha para a adicionar, ou «apaga 2», «move 3 para cima».",
             "REMINDER_HELP": "Diz uma alteração: «às 10:30», «adiciona a Ana», «remove o local».",
+            "HELLO": "Olá!",
+            "HELP_PROMPT": "Como posso ajudar-te hoje?",
         },
     },
     "nl": {
@@ -601,6 +613,8 @@ LANGS = {
             "NOTE_EMPTY": "Lege notitie.\nTik op de microfoon en dicteer.",
             "NOTE_HELP": "Zeg een regel om hem toe te voegen, of ‘verwijder 2’, ‘3 naar boven’.",
             "REMINDER_HELP": "Zeg een wijziging: ‘om 10:30’, ‘voeg Ana toe’, ‘haal de plek weg’.",
+            "HELLO": "Hoi!",
+            "HELP_PROMPT": "Hoe kan ik je vandaag helpen?",
         },
     },
     "ca": {
@@ -687,6 +701,8 @@ LANGS = {
             "NOTE_EMPTY": "Nota buida.\nToca el micròfon i dicta.",
             "NOTE_HELP": "Digues una línia per afegir-la, o «esborra la 2», «puja la 3 a dalt».",
             "REMINDER_HELP": "Digues un canvi: «a les 10:30», «afegeix l’Ana», «treu el lloc».",
+            "HELLO": "Hola!",
+            "HELP_PROMPT": "En què et puc ajudar avui?",
         },
     },
     "gl": {
@@ -773,6 +789,8 @@ LANGS = {
             "NOTE_EMPTY": "Nota baleira.\nToca o micrófono e dita.",
             "NOTE_HELP": "Di unha liña para engadila, ou «borra a 2», «sube a 3 arriba».",
             "REMINDER_HELP": "Di un cambio: «ás 10:30», «engade a Ana», «quita o lugar».",
+            "HELLO": "Ola!",
+            "HELP_PROMPT": "En que podo axudarte hoxe?",
         },
     },
 }

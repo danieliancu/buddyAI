@@ -6,7 +6,7 @@ Operator and developer reference. Customer-facing wording lives in the web app (
 
 | Setting (operator: Usage → Plan settings) | Default | Meaning |
 |---|---|---|
-| Care selling price | £7.99 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match. |
+| Care selling price | £7.90 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match. |
 | Included AI allowance | £2.50 / period | Internal provider-cost budget per account (never shown in £ to customers). |
 | Extra usage price | £1.99 one-off | Stripe Checkout `mode=payment`, `price_data` from settings. Never recurring. |
 | Extra usage allowance | £0.65 | Added to the current period only. |
