@@ -1127,6 +1127,7 @@ void ui_apply_settings(const buddy_settings_t *s)
         ui_items_refresh_theme();
         ui_chat_refresh_theme();
     }
+    ui_chat_refresh_title();
     ui_settings_refresh();
     if (s_power == POWER_ON) {
         board_display_set_brightness(s->brightness);

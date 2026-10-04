@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Bell, CalendarClock, Check, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, CalendarClock, Check, ChevronDown, ChevronRight, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
 import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
@@ -126,16 +126,47 @@ function NoteDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: 
 
 // ---------- reminders ----------
 
+const dayFmt = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+/** "YYYY-MM-DD" of a moment in the browser's time zone (empty without a date). */
+function dayKey(d: Date | null): string {
+  if (!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** "Tomorrow · Sun 5 Oct", "Mon 6 Oct". */
+function dayLabel(key: string, today: string, tomorrow: string): string {
+  const d = new Date(`${key}T12:00:00`);
+  if (key === today) return `Today · ${dayFmt.format(d)}`;
+  if (key === tomorrow) return `Tomorrow · ${dayFmt.format(d)}`;
+  return dayFmt.format(d);
+}
+
+/** "in 25 min", "in 2 h 10 min", "tomorrow at 09:00", "Mon 6 Oct at 09:00". */
+function untilText(due: Date, now: number, today: string, tomorrow: string): string {
+  const min = Math.round((due.getTime() - now) / 60000);
+  const key = dayKey(due);
+  if (key === today) {
+    if (min <= 0) return "now";
+    if (min < 60) return `in ${min} min`;
+    return `in ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+  }
+  return `${key === tomorrow ? "tomorrow" : dayFmt.format(due)} at ${timeFmt.format(due)}`;
+}
+
 export function MyRemindersPage() {
   const q = useItems("reminder");
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Item | null>(null);
   const [toggling, setToggling] = useState<number | null>(null);
   const [toggleError, setToggleError] = useState<unknown>(null);
-  // Open reminders by time, completed ones last (like the watch).
-  const reminders = [...q.items].sort(
-    (a, b) => Number(a.done) - Number(b.done) || (a.due_at ?? "").localeCompare(b.due_at ?? "") || a.number - b.number,
-  );
+  const [showPast, setShowPast] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const toggleDone = async (r: Item) => {
     setToggling(r.number);
@@ -150,6 +181,40 @@ export function MyRemindersPage() {
     }
   };
 
+  // By time, completed ones last in their day (like the watch).
+  const sorted = [...q.items].sort(
+    (a, b) =>
+      dayKey(parseDate(a.due_at)).localeCompare(dayKey(parseDate(b.due_at))) ||
+      Number(a.done) - Number(b.done) ||
+      (a.due_at ?? "").localeCompare(b.due_at ?? "") ||
+      a.number - b.number,
+  );
+  const today = dayKey(new Date(now));
+  const tomorrow = dayKey(new Date(now + 86400000));
+  const keyOf = (r: Item) => dayKey(parseDate(r.due_at)) || today;
+  // 1. what is next: the first open reminder from now on (today, or the next day with one)
+  const upNext = sorted.find((r) => !r.done && keyOf(r) >= today && (parseDate(r.due_at)?.getTime() ?? now) >= now);
+  const todays = sorted.filter((r) => keyOf(r) === today && r !== upNext);
+  // 2. the next days, grouped by day
+  const coming = new Map<string, Item[]>();
+  for (const r of sorted) {
+    if (keyOf(r) > today && r !== upNext) coming.set(keyOf(r), [...(coming.get(keyOf(r)) ?? []), r]);
+  }
+  // 3. the past (newest first; not shown on the watch)
+  const past = sorted.filter((r) => keyOf(r) < today).reverse();
+
+  const row = (r: Item, muted = false) => (
+    <ReminderRow
+      key={r.number}
+      r={r}
+      muted={muted}
+      busy={toggling === r.number}
+      onToggle={() => toggleDone(r)}
+      onEdit={() => setEditing(r)}
+      onDelete={() => setDeleting(r)}
+    />
+  );
+
   return (
     <ItemsLayout
       title="Reminders"
@@ -160,81 +225,185 @@ export function MyRemindersPage() {
       loading={q.loading && !q.data}
     >
       <ErrorBox error={toggleError} />
-      {reminders.length === 0 ? (
+      {sorted.length === 0 ? (
         <Card>
           <Empty icon={<CalendarClock className="size-7" />} title="No reminders yet" />
         </Card>
       ) : (
-        <ul className="space-y-3">
-          {reminders.map((r) => (
-            <ItemCard
-              key={r.number}
-              item={r}
-              onEdit={() => setEditing(r)}
-              onDelete={() => setDeleting(r)}
-              leading={
-                <button
-                  type="button"
-                  onClick={() => toggleDone(r)}
-                  disabled={toggling === r.number}
-                  aria-pressed={r.done}
-                  aria-label={r.done ? `Reopen reminder #${r.number}` : `Complete reminder #${r.number}`}
-                  title={r.done ? "Reopen" : "Complete"}
-                  className={
-                    r.done
-                      ? "grid size-6 shrink-0 place-items-center rounded-full border border-ok bg-ok text-white transition disabled:opacity-60"
-                      : "grid size-6 shrink-0 place-items-center rounded-full border-2 border-border text-transparent transition hover:border-ok hover:text-ok disabled:opacity-60"
-                  }
-                >
-                  <Check className="size-3.5" strokeWidth={3} />
-                </button>
-              }
-            >
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <CalendarClock className="size-4 text-muted" />
-                <span className={r.done ? "font-medium text-muted" : "font-medium"}>
-                  {fmtDateTime(r.due_at)}
-                  {r.end_at && ` – ${toLocalInput(r.end_at).slice(11)}`}
-                </span>
-                {r.notify_before_min ? (
-                  <span className="inline-flex items-center gap-1 text-muted" title="Advance notice">
-                    <Bell className="size-3.5" /> {fmtNotice(r.notify_before_min)} before
-                  </span>
-                ) : null}
-                {r.done ? (
-                  <Badge tone="ok">
-                    <CircleCheck className="size-3" /> Completed
-                  </Badge>
-                ) : (
-                  r.overdue && (
-                    <Badge tone="danger">
-                      <TriangleAlert className="size-3" /> Overdue
-                    </Badge>
-                  )
-                )}
+        <div className="space-y-8">
+          <section aria-labelledby="rem-today">
+            <h2 id="rem-today" className="mb-3 text-sm font-semibold text-fg">
+              {dayLabel(today, today, tomorrow)}
+            </h2>
+            {upNext && (
+              <UpNextCard
+                r={upNext}
+                until={untilText(parseDate(upNext.due_at) ?? new Date(now), now, today, tomorrow)}
+                busy={toggling === upNext.number}
+                onToggle={() => toggleDone(upNext)}
+                onEdit={() => setEditing(upNext)}
+                onDelete={() => setDeleting(upNext)}
+              />
+            )}
+            {todays.length > 0 ? (
+              <ul className={upNext ? "mt-3 space-y-3" : "space-y-3"}>{todays.map((r) => row(r))}</ul>
+            ) : (
+              !upNext && <p className="text-sm text-muted">Nothing planned for today.</p>
+            )}
+            {upNext && todays.length === 0 && keyOf(upNext) !== today && (
+              <p className="mt-3 text-sm text-muted">Nothing else today.</p>
+            )}
+          </section>
+
+          {coming.size > 0 && (
+            <section aria-labelledby="rem-coming">
+              <h2 id="rem-coming" className="mb-3 text-sm font-semibold text-fg">
+                Coming up
+              </h2>
+              <div className="space-y-5">
+                {[...coming.entries()].map(([key, items]) => (
+                  <div key={key}>
+                    <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">{dayLabel(key, today, tomorrow)}</h3>
+                    <ul className="space-y-3">{items.map((r) => row(r))}</ul>
+                  </div>
+                ))}
               </div>
-              <p className={r.done ? "mt-1 text-sm text-muted line-through" : "mt-1 text-sm"}>{r.text}</p>
-              {(r.location || r.participants) && (
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                  {r.location && (
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="size-3.5" /> {r.location}
-                    </span>
-                  )}
-                  {r.participants && (
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="size-3.5" /> {r.participants}
-                    </span>
-                  )}
-                </div>
-              )}
-            </ItemCard>
-          ))}
-        </ul>
+            </section>
+          )}
+
+          {past.length > 0 && (
+            <section aria-labelledby="rem-past" className="border-t border-border pt-5">
+              <button
+                id="rem-past"
+                type="button"
+                onClick={() => setShowPast((v) => !v)}
+                aria-expanded={showPast}
+                className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg"
+              >
+                {showPast ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                Past reminders ({past.length})
+                <span className="text-xs">· not shown on the watch</span>
+              </button>
+              {showPast && <ul className="mt-3 space-y-3">{past.map((r) => row(r, true))}</ul>}
+            </section>
+          )}
+        </div>
       )}
       <ReminderDialog editing={editing} onClose={() => setEditing(null)} onSaved={q.reload} />
       <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={q.reload} />
     </ItemsLayout>
+  );
+}
+
+type RowProps = { r: Item; busy: boolean; onToggle: () => void; onEdit: () => void; onDelete: () => void };
+
+function DoneButton({ r, busy, onToggle }: Pick<RowProps, "r" | "busy" | "onToggle">) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      aria-pressed={r.done}
+      aria-label={r.done ? `Reopen reminder #${r.number}` : `Complete reminder #${r.number}`}
+      title={r.done ? "Reopen" : "Complete"}
+      className={
+        r.done
+          ? "grid size-6 shrink-0 place-items-center rounded-full border border-ok bg-ok text-white transition disabled:opacity-60"
+          : "grid size-6 shrink-0 place-items-center rounded-full border-2 border-border text-transparent transition hover:border-ok hover:text-ok disabled:opacity-60"
+      }
+    >
+      <Check className="size-3.5" strokeWidth={3} />
+    </button>
+  );
+}
+
+function ReminderMeta({ r }: { r: Item }) {
+  return (
+    <>
+      {r.notify_before_min ? (
+        <span className="inline-flex items-center gap-1 text-muted" title="Advance notice">
+          <Bell className="size-3.5" /> {fmtNotice(r.notify_before_min)} before
+        </span>
+      ) : null}
+      {r.done ? (
+        <Badge tone="ok">
+          <CircleCheck className="size-3" /> Completed
+        </Badge>
+      ) : (
+        r.overdue && (
+          <Badge tone="danger">
+            <TriangleAlert className="size-3" /> Overdue
+          </Badge>
+        )
+      )}
+    </>
+  );
+}
+
+function ReminderPlace({ r }: { r: Item }) {
+  if (!r.location && !r.participants) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+      {r.location && (
+        <span className="inline-flex items-center gap-1">
+          <MapPin className="size-3.5" /> {r.location}
+        </span>
+      )}
+      {r.participants && (
+        <span className="inline-flex items-center gap-1">
+          <Users className="size-3.5" /> {r.participants}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function timeRange(r: Item): string {
+  const start = parseDate(r.due_at);
+  return `${start ? timeFmt.format(start) : "—"}${r.end_at ? ` – ${toLocalInput(r.end_at).slice(11)}` : ""}`;
+}
+
+/** One reminder in a day's list (the day is in the heading, so only the time is shown). */
+function ReminderRow({ r, muted, busy, onToggle, onEdit, onDelete }: RowProps & { muted: boolean }) {
+  return (
+    <div className={muted ? "opacity-70" : undefined}>
+      <ItemCard item={r} onEdit={onEdit} onDelete={onDelete} leading={<DoneButton r={r} busy={busy} onToggle={onToggle} />}>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <CalendarClock className="size-4 text-muted" />
+          <span className={r.done ? "font-medium text-muted" : "font-medium"}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
+          <ReminderMeta r={r} />
+        </div>
+        <p className={r.done ? "mt-1 text-sm text-muted line-through" : "mt-1 text-sm"}>{r.text}</p>
+        <ReminderPlace r={r} />
+      </ItemCard>
+    </div>
+  );
+}
+
+/** The next thing to do: large, in the accent colour, with the time left. */
+function UpNextCard({ r, until, busy, onToggle, onEdit, onDelete }: RowProps & { until: string }) {
+  return (
+    <div className="rounded-2xl border-2 border-accent bg-accent-bg p-5">
+      <div className="flex items-start gap-3">
+        <DoneButton r={r} busy={busy} onToggle={onToggle} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold tracking-wide text-accent uppercase">Up next · {until}</p>
+          <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{timeRange(r)}</p>
+          <p className="mt-1 text-base">{r.text}</p>
+          <ReminderPlace r={r} />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-mono text-xs font-semibold text-accent">#{r.number}</span>
+            <ReminderMeta r={r} />
+          </div>
+        </div>
+        <button className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg" onClick={onEdit} aria-label={`Edit #${r.number}`}>
+          <Pencil className="size-4" />
+        </button>
+        <button className="rounded p-1.5 text-muted hover:bg-danger-bg hover:text-danger" onClick={onDelete} aria-label={`Delete #${r.number}`}>
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -11,7 +11,7 @@ import contextlib
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -349,16 +349,30 @@ def create_persona(body: PersonaBody, acc: Account = Depends(current_account), d
 
 @router.put("/personas/{persona_id}")
 def update_persona(
-    persona_id: int, body: PersonaBody, acc: Account = Depends(current_account), db: Session = Depends(get_session)
+    persona_id: int,
+    body: PersonaBody,
+    request: Request,
+    background: BackgroundTasks,
+    acc: Account = Depends(current_account),
+    db: Session = Depends(get_session),
 ) -> dict:
     _own_persona(db, persona_id, acc)
-    return _persona_out(PersonaRepo(db).upsert(persona_id, body.name, body.system_prompt, False, acc.id))
+    out = _persona_out(PersonaRepo(db).upsert(persona_id, body.name, body.system_prompt, False, acc.id))
+    background.add_task(hub_of(request).refresh_chat_titles, acc.id)  # the name shown on the watches
+    return out
 
 
 @router.delete("/personas/{persona_id}")
-def delete_persona(persona_id: int, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
+def delete_persona(
+    persona_id: int,
+    request: Request,
+    background: BackgroundTasks,
+    acc: Account = Depends(current_account),
+    db: Session = Depends(get_session),
+) -> dict:
     _own_persona(db, persona_id, acc)
     PersonaRepo(db).delete(persona_id)
+    background.add_task(hub_of(request).refresh_chat_titles, acc.id)
     return {"ok": True}
 
 

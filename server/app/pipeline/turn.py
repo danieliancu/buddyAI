@@ -54,6 +54,7 @@ class TurnContext:
     note_number: int | None = None  # note / reminder mode: the item being edited
     end_requested: bool = False  # the watch's stop button: transcribe what was said so far
     changed_line: int | None = None  # note mode: line to highlight on the watch
+    abort_reason: str | None = None  # why the turn was cancelled: user_tap | timeout | error | connection_lost
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"
@@ -64,3 +65,4 @@ class TurnResult:
     status: str  # completed | no_speech | error | aborted
     error_code: str | None = None
     error_message: str | None = None
+    notified: bool = False  # the user already heard / saw an apology: no error screen on the watch

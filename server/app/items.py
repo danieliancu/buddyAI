@@ -40,6 +40,15 @@ def local_time(dt: datetime | None, tz: str) -> str | None:
     return dt.astimezone(ZoneInfo(tz)).strftime(LOCAL_FMT) if dt else None
 
 
+def on_watch(it: Item, tz: str, now: datetime | None = None) -> bool:
+    """Shown in the watch's reminder list: today and later in the watch's time zone (older days are only
+    in the web account). Notes and reminders without a time always are."""
+    if it.kind != "reminder" or it.due_at is None:
+        return True
+    zone = ZoneInfo(tz)
+    return it.due_at.astimezone(zone).date() >= (now or datetime.now(timezone.utc)).astimezone(zone).date()
+
+
 def parse_local(value: str, tz: str) -> datetime:
     """'YYYY-MM-DD HH:MM' (or ISO 8601, with or without offset) in `tz` -> aware UTC datetime."""
     dt = datetime.fromisoformat(value.strip().replace("T", " "))
@@ -227,8 +236,10 @@ TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "item_list",
-        "description": "List the user's notes or reminders. With show_on_watch=true the list also opens on the "
-        "watch screen (when the user wants to see their notes or reminders).",
+        "description": "List the user's notes or reminders. Reminders: only today and later, exactly what the "
+        "watch shows (earlier days are only in the web account - never talk about them unless the user asks for "
+        "a past date). With show_on_watch=true the list also opens on the watch screen (when the user wants to "
+        "see their notes or reminders).",
         "parameters": {
             "type": "object",
             "properties": {"kind": _KIND, "show_on_watch": _SHOW},
@@ -283,6 +294,9 @@ TOOLS_RULE = (
     "change or delete something. When they want to see their notes or reminders, call item_list with "
     "show_on_watch=true; while you only look things up or ask for confirmation, leave show_on_watch false "
     "(after a create or change the watch opens that item by itself; after a delete it opens the list). Never say something was saved, changed or deleted unless the tool reported success. "
+    "For questions about their schedule or calendar ('what do I have today', 'what's next'), always call "
+    "item_list for reminders first and talk only about what it returns (today and later, as on the watch), "
+    "not about older reminders from earlier in the conversation. "
     "Say the number of a new item. A reminder always needs a time of day: if the user did not say one (only "
     "a day, or nothing), do not create it yet - ask what time, and keep asking until you have at least a start "
     "time; never pick a time yourself. If they give an end time or a range ('from 9:30 to 10', 'between 3 "
@@ -355,6 +369,7 @@ class AssistantTools:
                     if kind == "reminder"
                     else {"number": it.number, "preview": preview(it.text)}
                     for it in repo.list(account_id, kind)
+                    if on_watch(it, tz)  # what the user sees on the watch, never older days
                 ]
                 show = {"list": kind} if a.get("show_on_watch") is True else None
                 return ToolOutcome(json.dumps({"ok": True, "items": rows}, ensure_ascii=False), open=show)

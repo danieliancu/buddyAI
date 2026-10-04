@@ -64,7 +64,7 @@ def test_settings_tz_and_theme_preset():
     view = device_view(s)
     assert set(view) == {
         "language", "quick_languages", "volume", "brightness", "screen_timeout_s", "tz_posix", "theme",
-        "max_listen_s",
+        "max_listen_s", "chat_title",
     }
     # The watch's listening window = wait for the first word + the longest question.
     assert view["max_listen_s"] == s.wait_for_speech_s + s.max_listen_s

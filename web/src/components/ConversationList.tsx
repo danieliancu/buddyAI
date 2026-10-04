@@ -170,7 +170,11 @@ function TurnCost({ turn: t }: { turn: ConversationTurn }) {
               </span>
             </p>
           )}
-          {t.error && <p className="mt-1 text-danger">Error: {t.error}</p>}
+          {t.error && (
+            <p className={cx("mt-1", t.status === "aborted" ? "text-fg" : "text-danger")}>
+              {t.status === "aborted" ? "Why it stopped" : "Error"}: {t.error}
+            </p>
+          )}
         </div>
       )}
     </div>

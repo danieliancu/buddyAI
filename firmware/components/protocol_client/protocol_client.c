@@ -798,6 +798,9 @@ static void handle_text(const char *txt)
     }
     if (strcmp(type, "items_open") == 0) {
         const char *kind = json_str(j, "kind");
+        /* The edited item was deleted (the server sends this before turn_end): close the edit mode
+         * now, so turn_end does not reopen the mic for a reminder / note that no longer exists. */
+        note_close(false);
         emit(PROTO_EVT_ITEMS_OPEN, kind && strcmp(kind, "reminder") == 0, NULL);
         goto out;
     }

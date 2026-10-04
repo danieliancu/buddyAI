@@ -6,6 +6,7 @@ import asyncio
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace as NS
 
 from app.db.models import Account
@@ -468,3 +469,22 @@ def test_reminder_location_and_participants() -> None:
     upd = {"kind": "reminder", "number": 1, "location": "", "participants": []}
     body = json.loads(tools.execute(acc, tz, "item_update", json.dumps(upd)).result)
     assert body["location"] is None and body["participants"] is None
+
+
+def test_reminder_list_has_only_what_the_watch_shows() -> None:
+    # The voice talks about today and later only: older days are in the web account, not on the watch.
+    from app.items import on_watch
+
+    acc = _account()
+    tools = AssistantTools()
+    tz = "Europe/London"
+    now = datetime.now(timezone.utc).astimezone(ZoneInfo(tz))
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d 09:00")
+    today = now.strftime("%Y-%m-%d 23:58")
+    for text, due in (("Old meeting", yesterday), ("Tonight", today), ("Next year", "2030-01-02 10:00")):
+        tools.execute(acc, tz, "item_create", json.dumps({"kind": "reminder", "text": text, "due_local": due}))
+    rows = json.loads(tools.execute(acc, tz, "item_list", json.dumps({"kind": "reminder"})).result)["items"]
+    assert [r["text"] for r in rows] == ["Tonight", "Next year"]
+    with session_scope() as db:
+        old = next(it for it in ItemRepo(db).list(acc, "reminder") if it.text == "Old meeting")
+        assert not on_watch(old, tz)

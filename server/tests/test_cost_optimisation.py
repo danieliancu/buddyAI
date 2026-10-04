@@ -269,3 +269,22 @@ async def test_tts_reports_every_request_including_twins() -> None:
     async for _ in tts.stream(frags(), req):
         pass
     assert sent == [12, 12]  # the stalled request and its twin are both billed by the provider
+
+
+def test_chat_title_is_the_persona_name_except_for_the_default() -> None:
+    from app.db.models import Persona
+    from app.db.repositories import PersonaRepo
+    from app.db.session import session_scope
+
+    with session_scope() as db:
+        repo = PersonaRepo(db)
+        repo.seed()
+        default = repo.get(None)
+        coach = Persona(name="Coach title test", system_prompt="x")
+        db.add(coach)
+        db.commit()
+        db.refresh(coach)
+        assert repo.chat_title(None) == "" and repo.chat_title(default.id) == ""
+        assert repo.chat_title(coach.id) == "Coach title test"
+        db.delete(coach)
+        db.commit()

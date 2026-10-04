@@ -52,6 +52,8 @@ NOTE_EDIT_TOOL: dict[str, Any] = {
     },
 }
 
+IGNORE = "IGNORE"  # the model's whole reply for speech that is not meant for the item: nothing changes
+
 NOTE_SYSTEM = (
     "You edit ONE note on a smartwatch by voice. The note has a title and, under it, numbered lines (1, 2, "
     "3 - line numbers in your operations are these). Each user message is one spoken sentence. Always "
@@ -63,6 +65,9 @@ NOTE_SYSTEM = (
     "numbering or bullet in the text.\n"
     "- Commands like 'delete 3', 'change 2 to …', 'replace milk with bread', 'move 4 to the top', 'put this "
     "after 1', 'undo' -> the matching operations. Lines are referred to by number or by their content.\n"
+    "- The microphone stays open, so it also hears speech not meant for the note: someone talking to the user, "
+    "a TV or radio, a lone filler word or exclamation ('ok', 'hmm', 'wow'). For that, do not call the tool: "
+    f"reply only {IGNORE}.\n"
     "- Never answer questions or chat; you only edit this note. If a command is unclear (e.g. the line "
     "does not exist), do not call the tool: reply with a very short question in the user's language, at "
     "most 60 characters."

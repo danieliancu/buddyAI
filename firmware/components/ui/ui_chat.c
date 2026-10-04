@@ -29,6 +29,8 @@
 #define BUBBLE_MAX_W        290
 #define MIC_SIZE            76
 #define MIC_BOTTOM          24
+#define TITLE_W             260         /* left of the close X */
+#define CHAT_GREETING       "Olá!"      /* title for the default persona */
 #define RING_BASE           (MIC_SIZE + 14)
 #define SPINNER_SIZE        (MIC_SIZE + 16)
 #define PILL_BG             0x252b36
@@ -305,11 +307,15 @@ void ui_chat_init(void)
 
     s_title = lv_label_create(s_scr);
     lv_obj_set_style_text_font(s_title, &buddy_font_28, 0);
-    lv_obj_align(s_title, LV_ALIGN_TOP_LEFT, 36, 42);
-    lv_label_set_text(s_title, "Ola");
+    lv_obj_set_width(s_title, TITLE_W);
+    lv_label_set_long_mode(s_title, LV_LABEL_LONG_DOT);
+    ui_chat_refresh_title();
 
     /* X: same as the notes / reminders screens */
     lv_obj_t *x = ui_add_close_x(s_scr, close_cb);
+    /* The title on the X's centre line, 36 px from the left edge. */
+    lv_obj_align_to(s_title, x, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_x(s_title, 36);
 
     s_list = lv_obj_create(s_scr);
     lv_obj_remove_style_all(s_list);
@@ -412,6 +418,14 @@ void ui_chat_anim(int level, uint32_t phase)
     lv_obj_set_size(s_ring, size, size);
     lv_obj_align(s_ring, LV_ALIGN_BOTTOM_MID, 0, -(MIC_BOTTOM - (size - MIC_SIZE) / 2));
     lv_obj_set_style_border_opa(s_ring, (lv_opa_t)(120 + level * 135 / 100), 0);
+}
+
+/* The active persona's name, or the greeting for the default persona. */
+void ui_chat_refresh_title(void)
+{
+    if (s_title) {
+        lv_label_set_text(s_title, g_ui_settings.chat_title[0] ? g_ui_settings.chat_title : CHAT_GREETING);
+    }
 }
 
 void ui_chat_refresh_theme(void)

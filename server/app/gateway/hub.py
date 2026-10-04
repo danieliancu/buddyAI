@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from app.db.models import Item
-from app.db.repositories import DeviceRepo, ItemRepo, SettingsRepo
+from app.db.repositories import DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo
 from app.db.session import session_scope
 from app.device_settings import device_view
 from app.items import device_full, device_snapshot
@@ -147,8 +147,16 @@ class DeviceHub:
             return
         with session_scope() as db:
             settings, version = SettingsRepo(db).get(device_id)
+            title = PersonaRepo(db).chat_title(settings.persona_id, conn.account_id)
         conn.settings = settings
-        await conn.send_json("settings_update", settings=device_view(settings), settings_version=version)
+        await conn.send_json("settings_update", settings=device_view(settings, title), settings_version=version)
+
+    async def refresh_chat_titles(self, account_id: int | None = None) -> None:
+        """A persona was renamed / deleted / made default: resend the settings (dialog title) to the
+        online watches of the account (None: every watch)."""
+        for conn in list(self.connections.values()):
+            if conn.authenticated and (account_id is None or conn.account_id == account_id):
+                await self.push_settings(conn.device_id)
 
     def account_connections(self, account_id: int) -> list["DeviceConnection"]:
         return [c for c in self.connections.values() if c.authenticated and c.account_id == account_id]

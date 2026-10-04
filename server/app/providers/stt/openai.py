@@ -28,6 +28,7 @@ from app.providers.base import ProviderError
 from app.providers.stt.base import PartialCallback, STTProvider, STTSession
 
 log = logging.getLogger(__name__)
+FALLBACK_TIMEOUT_S = 9.0  # fallback transcription request (see OpenAISTTProvider.__init__)
 INPUT_RATE = 24000
 
 
@@ -53,7 +54,9 @@ class OpenAIRealtimeSTT(STTProvider):
         self.rest_url = rest_url.rstrip("/")
         self.fallback_model = fallback_model
         self.open_timeout_s = open_timeout_s
-        self._http = httpx.AsyncClient(timeout=20.0)
+        # Fallback transcription: realtime wait (4 s) + this stays well under the watch's 30 s limit, so a
+        # stalled provider ends as an apology instead of the watch giving up.
+        self._http = httpx.AsyncClient(timeout=FALLBACK_TIMEOUT_S)
 
     async def start(self, language: str, sample_rate: int, on_partial: PartialCallback | None) -> STTSession:
         if not self.api_key:

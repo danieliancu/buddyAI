@@ -2,11 +2,14 @@
 import { Image } from "astro:assets";
 import Icon from "./Icon.astro";
 import watch from "../assets/home/hero-watch.png";
+import { brandHtml } from "../lib/brand";
+
+const olawatch = brandHtml("watch");
 
 const steps = [
   {
     title: "Wear It",
-    text: "Connect your ola to Wi-Fi and link it to your account with a 6-digit code.",
+    text: `Connect your ${olawatch} to Wi-Fi and link it to your account with a 6-digit code.`,
   },
   {
     title: "Talk Naturally",
@@ -14,7 +17,7 @@ const steps = [
   },
   {
     title: "Get Things Done",
-    text: "ola answers out loud, in your language, right from your wrist.",
+    text: `${olawatch} answers out loud, in your language, right from your wrist.`,
   },
 ];
 ---
@@ -31,7 +34,7 @@ const steps = [
         </span>
         <div class="min-w-0">
           <h3 class="text-base font-bold text-fg"><span class="sr-only">Step {i + 1}: </span>{s.title}</h3>
-          <p class="mt-1 text-sm text-muted">{s.text}</p>
+          <p class="mt-1 text-sm text-muted" set:html={s.text} />
         </div>
       </li>
       {i < steps.length - 1 && (

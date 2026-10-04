@@ -27,6 +27,7 @@ extern "C" {
 #define SETTINGS_LANG_MAX       8       /* "auto" or an ISO 639-1 code (up to 7 chars, [a-z-]) */
 #define SETTINGS_QUICK_LANG_MAX 3       /* entries in quick_languages */
 #define SETTINGS_LANG_LABEL_MAX 25      /* label, UTF-8, up to 24 bytes + NUL */
+#define SETTINGS_TITLE_MAX      161     /* persona name: 40 characters of up to 4 bytes + NUL */
 
 typedef struct {
     char     preset[16];
@@ -58,6 +59,9 @@ typedef struct {
     char             tz_posix[SETTINGS_TZ_MAX];
     settings_theme_t theme;
     uint16_t         max_listen_s;
+    /* Dialog screen title: the active persona's name; "" = the default persona (the watch shows
+     * its own greeting). UTF-8, up to 40 characters. */
+    char             chat_title[SETTINGS_TITLE_MAX];
 } buddy_settings_t;
 
 /* Change notification: called after the device-facing settings changed

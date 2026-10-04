@@ -131,9 +131,14 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
     "clock": "#FFFFFF",
     "text": "#B0B8C8"
   },
-  "max_listen_s": 35
+  "max_listen_s": 35,
+  "chat_title": "Coach"
 }
 ```
+
+- `chat_title`: title of the watch's dialog screen, the active persona's name (up to 40 characters);
+  `""` for the default persona, when the watch shows its own greeting ("Olá!"). Read-only for the watch;
+  resent when the persona is changed, renamed or deleted.
 
 - `max_listen_s`: the watch's whole listening window for one question: the server's wait for the
   first word (`wait_for_speech_s`, default 20) plus the longest question from the first word

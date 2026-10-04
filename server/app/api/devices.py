@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -158,16 +158,23 @@ def _system_persona(db: Session, persona_id: int) -> Persona:
 
 
 @router.put("/personas/{persona_id}")
-def update_persona(persona_id: int, body: PersonaBody, db: Session = Depends(get_session)) -> dict:
+def update_persona(
+    persona_id: int, body: PersonaBody, request: Request, background: BackgroundTasks, db: Session = Depends(get_session)
+) -> dict:
     _system_persona(db, persona_id)
-    return PersonaRepo(db).upsert(persona_id, body.name, body.system_prompt, body.is_default).model_dump()
+    out = PersonaRepo(db).upsert(persona_id, body.name, body.system_prompt, body.is_default).model_dump()
+    background.add_task(hub_of(request).refresh_chat_titles)  # name / default shown on the watches
+    return out
 
 
 @router.delete("/personas/{persona_id}")
-def delete_persona(persona_id: int, db: Session = Depends(get_session)) -> dict:
+def delete_persona(
+    persona_id: int, request: Request, background: BackgroundTasks, db: Session = Depends(get_session)
+) -> dict:
     _system_persona(db, persona_id)
     if not PersonaRepo(db).delete(persona_id):
         raise HTTPException(400, "cannot delete the default persona")
+    background.add_task(hub_of(request).refresh_chat_titles)
     return {"ok": True}
 
 

@@ -124,9 +124,11 @@ DEVICE_EDITABLE = {
 }
 
 
-def device_view(s: DeviceSettings) -> dict[str, Any]:
-    """Subset sent to the watch."""
+def device_view(s: DeviceSettings, chat_title: str = "") -> dict[str, Any]:
+    """Subset sent to the watch. chat_title: the active persona's name for the dialog screen
+    ("" = the default persona: the watch shows its own greeting)."""
     return {
+        "chat_title": chat_title,
         "language": s.language,
         "quick_languages": languages.quick_languages(s.preferred_language),
         "volume": s.volume,

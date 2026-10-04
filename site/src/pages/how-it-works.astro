@@ -13,12 +13,12 @@ const journey = [
   { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. olacare starts with " + prices.trialMonths + " months free." },
   { icon: "mail" as const, title: "Set your password", text: "Your confirmation email has a link to set your ola account password." },
   { icon: "truck" as const, title: "Delivery", text: "We email you tracking details when your watch ships." },
-  { icon: "wifi" as const, title: "Add watch", text: "Sign in at the ola app, choose Add watch and connect it to Wi-Fi." },
+  { icon: "wifi" as const, title: "Add watch", text: "Connect it to Wi-Fi, then sign in to your ola account in any web browser and choose Add watch. No app to install." },
   { icon: "mic" as const, title: "Start talking", text: "Tap the mic button. That's it." },
 ];
 ---
 <Base title="How the olawatch AI smartwatch works" crumb="How it works" description="Tap the mic, talk, and hear the AI answer out loud. How the olawatch voice assistant works, from ordering and Wi-Fi setup to your first conversation.">
-  <PageHero eyebrow="How it works" title="Tap. Talk." gradient="Listen." lead="No wake words, no menus to learn. One button on your wrist starts a conversation with your AI assistant." />
+  <PageHero eyebrow="How it works" title="Tap. Talk." gradient="Listen." lead="No app to install, no wake words, no menus to learn. Set it up once, and one button on your wrist starts a conversation with your AI assistant." />
 
   <section class="container-x mt-6" aria-labelledby="steps-title">
     <h2 id="steps-title" class="sr-only">Three steps</h2>
@@ -50,6 +50,6 @@ const journey = [
         </li>
       ))}
     </ol>
-    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to the ola app</a>.</p>
+    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to your ola account</a>.</p>
   </section>
 </Base>

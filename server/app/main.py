@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
 
         mdns = MdnsAdvertiser(lan_ip(), settings.port)
         await mdns.start()
+        mdns_follow = asyncio.create_task(mdns.follow(lan_ip))  # new LAN address -> advertised again
     log.info("ola server ready. Device endpoint: ws://<this-host>:%s/ws/device", settings.port)
     if settings.mock_providers:
         log.warning("MOCK providers enabled: no real STT/LLM/TTS calls")
@@ -69,6 +70,7 @@ async def lifespan(app: FastAPI):
     warmup.cancel()
     reminders.cancel()
     if mdns:
+        mdns_follow.cancel()
         await mdns.stop()
 
 

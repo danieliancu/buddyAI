@@ -1,12 +1,12 @@
 ---
-// The six feature cards under the home page hero.
+// The six features under the home page hero: no card or icon background, icons in the accent colour.
 import Icon from "./Icon.astro";
 import { highlights } from "../data/features";
 ---
 <ul class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
   {highlights.map((f) => (
-    <li class="glass p-5 text-center">
-      <span class="icon-tile mx-auto" data-tint={f.tint}><Icon name={f.icon} /></span>
+    <li class="p-5 text-center">
+      <Icon name={f.icon} size={44} class="mx-auto block text-accent" />
       <h3 class="mt-4 text-sm font-bold text-fg">{f.title}</h3>
       <p class="mt-1.5 text-xs leading-relaxed text-muted">{f.text}</p>
     </li>

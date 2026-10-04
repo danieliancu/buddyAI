@@ -15,7 +15,7 @@ from app import entitlements, issues, languages, usage_notices
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, DeviceIssue, utcnow
-from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, SettingsRepo, TurnRepo, UsageRepo
+from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo, TurnRepo, UsageRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
@@ -34,6 +34,20 @@ TRY_LATER = "Ola can't answer right now. Please try again a little later."
 router = APIRouter()
 
 MAX_RECENT_TURNS = 8
+ABORT_REASONS = ("user_tap", "timeout", "error")
+ABORT_TEXT = {
+    "user_tap": "Stopped on the watch",
+    "timeout": "The watch stopped waiting for the answer (30 s); not charged",
+    "error": "Stopped by the watch after an error",
+    "connection_lost": "The connection closed during the turn",
+}
+
+
+def abort_text(result: TurnResult, turn: TurnContext) -> str | None:
+    """Why an aborted turn stopped (stored in turns.error, shown in the admin)."""
+    if result.status != "aborted":
+        return None
+    return ABORT_TEXT.get(turn.abort_reason or "", "Aborted")
 
 
 class DeviceConnection:
@@ -137,6 +151,7 @@ class DeviceConnection:
         if self.authenticated:
             self._record_session_issues()
         if self.active:
+            self.active.abort_reason = self.active.abort_reason or "connection_lost"
             await self._cancel_active()
         self.hub.unregister(self)
         await self.close()
@@ -217,6 +232,7 @@ class DeviceConnection:
                     DeviceRepo(db).touch(dev.id, fw_version=fw, hw_model=hw, last_ip=self._client_ip())
                     settings, version = SettingsRepo(db).ensure(dev.id)
                     account_id = dev.account_id
+                    chat_title = PersonaRepo(db).chat_title(settings.persona_id, account_id)
                     owner = db.get(Account, account_id) if account_id else None
                     owner_status = owner.status if owner else None
             if dev is None:
@@ -238,7 +254,7 @@ class DeviceConnection:
             await self.send_json(
                 "hello_ack",
                 server_time=int(utcnow().timestamp() * 1000),
-                settings=device_view(settings),
+                settings=device_view(settings, chat_title),
                 settings_version=version,
                 downlink_rate=self.downlink_rate,
             )
@@ -359,6 +375,8 @@ class DeviceConnection:
 
     async def _on_abort(self, msg: dict[str, Any]) -> None:
         if self.active and msg.get("turn_id") == self.active.turn_id:
+            reason = msg.get("reason")
+            self.active.abort_reason = reason if reason in ABORT_REASONS else "error"
             await self._cancel_active()
 
     async def _cancel_active(self) -> None:
@@ -392,7 +410,7 @@ class DeviceConnection:
         live = self._is_live(turn)
         if turn.language != languages.AUTO and turn.user_text:
             self.last_language = turn.language
-        if result.error_code and live:
+        if result.error_code and live and not result.notified:
             # Provider/internal failures (e.g. no provider credit, timeouts) never reach the user with
             # their reason: the details stay in the log and the turn record.
             hidden = result.error_code == "internal" or result.error_code.endswith("_failed")
@@ -400,21 +418,24 @@ class DeviceConnection:
             await self.send_json("error", turn.turn_id, code=result.error_code, message=message)
         if live:
             await self.send(turn, "state", state="idle")
-        # turn_end is bookkeeping: always sent (the watch accepts it even for old turns).
-        await self.send_json("turn_end", turn.turn_id, status=result.status)
-        if self.active is turn:
-            self.active = None
-        if turn.settings_changed:  # volume, language... changed by voice: applies after the reply
-            await self.hub.push_settings(self.device_id)
-            self.hub.publish({"type": "settings_changed", "device_id": self.device_id})
-        if turn.items_changed and turn.account_id is not None:
+        if turn.items_changed and turn.account_id is not None:  # the fresh list first
             await self.hub.push_items(turn.account_id)
             self.hub.items_changed(turn.account_id)
+        # Before turn_end: an edit-mode turn that deleted its item opens the list, and the watch closes the
+        # edit mode on it instead of reopening the mic for the next sentence.
         if turn.pending_open is not None and live and result.status == "completed":
             if "list" in turn.pending_open:
                 await self.send_json("items_open", kind=turn.pending_open["list"])
             else:
                 await self.send_json("item_show", item=turn.pending_open["item"])
+        # turn_end is bookkeeping: always sent (the watch accepts it even for old turns). After an apology
+        # the watch ends the turn like a reply (it would cut the spoken apology on "error").
+        await self.send_json("turn_end", turn.turn_id, status="completed" if result.notified else result.status)
+        if self.active is turn:
+            self.active = None
+        if turn.settings_changed:  # volume, language... changed by voice: applies after the reply
+            await self.hub.push_settings(self.device_id)
+            self.hub.publish({"type": "settings_changed", "device_id": self.device_id})
         if turn.mode in ("note", "reminder") and turn.db_id is None and result.status != "no_speech" and turn.usage:
             with session_scope() as db:  # edit-mode turns: stored only when something was said
                 row = TurnRepo(db).create(
@@ -458,7 +479,7 @@ class DeviceConnection:
                 language=turn.language,
                 user_text=turn.user_text,
                 assistant_text=turn.assistant_text,
-                error=result.error_message if result.error_code else None,
+                error=result.error_message if result.error_code else abort_text(result, turn),
                 finished_at=utcnow(),
                 llm_model=next((u.model for u in turn.usage if u.kind == "llm"), None),
                 stt_provider=next((u.provider for u in turn.usage if u.kind == "stt"), None),
@@ -466,8 +487,9 @@ class DeviceConnection:
                 **turn.marks.as_db_fields(),
             )
             pricing = ProviderPricingConfig.load(db)
-            # A turn that failed on our side (provider/server error) is not charged to the customer's
-            # allowance; its cost stays visible to the operator. Aborted / no-speech turns count.
+            # A turn that failed on our side (provider/server error, or the watch gave up waiting for us)
+            # is not charged to the customer's allowance; its cost stays visible to the operator.
+            # Turns the user stopped, and no-speech turns, count.
             UsageRepo(db).add_many(
                 pricing.records(
                     turn.usage,
@@ -475,7 +497,7 @@ class DeviceConnection:
                     turn.db_id,
                     turn.account_id,
                     turn_status=result.status,
-                    billable=result.status != "error",
+                    billable=result.status != "error" and turn.abort_reason != "timeout",
                 )
             )
 

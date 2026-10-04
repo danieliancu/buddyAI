@@ -26,6 +26,10 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
         a: "Battery life: we'll publish measured figures before shipping. We'd rather give you a real, measured number than an estimate.",
       },
       {
+        q: "Do I need to install an app?",
+        a: "No. There's no app to download and nothing that has to keep running on your phone. You set the watch up once: connect it to Wi-Fi, then link it to your account by entering a 6-digit code in any web browser. After that you're good to go: the watch works on its own and answers straight from your wrist.",
+      },
+      {
         q: "Does it need Wi-Fi?",
         a: "Yes. ola connects over Wi-Fi (2.4 GHz) — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection, so it can't answer without Wi-Fi.",
       },
@@ -103,7 +107,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What happens after I order?",
-        a: `You'll get an order confirmation email with a link to set your account password. When your watch ships, we email you tracking details. When it arrives, sign in at <a href="${config.appUrl}">the ola app</a> and choose Add watch.`,
+        a: `You'll get an order confirmation email with a link to set your account password. When your watch ships, we email you tracking details. When it arrives, sign in to <a href="${config.appUrl}">your ola account</a> in any web browser and choose Add watch.`,
       },
     ],
   },

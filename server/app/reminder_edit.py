@@ -20,6 +20,7 @@ from app.db.repositories import ItemRepo
 from app.db.session import session_scope
 from app.items import _DONE, _END, _LOCATION, _NOTIFY, _PARTICIPANTS, device_full, is_done, local_time
 from app.items import reminder_update_kwargs
+from app.notes_edit import IGNORE
 
 REMINDER_EDIT_TOOL: dict[str, Any] = {
     "name": "reminder_edit",
@@ -58,11 +59,16 @@ REMINDER_SYSTEM = (
     "with a single reminder_edit call:\n"
     "- Changes ('move it to 10:30', 'tomorrow at 9', 'until 11', 'add Ana', 'without Mihai', 'at the "
     "dentist', 'tell me 15 minutes before', 'call it ...') -> action change with only the fields that "
-    "change. Resolve dates and times from 'Now'; keep the user's words and language in the text.\n"
+    "change. Resolve dates and times from 'Now'; keep the user's words and language in the text. Change the "
+    "text only when the user clearly asks for it ('call it ...', 'change the text to ...', 'rename it ...', "
+    "'it's about ...'): never make a stray word or sentence the new text.\n"
     "- 'Done' / 'completed' -> done true; 'not done' / 'open it again' -> done false.\n"
     "- 'Delete it' / 'delete the reminder' -> action delete. Removing one detail ('remove the place', 'no "
     "advance notice') -> change with an empty value.\n"
     "- 'Undo' -> action undo.\n"
+    "- The microphone stays open, so it also hears speech that is not an instruction about this reminder: a "
+    "lone word ('love', 'impossible'), a remark, someone talking to the user, a TV or radio, words in another "
+    f"language. For that, do not call the tool: reply only {IGNORE}.\n"
     "- Never answer questions or chat; you only edit this reminder. If a command is unclear, do not call "
     "the tool: reply with a very short question in the user's language, at most 60 characters."
 )

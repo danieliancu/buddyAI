@@ -222,6 +222,10 @@ static void merge_json(buddy_settings_t *s, const cJSON *j)
     if (cJSON_IsNumber(it)) {
         s->max_listen_s = (uint16_t)clamp_int(it->valueint, 3, 120);
     }
+    it = cJSON_GetObjectItemCaseSensitive(j, "chat_title");
+    if (cJSON_IsString(it)) {
+        strlcpy(s->chat_title, it->valuestring, sizeof(s->chat_title));
+    }
     const cJSON *theme = cJSON_GetObjectItemCaseSensitive(j, "theme");
     if (cJSON_IsObject(theme)) {
         /* Only the preset counts and its colours are fixed; any other theme (an older one, custom
@@ -258,6 +262,7 @@ cJSON *settings_to_json(const buddy_settings_t *s)
     color_str(s->theme.text, buf);
     cJSON_AddStringToObject(t, "text", buf);
     cJSON_AddNumberToObject(j, "max_listen_s", s->max_listen_s);
+    cJSON_AddStringToObject(j, "chat_title", s->chat_title);
     cJSON *ql = cJSON_AddArrayToObject(j, "quick_languages");
     for (int i = 0; i < s->quick_language_count && i < SETTINGS_QUICK_LANG_MAX; i++) {
         cJSON *o = cJSON_CreateObject();

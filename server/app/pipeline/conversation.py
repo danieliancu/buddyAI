@@ -26,6 +26,7 @@ from app.items import AssistantTools, device_full
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
+from app.pipeline.apology import not_understood
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
@@ -136,7 +137,15 @@ class ConversationPipeline:
         self.tools = tools
 
     async def run(self, turn: TurnContext, io: TurnIO) -> TurnResult:
-        user_text = await self._listen(turn, io)
+        try:
+            user_text = await self._listen(turn, io)
+        except ProviderError as exc:
+            if exc.stage != "stt":
+                raise
+            # The question was recorded but not transcribed (provider stalled / failed): apologise and ask
+            # to repeat it, instead of the "try again later" screen. Not charged (status error).
+            await self._apologise(turn, io)
+            return TurnResult("error", "stt_failed", exc.message, notified=True)
         if not user_text:
             await io.send(turn, "state", state="idle")
             return TurnResult("no_speech")
@@ -149,6 +158,39 @@ class ConversationPipeline:
         else:
             await self._reply(turn, io)
         return TurnResult("completed")
+
+    async def _apologise(self, turn: TurnContext, io: TurnIO) -> None:
+        """'Sorry, I didn't catch that. Could you say it again?' - spoken in chat mode, shown in edit modes."""
+        s = turn.settings
+        guess = turn.language if turn.language != languages.AUTO else (turn.fallback_language or s.preferred_language)
+        language, text = not_understood(guess)
+        turn.assistant_text = text
+        if turn.mode != "chat":
+            await io.send(turn, "llm_display", text=text)
+            return
+        await io.send(turn, "llm_text", delta=text)
+        try:
+            tts_sel = self.router.tts(language, s)
+            encoder = OpusEncoder(turn.downlink_rate, bitrate=self.downlink_bitrate)
+
+            async def one() -> AsyncIterator[str]:
+                yield text
+
+            started = False
+            request = TTSRequest(voice=tts_sel.voice, language=language, speech_rate=s.speech_rate,
+                                 instructions=tts_sel.instructions)
+            async for pcm in tts_sel.provider.stream(one(), request):
+                for packet in encoder.encode(pcm.pcm, pcm.sample_rate):
+                    if not started:
+                        started = True
+                        await io.send(turn, "tts_start", sample_rate=turn.downlink_rate, language=language)
+                        await io.send(turn, "state", state="speaking")
+                    await io.send_audio(turn, packet)
+            for packet in encoder.flush():
+                await io.send_audio(turn, packet)
+            turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", len(text)))
+        except ProviderError as exc:  # the text is already on the screen
+            log.warning("apology not spoken: %s", exc)
 
     # --- listening: VAD + streaming STT ---------------------------------------------------
 
@@ -495,6 +537,9 @@ class ConversationPipeline:
         call = next((c for c in calls if c.name == notes_edit.NOTE_EDIT_TOOL["name"]), None)
         if call is None:  # an unclear command: a short question on the screen, nothing changed
             question = strip_emoji("".join(reply)).strip()[:80]
+            if question.strip(" .").upper() == notes_edit.IGNORE:  # speech not meant for the item
+                turn.assistant_text = "(ignored: not an instruction)"
+                return
             turn.assistant_text = question
             if question:
                 await io.send(turn, "llm_display", text=question)
@@ -570,6 +615,9 @@ class ConversationPipeline:
         call = next((c for c in calls if c.name == reminder_edit.REMINDER_EDIT_TOOL["name"]), None)
         if call is None:  # an unclear command: a short question on the screen, nothing changed
             question = strip_emoji("".join(reply)).strip()[:80]
+            if question.strip(" .").upper() == notes_edit.IGNORE:  # speech not meant for the item
+                turn.assistant_text = "(ignored: not an instruction)"
+                return
             turn.assistant_text = question
             if question:
                 await io.send(turn, "llm_display", text=question)

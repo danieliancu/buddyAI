@@ -59,7 +59,7 @@ export const features: Feature[] = [
     icon: "palette",
     title: "Blue or white",
     short: "Two themes for the screen: blue or white.",
-    long: "Switch the watch between its blue and white themes, on the watch, in the ola app or just by asking.",
+    long: "Switch the watch between its blue and white themes, on the watch, in your ola account or just by asking.",
   },
   {
     icon: "history",

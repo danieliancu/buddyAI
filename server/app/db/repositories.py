@@ -224,6 +224,11 @@ class PersonaRepo:
             select(Persona).where(Persona.is_default == True, col(Persona.account_id).is_(None))  # noqa: E712
         ).first()
 
+    def chat_title(self, persona_id: int | None, account_id: int | None = None) -> str:
+        """Title of the watch's dialog screen: the active persona's name, "" for the default persona."""
+        p = self.get(persona_id, account_id)
+        return "" if p is None or p.is_default else p.name[:40]
+
     def upsert(
         self, persona_id: int | None, name: str, prompt: str, is_default: bool, account_id: int | None = None
     ) -> Persona:

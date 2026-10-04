@@ -88,3 +88,15 @@ def test_reminder_mode_unclear_or_invalid_changes_nothing() -> None:
     with session_scope() as db:
         it = ItemRepo(db).get(acc, "reminder", n)
         assert it.due_at.replace(tzinfo=timezone.utc) == datetime(2030, 5, 1, 6, 30, tzinfo=timezone.utc)
+
+
+def test_reminder_mode_ignores_speech_that_is_not_an_instruction() -> None:
+    # The mic stays open: a stray word ("amor", a TV) must not become the reminder's text.
+    acc = _account()
+    n = _reminder(acc)
+    turn, io, llm = _run(acc, n, "amor", None, "IGNORE")
+    assert "IGNORE" in llm.requests[0].messages[0]["content"]  # the rule is in the prompt
+    assert io.sent == [] and not turn.items_changed and turn.pending_open is None
+    assert turn.assistant_text == "(ignored: not an instruction)"
+    with session_scope() as db:
+        assert ItemRepo(db).get(acc, "reminder", n).text == "Dentist"
