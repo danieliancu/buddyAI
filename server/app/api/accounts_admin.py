@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from app import accounts, billing, email, entitlements
+from app.account_lock import lock_account
 from app.api.common import device_out, hub_of
 from app.db.models import Account, AuditLog, Device, Order
 from app.db.repositories import DeviceRepo, UsageRepo
@@ -118,6 +119,8 @@ class StatusBody(BaseModel):
 @router.patch("/{account_id}")
 async def set_status(account_id: int, body: StatusBody, request: Request, db: Session = Depends(get_session)) -> dict:
     acc = _account(db, account_id)
+    lock_account(db, acc.id)  # no admission decides on this account while its status changes
+    db.refresh(acc)
     acc.status = body.status
     if body.status == "suspended":
         acc.session_version += 1  # sign the customer out everywhere

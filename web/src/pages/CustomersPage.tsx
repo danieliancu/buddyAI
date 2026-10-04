@@ -30,7 +30,8 @@ export default function CustomersPage() {
     <>
       <PageHeader
         title="Customers"
-        subtitle={list.data ? `${rows.length} ${rows.length === 1 ? "account" : "accounts"}${rows.length >= 500 ? " (first 500)" : ""}` : undefined}
+        count={list.data ? rows.length : undefined}
+        subtitle={`Customer accounts, their plans and watches.${rows.length >= 500 ? " Showing the first 500." : ""}`}
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
             Create account

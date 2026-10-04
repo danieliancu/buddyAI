@@ -133,7 +133,7 @@ def options_(request: Request) -> dict:
 
 @router.post("/voice-sample")
 async def voice_sample_(body: VoiceSampleBody, request: Request) -> Response:
-    return await voice_sample(body, request)
+    return await voice_sample(body, request, operator=True)
 
 
 # --- system personas (operator) ------------------------------------------------------------------

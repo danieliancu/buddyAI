@@ -113,6 +113,8 @@ typedef enum {
     STR_ERR_BATT_B,
     STR_ERR_BUSY_T,
     STR_ERR_BUSY_B,
+    STR_ERR_CONC_T,
+    STR_ERR_CONC_B,
     STR_ERR_SUB_T,
     STR_ERR_SUB_B,
     STR_ERR_LIMIT_T,

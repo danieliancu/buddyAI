@@ -92,6 +92,13 @@ class Settings(BaseSettings):
 
     # Session / protocol
     session_idle_timeout_s: int = 45
+    # AI usage operations (app/usage_ops.py): the lease a process holds on a running operation, how often it
+    # renews it, how often expired leases are recovered, and the database lock wait for admission.
+    usage_lease_s: int = 90
+    usage_heartbeat_s: int = 20
+    usage_recovery_interval_s: int = 30
+    usage_lock_timeout_ms: int = 3000
+    usage_admit_retries: int = 5
     pairing_code_ttl_s: int = 300
     conversation_idle_minutes: int = 30
 

@@ -29,16 +29,20 @@ def _reminder(acc: int) -> int:
         return it.number
 
 
+_TURN = iter(range(1, 10**6))  # turns of one edit session (a confirmation needs a later turn)
+
+
 def _turn(acc: int, number: int, text: str) -> TurnContext:
-    turn = TurnContext(1, "s", "dev", "ro", DeviceSettings(timezone=TZ), 16000, account_id=acc)
+    turn = TurnContext(next(_TURN), "s-rem", "dev-rem", "ro", DeviceSettings(timezone=TZ), 16000, account_id=acc)
     turn.mode, turn.note_number, turn.user_text = "reminder", number, text
     return turn
 
 
 def _run(acc: int, number: int, text: str, args: dict | None, reply: str = "") -> tuple[TurnContext, FakeIO, NoteLLM]:
+    """One edit-mode sentence through the whole pipeline step (confirmation gate first)."""
     llm = NoteLLM([ToolCall("c1", "reminder_edit", json.dumps(args))] if args is not None else None, reply)
     turn, io = _turn(acc, number, text), FakeIO()
-    asyncio.run(ConversationPipeline(FakeRouter(llm), ChunkerConfig())._reminder_reply(turn, io))
+    asyncio.run(ConversationPipeline(FakeRouter(llm), ChunkerConfig()).respond(turn, io))
     return turn, io, llm
 
 
@@ -59,8 +63,9 @@ def test_reminder_mode_changes_only_that_reminder_without_tts() -> None:
     assert not [t for t, _f in io.sent if t.startswith("tts")]  # nothing spoken
     assert {u.kind for u in turn.usage} == {"llm"}
 
-    # Remove one detail, mark it done, then undo the last change.
-    _run(acc, n, "fără locație", {"action": "change", "location": ""})
+    # Removing a detail applies at once on the reminder's screen; then mark it done and undo the last change.
+    turn, _, _ = _run(acc, n, "fără locație", {"action": "change", "remove": ["location"]})
+    assert turn.pending_open["item"]["location"] is None
     turn, _, _ = _run(acc, n, "gata", {"action": "change", "done": True})
     assert turn.pending_open["item"]["done"] is True and not turn.pending_open["item"]["location"]
     turn, _, _ = _run(acc, n, "anulează", {"action": "undo"})
@@ -71,7 +76,7 @@ def test_reminder_mode_delete_opens_the_list() -> None:
     acc = _account()
     n = _reminder(acc)
     turn, _, _ = _run(acc, n, "șterge reminderul", {"action": "delete"})
-    assert turn.pending_open == {"list": "reminder"} and turn.items_changed
+    assert turn.pending_open == {"list": "reminder"} and turn.items_changed  # at once, on its own screen
     with session_scope() as db:
         assert ItemRepo(db).get(acc, "reminder", n) is None
 

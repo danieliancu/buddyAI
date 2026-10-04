@@ -161,8 +161,9 @@ def test_no_display_value_after_notes_or_reminders() -> None:
         def rules(self, account_id):
             return []
 
-        def execute(self, account_id, tz, name, arguments, device_id=""):
-            return NS(result='{"ok": true}', changed=False, open=None, settings_changed=False)
+        def execute(self, account_id, tz, name, arguments, device_id="", call=None):
+            return NS(result='{"ok": true}', changed=False, open=None, settings_changed=False, awaits_answer=False,
+                      open_uid=None)
 
     io = _reply_with(ToolThenTag(), "how many notes do I have?", tools=NoTools())
     assert not any(t == "llm_display" for t, _ in io.sent)

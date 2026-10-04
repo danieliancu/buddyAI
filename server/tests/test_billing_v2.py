@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app import allowance as allowance_mod
-from app import billing, entitlements, plan as plan_mod, usage_notices
+from app import billing, entitlements, plan as plan_mod, usage_notices, usage_ops
 from app.db.models import Account, AuditLog, RevenueEvent, StripeEvent, Subscription, TopUp, UsageNotice, UsageRecord
 from app.db.session import session_scope
 from app.email import ConsoleEmailSender
@@ -155,17 +155,28 @@ async def test_complimentary_refused_over_paid_stripe_subscription(billing_on):
         assert exc.value.status == 409
 
 
+def _admit(acc_id: int, key: str):
+    return usage_ops.admit(usage_ops.AdmitRequest(device_id=key.split(":")[0], request_key=f"r:{key}",
+                                                  request_kind="client", kind="chat", account_id=acc_id,
+                                                  fingerprint="fp"))
+
+
+def _end(a) -> None:
+    usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True)
+
+
 async def test_limit_and_concurrent_watches(enforce):
     acc_id = _account()
     _grant(acc_id)
     _spend(acc_id, 2.48)  # 99.2 % of £2.50, reserve is 3p
-    first = await entitlements.begin_turn(acc_id, "watch-a:1")
+    first = _admit(acc_id, "watch-a:1")
     assert first.allowed  # a single watch is only refused at 100 %
-    second = await entitlements.begin_turn(acc_id, "watch-b:1")
-    assert not second.allowed and second.code == "limit_reached"  # the other watch's reservation counts
-    entitlements.end_turn(acc_id, "watch-a:1")
-    assert (await entitlements.begin_turn(acc_id, "watch-b:2")).allowed
-    entitlements.end_turn(acc_id, "watch-b:2")
+    second = _admit(acc_id, "watch-b:1")
+    assert not second.allowed and second.code == "busy_concurrent"  # the other watch's reservation counts
+    _end(first)
+    b2 = _admit(acc_id, "watch-b:2")
+    assert b2.allowed
+    _end(b2)
     _spend(acc_id, 0.02)
     d = await entitlements.check(acc_id)
     assert not d.allowed and d.code == "limit_reached"
@@ -175,10 +186,11 @@ async def test_parallel_begin_turns_do_not_overshoot(enforce):
     acc_id = _account()
     _grant(acc_id)
     _spend(acc_id, 2.46)  # room for one 3p reservation, not two
-    results = await asyncio.gather(*(entitlements.begin_turn(acc_id, f"w{i}:1") for i in range(4)))
+    results = await asyncio.gather(*(asyncio.to_thread(_admit, acc_id, f"w{i}:1") for i in range(4)))
     assert sum(r.allowed for r in results) == 1
-    for i in range(4):
-        entitlements.end_turn(acc_id, f"w{i}:1")
+    for r in results:
+        if r.allowed:
+            _end(r)
 
 
 # --- usage notices ----------------------------------------------------------------------------------------

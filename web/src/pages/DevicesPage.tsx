@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { Check, Copy, MessagesSquare, Pencil, Plus, SlidersHorizontal, Trash2, UserRound, Watch } from "lucide-react";
 import { api, ApiError, type Device, type LiveEvent, type PendingPairing } from "../api";
@@ -6,22 +6,12 @@ import { useLive } from "../live";
 import { fmtAgo, fmtDateTime } from "../format";
 import { BatteryInfo, OnlineDot, RssiInfo, StateBadge } from "../components/DeviceBits";
 import { AccountPicker } from "../components/AccountPicker";
-import { turnRefusedText } from "../components/BillingBits";
-import { Badge, Button, buttonCls, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, useAsync } from "../components/ui";
-
-interface LastTurn {
-  user_text: string;
-  assistant_text: string;
-  status: string;
-  /** turn_refused code (billing / account state) */
-  refused?: string;
-}
+import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, useAsync } from "../components/ui";
 
 export default function DevicesPage() {
   const devices = useAsync(api.devices.list, []);
   const info = useAsync(api.system.info, []);
   const [pending, setPending] = useState<PendingPairing[]>([]);
-  const [lastTurn, setLastTurn] = useState<Record<string, LastTurn>>({});
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<Device | null>(null);
   const [revoking, setRevoking] = useState<Device | null>(null);
@@ -61,12 +51,6 @@ export default function DevicesPage() {
         update(e.device_id, p);
         break;
       }
-      case "turn_end":
-        setLastTurn((m) => ({ ...m, [e.device_id]: e }));
-        break;
-      case "turn_refused":
-        setLastTurn((m) => ({ ...m, [e.device_id]: { user_text: "", assistant_text: "", status: "refused", refused: e.code } }));
-        break;
       case "pairing_pending":
         loadPending();
         break;
@@ -84,7 +68,8 @@ export default function DevicesPage() {
     <>
       <PageHeader
         title="Devices"
-        subtitle={devices.data ? `${list.length} ${list.length === 1 ? "watch" : "watches"} • ${onlineCount} online` : undefined}
+        count={devices.data ? list.length : undefined}
+        subtitle={`Paired watches, their owners and live status.${devices.data ? ` ${onlineCount} online now.` : ""}`}
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
             Add watch
@@ -119,18 +104,33 @@ export default function DevicesPage() {
           </Empty>
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {list.map((d) => (
-            <DeviceCard
-              key={d.id}
-              device={d}
-              lastTurn={lastTurn[d.id]}
-              onRename={() => setRenaming(d)}
-              onRevoke={() => setRevoking(d)}
-              onAssign={() => setAssigning(d)}
-            />
-          ))}
-        </div>
+        <Card bodyClassName="p-0 px-4">
+          <Table>
+            <thead>
+              <tr>
+                <th>Watch</th>
+                <th>Owner</th>
+                <th>Status</th>
+                <th>Battery</th>
+                <th>Signal</th>
+                <th>Firmware</th>
+                <th>Last seen</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((d) => (
+                <DeviceRow
+                  key={d.id}
+                  device={d}
+                  onRename={() => setRenaming(d)}
+                  onRevoke={() => setRevoking(d)}
+                  onAssign={() => setAssigning(d)}
+                />
+              ))}
+            </tbody>
+          </Table>
+        </Card>
       )}
 
       <AddWatchDialog
@@ -175,105 +175,78 @@ export default function DevicesPage() {
   );
 }
 
-function DeviceCard({
+/** One watch per row: who owns it, live status and telemetry, actions. */
+function DeviceRow({
   device: d,
-  lastTurn,
   onRename,
   onRevoke,
   onAssign,
 }: {
   device: Device;
-  lastTurn?: LastTurn;
   onRename: () => void;
   onRevoke: () => void;
   onAssign: () => void;
 }) {
+  const icon = "rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-fg";
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-surface">
-      <div className="flex items-start gap-3 p-4">
-        <div className="mt-1.5">
+    <tr>
+      <td>
+        <div className="flex items-center gap-2.5">
           <OnlineDot online={d.online} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-semibold">{d.name}</h3>
-            <StateBadge online={d.online} state={d.state} />
+          <div className="min-w-0">
+            <p className="max-w-48 truncate font-medium">{d.name}</p>
+            <p className="max-w-48 truncate font-mono text-[11px] text-muted" title={d.id}>
+              {d.id}
+            </p>
           </div>
-          <p className="truncate font-mono text-xs text-muted" title={d.id}>
-            {d.id}
-          </p>
-          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs">
-            <UserRound className="size-3.5 shrink-0 text-muted" />
-            {d.account ? (
-              <Link to={`/admin/customers/${d.account.id}`} className="truncate text-accent hover:underline" title={d.account.name || d.account.email}>
-                {d.account.email}
-              </Link>
-            ) : (
-              <span className="text-muted">Stock</span>
-            )}
-          </p>
         </div>
-        <button onClick={onRename} className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg" title="Rename" aria-label="Rename">
-          <Pencil className="size-4" />
-        </button>
-      </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-sm sm:grid-cols-4">
-        <Info label="Battery">
-          <BatteryInfo pct={d.battery_pct} charging={d.charging} />
-        </Info>
-        <Info label="Signal">
-          <RssiInfo rssi={d.rssi} />
-        </Info>
-        <Info label="Firmware">
-          <span className="font-mono text-xs">{d.fw_version || "—"}</span>
-        </Info>
-        <Info label="Last seen">
-          <span title={fmtDateTime(d.last_seen_at)}>{d.online ? "now" : fmtAgo(d.last_seen_at)}</span>
-        </Info>
-      </dl>
-      {lastTurn?.refused && (
-        <p className="mx-4 mb-4 rounded-lg bg-warn-bg px-3 py-2 text-xs text-warn">{turnRefusedText(lastTurn.refused, true)}</p>
-      )}
-      {lastTurn && !lastTurn.refused && (
-        <div className="mx-4 mb-4 space-y-1 rounded-lg bg-surface-2 px-3 py-2 text-xs">
-          {lastTurn.user_text && (
-            <p className="truncate">
-              <span className="text-muted">User: </span>
-              {lastTurn.user_text}
-            </p>
-          )}
-          {lastTurn.assistant_text && (
-            <p className="truncate">
-              <span className="text-accent">Ola: </span>
-              {lastTurn.assistant_text}
-            </p>
-          )}
+      </td>
+      <td>
+        {d.account ? (
+          <Link
+            to={`/admin/customers/${d.account.id}`}
+            className="block max-w-52 truncate text-fg underline decoration-border underline-offset-4 hover:decoration-fg"
+            title={d.account.name || d.account.email}
+          >
+            {d.account.email}
+          </Link>
+        ) : (
+          <span className="text-muted">Stock</span>
+        )}
+      </td>
+      <td>
+        <StateBadge online={d.online} state={d.state} />
+      </td>
+      <td className="whitespace-nowrap">
+        <BatteryInfo pct={d.battery_pct} charging={d.charging} />
+      </td>
+      <td className="whitespace-nowrap">
+        <RssiInfo rssi={d.rssi} />
+      </td>
+      <td className="font-mono text-xs">{d.fw_version || "—"}</td>
+      <td className="whitespace-nowrap" title={fmtDateTime(d.last_seen_at)}>
+        {d.online ? "now" : fmtAgo(d.last_seen_at)}
+      </td>
+      <td>
+        <div className="flex items-center justify-end gap-0.5">
+          <Link to={`/admin/devices/${encodeURIComponent(d.id)}`} className={icon} title="Settings" aria-label="Settings">
+            <SlidersHorizontal className="size-4" />
+          </Link>
+          <Link to={`/admin/conversations?device=${encodeURIComponent(d.id)}`} className={icon} title="Conversations" aria-label="Conversations">
+            <MessagesSquare className="size-4" />
+          </Link>
+          <button onClick={onAssign} className={icon} title="Assign to customer" aria-label="Assign to customer">
+            <UserRound className="size-4" />
+          </button>
+          <button onClick={onRename} className={icon} title="Rename" aria-label="Rename">
+            <Pencil className="size-4" />
+          </button>
+          <button onClick={onRevoke} className="rounded-md p-1.5 text-muted hover:bg-danger-bg hover:text-danger" title="Revoke" aria-label="Revoke">
+            <Trash2 className="size-4" />
+          </button>
         </div>
-      )}
-      <div className="mt-auto flex flex-wrap gap-2 border-t border-border px-4 py-3">
-        <Link to={`/admin/devices/${encodeURIComponent(d.id)}`} className={buttonCls("secondary", "sm")}>
-          <SlidersHorizontal className="size-3.5" /> Settings
-        </Link>
-        <Link to={`/admin/conversations?device=${encodeURIComponent(d.id)}`} className={buttonCls("ghost", "sm")}>
-          <MessagesSquare className="size-3.5" /> Conversations
-        </Link>
-        <Button size="sm" variant="ghost" icon={<UserRound className="size-3.5" />} onClick={onAssign}>
-          Assign to customer
-        </Button>
-        <Button size="sm" variant="ghost" className="ml-auto text-danger" icon={<Trash2 className="size-3.5" />} onClick={onRevoke}>
-          Revoke
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function Info({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11px] text-muted">{label}</dt>
-      <dd className="truncate">{children}</dd>
-    </div>
+      </td>
+    </tr>
   );
 }
 

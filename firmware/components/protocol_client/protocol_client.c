@@ -120,6 +120,18 @@ static int64_t          s_last_ping_ms;
 static int64_t          s_last_status_ms;
 static int64_t          s_ping_sent_ms;
 
+/* The server asked something the current operation needs ("which one?", "delete it?"): listen again
+ * once the reply has been played. Set by each turn_end with expect_reply, so a clarification followed by
+ * a confirmation keeps the mic coming back; it stops when a turn ends without it (done, cancelled, no
+ * answer heard) or the user taps. */
+static bool             s_expect_reply;
+/* Hand-off from the chat to an item's screen: the user's words fit several places inside one note /
+ * reminder ("the milk" on two lines). The server opens the item with `listen` and a question; once the chat
+ * reply has been played, the item's edit mode starts with the question shown (its own logic continues). */
+static int              s_handoff_number;       /* 0 = none */
+static bool             s_handoff_reminder;
+static char             s_handoff_question[100];
+
 static char             s_pairing_code[8];
 static bool             s_paired_token;     /* hello was sent with a token */
 
@@ -504,8 +516,15 @@ static void start_turn(void)
     s_turn_note = s_note_open;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
+    /* A fresh random id per new turn: the server admits (and charges) one request id at most once. It is
+     * never re-sent automatically - a retry by the user is a new turn with a new id. */
+    char request_id[33];
+    for (int i = 0; i < 4; i++) {
+        snprintf(request_id + i * 8, 9, "%08lx", (unsigned long)esp_random());
+    }
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "language", st.language);
+    cJSON_AddStringToObject(m, "request_id", request_id);
     if (s_turn_note) {
         cJSON_AddStringToObject(m, "mode", s_note_reminder ? "reminder" : "note");
         cJSON_AddNumberToObject(m, s_note_reminder ? "reminder" : "note", s_note_number);
@@ -556,6 +575,7 @@ static void note_open(int number, bool reminder)
 
 static void handle_tap(void)
 {
+    s_expect_reply = false;   /* the user takes over: no automatic listening */
     if (s_conn != CONN_SESSION) {
         emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
         return;
@@ -583,6 +603,29 @@ static void finish_turn_idle(void)
     kill_turn_locked();
     audio_capture_stop();
     set_conv(PROTO_CONV_IDLE);
+}
+
+/* After a reply that asked the user something (turn_end expect_reply): open the mic for the answer - or,
+ * after a hand-off, the item's own edit mode with the question on its screen. */
+static void listen_again_if_asked(void)
+{
+    if (s_handoff_number && s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
+        int number = s_handoff_number;
+        s_handoff_number = 0;
+        s_expect_reply = false;
+        note_open(number, s_handoff_reminder);
+        if (s_note_open && s_handoff_question[0]) {
+            emit(PROTO_EVT_NOTE_TEXT, 1, s_handoff_question);
+        }
+        return;
+    }
+    if (!s_expect_reply) {
+        return;
+    }
+    s_expect_reply = false;
+    if (s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
+        start_turn();
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -669,6 +712,17 @@ static void on_error_msg(const cJSON *j, bool has_turn, uint32_t turn)
         if (s_ws) {
             esp_websocket_client_close(s_ws, pdMS_TO_TICKS(1000));
         }
+    } else if (strcmp(code, "duplicate") == 0) {
+        /* a request id the server has seen: never ours for a live turn (ids are random) - log only */
+    } else if (strcmp(code, "busy_concurrent") == 0 || strcmp(code, "service_unavailable") == 0) {
+        /* listen_start refused (uplink already cut by uplink_refused_fast_path): other conversations of
+         * the account hold the rest of the allowance, or the server cannot decide right now. */
+        if (has_turn && turn != s_active_turn) {
+            return; /* stale turn */
+        }
+        local_stop_turn();
+        set_conv(PROTO_CONV_IDLE);
+        emit(PROTO_EVT_ERROR, code[0] == 'b' ? PROTO_ERR_CONCURRENT : PROTO_ERR_BUSY, message);
     } else if (strcmp(code, "subscription_required") == 0 || strcmp(code, "limit_reached") == 0) {
         /* Reply to listen_start (turn_end {status: error} follows). The uplink
          * was already cut in the websocket task (uplink_refused_fast_path);
@@ -805,7 +859,21 @@ static void handle_text(const char *txt)
         goto out;
     }
     if (strcmp(type, "item_show") == 0) {
+        const cJSON *item = cJSON_GetObjectItemCaseSensitive(j, "item");
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "listen"))) {
+            const char *kind = json_str(item, "kind");
+            const char *question = json_str(item, "question");
+            uint32_t number = 0;
+            if (json_uint32(item, "number", &number) && number > 0) {
+                s_handoff_number = (int)number;
+                s_handoff_reminder = kind && strcmp(kind, "reminder") == 0;
+                strlcpy(s_handoff_question, question ? question : "", sizeof(s_handoff_question));
+            }
+        }
         emit(PROTO_EVT_ITEM_SHOW, 0, txt);
+        if (s_handoff_number && s_conv == PROTO_CONV_IDLE) {
+            listen_again_if_asked();    /* no chat turn running: start right away */
+        }
         goto out;
     }
     if (strcmp(type, "reminder_fire") == 0) {
@@ -825,8 +893,10 @@ static void handle_text(const char *txt)
         if (has_turn && turn == s_active_turn && s_turn_live) {
             s_turn_ended = true;
             bool completed = status && strcmp(status, "completed") == 0;
+            s_expect_reply = completed && !s_turn_note && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "expect_reply"));
             if (!completed || (!s_first_audio_seen && !audio_playback_active())) {
                 finish_turn_idle();
+                listen_again_if_asked();
             }
         }
         if (has_turn && turn == s_active_turn && s_turn_note) {
@@ -921,9 +991,16 @@ out:
  * the turn here (capture_cb checks s_turn_live) so not one more uplink frame is
  * sent while the message waits in the proto queue. The proto task then does
  * the full handling (on_error_msg). */
+static bool is_refusal_code(const char *code)
+{
+    return strcmp(code, "subscription_required") == 0 || strcmp(code, "limit_reached") == 0 ||
+           strcmp(code, "busy_concurrent") == 0 || strcmp(code, "service_unavailable") == 0;
+}
+
 static void uplink_refused_fast_path(const char *txt)
 {
-    if (!strstr(txt, "subscription_required") && !strstr(txt, "limit_reached")) {
+    if (!strstr(txt, "subscription_required") && !strstr(txt, "limit_reached") &&
+        !strstr(txt, "busy_concurrent") && !strstr(txt, "service_unavailable")) {
         return;
     }
     cJSON *j = cJSON_Parse(txt);
@@ -934,8 +1011,7 @@ static void uplink_refused_fast_path(const char *txt)
     const char *code = json_str(j, "code");
     uint32_t turn = 0;
     bool has_turn = json_uint32(j, "turn_id", &turn);
-    if (type && code && strcmp(type, "error") == 0 &&
-        (strcmp(code, "subscription_required") == 0 || strcmp(code, "limit_reached") == 0)) {
+    if (type && code && strcmp(type, "error") == 0 && is_refusal_code(code)) {
         xSemaphoreTake(s_turn_lock, portMAX_DELAY);
         if (!has_turn || turn == s_active_turn) {
             s_turn_live = false;
@@ -1294,6 +1370,7 @@ static void handle_msg(msg_t *m)
         if (m->a == s_active_turn && s_turn_live) {
             send_turn_msg("playback_done", m->a, NULL);
             finish_turn_idle();
+            listen_again_if_asked();
         }
         break;
     case MSG_END_CONVERSATION:

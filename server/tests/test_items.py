@@ -15,6 +15,7 @@ from app.db.session import session_scope
 from app.device_settings import DeviceSettings
 from app.gateway.hub import DeviceHub
 from app.items import AssistantTools, device_snapshot
+from tests.voice_helpers import Voice, by_number
 from app.pipeline.chunker import ChunkerConfig
 from app.pipeline.conversation import ConversationPipeline
 from app.pipeline.turn import TurnContext
@@ -103,16 +104,18 @@ def test_tools_create_show_update_delete() -> None:
     acc = _account()
     tools = AssistantTools()
     tz = "Europe/Bucharest"
+    v = Voice(acc, tz)
     # Without an owner only the settings tool is offered; with one, the notes / reminders tools too.
     assert [t["name"] for t in tools.definitions(None)] == ["watch_settings"]
     assert "item_create" in [t["name"] for t in tools.definitions(acc)]
+    # Item tools never run from a bare account id (no authenticated voice session).
+    bare = json.loads(tools.execute(acc, tz, "item_create", json.dumps({"kind": "note", "text": "x"})).result)
+    assert bare["ok"] is False
 
-    out = tools.execute(acc, tz, "item_create", json.dumps({"kind": "note", "text": "Cumpără lapte"}))
+    out = v.run("item_create", {"kind": "note", "text": "Cumpără lapte"})
     assert out.changed and json.loads(out.result)["number"] == 1
 
-    out = tools.execute(
-        acc, tz, "item_create", json.dumps({"kind": "reminder", "text": "Sună la dentist", "due_local": "2030-05-01 09:30"})
-    )
+    out = v.run("item_create", {"kind": "reminder", "text": "Sună la dentist", "due_local": "2030-05-01 09:30"})
     body = json.loads(out.result)
     assert body["ok"] and body["due_local"] == "2030-05-01 09:30"
     assert out.open["item"]["kind"] == "reminder" and out.open["item"]["number"] == 1  # the new item opens
@@ -120,31 +123,31 @@ def test_tools_create_show_update_delete() -> None:
         it = ItemRepo(db).get(acc, "reminder", 1)
         assert it.due_at == datetime(2030, 5, 1, 6, 30, tzinfo=timezone.utc)  # EEST = UTC+3
 
-    out = tools.execute(acc, tz, "item_show", json.dumps({"kind": "note", "number": 1}))
+    out = v.run("item_show", {"target": by_number("note", 1)})
     assert not out.changed and out.open is None  # a lookup: the watch stays where it is
-    out = tools.execute(acc, tz, "item_show", json.dumps({"kind": "note", "number": 1, "show_on_watch": True}))
+    out = v.run("item_show", {"target": by_number("note", 1), "show_on_watch": True})
     assert out.open["item"]["text"] == "Cumpără lapte" and out.open["item"]["number"] == 1
 
-    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "due_local": "2030-05-01 10:00"}))
+    out = v.run("item_update", {"target": by_number("reminder", 1), "changes": {"due_local": "2030-05-01 10:00"}})
     assert json.loads(out.result)["due_local"] == "2030-05-01 10:00"
     assert out.open["item"]["number"] == 1 and out.open["item"]["due_local"] == "2030-05-01 10:00"
 
-    out = tools.execute(acc, tz, "item_list", json.dumps({"kind": "note"}))
-    assert json.loads(out.result)["items"] == [{"number": 1, "preview": "Cumpără lapte"}]
+    out = v.run("item_list", {"kind": "note"})
+    rows = json.loads(out.result)["items"]
+    assert [(r["number"], r["title"]) for r in rows] == [(1, "Cumpără lapte")] and rows[0]["ref"]
     assert out.open is None
-    assert tools.execute(acc, tz, "item_list", json.dumps({"kind": "note", "show_on_watch": True})).open == {
-        "list": "note"
-    }
+    assert v.run("item_list", {"kind": "note", "show_on_watch": True}).open == {"list": "note"}
 
     long_rem = {"kind": "reminder", "text": "y" * 81, "due_local": "2030-05-01 09:30"}
-    assert "limit" in json.loads(tools.execute(acc, tz, "item_create", json.dumps(long_rem)).result)["error"]
+    assert "limit" in v.body("item_create", long_rem)["error"]
 
-    out = tools.execute(acc, tz, "item_delete", json.dumps({"kind": "note", "number": 1}))
-    assert json.loads(out.result)["ok"] and out.open == {"list": "note"}  # deleted: back to the list
-    missing = json.loads(tools.execute(acc, tz, "item_show", json.dumps({"kind": "note", "number": 1})).result)
-    assert missing["ok"] is False
-    assert json.loads(tools.execute(acc, tz, "item_create", json.dumps({"kind": "reminder", "text": "x"})).result)["ok"] is False
-    assert json.loads(tools.execute(acc, tz, "item_create", "not json").result)["ok"] is False
+    # A delete only prepares it: nothing is deleted, the watch does not move.
+    out = v.run("item_delete", {"target": by_number("note", 1)})
+    assert json.loads(out.result)["status"] == "confirmation_required" and out.open is None and not out.changed
+    with session_scope() as db:
+        assert ItemRepo(db).get(acc, "note", 1) is not None
+    assert v.body("item_create", {"kind": "reminder", "text": "x"})["ok"] is False
+    assert v.body("item_create", "not json")["ok"] is False
 
 
 def test_device_snapshot_orders_reminders() -> None:
@@ -350,8 +353,8 @@ def test_completed_reminder_is_not_overdue_does_not_fire_and_sorts_last() -> Non
     hub.connections["w1"] = FakeConn(acc)
     assert asyncio.run(deliver_due(hub, acc)) == 0  # completed early: never fires
 
-    tools = AssistantTools()
-    out = tools.execute(acc, "Europe/London", "item_update", json.dumps({"kind": "reminder", "number": 1, "done": False}))
+    v = Voice(acc)  # reopening a completed one: the user asks about completed reminders
+    out = v.run("item_update", {"target": {"query": {"kind": "reminder", "number": 1, "status": "done"}}, "changes": {"done": False}})
     assert json.loads(out.result)["done"] is False and json.loads(out.result)["overdue"] is True
     with session_scope() as db:
         repo = ItemRepo(db)
@@ -372,27 +375,20 @@ def test_web_marks_reminder_done() -> None:
 
 def test_reminder_time_range() -> None:
     acc = _account()
-    tools = AssistantTools()
     tz = "Europe/London"
-    out = tools.execute(
-        acc,
-        tz,
-        "item_create",
-        json.dumps({"kind": "reminder", "text": "Team sync", "due_local": "2030-05-01 09:30", "end_local": "2030-05-01 10:00"}),
-    )
-    body = json.loads(out.result)
+    v = Voice(acc, tz)
+    body = v.body("item_create", {"kind": "reminder", "text": "Team sync", "due_local": "2030-05-01 09:30", "end_local": "2030-05-01 10:00"})
     assert body["ok"] and body["end_local"] == "2030-05-01 10:00"
     # Moving only the start keeps the length of the range.
-    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "due_local": "2030-05-01 11:00"}))
+    out = v.run("item_update", {"target": by_number("reminder", 1), "changes": {"due_local": "2030-05-01 11:00"}})
     assert json.loads(out.result)["end_local"] == "2030-05-01 11:30"
-    # An end before the start is refused; an empty end_local removes it.
-    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "end_local": "2030-05-01 10:00"}))
-    assert json.loads(out.result)["ok"] is False
-    out = tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "end_local": ""}))
-    assert json.loads(out.result)["end_local"] is None
+    # An end before the start is refused; removing the end is a deletion: it waits for the user's yes.
+    assert v.body("item_update", {"target": by_number("reminder", 1), "changes": {"end_local": "2030-05-01 10:00"}})["ok"] is False
+    body = v.body("item_update", {"target": by_number("reminder", 1), "changes": {"end_local": ""}})
+    assert body["status"] == "confirmation_required" and "end time" in body["will_delete"]
     with session_scope() as db:
         snap = device_snapshot(ItemRepo(db).list(acc), tz)
-    assert snap["reminders"][0]["end_local"] is None and snap["reminders"][0]["due_local"] == "2030-05-01 11:00"
+    assert snap["reminders"][0]["end_local"] == "2030-05-01 11:30" and snap["reminders"][0]["due_local"] == "2030-05-01 11:00"
 
 
 def test_web_reminder_end_time() -> None:
@@ -410,9 +406,9 @@ def test_web_reminder_end_time() -> None:
 def test_reminder_needs_a_time_of_day() -> None:
     acc = _account()
     tools = AssistantTools()
-    tz = "Europe/London"
+    v = Voice(acc)
     for args in ({"kind": "reminder", "text": "dentist"}, {"kind": "reminder", "text": "dentist", "due_local": "2030-05-01"}):
-        body = json.loads(tools.execute(acc, tz, "item_create", json.dumps(args)).result)
+        body = v.body("item_create", args)
         assert body["ok"] is False and "ask the user" in body["error"].lower()
     with session_scope() as db:
         assert ItemRepo(db).list(acc, "reminder") == []
@@ -442,15 +438,15 @@ def test_advance_notice_fires_before_and_at_the_start() -> None:
     assert asyncio.run(deliver_due(hub, acc)) == 1
     assert [f["early"] for t, f in conn.sent if t == "reminder_fire"] == [True, False]
 
-    tools = AssistantTools()
-    out = tools.execute(acc, "Europe/London", "item_update", json.dumps({"kind": "reminder", "number": 2, "notify_before_minutes": 0}))
-    assert json.loads(out.result)["notify_before_minutes"] is None
+    v = Voice(acc)  # removing the advance alert waits for the user's yes
+    body = v.body("item_update", {"target": by_number("reminder", 2), "changes": {"notify_before_minutes": 0}})
+    assert body["status"] == "confirmation_required" and "advance alert" in body["will_delete"]
 
 
 def test_reminder_location_and_participants() -> None:
     acc = _account()
-    tools = AssistantTools()
     tz = "Europe/London"
+    v = Voice(acc, tz)
     args = {
         "kind": "reminder",
         "text": "Team sync with Ana and Mihai at Studio Office",
@@ -458,17 +454,22 @@ def test_reminder_location_and_participants() -> None:
         "location": " Studio  Office ",
         "participants": ["Ana", " Mihai", ""],
     }
-    body = json.loads(tools.execute(acc, tz, "item_create", json.dumps(args)).result)
+    body = v.body("item_create", args)
     assert body["location"] == "Studio Office" and body["participants"] == "Ana, Mihai"
     with session_scope() as db:
         snap = device_snapshot(ItemRepo(db).list(acc), tz)
     assert snap["reminders"][0]["location"] == "Studio Office"
-    # Leaving them out of an update keeps them; empty values remove them.
-    body = json.loads(tools.execute(acc, tz, "item_update", json.dumps({"kind": "reminder", "number": 1, "text": "Team sync"})).result)
+    # Leaving them out of an update keeps them; adding a person keeps the others.
+    body = v.body("item_update", {"target": by_number("reminder", 1), "changes": {"text": "Team sync"}})
     assert body["participants"] == "Ana, Mihai"
-    upd = {"kind": "reminder", "number": 1, "location": "", "participants": []}
-    body = json.loads(tools.execute(acc, tz, "item_update", json.dumps(upd)).result)
-    assert body["location"] is None and body["participants"] is None
+    body = v.body("item_update", {"target": by_number("reminder", 1), "changes": {"add_participants": ["Ioana"]}})
+    assert body["participants"] == "Ana, Mihai, Ioana"
+    # Empty values are removals in disguise: they wait for the user's yes, nothing changes now.
+    body = v.body("item_update", {"target": by_number("reminder", 1), "changes": {"location": "", "remove": ["participants"]}})
+    assert body["status"] == "confirmation_required"
+    with session_scope() as db:
+        it = ItemRepo(db).get(acc, "reminder", 1)
+        assert it.location == "Studio Office" and it.participants == "Ana, Mihai, Ioana"
 
 
 def test_reminder_list_has_only_what_the_watch_shows() -> None:
@@ -476,14 +477,14 @@ def test_reminder_list_has_only_what_the_watch_shows() -> None:
     from app.items import on_watch
 
     acc = _account()
-    tools = AssistantTools()
     tz = "Europe/London"
+    v = Voice(acc, tz)
     now = datetime.now(timezone.utc).astimezone(ZoneInfo(tz))
     yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d 09:00")
     today = now.strftime("%Y-%m-%d 23:58")
     for text, due in (("Old meeting", yesterday), ("Tonight", today), ("Next year", "2030-01-02 10:00")):
-        tools.execute(acc, tz, "item_create", json.dumps({"kind": "reminder", "text": text, "due_local": due}))
-    rows = json.loads(tools.execute(acc, tz, "item_list", json.dumps({"kind": "reminder"})).result)["items"]
+        v.run("item_create", {"kind": "reminder", "text": text, "due_local": due})
+    rows = v.body("item_list", {"kind": "reminder"})["items"]
     assert [r["text"] for r in rows] == ["Tonight", "Next year"]
     with session_scope() as db:
         old = next(it for it in ItemRepo(db).list(acc, "reminder") if it.text == "Old meeting")

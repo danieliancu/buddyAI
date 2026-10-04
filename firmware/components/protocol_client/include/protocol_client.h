@@ -38,6 +38,7 @@ typedef enum {
     PROTO_ERR_SUBSCRIPTION_REQUIRED, /* listen_start refused: no active ola Care subscription */
     PROTO_ERR_LIMIT_REACHED,        /* listen_start refused: monthly allowance used up */
     PROTO_ERR_ACCOUNT_INACTIVE,     /* hello refused: owner account suspended/closed (slow retry) */
+    PROTO_ERR_CONCURRENT,           /* listen_start refused: other turns of the account use the rest */
 } proto_error_t;
 
 typedef enum {

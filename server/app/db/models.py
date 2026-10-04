@@ -5,6 +5,7 @@ Schema changes go through Alembic migrations (server/migrations).
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -107,6 +108,7 @@ class BillingSettings(SQLModel, table=True):
     thresholds: str = Field(default="80,95,100", max_length=40)  # % of the allowance that notify
     usd_gbp_rate: str = Field(default="0.75", max_length=16)  # USD -> GBP for provider costs (Decimal text)
     reserve_pence: int = 3  # held per running turn so parallel watches cannot overshoot
+    admission_paused: bool = False  # maintenance drain: no new AI operation is admitted
     updated_at: datetime = Field(default_factory=utcnow)
     updated_by: str = Field(default="", max_length=80)
 
@@ -127,6 +129,7 @@ class TopUp(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     paid_at: Optional[datetime] = None
     refunded_at: Optional[datetime] = None
+    period_key: Optional[str] = Field(default=None, max_length=80)  # the allowance period it tops up (stable id)
 
 
 class RevenueEvent(SQLModel, table=True):
@@ -270,6 +273,11 @@ class Item(SQLModel, table=True):
     __tablename__ = "items"
     __table_args__ = (UniqueConstraint("account_id", "kind", "number", name="uq_items_account_kind_number"),)
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Stable id for voice references: numbers are reused after a delete, uids never are.
+    uid: str = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, unique=True)
+    # Bumped on every content write (not when a reminder fires): a pending voice confirmation or a
+    # selection made earlier is refused when the item changed since.
+    version: int = Field(default=1, sa_column_kwargs={"server_default": "1"})
     account_id: int = Field(foreign_key="accounts.id", index=True)
     kind: str = Field(max_length=16)  # note | reminder
     number: int
@@ -285,6 +293,26 @@ class Item(SQLModel, table=True):
     done_at: Optional[datetime] = None  # reminders only: marked completed (it no longer fires or counts as overdue)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class VoiceOperation(SQLModel, table=True):
+    """A change made by voice (create / change / copy / delete), recorded in the same transaction as the
+    change. `op_key` identifies the operation (account, device, session, turn, tool, arguments): a technical
+    retry finds it and gets the stored result instead of a second copy / line. `reported` turns true when
+    the turn that made it ended normally - otherwise the next turn is told the change was saved."""
+
+    __tablename__ = "voice_operations"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    op_key: str = Field(max_length=64, unique=True)
+    account_id: int = Field(index=True)
+    device_id: str = Field(max_length=64)
+    session_id: str = Field(max_length=64)
+    turn_id: int
+    tool: str = Field(max_length=32)
+    summary: str = Field(default="", max_length=300)
+    result: str = ""
+    reported: bool = False
+    created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
 class Conversation(SQLModel, table=True):
@@ -344,6 +372,56 @@ class UsageRecord(SQLModel, table=True):
     turn_uid: Optional[str] = Field(default=None, index=True, max_length=40)
     turn_status: Optional[str] = Field(default=None, max_length=16)  # completed | aborted | error | no_speech
     created_at: datetime = Field(default_factory=utcnow, index=True)
+    # The AI operation this cost belongs to (usage_operations), its stable dedup key (operation:stage:seq:
+    # provider:model:unit - the same call reported twice is one row) and the period the operation was
+    # accepted in (late costs stay there). NULL on rows written before operations existed.
+    operation_id: Optional[int] = Field(default=None, foreign_key="usage_operations.id")
+    dedup_key: Optional[str] = Field(default=None, max_length=160)
+    period_key: Optional[str] = Field(default=None, max_length=80)
+    stage: Optional[str] = Field(default=None, max_length=16)
+
+
+class UsageOperation(SQLModel, table=True):
+    """One AI-consuming operation (a watch turn, a voice sample, an operator test): the database is the
+    authority for admitting it, the allowance it reserves, who executes it (lease + token) and how it ended.
+    See app/usage_ops.py and docs/BILLING.md."""
+
+    __tablename__ = "usage_operations"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    op_uid: str = Field(max_length=32)
+    account_id: Optional[int] = None  # None: a watch without an owner (operator stock) or an operator test
+    device_id: str = Field(max_length=64)
+    request_key: str = Field(max_length=128)  # r:<request_id> | l:<device>:<session>:<turn> | s:<uuid>
+    request_kind: str = Field(max_length=8)  # client | legacy | server
+    request_fingerprint: str = Field(max_length=64)
+    kind: str = Field(max_length=16)  # chat | note | reminder | voice_sample | operator_test
+    period_key: Optional[str] = Field(default=None, max_length=80)
+    period_kind: Optional[str] = Field(default=None, max_length=16)
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+    source: str = Field(max_length=16)  # stripe | complimentary | calendar | internal | unenforced | unowned | operator
+    subscription_id: Optional[int] = None
+    enforced: bool = False
+    state: str = Field(max_length=12)  # reserved | running | settled | cancelled | expired
+    cost_certainty: str = Field(default="pending", max_length=12)  # pending | exact | unpriced | uncertain
+    reserved_micro: int = Field(default=0, sa_type=BigInteger)
+    recorded_cost_micro: int = Field(default=0, sa_type=BigInteger)
+    billable_cost_micro: Optional[int] = Field(default=None, sa_type=BigInteger)
+    unpriced_count: int = 0
+    billable: Optional[bool] = None
+    result_status: Optional[str] = Field(default=None, max_length=16)
+    reason: Optional[str] = Field(default=None, max_length=32)
+    reason_detail: Optional[str] = Field(default=None, max_length=200)
+    owner: Optional[str] = Field(default=None, max_length=80)
+    exec_token: Optional[str] = Field(default=None, max_length=32)
+    accepted_at: datetime = Field(default_factory=utcnow)
+    lease_expires_at: Optional[datetime] = None
+    heartbeat_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    last_cost_at: Optional[datetime] = None
+    turn_db_id: Optional[int] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class PricingRule(SQLModel, table=True):
@@ -351,7 +429,7 @@ class PricingRule(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(max_length=32)
     model: str = Field(max_length=64)
-    unit: str = Field(max_length=16)
+    unit: str = Field(max_length=24)
     price_usd: float
     note: str = ""
     updated_at: datetime = Field(default_factory=utcnow)

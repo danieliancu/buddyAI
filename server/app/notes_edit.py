@@ -35,11 +35,16 @@ NOTE_EDIT_TOOL: dict[str, Any] = {
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["append", "insert", "replace", "delete", "move", "title", "undo"],
+                            "enum": ["append", "insert", "replace", "delete", "clear", "move", "title", "undo"],
                         },
                         "line": {
                             "type": "integer",
                             "description": "numbered line under the title, from 1 (insert: the new line's position)",
+                        },
+                        "match": {
+                            "type": "string",
+                            "description": "replace / delete / move: the user's words for the line when they name it "
+                            "by its content ('the milk' -> 'milk') instead of a number",
                         },
                         "to": {"type": "integer", "description": "move: the line's new position (1-based)"},
                         "text": {"type": "string", "description": "append / insert / replace / title: the text"},
@@ -64,10 +69,14 @@ NOTE_SYSTEM = (
     "fix the transcription's punctuation and capitalization, keep the user's words and language, no "
     "numbering or bullet in the text.\n"
     "- Commands like 'delete 3', 'change 2 to …', 'replace milk with bread', 'move 4 to the top', 'put this "
-    "after 1', 'undo' -> the matching operations. Lines are referred to by number or by their content.\n"
+    "after 1', 'undo' -> the matching operations. When the user names a line by its content ('delete the "
+    "milk'), pass match with their words instead of guessing a line number; use line only when they say a number "
+    "(or answer your question about which line).\n"
     "- The microphone stays open, so it also hears speech not meant for the note: someone talking to the user, "
     "a TV or radio, a lone filler word or exclamation ('ok', 'hmm', 'wow'). For that, do not call the tool: "
     f"reply only {IGNORE}.\n"
+    "- If the user talks about a DIFFERENT note or reminder than this one, do not call the tool: reply only "
+    "OTHER.\n"
     "- Never answer questions or chat; you only edit this note. If a command is unclear (e.g. the line "
     "does not exist), do not call the tool: reply with a very short question in the user's language, at "
     "most 60 characters."
@@ -194,15 +203,18 @@ def parse_ops(arguments: str) -> Any:
 
 
 # One-step undo per (account, note number): the lines before the last change made in note mode.
-_UNDO: dict[tuple[int, int], list[str]] = {}
+# One-step undo per (account, note uid): the lines before the last change made in note mode and the version
+# that change produced - undo only applies while the note is still at that version.
+_UNDO: dict[tuple[int, str], tuple[list[str], int]] = {}
 _UNDO_MAX = 500
 
 
-def undo_get(account_id: int, number: int) -> list[str] | None:
-    return _UNDO.get((account_id, number))
+def undo_get(account_id: int, uid: str, version: int) -> list[str] | None:
+    got = _UNDO.get((account_id, uid))
+    return list(got[0]) if got is not None and got[1] == version else None
 
 
-def undo_set(account_id: int, number: int, lines: list[str]) -> None:
+def undo_set(account_id: int, uid: str, lines: list[str], version: int) -> None:
     if len(_UNDO) >= _UNDO_MAX:
         _UNDO.pop(next(iter(_UNDO)))
-    _UNDO[(account_id, number)] = list(lines)
+    _UNDO[(account_id, uid)] = (list(lines), version)

@@ -13,6 +13,7 @@ from app.db.repositories import DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo
 from app.db.session import session_scope
 from app.device_settings import device_view
 from app.items import device_full, device_snapshot
+from app.voice_context import STORE
 from app.security import hash_device_token, new_device_token
 
 if TYPE_CHECKING:
@@ -75,6 +76,7 @@ class DeviceHub:
 
     def forget_owner(self, device_id: str) -> None:
         self.owners.pop(device_id, None)
+        STORE.drop_device(device_id)  # new owner: nothing pending or remembered from the previous one
 
     # --- connections ------------------------------------------------------------------
 
@@ -198,6 +200,9 @@ class DeviceHub:
         for c in self.account_connections(item.account_id):
             if await c.send_json("reminder_fire", item=device_full(item, c.settings.timezone), early=early):
                 delivered = True
+                shown = getattr(c, "_shown", None)
+                if shown is not None:  # the alert opens this reminder on the watch
+                    shown[("reminder", item.number)] = item.uid
         return delivered
 
     async def revoke(self, device_id: str) -> None:

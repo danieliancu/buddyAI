@@ -1905,6 +1905,13 @@ static void note_show_json(const cJSON *item, int number)
 void ui_note_session(bool open)
 {
     LOCK();
+    if (open && s_note_scr && lv_screen_active() == s_note_scr) {         /* also when the server opened it */
+        s_mic_reminder = false;
+        s_mic_number = s_note_number;
+    } else if (open && s_rem_scr && lv_screen_active() == s_rem_scr) {
+        s_mic_reminder = true;
+        s_mic_number = s_det_number;
+    }
     s_note_mic_open = open;
     ui_hold_awake(open);        /* the screen stays on while the mic is open */
     note_live_reset();
@@ -2027,15 +2034,31 @@ void ui_items_set(const char *json)
         }
     }
     if (s_rem_scr && s_rem_row && lv_screen_active() == s_rem_scr) {
-        /* the reminder shown may have changed on the server */
+        /* the reminder shown may have changed on the server - or been deleted (then back to the list) */
+        bool found = false;
         for (int i = 0; i < s_row_count; i++) {
             if (s_rows[i].reminder && s_rows[i].number == s_det_number) {
                 memcpy(s_rem_row, &s_rows[i], sizeof(*s_rem_row));
                 s_det_done = s_rem_row->done;
+                found = true;
                 break;
             }
         }
-        rem_render();
+        if (found) {
+            rem_render();
+        } else {
+            note_close_mic();
+            open_list(true, true);
+        }
+    } else if (s_note_scr && lv_screen_active() == s_note_scr) {
+        bool found = false;
+        for (int i = 0; i < s_row_count && !found; i++) {
+            found = !s_rows[i].reminder && s_rows[i].number == s_note_number;
+        }
+        if (!found) {   /* the open note was deleted (another watch, the web, a confirmed voice delete) */
+            note_close_mic();
+            open_list(false, true);
+        }
     }
     UNLOCK();
     free(tmp);

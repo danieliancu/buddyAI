@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Bell, CalendarClock, Check, ChevronDown, ChevronRight, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
-import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
+import { Badge, Button, Card, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
 import { useLive } from "../../live";
 
@@ -627,25 +627,36 @@ function useSave(editing: Editing, onClose: () => void, onSaved: () => void) {
   return { busy, error, submit };
 }
 
+/** Deletes the item right away (no confirmation in the account); shows a message only if it fails. */
 function DeleteDialog({ item, onClose, onDeleted }: { item: Item | null; onClose: () => void; onDeleted: () => void }) {
-  const noun = item?.kind === "reminder" ? "reminder" : "note";
-  return (
-    <ConfirmDialog
-      open={!!item}
-      danger
-      title={`Delete ${noun}`}
-      confirmLabel="Delete"
-      message={
-        <>
-          Delete {noun} <b>#{item?.number}</b>? Its number will be reused by the next new {noun}.
-        </>
-      }
-      onConfirm={async () => {
-        if (!item) return;
-        await api.me.items.remove(item.kind, item.number);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    if (!item) return;
+    let alive = true;
+    api.me.items
+      .remove(item.kind, item.number)
+      .then(() => {
+        if (!alive) return;
         onDeleted();
+        onClose();
+      })
+      .catch((err) => alive && setError(err));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item]);
+  if (!error) return null;
+  return (
+    <Dialog
+      open
+      title="Could not delete"
+      onClose={() => {
+        setError(null);
+        onClose();
       }}
-      onClose={onClose}
-    />
+    >
+      <ErrorBox error={error} />
+    </Dialog>
   );
 }

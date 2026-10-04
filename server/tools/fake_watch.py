@@ -14,6 +14,7 @@ Exit code is non-zero when a check fails (stale frames after abort, missing audi
 from __future__ import annotations
 
 import argparse
+import uuid
 import asyncio
 import json
 import random
@@ -148,8 +149,10 @@ class TurnLog:
 
 
 class FakeWatch:
-    def __init__(self, url: str, device_id: str, verbose: bool = False) -> None:
+    def __init__(self, url: str, device_id: str, verbose: bool = False, legacy: bool = False) -> None:
         self.url, self.device_id, self.verbose = url, device_id, verbose
+        self.legacy = legacy  # old firmware: listen_start without request_id
+        self.last_request_id: str | None = None
         self.ws: websockets.ClientConnection | None = None
         self.seq = 0
         self.session_id: str | None = None
@@ -344,11 +347,25 @@ class FakeWatch:
 
     async def ask(self, pcm: np.ndarray, language: str | None, realtime: bool = True) -> TurnLog:
         tl = self.new_turn()
-        await self.send("listen_start", tl.turn_id, **({"language": language} if language else {}))
+        extra: dict[str, Any] = {"language": language} if language else {}
+        if not self.legacy:  # like the firmware: a new random id per new turn
+            self.last_request_id = uuid.uuid4().hex
+            extra["request_id"] = self.last_request_id
+        await self.send("listen_start", tl.turn_id, **extra)
         await self.stream_utterance(tl, pcm, realtime)
         await asyncio.wait_for(tl.ended.wait(), 60)
         await self.send("playback_done", tl.turn_id)
         return tl
+
+    async def resend(self) -> dict:
+        """Test aid: send the last listen_start again (same request_id, next turn_id) - the server must not
+        run or charge it twice. Returns the server's answer (error duplicate, or turn_end duplicate)."""
+        tl = self.new_turn()
+        await self.send("listen_start", tl.turn_id, request_id=self.last_request_id)
+        while True:
+            msg = await self.expect("error", "turn_end")
+            if msg.get("turn_id") == tl.turn_id:
+                return msg
 
     async def abort_active(self) -> None:
         tid = self.active_turn
@@ -407,14 +424,14 @@ def load_token(device_id: str) -> str:
 
 
 async def connected(args) -> FakeWatch:
-    w = FakeWatch(args.url, args.device_id, args.verbose)
+    w = FakeWatch(args.url, args.device_id, args.verbose, args.legacy)
     await w.connect()
     await w.hello_token(load_token(args.device_id))
     return w
 
 
 async def cmd_pair(args) -> int:
-    w = FakeWatch(args.url, args.device_id, args.verbose)
+    w = FakeWatch(args.url, args.device_id, args.verbose, args.legacy)
     await w.connect()
     token = await w.pair()
     data = json.loads(TOKEN_FILE.read_text()) if TOKEN_FILE.exists() else {}
@@ -563,6 +580,7 @@ def main() -> None:
     p.add_argument("--url", default="ws://127.0.0.1:8765/ws/device")
     p.add_argument("--device-id", default="sim-000001")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--legacy", action="store_true", help="behave like old firmware (no request_id)")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("pair")
     sub.add_parser("online", help="stay connected as an idle watch until Ctrl+C")

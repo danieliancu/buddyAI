@@ -260,6 +260,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         case PROTO_ERR_LIMIT_REACHED:
             ui_show_error(UI_ERR_LIMIT, NULL);
             break;
+        case PROTO_ERR_CONCURRENT:
+            ui_show_error(UI_ERR_CONCURRENT, NULL);
+            break;
         case PROTO_ERR_ACCOUNT_INACTIVE:
             ui_show_error(UI_ERR_ACCOUNT_INACTIVE, NULL);
             break;

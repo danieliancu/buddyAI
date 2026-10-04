@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,7 +15,7 @@ from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import languages
+from app import languages, usage_ops
 from app.api import accounts_admin, auth, devices, finance, firmware, issues, live, me, shop, system, usage
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
     )
 
     reminders = asyncio.create_task(reminder_loop(app.state.hub), name="reminders")
+    # Usage operations: queued settlements and expired leases (each process runs it; see app/usage_ops.py).
+    usage_maint = asyncio.create_task(usage_ops.maintenance_loop(), name="usage-maintenance")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -69,6 +72,16 @@ async def lifespan(app: FastAPI):
     yield
     warmup.cancel()
     reminders.cancel()
+    usage_maint.cancel()
+    # Graceful shutdown: running turns stop now (not charged, reason "shutdown") and are settled here;
+    # what cannot be settled is expired by another process (or this one after a restart) when its lease ends.
+    for conn in list(app.state.hub.connections.values()):
+        if conn.active is not None:
+            conn.active.abort_reason = "shutdown"
+            with contextlib.suppress(Exception):
+                await conn._cancel_active()
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(usage_ops.flush_pending)
     if mdns:
         mdns_follow.cancel()
         await mdns.stop()
@@ -132,6 +145,8 @@ def create_app() -> FastAPI:
                 db.exec(text("SELECT 1"))
         except Exception:  # noqa: BLE001
             return JSONResponse({"ok": False, "db": False}, status_code=503)
+        if not usage_ops.database_ready():  # AI admissions need the billing database
+            return JSONResponse({"ok": False, "db": True, "billing_db": False}, status_code=503)
         return JSONResponse({"ok": True, "db": True})
 
     dist = settings.web_dist

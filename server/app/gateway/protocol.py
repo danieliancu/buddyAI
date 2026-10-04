@@ -83,4 +83,13 @@ def parse_message(text: str) -> dict[str, Any]:
     turn_id = msg.get("turn_id")
     if turn_id is not None and (not isinstance(turn_id, int) or not 0 <= turn_id <= 0xFFFFFFFF):
         raise ProtocolError("bad_request", "turn_id must be uint32")
+    request_id = msg.get("request_id")
+    if request_id is not None and not valid_request_id(request_id):
+        raise ProtocolError("bad_request", "request_id must be 16-64 characters [0-9A-Za-z_-]")
     return msg
+
+
+def valid_request_id(value: object) -> bool:
+    """listen_start.request_id: the watch's id for one new turn (random, never reused for another turn)."""
+    return isinstance(value, str) and 16 <= len(value) <= 64 and all(c.isalnum() or c in "-_" for c in value) \
+        and value.isascii()

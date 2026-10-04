@@ -11,6 +11,7 @@ from typing import Any
 from sqlmodel import Session, col, select
 
 from app.config import get_settings
+from app.account_lock import lock_account
 from app.db.models import (
     Account,
     AuditLog,
@@ -228,6 +229,7 @@ def delete_account(db: Session, account: Account) -> list[str]:
 
     Usage records are kept for accounting but detached from content (turn link removed).
     """
+    lock_account(db, account.id)
     device_ids = [d.id for d in db.exec(select(Device).where(Device.account_id == account.id)).all()]
     turns = db.exec(select(Turn).where(Turn.account_id == account.id)).all()
     turn_ids = [t.id for t in turns]

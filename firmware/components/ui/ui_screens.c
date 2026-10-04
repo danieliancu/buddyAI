@@ -771,6 +771,10 @@ void ui_show_error(ui_error_t err, const char *detail)
         ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_LIMIT_T), ui_str(STR_ERR_LIMIT_B), NULL,
                     NULL, NULL, true, 6000);
         break;
+    case UI_ERR_CONCURRENT:
+        ui_msg_show(ICON_WARNING, amber, ui_str(STR_ERR_CONC_T), ui_str(STR_ERR_CONC_B), NULL,
+                    NULL, NULL, true, 5000);
+        break;
     case UI_ERR_ACCOUNT_INACTIVE:
         ui_msg_show(ICON_LOCK, red, ui_str(STR_ERR_INACTIVE_T), ui_str(STR_ERR_INACTIVE_B), NULL,
                     NULL, NULL, true, 10000);

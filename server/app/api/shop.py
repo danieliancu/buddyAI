@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from app import accounts, billing, email, entitlements, plan as plan_mod, usage_notices
 from app import allowance as allowance_mod
+from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
 from app.db.models import Account, Order, TopUp, utcnow
@@ -324,6 +325,7 @@ def set_allowance(account_id: int, body: AllowanceBody, request: Request, db: Se
     acc = db.get(Account, account_id)
     if not acc or acc.status == "deleted":
         raise HTTPException(404, "account not found")
+    lock_account(db, acc.id)  # the limit changes: admissions of this account wait for it
     acc.allowance_override = body.allowance_override
     db.add(acc)
     db.commit()

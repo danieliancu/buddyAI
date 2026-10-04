@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import func
+from sqlalchemy import delete as sa_delete, func, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -21,6 +21,7 @@ from app.db.models import (
     PricingRule,
     Turn,
     UsageRecord,
+    VoiceOperation,
     utcnow,
 )
 from app.device_settings import DeviceSettings, merge
@@ -472,7 +473,19 @@ class ItemTimeError(ValueError):
     """A reminder's end time is not after its start, or its advance notice is out of range."""
 
 
+class ItemConflictError(Exception):
+    """A versioned write found the item changed (`changed`) or gone (`missing`) since it was read."""
+
+    def __init__(self, missing: list[str] | None = None, changed: list[str] | None = None) -> None:
+        self.missing, self.changed = missing or [], changed or []
+        super().__init__(f"items changed {self.changed} / missing {self.missing}")
+
+
 _KEEP: Any = object()  # ItemRepo.update: leave the end time as it is
+
+# Columns written by a content change (everything a user can edit, plus the state reset by a reschedule).
+_CONTENT_COLS = ("text", "due_at", "end_at", "notify_before_min", "early_fired_at", "location", "participants",
+                 "pinned", "fired_at", "done_at", "updated_at")
 
 
 class ItemRepo:
@@ -493,6 +506,11 @@ class ItemRepo:
         for it in items:
             self._fix(it)
         return items
+
+    def get_by_uid(self, account_id: int, uid: str) -> Item | None:
+        """The item with this stable id, only if it belongs to the account."""
+        it = self.s.exec(select(Item).where(Item.account_id == account_id, Item.uid == uid)).first()
+        return self._fix(it) if it else None
 
     def get(self, account_id: int, kind: str, number: int) -> Item | None:
         it = self.s.exec(
@@ -557,7 +575,9 @@ class ItemRepo:
         notify_before_min: int | None = None,
         location: str | None = None,
         participants: str | None = None,
+        op: VoiceOperation | None = None,
     ) -> Item:
+        """`op`: the voice operation record, committed together with the new item."""
         text = self.check_text(kind, text)
         end_at = self.check_end(due_at, end_at) if kind == "reminder" else None
         notify_before_min = self.check_notify(notify_before_min) if kind == "reminder" else None
@@ -576,11 +596,14 @@ class ItemRepo:
                 participants=participants,
             )
             self.s.add(it)
+            if op is not None:
+                op.summary = op.summary or f"{kind}: {text[:120]}"
+                self.s.add(op)
             try:
                 self.s.commit()
-            except IntegrityError:  # another writer took the same number
+            except IntegrityError:  # another writer took the same number (or the same voice operation)
                 self.s.rollback()
-                if attempt:
+                if attempt or (op is not None and VoiceOpRepo(self.s).get(op.op_key)):
                     raise
                 continue
             self.s.refresh(it)
@@ -598,9 +621,15 @@ class ItemRepo:
         location: str | None = _KEEP,
         participants: str | None = _KEEP,
         pinned: bool | None = None,
+        expected_version: int | None = None,
+        op: VoiceOperation | None = None,
     ) -> Item:
         """`end_at`: a new end time, None to remove it, or leave it out to keep the range's length when
-        only the start moves."""
+        only the start moves. `expected_version`: write only if the item is still at that version
+        (ItemConflictError otherwise) - voice changes never overwrite a change made meanwhile."""
+        if expected_version is not None:
+            if it in self.s:
+                self.s.expunge(it)  # computed on a detached copy, written by one conditional UPDATE
         if text is not None:
             it.text = self.check_text(it.kind, text)
         if it.kind == "reminder":
@@ -627,25 +656,85 @@ class ItemRepo:
         if it.kind == "reminder" and done is not None:
             it.done_at = (it.done_at or utcnow()) if done else None
         it.updated_at = utcnow()
-        self.s.add(it)
-        self.s.commit()
-        self.s.refresh(it)
-        return self._fix(it)
+        return self._save(it, expected_version, op)
 
-    def set_note_text(self, it: Item, text: str) -> Item:
+    def set_note_text(
+        self, it: Item, text: str, expected_version: int | None = None, op: VoiceOperation | None = None
+    ) -> Item:
         """Note edit mode: the new text may be empty (every line deleted)."""
         if len(text) > self.TEXT_MAX["note"]:
             raise ItemTextError(f"note text is {len(text)} characters; the limit is {self.TEXT_MAX['note']}")
+        if expected_version is not None and it in self.s:
+            self.s.expunge(it)
         it.text = text
         it.updated_at = utcnow()
-        self.s.add(it)
+        return self._save(it, expected_version, op)
+
+    def _save(self, it: Item, expected_version: int | None, op: VoiceOperation | None = None) -> Item:
+        if expected_version is None:
+            it.version = (it.version or 1) + 1
+            self.s.add(it)
+            if op is not None:
+                self.s.add(op)
+            self.s.commit()
+            self.s.refresh(it)
+            return self._fix(it)
+        res = self.s.execute(
+            sa_update(Item)
+            .where(Item.id == it.id, Item.account_id == it.account_id, Item.version == expected_version)
+            .values(**{c: getattr(it, c) for c in _CONTENT_COLS}, version=expected_version + 1)
+        )
+        if res.rowcount != 1:
+            self.s.rollback()
+            exists = self.get_by_uid(it.account_id, it.uid) is not None
+            raise ItemConflictError(changed=[it.uid] if exists else [], missing=[] if exists else [it.uid])
+        if op is not None:
+            self.s.add(op)
         self.s.commit()
-        self.s.refresh(it)
-        return self._fix(it)
+        fresh = self.get_by_uid(it.account_id, it.uid)
+        assert fresh is not None
+        return fresh
+
+    def duplicate(self, src: Item, op: VoiceOperation | None = None, **overrides: Any) -> Item:
+        """A new item copied from `src` (own uid and number, not pinned, not completed, never fired).
+        `overrides`: text, due_at, end_at, notify_before_min, location, participants."""
+        fields: dict[str, Any] = {
+            "text": src.text,
+            "due_at": src.due_at,
+            "end_at": src.end_at,
+            "notify_before_min": src.notify_before_min,
+            "location": src.location,
+            "participants": src.participants,
+        }
+        fields.update(overrides)
+        if src.kind == "note" and not fields["text"].strip():
+            raise ItemTextError("text is empty")
+        return self.create(src.account_id, src.kind, op=op, **fields)
 
     def delete(self, it: Item) -> None:
         self.s.delete(it)
         self.s.commit()
+
+    def delete_exact(self, account_id: int, targets: list[tuple[str, int]], op: VoiceOperation | None = None) -> int:
+        """Delete exactly these (uid, version) items of the account in one transaction: all or nothing.
+        ItemConflictError if any is gone or changed since (then nothing is deleted)."""
+        missing, changed = [], []
+        for uid, version in targets:
+            res = self.s.execute(
+                sa_delete(Item).where(Item.account_id == account_id, Item.uid == uid, Item.version == version)
+            )
+            if res.rowcount != 1:
+                (changed if self._exists(account_id, uid) else missing).append(uid)
+        if missing or changed:
+            self.s.rollback()
+            raise ItemConflictError(missing=missing, changed=changed)
+        if op is not None:
+            self.s.add(op)
+        self.s.commit()
+        return len(targets)
+
+    def _exists(self, account_id: int, uid: str) -> bool:
+        return self.s.exec(select(Item.id).where(Item.account_id == account_id, Item.uid == uid)).first() is not None
 
     def due(self, now: datetime, since: datetime | None = None, account_id: int | None = None) -> list[Item]:
         """Reminders that are due and not yet delivered (optionally only those due after `since`)."""
@@ -683,6 +772,8 @@ class ItemRepo:
                 out.append(it)
         return out
 
+    # Delivery marks are not content changes: they do not bump the version (a reminder firing must not
+    # invalidate a pending voice confirmation about it).
     def mark_early_fired(self, it: Item) -> None:
         it.early_fired_at = utcnow()
         self.s.add(it)
@@ -703,3 +794,53 @@ class ItemRepo:
         it.created_at = _aware(it.created_at)
         it.updated_at = _aware(it.updated_at)
         return it
+
+
+class VoiceOpRepo:
+    """Durable record of voice changes (see VoiceOperation): idempotency across retries and reconnects."""
+
+    KEEP_DAYS = 7
+
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def get(self, op_key: str) -> VoiceOperation | None:
+        return self.s.exec(select(VoiceOperation).where(VoiceOperation.op_key == op_key)).first()
+
+    def mark_reported(self, session_id: str, turn_id: int) -> None:
+        rows = self.s.exec(
+            select(VoiceOperation).where(
+                VoiceOperation.session_id == session_id, VoiceOperation.turn_id == turn_id, VoiceOperation.reported == False  # noqa: E712
+            )
+        ).all()
+        for r in rows:
+            r.reported = True
+            self.s.add(r)
+        if rows:
+            self.s.commit()
+
+    def unreported(self, account_id: int, device_id: str, since: datetime) -> list[VoiceOperation]:
+        """Changes saved by voice whose turn did not end normally (the user may not have heard about them)."""
+        return list(
+            self.s.exec(
+                select(VoiceOperation)
+                .where(
+                    VoiceOperation.account_id == account_id,
+                    VoiceOperation.device_id == device_id,
+                    VoiceOperation.reported == False,  # noqa: E712
+                    VoiceOperation.created_at >= since,
+                )
+                .order_by(VoiceOperation.id)
+            ).all()
+        )
+
+    def acknowledge(self, ids: list[int]) -> None:
+        """The next turn was told about these changes."""
+        for r in self.s.exec(select(VoiceOperation).where(col(VoiceOperation.id).in_(ids))).all():
+            r.reported = True
+            self.s.add(r)
+        self.s.commit()
+
+    def prune(self, now: datetime) -> None:
+        self.s.exec(sa_delete(VoiceOperation).where(VoiceOperation.created_at < now - timedelta(days=self.KEEP_DAYS)))  # type: ignore[call-overload]
+        self.s.commit()

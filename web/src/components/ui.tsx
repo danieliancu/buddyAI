@@ -10,6 +10,7 @@ import {
   type TextareaHTMLAttributes,
 } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
+import { useArea } from "../area";
 
 export function cx(...c: (string | false | null | undefined)[]): string {
   return c.filter(Boolean).join(" ");
@@ -67,12 +68,28 @@ export function Button({
 
 // ---------- layout ----------
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  count,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  /** A small counter next to the title (e.g. how many watches). */
+  count?: number;
+}) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-        {subtitle && <div className="mt-1 text-sm text-muted">{subtitle}</div>}
+        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight sm:text-[1.9rem]">
+          {title}
+          {count != null && (
+            <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-medium text-muted tabular-nums">{count}</span>
+          )}
+        </h1>
+        {subtitle && <div className="mt-2 text-[15px] text-muted">{subtitle}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -234,7 +251,23 @@ const TONES: Record<Tone, string> = {
   accent: "bg-accent-bg text-accent border-accent/30",
 };
 
+const DOTS: Record<Tone, string> = { neutral: "bg-muted", ok: "bg-ok", warn: "bg-warn", danger: "bg-danger", accent: "bg-accent" };
+
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
+  if (useArea() === "admin") {
+    // Operator area: a white pill with a coloured status dot.
+    return (
+      <span
+        className={cx(
+          "inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium whitespace-nowrap text-fg",
+          className,
+        )}
+      >
+        <span className={cx("size-1.5 shrink-0 rounded-full", DOTS[tone])} />
+        {children}
+      </span>
+    );
+  }
   return (
     <span
       className={cx(
@@ -428,7 +461,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={cx("-mx-4 overflow-x-auto px-4", className)}>
-      <table className="w-full min-w-max text-left text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:px-3 [&_th]:py-2 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted [&_thead_tr]:border-b [&_thead_tr]:border-border [&_tbody_tr]:border-b [&_tbody_tr]:border-border/60 [&_tbody_tr:last-child]:border-0">
+      <table className="w-full min-w-max text-left text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-2.5 [&_th]:text-[13px] [&_th]:font-medium [&_th]:text-muted [&_thead_tr]:border-b [&_thead_tr]:border-border [&_thead_tr]:bg-surface-2/70 [&_th+th]:border-l [&_th+th]:border-border [&_td+td]:border-l [&_td+td]:border-border/70 [&_tbody_tr]:border-b [&_tbody_tr]:border-border/70 [&_tbody_tr:last-child]:border-0 [&_tbody_tr:hover]:bg-surface-2/40">
         {children}
       </table>
     </div>

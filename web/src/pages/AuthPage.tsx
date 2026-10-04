@@ -31,7 +31,7 @@ export default function AuthPage({ mode, onDone }: { mode: "setup" | "login"; on
   };
 
   return (
-    <div className="grid min-h-screen place-items-center px-4 py-10">
+    <div className="admin-ui grid min-h-screen place-items-center bg-bg px-4 py-10 text-fg">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-xl bg-accent-bg text-accent">

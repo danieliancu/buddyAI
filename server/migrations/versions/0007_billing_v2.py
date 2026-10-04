@@ -150,7 +150,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     rate = _usd_gbp_rate()
     bind.execute(sa.text(
-        "UPDATE usage_records SET mock = CASE WHEN provider LIKE 'mock%' THEN 1 ELSE 0 END"
+        "UPDATE usage_records SET mock = CASE WHEN provider LIKE 'mock%' THEN TRUE ELSE FALSE END"
     ))
     bind.execute(sa.text(
         "UPDATE usage_records SET fx_rate = :r, cost_micro_gbp = CAST(ROUND(cost_usd * :r * 1000000) AS BIGINT) "
@@ -167,13 +167,13 @@ def upgrade() -> None:
     with op.batch_alter_table('subscriptions', schema=None) as batch_op:
         batch_op.alter_column('created_at', existing_type=T(), nullable=False)
     bind.execute(sa.text(
-        "UPDATE accounts SET internal = 1 WHERE email = 'owner@buddyai.local' AND stripe_customer_id IS NULL "
+        "UPDATE accounts SET internal = TRUE WHERE email = 'owner@buddyai.local' AND stripe_customer_id IS NULL "
         "AND id NOT IN (SELECT account_id FROM orders WHERE account_id IS NOT NULL)"
     ))
     bind.execute(sa.text(
         "INSERT INTO billing_settings (id, enforce, care_price_pence, care_allowance_pence, topup_price_pence, "
         "topup_allowance_pence, thresholds, usd_gbp_rate, reserve_pence, updated_at, updated_by) "
-        "VALUES (1, 0, 799, 250, 199, 65, '80,95,100', :r, 3, CURRENT_TIMESTAMP, 'migration')"
+        "VALUES (1, FALSE, 799, 250, 199, 65, '80,95,100', :r, 3, CURRENT_TIMESTAMP, 'migration')"
     ), {"r": rate})
 
 

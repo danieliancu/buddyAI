@@ -320,7 +320,7 @@ def options_(request: Request, acc: Account = Depends(current_account)) -> dict:
 
 @router.post("/voice-sample")
 async def voice_sample_(body: VoiceSampleBody, request: Request, acc: Account = Depends(current_account)) -> Response:
-    return await voice_sample(body, request)
+    return await voice_sample(body, request, account_id=acc.id)
 
 
 # --- personas: system + own ----------------------------------------------------------------------

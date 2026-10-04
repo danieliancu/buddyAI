@@ -38,6 +38,7 @@ typedef enum {
     UI_ERR_BUSY,
     UI_ERR_SUBSCRIPTION,        /* subscription_required: no active ola Care */
     UI_ERR_LIMIT,               /* limit_reached: monthly allowance used up */
+    UI_ERR_CONCURRENT,          /* busy_concurrent: other conversations of the account in progress */
     UI_ERR_ACCOUNT_INACTIVE,    /* account_inactive: owner account suspended/closed */
 } ui_error_t;
 

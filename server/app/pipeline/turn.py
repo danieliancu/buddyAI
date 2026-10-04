@@ -55,6 +55,19 @@ class TurnContext:
     end_requested: bool = False  # the watch's stop button: transcribe what was said so far
     changed_line: int | None = None  # note mode: line to highlight on the watch
     abort_reason: str | None = None  # why the turn was cancelled: user_tap | timeout | error | connection_lost
+    expect_reply: bool = False  # the reply asked something the operation needs: the watch listens again
+    edit_uid: str | None = None  # edit modes: the stable id of the item being edited (bound by the gateway)
+    pending_uid: str | None = None  # uid of the item in pending_open (the gateway remembers what it showed)
+    edit_outcome: str = ""  # edit modes: "ignored" when the sentence was not meant for the item
+    # The AI operation that pays for this turn (app/usage_ops.py): admitted in the database, executed only
+    # while this process holds its lease (exec_token). lease_lost: stop - no further paid work.
+    op_id: int | None = None
+    exec_token: str | None = None
+    request_key: str = ""
+    lease_lost: bool = False
+    usage_flushed: int = 0  # turn.usage items already written as usage records
+    lease_task: asyncio.Task | None = None
+    final_status: str | None = None  # the status sent in turn_end (a resend of the request gets it again)
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"

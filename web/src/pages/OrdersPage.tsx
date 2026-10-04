@@ -19,7 +19,8 @@ export default function OrdersPage() {
     <>
       <PageHeader
         title="Orders"
-        subtitle={orders.data ? `${list.length} ${list.length === 1 ? "order" : "orders"}` : undefined}
+        count={orders.data ? list.length : undefined}
+        subtitle="Shop orders, payments and delivery status."
         actions={
           <Select className="w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
             <option value="">All statuses</option>

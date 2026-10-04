@@ -13,7 +13,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -26,7 +26,22 @@ from app.items import AssistantTools, device_full
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
+from app import edit_texts
+from app.confirm_words import classify_answer
+from app.db.models import Item, VoiceOperation, utcnow
+from app.db.repositories import ItemConflictError, VoiceOpRepo
+from sqlalchemy.exc import IntegrityError
 from app.pipeline.apology import not_understood
+from app.voice_context import STORE, VoiceContext, now as voice_now, op_key
+from app.voice_tools import (
+    AmbiguousLine,
+    AmbiguousPerson,
+    check_line_ambiguity,
+    ToolCallCtx,
+    execute_confirmation,
+    reask_after_change,
+    resolve_line_matches,
+)
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
@@ -151,13 +166,142 @@ class ConversationPipeline:
             return TurnResult("no_speech")
         turn.user_text = user_text
         await io.send(turn, "state", state="thinking")
+        await self.respond(turn, io)
+        return TurnResult("completed")
+
+    async def respond(self, turn: TurnContext, io: TurnIO) -> None:
+        """Answer a transcribed sentence: a pending deletion is decided first (by the server, from the user's
+        words - never by the model), then the mode's reply."""
+        pending = None
+        if turn.account_id is not None:
+            if turn.mode in ("note", "reminder"):
+                # The note / reminder screen applies everything at once (no confirmations there); a question
+                # left open in the dialog is dropped when the user moves to an item's screen.
+                if not turn.edit_uid:
+                    await asyncio.to_thread(self._edit_item, turn, turn.mode)  # bind the edit session to the item's uid
+                STORE.cancel_confirmation(self._voice_ctx(turn))
+            else:
+                pending = await self._confirmation_gate(turn, io)
+            if pending == "handled":
+                return
         if turn.mode == "note":
             await self._note_reply(turn, io)
         elif turn.mode == "reminder":
             await self._reminder_reply(turn, io)
         else:
             await self._reply(turn, io)
-        return TurnResult("completed")
+        if pending == "keep_if_ignored" and turn.edit_outcome != "ignored":
+            STORE.cancel_confirmation(self._voice_ctx(turn))  # another instruction: the question is dropped
+
+    # --- voice context and confirmations ------------------------------------------------------
+
+    def _voice_ctx(self, turn: TurnContext) -> VoiceContext:
+        assert turn.account_id is not None
+        return STORE.get(turn.account_id, turn.device_id, turn.session_id)
+
+    def _call_ctx(self, turn: TurnContext) -> ToolCallCtx:
+        assert turn.account_id is not None
+        return ToolCallCtx(turn.account_id, turn.device_id, turn.session_id, turn.turn_id, turn.settings.timezone,
+                           turn.mode, self._edit_lang(turn), turn.user_text)
+
+    def _answer_languages(self, turn: TurnContext) -> list[str]:
+        s = turn.settings
+        return [x for x in (turn.language, turn.fallback_language, s.preferred_language, s.language) if x and x != languages.AUTO]
+
+    async def _confirmation_gate(self, turn: TurnContext, io: TurnIO) -> str | None:
+        """None: nothing pending (or cancelled) - answer normally. "handled": this sentence was the answer to
+        a pending deletion. "keep_if_ignored": edit mode, another sentence - keep the question only if the
+        edit model ignores it (background speech)."""
+        ctx = self._voice_ctx(turn)
+        pc = STORE.pending_confirmation(ctx)
+        if pc is None:
+            return None
+        if pc.mode != turn.mode or pc.edit_uid != turn.edit_uid:
+            STORE.cancel_confirmation(ctx)  # another screen or item: the question is dropped
+            return None
+        strict = turn.mode != "chat"  # the mic stays open in edit modes: "yes, delete" is needed there
+        answer = classify_answer(turn.user_text, self._answer_languages(turn), strict=strict)
+        lang = turn.language if turn.language != languages.AUTO else (turn.fallback_language or turn.settings.preferred_language or "en")
+        if answer == "yes":
+            taken = STORE.take_confirmation(ctx, pc.id, turn.turn_id, turn.mode, turn.edit_uid)
+            if taken is None:
+                return None
+            call = self._call_ctx(turn)
+            res = await asyncio.to_thread(execute_confirmation, call, taken)
+            turn.assistant_text = f"(confirmed: {res.status}) {res.facts}"
+            if res.status == "done":
+                turn.items_changed = True
+                turn.pending_open, turn.pending_uid = res.open, res.open_uid
+                if turn.mode == "chat":
+                    await self._reply(turn, io, facts=f"Server result: {res.facts}. Tell the user in one short sentence that it is done.")
+                return "handled"
+            if res.status == "changed":
+                new = await asyncio.to_thread(reask_after_change, call, taken)
+                if turn.mode == "chat":
+                    facts = (f"Server result: nothing was deleted because it changed meanwhile; it is now: {new.facts}. Ask the user to confirm again."
+                             if new else "Server result: nothing was deleted because it changed meanwhile. Tell the user and ask what they want.")
+                    turn.expect_reply = new is not None
+                    await self._reply(turn, io, facts=facts)
+                else:
+                    await io.send(turn, "llm_display", text=edit_texts.text(lang, "changed"))
+                return "handled"
+            key = "gone" if res.status == "missing" else "error"
+            if turn.mode == "chat":
+                await self._reply(turn, io, facts=f"Server result: {res.facts}. Tell the user briefly.")
+            else:
+                await io.send(turn, "llm_display", text=edit_texts.text(lang, key))
+            return "handled"
+        if answer == "no":
+            STORE.cancel_confirmation(ctx)
+            turn.assistant_text = "(confirmation refused: nothing deleted)"
+            if turn.mode == "chat":
+                await self._reply(turn, io, facts="Server result: the user said no, nothing was deleted. Say so in a few words.")
+            else:
+                await io.send(turn, "llm_display", text=edit_texts.text(lang, "cancelled"))
+            return "handled"
+        if answer == "unclear":
+            pc.unclear_count += 1
+            if pc.unclear_count >= 2:
+                STORE.cancel_confirmation(ctx)
+                turn.assistant_text = "(confirmation unclear twice: cancelled)"
+                if turn.mode == "chat":
+                    await self._reply(turn, io, facts="Server result: the answer was not clear, so nothing was deleted. Say so briefly.")
+                else:
+                    await io.send(turn, "llm_display", text=edit_texts.text(lang, "cancelled"))
+                return "handled"
+            turn.assistant_text = "(confirmation unclear: asked again)"
+            turn.expect_reply = True
+            if turn.mode == "chat":
+                await self._reply(turn, io, facts=f"Server: still waiting for a clear yes or no to: {pc.facts}. Ask again briefly.")
+            else:
+                await io.send(turn, "llm_display", text=edit_texts.text(lang, "say_confirm"))
+            return "handled"
+        # another request
+        if turn.mode == "chat":
+            STORE.cancel_confirmation(ctx)
+            return None
+        return "keep_if_ignored"
+
+    def _context_messages(self, turn: TurnContext) -> list[dict[str, Any]]:
+        """Server state for the model (refs, open item, pending choice / confirmation) and changes that were
+        saved although the user may not have heard it (a reply that failed)."""
+        if turn.account_id is None:
+            return []
+        out = []
+        note = STORE.context_note(self._voice_ctx(turn))
+        if note:
+            out.append({"role": "system", "content": note})
+        with session_scope() as db:
+            repo = VoiceOpRepo(db)
+            since = utcnow() - timedelta(minutes=15)
+            missed = [o for o in repo.unreported(turn.account_id, turn.device_id, since)
+                      if not (o.session_id == turn.session_id and o.turn_id == turn.turn_id)]
+            if missed:
+                out.append({"role": "system", "content": "Saved earlier although the reply may not have reached the "
+                            "user (do not do these again unless the user explicitly asks again): "
+                            + "; ".join(o.summary for o in missed[-5:])})
+                repo.acknowledge([o.id for o in missed])
+        return out
 
     async def _apologise(self, turn: TurnContext, io: TurnIO) -> None:
         """'Sorry, I didn't catch that. Could you say it again?' - spoken in chat mode, shown in edit modes."""
@@ -225,6 +369,7 @@ class ConversationPipeline:
         audio_bytes = 0  # audio sent to the STT (billed)
         reason = "vad"
         arrivals: list[tuple[float, float]] = []  # (audio end ms, arrival mono ms)
+        stt_billed = False
         try:
             while True:
                 try:
@@ -274,6 +419,7 @@ class ConversationPipeline:
                     break
             turn.listening = False
             await io.send(turn, "listen_stop", reason=reason)
+            stt_billed = True
             turn.usage.append(UsageItem("stt", stt.name, stt.model, "audio_second", audio_bytes / 2 / UPLINK_RATE))
             if reason == "no_speech" or session is None:
                 return ""
@@ -291,6 +437,8 @@ class ConversationPipeline:
             return text
         finally:
             turn.listening = False
+            if not stt_billed and audio_bytes:  # cancelled while listening: the audio sent is still paid
+                turn.usage.append(UsageItem("stt", stt.name, stt.model, "audio_second", audio_bytes / 2 / UPLINK_RATE))
             if opening is not None:  # never used (no speech, or cancelled)
                 opening.cancel()
                 with contextlib.suppress(BaseException):
@@ -300,7 +448,9 @@ class ConversationPipeline:
 
     # --- reply: LLM -> chunker -> TTS -> Opus ----------------------------------------------
 
-    async def _reply(self, turn: TurnContext, io: TurnIO) -> None:
+    async def _reply(self, turn: TurnContext, io: TurnIO, facts: str | None = None) -> None:
+        """The spoken reply. `facts`: a server result to put into words (no tools: the model can only report
+        what the server did)."""
         s = turn.settings
         llm, model = self.router.llm(s)
         tts_sel = self.router.tts(turn.language, s)
@@ -321,6 +471,12 @@ class ConversationPipeline:
         messages = self.messages_builder(turn, turn.user_text)
         tool_defs = (self.tools.definitions(turn.account_id) if self.tools else []) + ([SEARCH_TOOL] if searcher else [])
         tool_defs = tool_defs or None
+        # server state goes right before the user's sentence (the cached system prompt stays identical)
+        extra_msgs = [{"role": "system", "content": facts}] if facts else self._context_messages(turn)
+        if facts:
+            tool_defs = None
+        if extra_msgs and messages:
+            messages = [*messages[:-1], *extra_msgs, messages[-1]]
         extra_rules = [SEARCH_RULE] if searcher else []
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
@@ -491,31 +647,33 @@ class ConversationPipeline:
 
     # --- note edit mode: one sentence -> line operations on one note -----------------------------
 
-    async def _note_reply(self, turn: TurnContext, io: TurnIO) -> None:
-        """Apply one sentence to the note. Low-cost model, minimal prompt, one tool, no TTS."""
-        if turn.account_id is None or turn.note_number is None:
-            raise ProviderError("llm", "note mode needs an owner and a note")
-        account_id, number = turn.account_id, turn.note_number
+    def _edit_item(self, turn: TurnContext, kind: str) -> Item | None:
+        """The item being edited: by the uid the gateway bound to this edit session (or by number)."""
+        assert turn.account_id is not None
         with session_scope() as db:
-            it = ItemRepo(db).get(account_id, "note", number)
-            text = it.text if it else None
-        if text is None:
-            await io.send(turn, "llm_display", text="?")
-            return
-        lines = notes_edit.note_lines(text)
-        # Always the default (low-cost) model, whatever the watch's chat model is.
+            repo = ItemRepo(db)
+            if turn.edit_uid:
+                it = repo.get_by_uid(turn.account_id, turn.edit_uid)
+            else:
+                it = repo.get(turn.account_id, kind, turn.note_number) if turn.note_number is not None else None
+                if it is not None:
+                    turn.edit_uid = it.uid
+            return it if it is not None and it.kind == kind else None
+
+    async def _edit_llm(self, turn: TurnContext, system: str, context: str, tool: dict[str, Any]) -> tuple[ToolCall | None, str]:
+        """One edit-mode model call (low-cost model, minimal prompt, one tool). The previous question asked in
+        this edit session is added, so a short answer ("line 5", "the second one") has its context."""
+        ctx = self._voice_ctx(turn)
+        follow = ctx.edit_followup
+        messages = [{"role": "system", "content": system}, {"role": "system", "content": context}]
+        if follow and follow.get("uid") == turn.edit_uid and follow.get("until", 0) > voice_now():
+            messages.append({"role": "system", "content": f"You asked: {follow['question']!r} after the user said: {follow['user_text']!r}. "
+                             "This sentence may answer it."})
+        ctx.edit_followup = None
+        messages.append({"role": "user", "content": turn.user_text})
         llm, model = self.router.llm(turn.settings.model_copy(update={"llm_model": ""}))
-        request = LLMRequest(
-            messages=[
-                {"role": "system", "content": notes_edit.NOTE_SYSTEM},  # identical every time: cached
-                {"role": "system", "content": f"Note #{number}:\n{notes_edit.numbered(lines)}"},
-                {"role": "user", "content": turn.user_text},
-            ],
-            model=model,
-            max_tokens=NOTE_MAX_TOKENS,
-            params=self.router.llm_params(),
-            tools=[notes_edit.NOTE_EDIT_TOOL],
-        )
+        request = LLMRequest(messages=messages, model=model, max_tokens=NOTE_MAX_TOKENS,
+                             params=self.router.llm_params(), tools=[tool])
         usage_in = usage_cached = usage_out = 0
         calls: list[ToolCall] = []
         reply: list[str] = []
@@ -534,106 +692,141 @@ class ConversationPipeline:
             turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
             turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
             turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
-        call = next((c for c in calls if c.name == notes_edit.NOTE_EDIT_TOOL["name"]), None)
-        if call is None:  # an unclear command: a short question on the screen, nothing changed
-            question = strip_emoji("".join(reply)).strip()[:80]
-            if question.strip(" .").upper() == notes_edit.IGNORE:  # speech not meant for the item
-                turn.assistant_text = "(ignored: not an instruction)"
-                return
-            turn.assistant_text = question
-            if question:
-                await io.send(turn, "llm_display", text=question)
+        return next((c for c in calls if c.name == tool["name"]), None), strip_emoji("".join(reply)).strip()[:80]
+
+    async def _edit_no_call(self, turn: TurnContext, io: TurnIO, reply: str) -> None:
+        """No tool call: background speech (ignored), another item (hint) or a short question."""
+        word = reply.strip(" .").upper()
+        if word == notes_edit.IGNORE:
+            turn.assistant_text = "(ignored: not an instruction)"
+            turn.edit_outcome = "ignored"
             return
+        lang = self._edit_lang(turn)
+        if word == "OTHER":
+            turn.assistant_text = "(another item: not applied)"
+            await io.send(turn, "llm_display", text=edit_texts.text(lang, "other_item"))
+            return
+        turn.assistant_text = reply
+        if reply:
+            self._voice_ctx(turn).edit_followup = {"question": reply, "user_text": turn.user_text, "uid": turn.edit_uid,
+                                                   "until": voice_now() + 120}
+            await io.send(turn, "llm_display", text=reply)
+
+    def _edit_lang(self, turn: TurnContext) -> str:
+        return turn.language if turn.language != languages.AUTO else (turn.fallback_language or turn.settings.preferred_language or "en")
+
+    def _edit_op(self, turn: TurnContext, tool: str, args: dict[str, Any]) -> VoiceOperation:
+        assert turn.account_id is not None
+        return VoiceOperation(op_key=op_key(turn.account_id, turn.device_id, turn.session_id, turn.turn_id, tool, args),
+                              account_id=turn.account_id, device_id=turn.device_id, session_id=turn.session_id,
+                              turn_id=turn.turn_id, tool=tool, summary=f"{tool}: {json.dumps(args, ensure_ascii=False)[:250]}",
+                              result="{}")
+
+    # --- note edit mode: one sentence -> line operations on one note ----------------------------------
+
+    async def _note_reply(self, turn: TurnContext, io: TurnIO) -> None:
+        """Apply one sentence to the note. Low-cost model, minimal prompt, one tool, no TTS. Line deletions
+        are prepared and confirmed by the user in the next sentence."""
+        if turn.account_id is None or (turn.note_number is None and not turn.edit_uid):
+            raise ProviderError("llm", "note mode needs an owner and a note")
+        account_id = turn.account_id
+        it = self._edit_item(turn, "note")
+        if it is None:
+            await io.send(turn, "llm_display", text="?")
+            return
+        version, lines = it.version, notes_edit.note_lines(it.text)
+        call, reply = await self._edit_llm(turn, notes_edit.NOTE_SYSTEM, f"Note #{it.number}:\n{notes_edit.numbered(lines)}",
+                                           notes_edit.NOTE_EDIT_TOOL)
+        if call is None:
+            await self._edit_no_call(turn, io, reply)
+            return
+        lang = self._edit_lang(turn)
         try:
-            new_lines, highlight = notes_edit.apply_note_ops(
-                lines, notes_edit.parse_ops(call.arguments), notes_edit.undo_get(account_id, number)
-            )
-            with session_scope() as db:
-                repo = ItemRepo(db)
-                it = repo.get(account_id, "note", number)
-                if it is None:
-                    return
-                it = repo.set_note_text(it, "\n".join(new_lines))
-                view = device_full(it, turn.settings.timezone)
+            ops = notes_edit.parse_ops(call.arguments)
+            undo = notes_edit.undo_get(account_id, it.uid, version)
+            if not any(isinstance(o, dict) and o.get("op") == "undo" for o in ops):
+                ops = resolve_line_matches(lines, ops)
+                check_line_ambiguity(lines, ops, turn.user_text)  # "the milk" on two lines: ask which
+            new_lines, highlight = notes_edit.apply_note_ops(lines, ops, undo)
+        except AmbiguousLine as exc:
+            lang = self._edit_lang(turn)
+            options = [f"{edit_texts.text(lang, 'line', n=str(x['line']))} \u00ab{x['text'][:24]}\u00bb" for x in exc.lines[:3]]
+            await self._edit_no_call(turn, io, edit_texts.which_of(lang, options))
+            return
         except (ValueError, ItemTextError) as exc:
             log.info("note edit refused: %s", exc)
             turn.assistant_text = f"(not applied: {exc})"
             await io.send(turn, "llm_display", text="?")
             return
-        notes_edit.undo_set(account_id, number, lines)
-        log.info("note #%s edit %s", number, call.arguments[:200])
+        try:
+            with session_scope() as db:
+                it2 = ItemRepo(db).set_note_text(it, "\n".join(new_lines), expected_version=version,
+                                                op=self._edit_op(turn, "note_edit", {"uid": it.uid, "ops": ops}))
+                view = device_full(it2, turn.settings.timezone)
+        except ItemConflictError:
+            turn.assistant_text = "(not applied: the note changed meanwhile)"
+            await io.send(turn, "llm_display", text=edit_texts.text(lang, "conflict"))
+            return
+        except IntegrityError:  # the same operation already ran (a technical retry)
+            turn.assistant_text = "(already applied)"
+            return
+        notes_edit.undo_set(account_id, it.uid, lines, it2.version)
+        STORE.refresh_version(self._voice_ctx(turn), it2.uid, it2.version)
+        log.info("note #%s edit %s", it.number, call.arguments[:200])
         turn.assistant_text = f"note_edit {call.arguments[:300]}"
         turn.items_changed = True
         turn.changed_line = highlight
         # changed_line: 0 = the title, n = numbered line n (the watch's numbers), null = none
-        turn.pending_open = {"item": {**view, "changed_line": highlight}}
+        turn.pending_open, turn.pending_uid = {"item": {**view, "changed_line": highlight}}, it2.uid
 
     # --- reminder edit mode: one sentence -> changes to one reminder ----------------------------
 
     async def _reminder_reply(self, turn: TurnContext, io: TurnIO) -> None:
-        """Apply one sentence to the reminder. Low-cost model, minimal prompt, one tool, no TTS."""
-        if turn.account_id is None or turn.note_number is None:
+        """Apply one sentence to the reminder. Low-cost model, minimal prompt, one tool, no TTS. A deletion or
+        a removed detail is prepared and confirmed by the user in the next sentence."""
+        if turn.account_id is None or (turn.note_number is None and not turn.edit_uid):
             raise ProviderError("llm", "reminder mode needs an owner and a reminder")
-        account_id, number, tz = turn.account_id, turn.note_number, turn.settings.timezone
-        with session_scope() as db:
-            it = ItemRepo(db).get(account_id, "reminder", number)
-            ctx = reminder_edit.context(it, tz) if it else None
-        if ctx is None:
+        account_id, tz = turn.account_id, turn.settings.timezone
+        it = self._edit_item(turn, "reminder")
+        if it is None:
             await io.send(turn, "llm_display", text="?")
             return
-        # Always the default (low-cost) model, whatever the watch's chat model is.
-        llm, model = self.router.llm(turn.settings.model_copy(update={"llm_model": ""}))
-        request = LLMRequest(
-            messages=[
-                {"role": "system", "content": reminder_edit.REMINDER_SYSTEM},  # identical every time: cached
-                {"role": "system", "content": ctx},
-                {"role": "user", "content": turn.user_text},
-            ],
-            model=model,
-            max_tokens=NOTE_MAX_TOKENS,
-            params=self.router.llm_params(),
-            tools=[reminder_edit.REMINDER_EDIT_TOOL],
-        )
-        usage_in = usage_cached = usage_out = 0
-        calls: list[ToolCall] = []
-        reply: list[str] = []
-        turn.marks.llm_request = mono_ms()
-        try:
-            async for chunk in llm.stream(request):
-                if chunk.delta:
-                    reply.append(chunk.delta)
-                if chunk.input_tokens is not None:
-                    usage_in += chunk.input_tokens
-                    usage_cached += min(chunk.cached_input_tokens, chunk.input_tokens)
-                    usage_out += chunk.output_tokens or 0
-                if chunk.tool_calls:
-                    calls = chunk.tool_calls
-        finally:
-            turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
-            turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
-            turn.usage.append(UsageItem("llm", llm.name, model, "output_token", usage_out))
-        call = next((c for c in calls if c.name == reminder_edit.REMINDER_EDIT_TOOL["name"]), None)
-        if call is None:  # an unclear command: a short question on the screen, nothing changed
-            question = strip_emoji("".join(reply)).strip()[:80]
-            if question.strip(" .").upper() == notes_edit.IGNORE:  # speech not meant for the item
-                turn.assistant_text = "(ignored: not an instruction)"
-                return
-            turn.assistant_text = question
-            if question:
-                await io.send(turn, "llm_display", text=question)
+        version = it.version
+        call, reply = await self._edit_llm(turn, reminder_edit.REMINDER_SYSTEM, reminder_edit.context(it, tz),
+                                           reminder_edit.REMINDER_EDIT_TOOL)
+        if call is None:
+            await self._edit_no_call(turn, io, reply)
             return
+        lang = self._edit_lang(turn)
+        op = self._edit_op(turn, "reminder_edit", {"uid": it.uid, "args": call.arguments})
         try:
-            result = await asyncio.to_thread(reminder_edit.apply, account_id, number, call.arguments, tz)
+            result = await asyncio.to_thread(reminder_edit.apply, account_id, it.uid, version, call.arguments, tz, op)
+        except ItemConflictError:
+            turn.assistant_text = "(not applied: the reminder changed meanwhile)"
+            await io.send(turn, "llm_display", text=edit_texts.text(lang, "conflict"))
+            return
+        except IntegrityError:
+            turn.assistant_text = "(already applied)"
+            return
+        except AmbiguousPerson as exc:  # "without Mihai" with two Mihais: ask which
+            await self._edit_no_call(turn, io, edit_texts.which_of(lang, exc.names[:3]))
+            return
         except ValueError as exc:
             log.info("reminder edit refused: %s", exc)
             turn.assistant_text = f"(not applied: {exc})"
             await io.send(turn, "llm_display", text="?")
             return
-        log.info("reminder #%s edit %s", number, call.arguments[:200])
+        log.info("reminder #%s edit %s", it.number, call.arguments[:200])
+        if result.deleted:  # deleted from its own screen: back to the reminders list
+            turn.assistant_text = f"reminder_edit {call.arguments[:300]}"
+            turn.items_changed = True
+            turn.pending_open = {"list": "reminder"}
+            return
         turn.assistant_text = f"reminder_edit {call.arguments[:300]}"
         turn.items_changed = True
-        # deleted: the watch goes back to the reminders list; otherwise it shows the changed reminder
-        turn.pending_open = {"list": "reminder"} if result.deleted else {"item": result.view}
+        if result.version is not None:
+            STORE.refresh_version(self._voice_ctx(turn), it.uid, result.version)
+        turn.pending_open, turn.pending_uid = {"item": result.view}, it.uid
 
     async def _run_tool(self, turn: TurnContext, call: ToolCall) -> str:
         label = call.name
@@ -658,14 +851,17 @@ class ConversationPipeline:
             log.info("web_search(%s) -> %s", call.arguments[:120], "cache hit" if outcome.cache_hit else "searched")
             return outcome.result
         assert self.tools is not None
+        call_ctx = self._call_ctx(turn) if turn.account_id is not None else None
         out = await asyncio.to_thread(
-            self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id
+            self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id,
+            call_ctx,
         )
         log.info("tool %s(%s) -> %s", call.name, call.arguments, out.result[:200])
         turn.items_changed |= out.changed
         turn.settings_changed |= out.settings_changed
+        turn.expect_reply |= out.awaits_answer
         if out.open is not None:
-            turn.pending_open = out.open
+            turn.pending_open, turn.pending_uid = out.open, out.open_uid
         return out.result
 
 
@@ -682,3 +878,4 @@ def _first_error(eg: BaseExceptionGroup) -> BaseException:
 
     walk(eg)
     return next((e for e in leaves if isinstance(e, ProviderError)), leaves[0])
+

@@ -16,10 +16,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.db.models import Item
-from app.db.repositories import ItemRepo
+from app.db.repositories import ItemConflictError, ItemRepo
 from app.db.session import session_scope
 from app.items import _DONE, _END, _LOCATION, _NOTIFY, _PARTICIPANTS, device_full, is_done, local_time
-from app.items import reminder_update_kwargs
 from app.notes_edit import IGNORE
 
 REMINDER_EDIT_TOOL: dict[str, Any] = {
@@ -43,10 +42,12 @@ REMINDER_EDIT_TOOL: dict[str, Any] = {
             "end_local": _END,
             "notify_before_minutes": _NOTIFY,
             "location": _LOCATION,
-            "participants": {
-                **_PARTICIPANTS,
-                "description": "The full new list of people (current ones kept unless the user removes them); "
-                "an empty list removes them all.",
+            "add_participants": {"type": "array", "items": {"type": "string"}, "description": "people to add"},
+            "remove_participants": {"type": "array", "items": {"type": "string"}, "description": "people to remove"},
+            "remove": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["location", "participants", "end", "notify"]},
+                "description": "details to remove entirely",
             },
             "done": _DONE,
         },
@@ -63,8 +64,11 @@ REMINDER_SYSTEM = (
     "text only when the user clearly asks for it ('call it ...', 'change the text to ...', 'rename it ...', "
     "'it's about ...'): never make a stray word or sentence the new text.\n"
     "- 'Done' / 'completed' -> done true; 'not done' / 'open it again' -> done false.\n"
-    "- 'Delete it' / 'delete the reminder' -> action delete. Removing one detail ('remove the place', 'no "
-    "advance notice') -> change with an empty value.\n"
+    "- 'Delete it' / 'delete the reminder' -> action delete. Removing a detail ('remove the place', 'no advance "
+    "notice', 'without Mihai') -> change with remove / remove_participants. Adding a person -> add_participants "
+    "(the others stay).\n"
+    "- If the user talks about a DIFFERENT reminder or note than this one, do not call the tool: reply only "
+    "OTHER.\n"
     "- 'Undo' -> action undo.\n"
     "- The microphone stays open, so it also hears speech that is not an instruction about this reminder: a "
     "lone word ('love', 'impossible'), a remark, someone talking to the user, a TV or radio, words in another "
@@ -94,12 +98,15 @@ def context(it: Item, tz: str) -> str:
 
 @dataclass
 class EditResult:
-    view: dict[str, Any] | None  # the reminder after the change (item_show); None when deleted
+    view: dict[str, Any] | None = None  # the reminder after the change (item_show); None when deleted
     deleted: bool = False
+    version: int | None = None  # the reminder's version after the change
 
 
-# One-step undo per (account, reminder number): the fields before the last change made in reminder mode.
-_UNDO: dict[tuple[int, int], dict[str, Any]] = {}
+# One-step undo per (account, reminder uid): the fields before the last change made in reminder mode, and
+# the version that change produced - undo only applies while the reminder is still at that version (it never
+# overwrites a change made elsewhere meanwhile).
+_UNDO: dict[tuple[int, str], tuple[dict[str, Any], int]] = {}
 _UNDO_MAX = 500
 
 
@@ -115,15 +122,19 @@ def _snapshot(it: Item) -> dict[str, Any]:
     }
 
 
-def _remember(account_id: int, number: int, before: dict[str, Any]) -> None:
+def _remember(account_id: int, uid: str, before: dict[str, Any], version: int) -> None:
     if len(_UNDO) >= _UNDO_MAX:
         _UNDO.pop(next(iter(_UNDO)))
-    _UNDO[(account_id, number)] = before
+    _UNDO[(account_id, uid)] = (before, version)
 
 
-def apply(account_id: int, number: int, arguments: str, tz: str) -> EditResult:
-    """Apply one reminder_edit call. Raises ValueError (incl. ItemTimeError / ItemTextError) when it
-    cannot be applied; nothing is changed then."""
+def apply(account_id: int, uid: str, version: int, arguments: str, tz: str, op: Any = None) -> EditResult:
+    """Apply one reminder_edit call to the reminder `uid`, which must still be at `version` (it was read
+    before the model ran). On the reminder screen everything applies at once, deletions too. Raises
+    ValueError (incl. ItemTimeError / ItemTextError / ItemTimeAsk) when it cannot be applied, and
+    ItemConflictError when the reminder changed meanwhile; nothing is changed then."""
+    from app.voice_tools import reminder_changes
+
     try:
         a = json.loads(arguments or "{}") or {}
     except ValueError:
@@ -133,25 +144,29 @@ def apply(account_id: int, number: int, arguments: str, tz: str) -> EditResult:
     action = a.get("action") or "change"
     with session_scope() as db:
         repo = ItemRepo(db)
-        it = repo.get(account_id, "reminder", number)
+        it = repo.get_by_uid(account_id, uid)
         if it is None:
-            raise ValueError(f"reminder #{number} does not exist")
+            raise ItemConflictError(missing=[uid])
+        if it.version != version:
+            raise ItemConflictError(changed=[uid])
         if action == "delete":
-            repo.delete(it)
-            _UNDO.pop((account_id, number), None)
+            repo.delete_exact(account_id, [(uid, version)], op=op)
+            _UNDO.pop((account_id, uid), None)
             return EditResult(None, deleted=True)
         before = _snapshot(it)
         if action == "undo":
-            previous = _UNDO.pop((account_id, number), None)
-            if previous is None:
+            previous = _UNDO.get((account_id, uid))
+            if previous is None or previous[1] != it.version:
                 raise ValueError("nothing to undo")
-            it = repo.update(it, **previous)
+            _UNDO.pop((account_id, uid), None)
+            it = repo.update(it, **previous[0], expected_version=version, op=op)
         elif action == "change":
-            changes = reminder_update_kwargs(a, tz)
-            if not changes:
+            changes = {k: v for k, v in a.items() if k != "action"}
+            kw, _removed = reminder_changes(it, changes, tz)
+            if not kw:
                 raise ValueError("no change given")
-            it = repo.update(it, **changes)
-            _remember(account_id, number, before)
+            it = repo.update(it, **kw, expected_version=version, op=op)
+            _remember(account_id, uid, before, it.version)
         else:
             raise ValueError(f"unknown action {action}")
-        return EditResult(device_full(it, tz))
+        return EditResult(device_full(it, tz), version=it.version)

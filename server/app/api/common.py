@@ -6,6 +6,7 @@ helpers never widen access. `account_id` scopes personas and history to one owne
 
 from __future__ import annotations
 
+import asyncio
 import io
 import wave
 from datetime import datetime
@@ -15,12 +16,13 @@ from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session, col, select
 
-from app import languages
+from app import languages, usage_ops
 from app.db.models import Device, Turn, UsageRecord
 from app.db.repositories import ConversationRepo, PersonaRepo, SettingsRepo
 from app.device_settings import THEME_PRESETS, DeviceSettings
 from app.gateway.hub import DeviceHub
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, UsageItem
+from app.ratelimit import VOICE_SAMPLE_PER_ACCOUNT
 from app.providers.tts.base import TTSRequest
 
 
@@ -167,8 +169,13 @@ class VoiceSampleBody(BaseModel):
     language: str = Field("en", min_length=2, max_length=8)
 
 
-async def voice_sample(body: VoiceSampleBody, request: Request) -> Response:
-    """A short sample sentence in `language` spoken with `voice`, as WAV."""
+async def voice_sample(body: VoiceSampleBody, request: Request, account_id: int | None = None,
+                       operator: bool = False) -> Response:
+    """A short sample sentence in `language` spoken with `voice`, as WAV.
+
+    Not billed to the customer (owner decision): a customer's samples are rate-limited per account and
+    their provider cost is recorded as a non-billable operation; the operator's are a documented exception
+    (operator_test), recorded the same way."""
     if body.language not in languages.supported_codes():
         raise HTTPException(422, "unsupported language")
     r = request.app.state.router
@@ -179,14 +186,23 @@ async def voice_sample(body: VoiceSampleBody, request: Request) -> Response:
     async def one():
         yield languages.sample_sentence(body.language)
 
+    if not operator and account_id is not None:
+        VOICE_SAMPLE_PER_ACCOUNT.hit(f"acc:{account_id}")
     pcm, rate = bytearray(), 24000
+    sentence = languages.sample_sentence(body.language)
+    status = "completed"
     try:
         req = TTSRequest(sel.voice, body.language, 1.0, sel.instructions)
         async for chunk in sel.provider.stream(one(), req):
             pcm += chunk.pcm
             rate = chunk.sample_rate
     except ProviderError as exc:
+        status = "error"
         raise HTTPException(502, exc.message) from exc
+    finally:
+        usage = [UsageItem("tts", sel.provider.name, sel.provider.model, "character", len(sentence))]
+        await asyncio.to_thread(usage_ops.record_free_operation, "operator_test" if operator else "voice_sample",
+                                "", account_id, usage, status)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)

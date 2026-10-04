@@ -41,7 +41,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Issue reports (token hello only, repeated until a `hello_ack`; shown in the admin Issues tab): `boot: {reset_reason, prev_uptime_s?}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?}` when the previous session of this boot ended (`drop`: `wifi_lost`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`). |
-| `listen_start` | `turn_id`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
+| `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
 | `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
@@ -68,15 +68,15 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `llm_display` | `turn_id`, `text` | Optional, before the first `llm_text`: the answer's key value (≤ 16 chars, e.g. `21°C`, `14:30`, `£3.50`). The watch shows only this, in large type, while the full reply is spoken. |
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
-| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`) | Server finished the turn. |
+| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?` | Server finished the turn. `expect_reply: true` (chat mode): the reply asked something the current operation needs ("which one?", "delete it?") - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
 | `ota_available` | `version`, `url`, `sha256`, `size`, `signature?` | Firmware update offer. |
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
 | `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
-| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted an item). Sent after `turn_end`. |
-| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent after `turn_end`. `changed_line` (note mode): the 1-based line just added or changed, to highlight. |
+| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted an item). After a voice request it is sent **before** `turn_end` (after the fresh `items`); a watch in note / reminder edit mode closes the edit mode on it. |
+| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent before `turn_end` (after the fresh `items`). `changed_line` (note mode): the 1-based line just added or changed, to highlight. `listen: true` + `question` (from the chat): the user's words fit several places inside this item; once the chat reply has been played the watch starts this item's edit mode and shows `question` - the item's screen continues from there (older firmware: the item opens, the user taps its mic). |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
 | `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 
@@ -92,6 +92,21 @@ takes the lowest free number, so after deleting #1 from #1, #2, #3 the next item
 line); the full text arrives with `item_show`. A reminder is delivered once: if no watch is online
 when it comes due, it is sent on the next `hello` (up to 24 h late). These messages have `turn_id: null`
 and are additive to protocol v1 (older firmware ignores them).
+
+**Voice references, questions and deletions.** Users name items by what they contain ("the list with the
+cat food", "the meeting with Stefan on Thursday"); the server finds them (server-side search over the whole
+account) and refers to them by a stable id that is never sent to the watch - numbers are reused after a
+delete, so an edit-mode `listen_start` whose number now points to another item than the one the server last
+showed under it is refused (`error` + `turn_end {status: error}`). When several items could match, the
+server asks (chat: spoken; edit modes: `llm_display`) and the next sentence answers. **In the chat
+(dialog screen) nothing is deleted by voice in the turn that asks for it**: deleting an item, note lines, or a
+reminder's place / people / end / advance alert is only prepared; it runs after an explicit yes in a later
+chat turn of the same session (within 120 s; "no", another request, the expiry or opening an item's screen
+cancel it). **On an item's own screen (note / reminder edit modes) everything applies at once, deletions
+too** - no confirmation there. The one question asked on an item's screen (and in the chat) is *which one*
+when the user's words fit several places ("delete the milk" with "Milk" on line 1 and "Whole milk" on line 10;
+"without Mihai" with two Mihais); the answer applies it. After a delete the list opens (`items_open`); after a line or detail removal
+the item is shown again (`item_show`).
 
 ## 4. Binary audio frames
 
@@ -171,7 +186,11 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `pairing_expired` | Code expired | Generate a new code, send new `hello`. |
 | `bad_request` | Malformed message | Log. |
 | `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn (e.g. no provider credit, timeout) | `message` is a generic "try again later" text; the reason is never shown to the user (server log only). Show "can't answer right now, try again later", go idle. The watch shows the same when a turn times out or the connection drops mid-turn. |
-| `busy` | Server overloaded | Retry later. |
+| `busy` | Server overloaded. Older firmware (no `request_id`) also gets it instead of `busy_concurrent`, `service_unavailable` and `duplicate` | Show "Server busy — try again in a moment", go idle. |
+| `busy_concurrent` | Other conversations of the same account are running and hold the rest of the allowance (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Conversations in progress — try again when they finish", go idle. No automatic retry. |
+| `service_unavailable` | The server cannot decide on the allowance right now (billing database unreachable, maintenance drain) | Show "Server busy", go idle. |
+| `duplicate` | A `listen_start` re-used a `request_id` that is still running | Ignore (stale). |
+| `request_conflict` | A `request_id` was re-used for a different request | Log. |
 | `subscription_required` | Owner has no active/trial ola Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the ola app", go idle. |
 | `limit_reached` | The account's AI allowance for the current period is used up (shared by all its watches) | Show "Monthly usage reached — answers again when it resets; extra usage in the app", go idle. |
 | `account_inactive` | Owner account suspended or closed (reply to `hello`, then close) | Show "Account inactive — contact support"; retry slowly. |

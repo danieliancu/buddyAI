@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from app import accounts, email
+from app.account_lock import lock_account
 from app.config import get_settings
 from app.db.models import Account, Order, RevenueEvent, StripeEvent, Subscription, TopUp, utcnow
 from app.plan import get_plan
@@ -145,13 +146,14 @@ def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
     if sub is None or not is_entitled(sub):
         raise BillingError(409, "extra usage needs an active ola Care plan")
     plan = get_plan(db)
-    period = allowance_mod.period_for(sub)
+    pid = allowance_mod.period_identity(sub)
     topup = TopUp(
         account_id=account.id,
         amount_pence=plan.topup_price_pence,
         allowance_pence=plan.topup_allowance_pence,
-        period_start=period.start,
-        period_end=period.end,
+        period_start=pid.period.start,
+        period_end=pid.period.end,
+        period_key=pid.key,  # the period it tops up, even if it is paid after the period rolled over
     )
     db.add(topup)
     db.commit()
@@ -248,12 +250,14 @@ def upsert_subscription(db: Session, sub: dict[str, Any]) -> Subscription:
     acc = db.exec(select(Account).where(Account.stripe_customer_id == customer)).first() if customer else None
     if acc is None and (sub.get("metadata") or {}).get("account_id"):  # subscribed from the app
         acc = db.get(Account, int(sub["metadata"]["account_id"]))
+        lock_account(db, acc.id if acc else None)
         if acc is not None and customer and not acc.stripe_customer_id:
             acc.stripe_customer_id = customer  # billing portal + invoices find the account from now on
             db.add(acc)
             db.commit()
             db.refresh(acc)
     row = row or Subscription(stripe_subscription_id=sub["id"], stripe_customer_id=customer, status=sub.get("status", ""))
+    lock_account(db, acc.id if acc else row.account_id)  # periods / status change the budget: admissions wait
     row.source = "stripe"
     row.stripe_customer_id = customer or row.stripe_customer_id
     row.account_id = acc.id if acc else row.account_id
@@ -352,6 +356,7 @@ def _topup_paid(db: Session, cs: dict[str, Any]) -> bool:
     if int(cs.get("amount_total") or 0) < topup.amount_pence or (cs.get("currency") or "").lower() != "gbp":
         log.warning("top-up %s: paid amount %s %s does not match", topup.id, cs.get("amount_total"), cs.get("currency"))
         return False
+    lock_account(db, topup.account_id)
     result = db.exec(  # type: ignore[call-overload]
         update(TopUp)
         .where(col(TopUp.id) == topup.id, col(TopUp.status) == "pending")
@@ -369,6 +374,7 @@ def _topup_paid(db: Session, cs: dict[str, Any]) -> bool:
 def _topup_failed(db: Session, cs: dict[str, Any]) -> None:
     topup = _topup_for_session(db, cs)
     if topup is not None:
+        lock_account(db, topup.account_id)
         db.exec(update(TopUp).where(col(TopUp.id) == topup.id, col(TopUp.status) == "pending").values(status="expired"))  # type: ignore[call-overload]
         db.commit()
 
@@ -383,6 +389,9 @@ def _refund(db: Session, charge: dict[str, Any]) -> None:
         db.add(order)
         db.commit()
     topup = db.exec(select(TopUp).where(TopUp.stripe_payment_intent == intent)).first()
+    if topup is not None:
+        lock_account(db, topup.account_id)
+        db.refresh(topup)
     if topup and topup.status == "paid":
         # Policy: a refunded top-up's extra allowance is withdrawn for the period (docs/BILLING.md).
         topup.status, topup.refunded_at = "refunded", utcnow()
@@ -529,6 +538,7 @@ def grant_complimentary(
     pays for Care (a Stripe subscription is entitled)."""
     if not 1 <= days <= 366:
         raise BillingError(422, "days must be between 1 and 366")
+    lock_account(db, account.id)
     now = utcnow()
     current = active_subscription(db, account.id)
     if current is not None and is_entitled(current, now) and current.source == "stripe":
@@ -570,6 +580,7 @@ def grant_complimentary(
 
 
 def revoke_complimentary(db: Session, account: Account, actor: str) -> bool:
+    lock_account(db, account.id)
     now = utcnow()
     rows = db.exec(
         select(Subscription).where(

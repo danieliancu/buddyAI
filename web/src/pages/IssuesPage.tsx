@@ -46,6 +46,7 @@ export default function IssuesPage() {
     <>
       <PageHeader
         title="Issues"
+        count={issues.data ? list.length : undefined}
         subtitle="Restarts and lost connections reported by the watches, newest first. Updates live."
         actions={
           <Button variant="ghost" icon={<Trash2 className="size-4" />} disabled={list.length === 0} onClick={() => setClearing(true)}>

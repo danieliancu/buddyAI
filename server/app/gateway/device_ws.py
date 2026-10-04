@@ -11,20 +11,20 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import entitlements, issues, languages, usage_notices
+from app import issues, languages, usage_notices, usage_ops
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, DeviceIssue, utcnow
-from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo, TurnRepo, UsageRepo
+from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo, TurnRepo, VoiceOpRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
 from app.items import KINDS, device_full
+from app.voice_context import STORE
 from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message
 from app.pipeline.conversation import ConversationPipeline
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnResult
-from app.pricing.pricing import ProviderPricingConfig
 from app.providers.base import ProviderError
 from app.reminders import deliver_due
 from app.security import hash_device_token, is_valid_pairing_code
@@ -70,6 +70,8 @@ class DeviceConnection:
         self._decoder: OpusDecoder | None = None
         self._closed = False
         self._fw = ""
+        # (kind, number) -> uid of the item the server last showed / fired under that number on this watch
+        self._shown: dict[tuple[str, int], str] = {}
         self._timed_out = False  # the session ended because the watch went silent
 
     # --- sending (TurnIO + generic) --------------------------------------------------------
@@ -148,6 +150,7 @@ class DeviceConnection:
             await self._teardown()
 
     async def _teardown(self) -> None:
+        STORE.drop_session(self.env.session_id or "")  # no voice context survives the connection
         if self.authenticated:
             self._record_session_issues()
         if self.active:
@@ -244,6 +247,7 @@ class DeviceConnection:
             self.account_id = account_id
             self.settings = settings
             self.authenticated = True
+            STORE.drop_device(device_id)  # a new session: nothing pending from an earlier one
             self._fw = fw
             self.env.session_id = uuid.uuid4().hex
             rates = (msg.get("audio") or {}).get("downlink_rates") or [16000]
@@ -274,8 +278,19 @@ class DeviceConnection:
             return
         await self.send_json("error", code="bad_request", message="hello needs token or 6-digit pairing_code")
 
-    def _reservation_key(self, turn_id: int) -> str:
-        return f"{self.device_id}:{self.env.session_id}:{turn_id}"
+    def _request_key(self, msg: dict[str, Any], turn_id: int) -> tuple[str, str]:
+        """(request key, kind): the watch's request_id, or - older firmware - this session's turn number."""
+        rid = msg.get("request_id")
+        if isinstance(rid, str):
+            return f"r:{rid}", "client"
+        return f"l:{self.device_id}:{self.env.session_id}:{turn_id}", "legacy"
+
+    async def _refuse(self, turn_id: int, code: str, legacy: bool, message: str = "") -> None:
+        # Older firmware does not know the new codes: it shows its "Server busy" screen for "busy".
+        sent = "busy" if legacy and code in usage_ops.NEW_CODES else code
+        await self.send_json("error", turn_id, code=sent, message=message or usage_ops.MESSAGES.get(code, code))
+        await self.send_json("turn_end", turn_id, status="error")
+        self.hub.publish({"type": "turn_refused", "device_id": self.device_id, "code": code})
 
     def _client_ip(self) -> str | None:
         return self.ws.client.host if self.ws.client else None
@@ -291,11 +306,21 @@ class DeviceConnection:
         edit_kind = msg.get("mode") if msg.get("mode") in ("note", "reminder") else None
         note_mode = edit_kind is not None
         note_number = msg.get(edit_kind) if edit_kind else None
+        edit_uid = None
         if note_mode:
             ok = self.account_id is not None and isinstance(note_number, int)
             if ok:
                 with session_scope() as db:
-                    ok = ItemRepo(db).get(self.account_id, edit_kind, note_number) is not None
+                    it = ItemRepo(db).get(self.account_id, edit_kind, note_number)
+                ok = it is not None
+                # The watch names the item by its number, which is reused after a delete: the edit session is
+                # bound to the item the server last showed under that number - never another one.
+                shown = self._shown.get((edit_kind, note_number))
+                if ok and shown is not None and shown != it.uid:
+                    ok = False
+                if ok:
+                    edit_uid = it.uid
+                    self._shown[(edit_kind, note_number)] = it.uid
             if not ok:
                 await self.send_json(
                     "error", turn_id, code="bad_request", message=f"{edit_kind} mode needs an existing {edit_kind}"
@@ -303,17 +328,57 @@ class DeviceConnection:
                 await self.send_json("turn_end", turn_id, status="error")
                 self.last_turn_id = turn_id
                 return
+        request_key, request_kind = self._request_key(msg, turn_id)
+        legacy = request_kind == "legacy"
+        # The same request again (a resend): never a second operation. Checked before the running turn is
+        # cancelled, so a resend cannot stop the turn it duplicates.
+        same = next((t for t in self.recent.values() if not legacy and t.request_key == request_key), None)
+        if same is not None:
+            self.last_turn_id = turn_id
+            if same.final_status is not None:  # already answered: report it, spend nothing
+                await self.send_json("turn_end", turn_id, status=same.final_status, duplicate=True)
+            else:
+                await self._refuse(turn_id, usage_ops.DUPLICATE, legacy)
+            return
         if self.active:
             await self._cancel_active()
         self.last_turn_id = turn_id
-        # Checks the plan and reserves a little allowance for this turn (released in _finish_turn), so
-        # several watches of one account cannot start turns past the limit at the same time.
-        decision = await entitlements.begin_turn(self.account_id, self._reservation_key(turn_id))
-        if not decision.allowed:
-            await self.send_json("error", turn_id, code=decision.code, message=decision.message)
-            await self.send_json("turn_end", turn_id, status="error")
-            self.hub.publish({"type": "turn_refused", "device_id": self.device_id, "code": decision.code})
+        # The database admits the turn and reserves a little allowance for it (app/usage_ops.py), shared by
+        # every server process: several watches of one account cannot start turns past the limit together.
+        fp = usage_ops.fingerprint(self.device_id, edit_kind or "chat", edit_uid)
+        req = usage_ops.AdmitRequest(device_id=self.device_id, request_key=request_key, request_kind=request_kind,
+                                     kind=edit_kind or "chat", account_id=self.account_id, fingerprint=fp)
+        adm = await usage_ops.in_pool(usage_ops.ADMIT_POOL, usage_ops.admit, req)
+        if not adm.allowed:
+            if adm.duplicate == "finished" and not legacy:  # already answered: report it, spend nothing
+                await self.send_json("turn_end", turn_id, status=adm.finished_status or "completed", duplicate=True)
+                return
+            await self._refuse(turn_id, adm.code or usage_ops.SERVICE_UNAVAILABLE, legacy, adm.message)
             return
+        try:
+            await self._start_turn(msg, turn_id, edit_kind, note_number, edit_uid, adm, request_key)
+        except Exception:
+            log.exception("turn %s/%s could not start", self.device_id, turn_id)
+            await usage_ops.in_pool(usage_ops.ADMIT_POOL, self._settle_quietly, adm.op_id, adm.exec_token,
+                                    "error", False, [], None, "start_failed")
+            await self.send_json("turn_end", turn_id, status="error")
+            return
+        if self.account_id is not None:
+            await usage_notices.evaluate(self.account_id)
+
+    @staticmethod
+    def _settle_quietly(op_id, token, status, billable, items, turn_db_id, reason):
+        try:
+            return usage_ops.settle(op_id, token, status=status, billable=billable, items=items,
+                                    turn_db_id=turn_db_id, reason=reason)
+        except Exception:  # noqa: BLE001 - database down: retried later; recovery expires it otherwise
+            log.warning("usage settle of op %s failed; queued", op_id, exc_info=True)
+            usage_ops.queue_settle(op_id, token, status=status, billable=billable, items=items,
+                                   turn_db_id=turn_db_id, reason=reason)
+            return None
+
+    async def _start_turn(self, msg, turn_id, edit_kind, note_number, edit_uid, adm, request_key) -> None:
+        note_mode = edit_kind is not None
         requested = msg.get("language")
         language = requested if isinstance(requested, str) and languages.is_known(requested) else self.settings.language
         turn = TurnContext(
@@ -328,7 +393,7 @@ class DeviceConnection:
         )
         if note_mode:
             # Stored only if something was said (_finish_turn), and outside the chat history.
-            turn.mode, turn.note_number = edit_kind, note_number
+            turn.mode, turn.note_number, turn.edit_uid = edit_kind, note_number, edit_uid
         else:
             with session_scope() as db:
                 conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
@@ -346,7 +411,9 @@ class DeviceConnection:
         self.recent[turn_id] = turn
         for old in sorted(self.recent)[:-MAX_RECENT_TURNS]:
             del self.recent[old]
+        turn.op_id, turn.exec_token, turn.request_key = adm.op_id, adm.exec_token, request_key
         turn.task = asyncio.create_task(self._run_turn(turn), name=f"turn-{self.device_id}-{turn_id}")
+        turn.lease_task = asyncio.create_task(self._keep_lease(turn, adm.lease_s), name=f"lease-{turn_id}")
 
     def _on_binary(self, data: bytes) -> None:
         if not self.authenticated:
@@ -389,9 +456,59 @@ class DeviceConnection:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await turn.task
 
+    async def _keep_lease(self, turn: TurnContext, lease_s: int) -> None:
+        """Heartbeat while the turn runs, and write the costs reported so far. When the lease cannot be
+        extended (expired, or the database unreachable until it would have) the turn stops: no new paid
+        stage may start without a valid lease."""
+        interval = max(1.0, float(get_settings().usage_heartbeat_s))
+        deadline = asyncio.get_running_loop().time() + lease_s
+        while True:
+            await asyncio.sleep(interval)
+            if turn.task is None or turn.task.done() or turn.op_id is None:
+                return
+            ok: bool | None
+            try:
+                self._flush_usage(turn)
+                ok = await usage_ops.in_pool(usage_ops.LEASE_POOL, usage_ops.heartbeat, turn.op_id, turn.exec_token)
+            except Exception:  # noqa: BLE001
+                log.warning("turn %s/%s heartbeat failed", self.device_id, turn.turn_id, exc_info=True)
+                ok = None if asyncio.get_running_loop().time() + interval < deadline - 5 else False
+            if ok:
+                deadline = asyncio.get_running_loop().time() + lease_s
+            elif ok is False:
+                log.warning("turn %s/%s lost its usage lease: stopping", self.device_id, turn.turn_id)
+                turn.lease_lost = True
+                if self.active is turn:
+                    turn.abort_reason = turn.abort_reason or "lease_lost"
+                    await self._cancel_active()
+                elif turn.task and not turn.task.done():
+                    turn.cancelled = True
+                    turn.task.cancel()
+                return
+
+    def _flush_usage(self, turn: TurnContext) -> None:
+        """Queue the provider usage reported since the last flush (intermediate costs, idempotent)."""
+        n = len(turn.usage)
+        if turn.op_id is None or n <= turn.usage_flushed:
+            return
+        items = list(enumerate(turn.usage))[turn.usage_flushed:n]
+        turn.usage_flushed = n
+        usage_ops.LEASE_POOL.submit(self._record_quietly, turn.op_id, items, turn.db_id)
+
+    @staticmethod
+    def _record_quietly(op_id, items, turn_db_id) -> None:
+        try:
+            usage_ops.record_costs(op_id, items, turn_db_id)
+        except Exception:  # noqa: BLE001 - the final settle writes them again (same dedup keys)
+            log.warning("usage record of op %s failed", op_id, exc_info=True)
+
     async def _run_turn(self, turn: TurnContext) -> None:
         result = TurnResult("error", "internal", "unexpected error")
         try:
+            if turn.op_id is not None and not await usage_ops.in_pool(
+                    usage_ops.LEASE_POOL, usage_ops.mark_running, turn.op_id, turn.exec_token):
+                turn.lease_lost = True  # expired before the first paid call: nothing is spent
+                raise ProviderError("usage", "usage lease lost before start")
             result = await self.pipeline.run(turn, self)
             if turn.cancelled:
                 result = TurnResult("aborted")
@@ -426,11 +543,23 @@ class DeviceConnection:
         if turn.pending_open is not None and live and result.status == "completed":
             if "list" in turn.pending_open:
                 await self.send_json("items_open", kind=turn.pending_open["list"])
+                if turn.account_id is not None:
+                    STORE.clear_open(STORE.get(turn.account_id, self.device_id, turn.session_id))
             else:
-                await self.send_json("item_show", item=turn.pending_open["item"])
+                view = turn.pending_open["item"]
+                if turn.pending_uid and isinstance(view.get("number"), int):
+                    self._shown[(view.get("kind"), view["number"])] = turn.pending_uid
+                await self.send_json("item_show", item=view)
         # turn_end is bookkeeping: always sent (the watch accepts it even for old turns). After an apology
-        # the watch ends the turn like a reply (it would cut the spoken apology on "error").
-        await self.send_json("turn_end", turn.turn_id, status="completed" if result.notified else result.status)
+        # the watch ends the turn like a reply (it would cut the spoken apology on "error"). expect_reply: the
+        # reply asked something the operation needs (which one? confirm?) - the watch listens again.
+        status = "completed" if result.notified else result.status
+        extra = {"expect_reply": True} if turn.expect_reply and turn.mode == "chat" and status == "completed" and live else {}
+        await self.send_json("turn_end", turn.turn_id, status=status, **extra)
+        turn.final_status = status
+        if status == "completed" and turn.account_id is not None:
+            with session_scope() as db:  # the user heard about the changes made in this turn
+                VoiceOpRepo(db).mark_reported(turn.session_id, turn.turn_id)
         if self.active is turn:
             self.active = None
         if turn.settings_changed:  # volume, language... changed by voice: applies after the reply
@@ -448,7 +577,18 @@ class DeviceConnection:
                 )
                 turn.db_id = row.id
         self._persist(turn, result)
-        entitlements.end_turn(turn.account_id, self._reservation_key(turn.turn_id))
+        lease_task = getattr(turn, "lease_task", None)
+        if lease_task is not None:
+            lease_task.cancel()
+        if turn.op_id is not None:
+            # The end of the operation: costs, billable decision, state. A turn that failed on our side
+            # (provider/server error, the watch gave up waiting for us, the lease was lost, shutdown) is not
+            # charged to the customer's allowance; its cost stays visible to the operator. Turns the user
+            # stopped, and no-speech turns, count.
+            reason = "lease_lost" if turn.lease_lost else turn.abort_reason
+            billable = result.status != "error" and reason not in ("timeout", "lease_lost", "shutdown")
+            await usage_ops.in_pool(usage_ops.ADMIT_POOL, self._settle_quietly, turn.op_id, turn.exec_token,
+                                    result.status, billable, list(enumerate(turn.usage)), turn.db_id, reason)
         if turn.account_id is not None:
             new = await usage_notices.evaluate(turn.account_id)
             if new:  # a usage threshold was crossed: web banner / dialog, and a short note on the watch
@@ -485,20 +625,6 @@ class DeviceConnection:
                 stt_provider=next((u.provider for u in turn.usage if u.kind == "stt"), None),
                 tts_provider=next((u.provider for u in turn.usage if u.kind == "tts"), None),
                 **turn.marks.as_db_fields(),
-            )
-            pricing = ProviderPricingConfig.load(db)
-            # A turn that failed on our side (provider/server error, or the watch gave up waiting for us)
-            # is not charged to the customer's allowance; its cost stays visible to the operator.
-            # Turns the user stopped, and no-speech turns, count.
-            UsageRepo(db).add_many(
-                pricing.records(
-                    turn.usage,
-                    self.device_id,
-                    turn.db_id,
-                    turn.account_id,
-                    turn_status=result.status,
-                    billable=result.status != "error" and turn.abort_reason != "timeout",
-                )
             )
 
     async def _on_playback_started(self, msg: dict[str, Any]) -> None:
@@ -542,9 +668,14 @@ class DeviceConnection:
         with session_scope() as db:
             it = ItemRepo(db).get(self.account_id, *ref)
             view = device_full(it, self.settings.timezone) if it else None
-        if view is None:
+        if view is None or it is None:
             await self.hub.push_items(self.account_id, only=self)  # the watch's list is stale
             return
+        self._shown[ref] = it.uid
+        from app.voice_tools import summary  # the item opened by tap is "this" for the next sentence
+
+        STORE.set_open(STORE.get(self.account_id, self.device_id, self.env.session_id or ""), it,
+                       summary(it, self.settings.timezone), self.last_turn_id)
         await self.send_json("item_show", item=view)
 
     async def _on_item_delete(self, msg: dict[str, Any]) -> None:

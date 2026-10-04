@@ -38,6 +38,8 @@ LANGS = {
             "ERR_BATT_B": "Please charge the watch.",
             "ERR_BUSY_T": "Server busy",
             "ERR_BUSY_B": "Please try again in a moment.",
+            "ERR_CONC_T": "Conversations in progress",
+            "ERR_CONC_B": "Other conversations are in progress.\nTry again when they finish.",
             "ERR_SUB_T": "Subscription needed",
             "ERR_SUB_B": "Open the ola app to renew\nola Care.",
             "ERR_LIMIT_T": "Monthly usage reached",
