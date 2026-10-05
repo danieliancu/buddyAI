@@ -18,7 +18,7 @@ services:
 
   server:
     build:
-      context: ..
+      context: .
       dockerfile: deploy/server.Dockerfile
     restart: unless-stopped
     environment:
@@ -63,7 +63,7 @@ services:
 
   caddy:
     build:
-      context: ..
+      context: .
       dockerfile: deploy/caddy.coolify.Dockerfile
     restart: unless-stopped
     environment:
