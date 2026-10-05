@@ -17,7 +17,7 @@
 
 	@root host {$ROOT_DOMAIN}
 	handle @root {
-		redir https://{$SITE_DOMAIN}{uri} permanent
+		redir {$PUBLIC_SCHEME}://{$SITE_DOMAIN}{uri} permanent
 	}
 
 	@shop {
