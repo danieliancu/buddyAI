@@ -1,0 +1,102 @@
+name: buddyai
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: buddyai
+      POSTGRES_USER: buddyai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Coolify}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buddyai -d buddyai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/server.Dockerfile
+    restart: unless-stopped
+    environment:
+      BUDDYAI_DATABASE_URL: postgresql+psycopg://buddyai:${POSTGRES_PASSWORD}@postgres:5432/buddyai
+      BUDDYAI_PUBLIC_URL: https://${API_DOMAIN}
+      BUDDYAI_APP_URL: https://${APP_DOMAIN}
+      BUDDYAI_SITE_URL: https://${SITE_DOMAIN}
+      BUDDYAI_FORWARDED_ALLOW_IPS: "*"
+      BUDDYAI_LOG_JSON: "true"
+      BUDDYAI_MDNS_ENABLED: "false"
+      BUDDYAI_ALLOW_WEB_SETUP: "false"
+      BUDDYAI_AI_PROFILE: ${BUDDYAI_AI_PROFILE:-openai}
+      BUDDYAI_OPENAI_API_KEY: ${BUDDYAI_OPENAI_API_KEY:-}
+      BUDDYAI_DASHSCOPE_API_KEY: ${BUDDYAI_DASHSCOPE_API_KEY:-}
+      BUDDYAI_AZURE_SPEECH_KEY: ${BUDDYAI_AZURE_SPEECH_KEY:-}
+      BUDDYAI_AZURE_SPEECH_REGION: ${BUDDYAI_AZURE_SPEECH_REGION:-westeurope}
+      BUDDYAI_DISPLAY_CURRENCY: ${BUDDYAI_DISPLAY_CURRENCY:-GBP}
+      BUDDYAI_USD_TO_DISPLAY_RATE: ${BUDDYAI_USD_TO_DISPLAY_RATE:-0.75}
+      BUDDYAI_EMAIL_BACKEND: ${BUDDYAI_EMAIL_BACKEND:-console}
+      BUDDYAI_EMAIL_FROM: ${BUDDYAI_EMAIL_FROM:-ola <hello@example.com>}
+      BUDDYAI_SMTP_HOST: ${BUDDYAI_SMTP_HOST:-}
+      BUDDYAI_SMTP_PORT: ${BUDDYAI_SMTP_PORT:-587}
+      BUDDYAI_SMTP_USER: ${BUDDYAI_SMTP_USER:-}
+      BUDDYAI_SMTP_PASSWORD: ${BUDDYAI_SMTP_PASSWORD:-}
+      BUDDYAI_SMTP_STARTTLS: ${BUDDYAI_SMTP_STARTTLS:-true}
+      BUDDYAI_STRIPE_SECRET_KEY: ${BUDDYAI_STRIPE_SECRET_KEY:-}
+      BUDDYAI_STRIPE_WEBHOOK_SECRET: ${BUDDYAI_STRIPE_WEBHOOK_SECRET:-}
+      BUDDYAI_STRIPE_PRICE_WATCH_GBP: ${BUDDYAI_STRIPE_PRICE_WATCH_GBP:-}
+      BUDDYAI_STRIPE_PRICE_WATCH_EUR: ${BUDDYAI_STRIPE_PRICE_WATCH_EUR:-}
+      BUDDYAI_STRIPE_PRICE_CARE_GBP: ${BUDDYAI_STRIPE_PRICE_CARE_GBP:-}
+      BUDDYAI_STRIPE_PRICE_CARE_EUR: ${BUDDYAI_STRIPE_PRICE_CARE_EUR:-}
+      BUDDYAI_STRIPE_SHIPPING_RATES_GBP: ${BUDDYAI_STRIPE_SHIPPING_RATES_GBP:-}
+      BUDDYAI_STRIPE_SHIPPING_RATES_EUR: ${BUDDYAI_STRIPE_SHIPPING_RATES_EUR:-}
+      BUDDYAI_CARE_TRIAL_DAYS: ${BUDDYAI_CARE_TRIAL_DAYS:-90}
+    volumes:
+      - serverdata:/data
+    expose:
+      - "8765"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/caddy.coolify.Dockerfile
+    restart: unless-stopped
+    environment:
+      ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN in Coolify}
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in Coolify}
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in Coolify}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in Coolify}
+    expose:
+      - "80"
+    depends_on:
+      - server
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - backupdata:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/buddyai-$$(date +%Y%m%d-%H%M).dump
+          pg_dump -h postgres -U buddyai -d buddyai -Fc -f "$$f" && echo "backup ok: $$f" || echo "BACKUP FAILED"
+          find /backups -name 'buddyai-*.dump' -mtime +14 -delete
+          sleep 86400
+        done
+
+volumes:
+  pgdata:
+  serverdata:
+  backupdata:
