@@ -1,6 +1,6 @@
 {
-  "name": "olawatch",
-  "short_name": "olawatch",
+  "name": "olacompanion",
+  "short_name": "olacompanion",
   "description": "The AI smartwatch with a built-in voice assistant.",
   "start_url": "/",
   "display": "browser",

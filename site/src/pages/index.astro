@@ -16,7 +16,7 @@ import heroBg from "../assets/home/hero-bg.png";
 import heroWatch from "../assets/home/hero-watch.png";
 import watchBox from "../assets/home/watch-box.png";
 
-const description = `olawatch is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
+const description = `olacompanion is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
 const site = Astro.site!;
 const heroImg = await getImage({ src: heroWatch, width: 1200, format: "png" });
 const boxImg = await getImage({ src: watchBox, width: 1200, format: "png" });
@@ -39,7 +39,7 @@ const jsonLd = [
     "@context": "https://schema.org",
     "@type": "Product",
     "@id": new URL("/#product", site).href,
-    name: "olawatch",
+    name: "olacompanion",
     description,
     image: [new URL(heroImg.src, site).href, new URL(boxImg.src, site).href],
     brand: { "@type": "Brand", name: config.siteName },
@@ -72,30 +72,32 @@ const jsonLd = [
     <div class="absolute inset-0 -z-10 bg-gradient-to-r from-white/85 via-white/55 to-white/10" aria-hidden="true"></div>
     <div class="container-x relative grid items-center gap-6 pb-10 pt-10 lg:grid-cols-[1.15fr_1fr] lg:pb-14 lg:pt-12">
       <div>
-        <h1 id="hero-title" class="text-4xl font-extrabold leading-[1.08] tracking-tight text-fg sm:text-5xl lg:text-[3.4rem]">
-          Your AI companion,<br /><span class="text-gradient">now on your wrist.</span>
+        <h1 id="hero-title" class="hero-title font-extrabold leading-[1.08] tracking-tight text-fg sm:text-5xl lg:text-[3.4rem]">
+          <span class="whitespace-nowrap">Your AI companion,</span><br /><span class="text-gradient whitespace-nowrap">now on your wrist.</span>
         </h1>
         <p class="mt-5 max-w-xl text-lg text-[#39415a]">
           Talk naturally. Get reminders, take notes, get live answers and more. <Brand name="watch" /> is an AI smartwatch designed to
           make everyday life easier, in {languageCount} languages.
         </p>
-        <div class="mt-7 flex flex-col gap-3 sm:flex-row">
-          <a href="#buy" class="btn btn-primary min-w-44 text-base">Buy Now <Icon name="arrow" size={18} /></a>
-          <a href="/how-it-works/" class="btn btn-ghost min-w-40 text-base"><Icon name="play" size={20} class="text-accent" /> How It Works</a>
+        <div class="mt-7 grid gap-3 sm:w-fit sm:grid-cols-2">
+          <a href="#buy" class="btn btn-primary text-base sm:min-w-48">Buy Now <Icon name="arrow" size={18} /></a>
+          <a href="/how-it-works/" class="btn btn-ghost text-base sm:min-w-48"><Icon name="play" size={20} class="text-accent" /> How It Works</a>
         </div>
-        <p class="mt-5 flex items-center gap-2 text-sm font-semibold text-fg">
-          <Icon name="check" size={18} class="text-accent" /> No app to install. Set it up once and you're good to go.
-        </p>
       </div>
-      <div class="relative">
+      <div class="relative mx-auto w-fit lg:-my-6 xl:-ml-16">
+        <!-- phones and tablets: top right, beside the watch; desktop: lower left -->
+        <p class="absolute -right-8 top-0 z-10 grid h-32 w-32 place-content-center gap-1 rounded-full bg-blue text-center font-display text-base font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_10px_28px_rgba(47,107,255,.4)] ring-4 ring-white/70 sm:-right-16 sm:h-36 sm:w-36 sm:text-lg lg:-left-10 lg:right-auto lg:top-[60%] lg:h-36 lg:w-36">
+          <span>No App</span>
+          <span>To Install</span>
+        </p>
         <Image
           src={heroWatch}
-          alt="The olawatch (illustration)"
+          alt="The olacompanion (illustration)"
           widths={[360, 560, 760]}
           sizes="(min-width: 1024px) 440px, 80vw"
           loading="eager"
           fetchpriority="high"
-          class="mx-auto w-72 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] sm:w-80 lg:-my-6 lg:w-[27rem] xl:-ml-16"
+          class="w-72 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] sm:w-80 lg:w-[27rem]"
         />
       </div>
       <HeroChat class="z-10 hidden xl:absolute xl:bottom-0 xl:top-10 xl:-right-24 xl:block xl:w-[21rem]" />
@@ -155,7 +157,7 @@ const jsonLd = [
       </div>
       <Image
         src={watchBox}
-        alt="The olawatch next to its box (illustration)"
+        alt="The olacompanion next to its box (illustration)"
         widths={[320, 520, 700]}
         sizes="(min-width: 1024px) 340px, 80vw"
         class="mx-auto w-72 lg:h-[446px] lg:!w-auto lg:max-w-full lg:overflow-visible lg:object-cover"

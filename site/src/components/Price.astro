@@ -1,5 +1,5 @@
 ---
-// A price that follows the £/€ toggle. Renders the default currency statically (works without JS).
+// A price in the visitor's currency (£ in the UK, € elsewhere, see lib/currency.ts). Renders the default currency statically (works without JS).
 import { prices, formatPrice } from "../config";
 interface Props {
   item: "watch" | "care";

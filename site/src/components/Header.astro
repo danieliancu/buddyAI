@@ -19,9 +19,12 @@ const isActive = (href: string) => path === href;
 ---
 <header class="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-md">
   <div class="container-x flex h-16 items-center justify-between gap-4">
-    <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="ola home">
-      <Logo />
-    </a>
+    <div class="flex min-w-0 items-center gap-2">
+      <slot name="start" />
+      <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="ola home">
+        <Logo />
+      </a>
+    </div>
 
     <nav aria-label="Main" class="hidden lg:block">
       <ul class="flex items-center gap-2">
@@ -68,7 +71,13 @@ const isActive = (href: string) => path === href;
     </div>
   </div>
 
-  <nav id="mobile-nav" aria-label="Mobile" class="border-t border-line bg-white lg:hidden" hidden>
+  <!-- over the page (it doesn't push the content down), scrolls on its own when taller than the screen -->
+  <nav
+    id="mobile-nav"
+    aria-label="Mobile"
+    class="absolute inset-x-0 top-full max-h-[calc(100dvh-4rem)] overflow-y-auto border-y border-line bg-white shadow-[0_18px_40px_rgba(15,21,51,.16)] lg:hidden"
+    hidden
+  >
     <ul class="container-x flex flex-col py-3">
       {[...nav, ...mobileExtra].map((item) => (
         <li>
@@ -101,6 +110,12 @@ const isActive = (href: string) => path === href;
       btn.querySelector(".sr-only")!.textContent = open ? "Close menu" : "Open menu";
     };
     btn.addEventListener("click", () => set(btn.getAttribute("aria-expanded") !== "true"));
+    // a tap outside the menu (or on one of its links, e.g. /#buy on the home page) closes it
+    document.addEventListener("click", (e) => {
+      const t = e.target as Node;
+      if (btn.getAttribute("aria-expanded") === "true" && !btn.contains(t) && (!menu.contains(t) || (t as Element).closest?.("a")))
+        set(false);
+    });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && btn.getAttribute("aria-expanded") === "true") {
         set(false);

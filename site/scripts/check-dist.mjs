@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dist = join(root, "dist");
-const SITE = "https://www.olawatch.ai";
-const APP = "https://app.olawatch.ai";
+const SITE = "https://www.olacompanion.com";
+const APP = "https://app.olacompanion.com";
 // The UK and the 27 EU member states.
 const COUNTRIES = "GB AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split(" ");
 

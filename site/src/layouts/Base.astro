@@ -15,12 +15,12 @@ interface Props {
 }
 
 const { title, description, noindex = false, jsonLd, crumb } = Astro.props;
-const site = Astro.site ?? new URL("https://www.olawatch.ai");
+const site = Astro.site ?? new URL("https://www.olacompanion.com");
 const path = Astro.url.pathname === "/" ? "/" : Astro.url.pathname.replace(/\/?$/, "/");
 const canonical = new URL(path, site).href;
 const fullTitle = path === "/" ? `${config.siteName} — ${title}` : `${title} | ${config.siteName}`;
 const ogImage = new URL("/og-image.png", site).href;
-const ogAlt = "olawatch — the AI smartwatch with a voice assistant (illustration)";
+const ogAlt = "olacompanion — the AI smartwatch with a voice assistant (illustration)";
 
 // Structured data on every page: the organisation, the website, and breadcrumbs on inner pages.
 const orgId = new URL("/#organization", site).href;
@@ -136,7 +136,7 @@ const allData = [...siteData, ...pageData];
         <li class="flex items-center gap-1.5"><Icon name="undo" size={15} /> 14-day right to cancel</li>
       </ul>
     </div>
-    <Header />
+    <Header><slot name="header-start" slot="start" /></Header>
     <main id="main" tabindex="-1" class="focus:outline-none">
       <slot />
     </main>

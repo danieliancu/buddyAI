@@ -23,8 +23,7 @@ const trial = `${prices.trialMonths} months`;
     <div>
       <H class="text-xl font-bold text-fg"><Brand name="watch" bold /></H>
       <p class="mt-1 text-sm text-muted">AMOLED display · Voice AI · Built for everyday life</p>
-    </div>
-    <CurrencyToggle />
+    </div>
   </div>
 
   <div class="mt-5 flex items-end gap-3">
@@ -111,8 +110,7 @@ const trial = `${prices.trialMonths} months`;
       const currency = getCurrency();
       if (!canBuyIn(shop, currency)) {
         // The shop is open, but not in this currency yet: say so instead of a failed checkout.
-        const other = shop.currencies.includes("gbp") ? "£ GBP" : "€ EUR";
-        showError(`Checkout in ${currency} isn't available yet. Switch to ${other} above to buy now.`);
+        showError(`Checkout in ${currency === "GBP" ? "pounds" : "euros"} isn't available yet. Please check back soon.`);
         return;
       }
       btn.disabled = true;

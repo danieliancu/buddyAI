@@ -6,7 +6,7 @@
 export type Currency = "GBP" | "EUR";
 
 // Prices are set in pounds; euro prices are converted at GBP_TO_EUR and rounded to clean figures.
-// Must match the Stripe prices (products "olawatch" and "olacare", GBP + EUR, trial length):
+// Must match the Stripe prices (products "olacompanion" and "olacare", GBP + EUR, trial length):
 // STRIPE_PRICE_WATCH_GBP/EUR and STRIPE_PRICE_CARE_GBP/EUR in server/.env. After changing a price or
 // the rate, create Stripe prices with the new amounts.
 // Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
@@ -29,7 +29,7 @@ export const prices = {
 } as const;
 
 export const config = {
-  siteName: "olawatch",
+  siteName: "olacompanion",
   tagline: "Your AI companion, now on your wrist.",
 
   // Company details shown in the footer, contact page and legal pages.
@@ -38,10 +38,10 @@ export const config = {
   // Company and VAT numbers. Empty = the line is not shown.
   companyNumber: "",
   vatNumber: "",
-  supportEmail: "ola@olawatch.ai",
+  supportEmail: "ola@olacompanion.com",
 
   // The customer web app (sign in, "Add watch", notes, reminders, ola Care).
-  appUrl: "https://app.olawatch.ai",
+  appUrl: "https://app.olacompanion.com",
 
   // Returns: only claim free returns when this is true.
   freeReturns: false,

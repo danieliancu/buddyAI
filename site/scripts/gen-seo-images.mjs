@@ -38,7 +38,7 @@ const text = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"
   <g transform="translate(80 120)" stroke="url(#g)" stroke-width="5" stroke-linecap="round">
     <path d="M0 12v8M10 5v22M20 -2v36M30 5v22M40 12v8"/>
   </g>
-  <text x="138" y="146" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700" fill="#0f1533">ola<tspan fill="#5b4cf0">watch</tspan></text>
+  <text x="138" y="146" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700" fill="#0f1533">ola<tspan fill="#5b4cf0">companion</tspan></text>
   <text x="80" y="268" font-family="Segoe UI, Arial, sans-serif" font-size="64" font-weight="800" fill="#0f1533">Your AI companion,</text>
   <text x="80" y="346" font-family="Segoe UI, Arial, sans-serif" font-size="64" font-weight="800" fill="url(#hl)">now on your wrist.</text>
   <text x="80" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="30" fill="#39415a">Talk, set reminders, take notes, get live answers.</text>

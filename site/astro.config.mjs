@@ -9,7 +9,7 @@ const API_TARGET = process.env.BUDDYAI_API ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
   // Public URL of the marketing site (canonical URLs, sitemap, Open Graph, structured data).
-  site: "https://www.olawatch.ai",
+  site: "https://www.olacompanion.com",
   output: "static",
   trailingSlash: "ignore",
   build: { format: "directory" },

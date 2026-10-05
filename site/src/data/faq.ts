@@ -38,7 +38,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
         a: "The clock keeps time, and notes and reminders the watch has already loaded stay on screen. Everything that needs the ola servers waits for a connection: talking to the assistant, opening a note's full text, marking a reminder done, and reminder alerts — reminders are sent to the watch by our servers when they are due, so the watch has to be online to alert you. If it was offline, reminders from the last 24 hours arrive when it reconnects.",
       },
       {
-        q: "What doesn't olawatch do?",
+        q: "What doesn't olacompanion do?",
         a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. It doesn't sync with Google, Outlook or other calendars: reminders live in your ola account.",
       },
       {

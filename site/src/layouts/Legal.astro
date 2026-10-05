@@ -1,5 +1,6 @@
 ---
 import Base from "./Base.astro";
+import Icon from "../components/Icon.astro";
 import { config, legalLastUpdated, formatDate } from "../config";
 
 interface Props {
@@ -19,9 +20,50 @@ const legalNav = [
 const path = Astro.url.pathname.replace(/\/?$/, "/");
 ---
 <Base title={title} description={description}>
+  <!-- phones and tablets: a second hamburger, on the left of the header, opens the list of policies in a drawer -->
+  <button
+    slot="header-start"
+    type="button"
+    class="inline-grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line text-fg lg:hidden"
+    aria-controls="legal-drawer"
+    aria-expanded="false"
+    data-legal-toggle
+  >
+    <span class="sr-only">Legal pages</span>
+    <Icon name="menu" />
+  </button>
+  <div id="legal-drawer" class="fixed inset-0 z-50 lg:hidden" hidden data-legal-drawer>
+    <div class="absolute inset-0 bg-[#0f1533]/40" data-legal-close></div>
+    <nav aria-label="Legal pages" class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-white shadow-[12px_0_40px_rgba(15,21,51,.2)]">
+      <div class="flex h-16 shrink-0 items-center justify-between border-b border-line px-4">
+        <p class="font-display font-bold text-fg">Legal</p>
+        <button type="button" class="inline-grid h-11 w-11 place-items-center rounded-xl border border-line text-fg" data-legal-close>
+          <span class="sr-only">Close legal pages</span>
+          <Icon name="close" />
+        </button>
+      </div>
+      <ul class="flex flex-col gap-1 p-3">
+        {legalNav.map((l) => (
+          <li>
+            <a
+              href={l.href}
+              class:list={[
+                "block rounded-lg px-3 py-3 text-base",
+                path === l.href ? "bg-bg-2 font-semibold text-fg" : "text-muted hover:text-fg",
+              ]}
+              aria-current={path === l.href ? "page" : undefined}
+            >
+              {l.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </div>
+
   <div class="container-x grid gap-10 py-12 lg:grid-cols-[14rem_1fr]">
-    <nav aria-label="Legal pages" class="lg:sticky lg:top-24 lg:self-start">
-      <ul class="flex flex-wrap gap-2 lg:flex-col lg:gap-1">
+    <nav aria-label="Legal pages" class="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+      <ul class="flex flex-col gap-1">
         {legalNav.map((l) => (
           <li>
             <a
@@ -56,3 +98,29 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
     </article>
   </div>
 </Base>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>("[data-legal-toggle]");
+  const drawer = document.querySelector<HTMLElement>("[data-legal-drawer]");
+  if (toggle && drawer) {
+    const set = (open: boolean) => {
+      drawer.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+      document.documentElement.style.overflow = open ? "hidden" : "";
+      if (open) (drawer.querySelector<HTMLElement>("a[aria-current]") ?? drawer.querySelector<HTMLElement>("a"))?.focus();
+    };
+    toggle.addEventListener("click", () => set(true));
+    drawer.querySelectorAll("[data-legal-close]").forEach((el) => el.addEventListener("click", () => {
+      set(false);
+      toggle.focus();
+    }));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !drawer.hidden) {
+        set(false);
+        toggle.focus();
+      }
+    });
+    // back to desktop width: the sidebar shows again, so the drawer goes away
+    matchMedia("(min-width: 1024px)").addEventListener("change", (m) => m.matches && set(false));
+  }
+</script>

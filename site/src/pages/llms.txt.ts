@@ -7,7 +7,7 @@ export const GET: APIRoute = ({ site }) => {
   const u = (p: string) => new URL(p, site).href;
   const body = `# ${config.siteName}
 
-> olawatch is an AI smartwatch with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
+> olacompanion is an AI smartwatch with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
 
 ## What it does
 - Natural voice conversation with an AI assistant; tap to talk, tap again to interrupt.
@@ -26,7 +26,7 @@ export const GET: APIRoute = ({ site }) => {
 - Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the ola servers). Offline, the clock and already loaded notes and reminders stay visible.
 
 ## Price
-- olawatch: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off, VAT included.
+- olacompanion: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off, VAT included.
 - olacare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after ${prices.trialMonths} months free (the free period starts at purchase). Cancel anytime from the account ("Manage billing").
 - olacare includes a monthly fair-use allowance of AI usage (not unlimited), shown in the account as a percentage; at the limit the assistant pauses until the reset, or one-off extra usage can be bought.
 - 14-day right to cancel; UK statutory rights and the EU 2-year legal guarantee.

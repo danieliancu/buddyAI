@@ -4,12 +4,12 @@ import Icon from "./Icon.astro";
 import watch from "../assets/home/hero-watch.png";
 import { brandHtml } from "../lib/brand";
 
-const olawatch = brandHtml("watch");
+const olacompanion = brandHtml("watch");
 
 const steps = [
   {
     title: "Wear It",
-    text: `Connect your ${olawatch} to Wi-Fi and link it to your account with a 6-digit code.`,
+    text: `Connect your ${olacompanion} to Wi-Fi and link it to your account with a 6-digit code.`,
   },
   {
     title: "Talk Naturally",
@@ -17,7 +17,7 @@ const steps = [
   },
   {
     title: "Get Things Done",
-    text: `${olawatch} answers out loud, in your language, right from your wrist.`,
+    text: `${olacompanion} answers out loud, in your language, right from your wrist.`,
   },
 ];
 ---
@@ -25,8 +25,9 @@ const steps = [
   {steps.map((s, i) => (
     <>
       <li class="flex items-center gap-5">
-        <span class="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-[0_4px_16px_rgba(40,50,120,.1)]" aria-hidden="true">
-          {i === 0 && <Image src={watch} alt="" width={160} class="h-20 w-20 object-contain" />}
+        <span class="relative grid h-24 w-24 shrink-0 place-items-center rounded-full bg-white shadow-[0_4px_16px_rgba(40,50,120,.1)] md:overflow-hidden" aria-hidden="true">
+          {/* phones: the watch is drawn larger than its white circle (absolute, so the spacing stays the same) */}
+          {i === 0 && <Image src={watch} alt="" width={320} class="absolute left-1/2 top-1/2 h-36 w-36 max-w-none -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-[0_10px_16px_rgba(30,40,90,.3)] md:static md:h-20 md:w-20 md:translate-x-0 md:translate-y-0 md:drop-shadow-none" />}
           {i === 1 && <Icon name="wave" size={44} class="text-accent" />}
           {i === 2 && (
             <span class="grid h-16 w-16 place-items-center rounded-full bg-accent text-white"><Icon name="check" size={34} /></span>
