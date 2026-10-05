@@ -1,0 +1,69 @@
+{
+	auto_https off
+}
+
+(common_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+:80 {
+	import common_headers
+	encode zstd gzip
+
+	@root host {$ROOT_DOMAIN}
+	handle @root {
+		redir https://{$SITE_DOMAIN}{uri} permanent
+	}
+
+	@shop {
+		host {$SITE_DOMAIN}
+		path /api/shop/*
+	}
+	handle @shop {
+		reverse_proxy server:8765
+	}
+
+	@site host {$SITE_DOMAIN}
+	handle @site {
+		header Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		root * /srv/site
+		try_files {path} {path}/index.html {path}.html
+		file_server
+	}
+
+	@app host {$APP_DOMAIN}
+	handle @app {
+		header {
+			X-Frame-Options "DENY"
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			Content-Security-Policy "default-src 'self'; connect-src 'self' wss:; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		}
+		reverse_proxy server:8765
+	}
+
+	@device {
+		host {$API_DOMAIN}
+		path /ws/device /fw/* /healthz
+	}
+	handle @device {
+		reverse_proxy server:8765
+	}
+
+	@api host {$API_DOMAIN}
+	handle @api {
+		respond 404
+	}
+
+	respond 404
+
+	handle_errors 404 {
+		root * /srv/site
+		rewrite * /404.html
+		file_server
+	}
+}
