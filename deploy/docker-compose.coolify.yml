@@ -23,9 +23,9 @@ services:
     restart: unless-stopped
     environment:
       BUDDYAI_DATABASE_URL: postgresql+psycopg://buddyai:${POSTGRES_PASSWORD}@postgres:5432/buddyai
-      BUDDYAI_PUBLIC_URL: https://${API_DOMAIN}
-      BUDDYAI_APP_URL: https://${APP_DOMAIN}
-      BUDDYAI_SITE_URL: https://${SITE_DOMAIN}
+      BUDDYAI_PUBLIC_URL: "${PUBLIC_SCHEME:-https}://${API_DOMAIN}"
+      BUDDYAI_APP_URL: "${PUBLIC_SCHEME:-https}://${APP_DOMAIN}"
+      BUDDYAI_SITE_URL: "${PUBLIC_SCHEME:-https}://${SITE_DOMAIN}"
       BUDDYAI_FORWARDED_ALLOW_IPS: "*"
       BUDDYAI_LOG_JSON: "true"
       BUDDYAI_MDNS_ENABLED: "false"
@@ -67,6 +67,7 @@ services:
       dockerfile: deploy/caddy.coolify.Dockerfile
     restart: unless-stopped
     environment:
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN in Coolify}
       SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in Coolify}
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in Coolify}
