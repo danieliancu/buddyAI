@@ -85,8 +85,8 @@ const jsonLd = [
         </div>
       </div>
       <div class="relative mx-auto w-fit lg:-my-6 xl:-ml-16">
-        <!-- phones and tablets: top right, beside the watch; desktop: lower left -->
-        <p class="absolute -right-8 top-0 z-10 grid h-32 w-32 place-content-center gap-1 rounded-full bg-blue text-center font-display text-base font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_10px_28px_rgba(47,107,255,.4)] ring-4 ring-white/70 sm:-right-16 sm:h-36 sm:w-36 sm:text-lg lg:-left-10 lg:right-auto lg:top-[60%] lg:h-36 lg:w-36">
+        <!-- phones and tablets: bottom right, beside the watch; desktop: lower left, 50px above the bottom of the hero (the hero ends 32px below this box: its lg:pb-14 minus lg:-my-6) -->
+        <p class="absolute -right-8 bottom-4 z-10 grid h-32 w-32 place-content-center gap-1 rounded-full bg-blue text-center font-display text-base font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_10px_28px_rgba(47,107,255,.4)] ring-4 ring-white/70 sm:-right-16 sm:h-36 sm:w-36 sm:text-lg lg:-left-10 lg:right-auto lg:bottom-[18px] lg:h-36 lg:w-36">
           <span>No App</span>
           <span>To Install</span>
         </p>
@@ -115,7 +115,7 @@ const jsonLd = [
   <!-- How it works -->
   <section class="bg-bg-2 py-10" aria-labelledby="how-title">
     <div class="container-x">
-      <h2 id="how-title" class="text-2xl font-extrabold tracking-tight text-fg">How <Brand name="watch" bold /> Works</h2>
+      <h2 id="how-title" class="text-2xl font-extrabold tracking-tight text-fg"><span class="md:hidden">How it Works</span><span class="hidden md:inline">How <Brand name="watch" bold /> Works</span></h2>
       <p class="mt-1 text-muted">Get started in just a few simple steps.</p>
       <div class="mt-6"><Steps /></div>
     </div>
@@ -145,7 +145,7 @@ const jsonLd = [
     <div class="container-x grid items-center gap-8 lg:grid-cols-[16rem_minmax(0,1fr)_21rem]">
       <div>
         <p class="eyebrow">Get yours</p>
-        <h2 id="buy-title" class="mt-1 text-3xl font-extrabold tracking-tight text-fg">Put <Brand name="watch" bold /> on Your Wrist</h2>
+        <h2 id="buy-title" class="mt-1 text-3xl font-extrabold tracking-tight text-fg"><span class="md:hidden">Put it on Your Wrist</span><span class="hidden md:inline">Put <Brand name="watch" bold /> on Your Wrist</span></h2>
         <p class="mt-3 max-w-md text-muted">
           Get your <Brand name="watch" /> and be part of the next generation of AI-powered wearables.
         </p>

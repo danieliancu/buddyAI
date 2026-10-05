@@ -20,18 +20,6 @@ const legalNav = [
 const path = Astro.url.pathname.replace(/\/?$/, "/");
 ---
 <Base title={title} description={description}>
-  <!-- phones and tablets: a second hamburger, on the left of the header, opens the list of policies in a drawer -->
-  <button
-    slot="header-start"
-    type="button"
-    class="inline-grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line text-fg lg:hidden"
-    aria-controls="legal-drawer"
-    aria-expanded="false"
-    data-legal-toggle
-  >
-    <span class="sr-only">Legal pages</span>
-    <Icon name="menu" />
-  </button>
   <div id="legal-drawer" class="fixed inset-0 z-50 lg:hidden" hidden data-legal-drawer>
     <div class="absolute inset-0 bg-[#0f1533]/40" data-legal-close></div>
     <nav aria-label="Legal pages" class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-white shadow-[12px_0_40px_rgba(15,21,51,.2)]">
@@ -61,7 +49,7 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
     </nav>
   </div>
 
-  <div class="container-x grid gap-10 py-12 lg:grid-cols-[14rem_1fr]">
+  <div class="container-x grid gap-10 pb-12 pt-4 lg:grid-cols-[14rem_1fr] lg:py-12">
     <nav aria-label="Legal pages" class="hidden lg:sticky lg:top-24 lg:block lg:self-start">
       <ul class="flex flex-col gap-1">
         {legalNav.map((l) => (
@@ -82,6 +70,17 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
     </nav>
 
     <article class="prose-legal min-w-0 max-w-3xl">
+      <!-- phones and tablets: a menu of dots, under the header and above the title, opens the list of policies in a drawer -->
+      <button
+        type="button"
+        class="mb-4 inline-grid h-11 w-11 place-items-center rounded-xl border border-line text-fg lg:hidden"
+        aria-controls="legal-drawer"
+        aria-expanded="false"
+        data-legal-toggle
+      >
+        <span class="sr-only">Legal pages</span>
+        <Icon name="dots" />
+      </button>
       <h1 class="text-3xl font-extrabold tracking-tight text-fg sm:text-4xl">{title}</h1>
       <p class="mt-2 text-sm text-muted">Last updated: <time datetime={legalLastUpdated}>{formatDate(legalLastUpdated)}</time></p>
 

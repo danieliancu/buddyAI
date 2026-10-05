@@ -19,12 +19,9 @@ const isActive = (href: string) => path === href;
 ---
 <header class="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-md">
   <div class="container-x flex h-16 items-center justify-between gap-4">
-    <div class="flex min-w-0 items-center gap-2">
-      <slot name="start" />
-      <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="ola home">
-        <Logo />
-      </a>
-    </div>
+    <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="ola home">
+      <Logo />
+    </a>
 
     <nav aria-label="Main" class="hidden lg:block">
       <ul class="flex items-center gap-2">
