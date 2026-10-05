@@ -75,7 +75,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
 | `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
-| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted an item). After a voice request it is sent **before** `turn_end` (after the fresh `items`); a watch in note / reminder edit mode closes the edit mode on it. |
+| `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted the item from its own screen). After a voice request it is sent **before** `turn_end` (after the fresh `items`); a watch in note / reminder edit mode closes the edit mode on it. |
 | `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent before `turn_end` (after the fresh `items`). `changed_line` (note mode): the 1-based line just added or changed, to highlight. `listen: true` + `question` (from the chat): the user's words fit several places inside this item; once the chat reply has been played the watch starts this item's edit mode and shows `question` - the item's screen continues from there (older firmware: the item opens, the user taps its mic). |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
 | `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
@@ -105,8 +105,11 @@ chat turn of the same session (within 120 s; "no", another request, the expiry o
 cancel it). **On an item's own screen (note / reminder edit modes) everything applies at once, deletions
 too** - no confirmation there. The one question asked on an item's screen (and in the chat) is *which one*
 when the user's words fit several places ("delete the milk" with "Milk" on line 1 and "Whole milk" on line 10;
-"without Mihai" with two Mihais); the answer applies it. After a delete the list opens (`items_open`); after a line or detail removal
-the item is shown again (`item_show`).
+"without Mihai" with two Mihais); the answer applies it. **After a confirmed deletion in the chat the watch
+stays on the dialog** (nothing to show): no `items_open` after an item is deleted, no `item_show` after only
+lines or details were removed. The item is shown (`item_show`) only when the same request also added or
+changed something. On an item's own screen a change shows it again (`item_show`) and deleting the item opens
+the list (`items_open`).
 
 ## 4. Binary audio frames
 

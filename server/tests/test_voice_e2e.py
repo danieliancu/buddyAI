@@ -117,11 +117,12 @@ async def _scenario(host: str, script: Script, acc: int) -> None:
     with session_scope() as db:
         assert len(ItemRepo(db).list(acc, "reminder")) == 2
 
-    # 4. "Da": deleted now; fresh items, then items_open, then turn_end
+    # 4. "Da": deleted now; fresh items, then turn_end - the watch stays on the dialog (nothing to show)
     script.steps = ["Am șters întâlnirea."]
     msgs = await _turn(w, pcm, "Da")
-    order = [m["type"] for m in msgs if m["type"] in ("items", "items_open", "turn_end")]
-    assert order.index("items") < order.index("items_open") < order.index("turn_end")
+    order = [m["type"] for m in msgs if m["type"] in ("items", "items_open", "item_show", "turn_end")]
+    assert "items_open" not in order and "item_show" not in order
+    assert order.index("items") < order.index("turn_end")
     with session_scope() as db:
         assert [it.text for it in ItemRepo(db).list(acc, "reminder")] == ["Ședință cu Ștefan"]
     await w.close()

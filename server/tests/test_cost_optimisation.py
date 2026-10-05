@@ -208,6 +208,39 @@ def test_history_keeps_what_the_search_found(monkeypatch) -> None:
     assert msgs[3] == {"role": "system", "content": "Web search behind that reply: " + past.search_note}
 
 
+class RetryingLLM(SearchingLLM):
+    """Round 1 searches (not found), round 2 retries with a broader query, round 3 answers."""
+
+    async def stream(self, request: LLMRequest):
+        self.requests.append(request)
+        n = len(self.requests)
+        if n <= 2:
+            q = "Bucharest North to Titu trains Monday 5 October 2026" if n == 1 else "Bucharest Nord Titu train timetable"
+            yield LLMChunk(input_tokens=500, cached_input_tokens=0, output_tokens=10)
+            yield LLMChunk(tool_calls=[ToolCall(f"s{n}", "web_search", json.dumps({"query": q, "category": "transport"}))])
+        else:
+            yield LLMChunk(delta="The first train leaves at 04:48.")
+            yield LLMChunk(input_tokens=600, cached_input_tokens=0, output_tokens=10)
+
+    async def web_search(self, query, location, language, **kw):
+        self.searches.append((query, location))
+        return ("NOT_FOUND" if len(self.searches) == 1 else "04:48 -> 06:17, 05:51 -> 07:07."), 700, 20, 1
+
+
+def test_not_found_search_is_retried_once_with_a_broader_query() -> None:
+    _clear_cache()
+    llm = RetryingLLM()
+    turn = _turn(_account(), "trains to Titu tomorrow")
+    asyncio.run(_pipeline(llm)._reply(turn, FakeIO()))
+    assert [q for q, _ in llm.searches] == ["Bucharest North to Titu trains Monday 5 October 2026",
+                                           "Bucharest Nord Titu train timetable"]
+    first = [json.loads(m["content"]) for m in llm.requests[1].messages if m.get("role") == "tool"][0]
+    assert first["retry_allowed"] is True
+    assert sum(u.quantity for u in turn.usage if u.unit == "web_search_call") == 2  # both attempts billed
+    assert turn.search_note.endswith("04:48 -> 06:17, 05:51 -> 07:07.")  # the final result is remembered
+    assert "04:48" in turn.assistant_text
+
+
 def test_search_note_records_query_and_answer() -> None:
     from app.pipeline.conversation import search_note
 

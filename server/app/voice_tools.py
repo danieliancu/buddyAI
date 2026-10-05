@@ -373,7 +373,8 @@ class VoiceItemTools:
                 return _err("no change given")
             if removed:
                 return self._ask_confirmation(
-                    "reminder_change", [(it.uid, it.version)], {"changes": _serial(kw)},
+                    "reminder_change", [(it.uid, it.version)], {"changes": _serial(kw),
+                                                                "opens": reminder_add_or_change(it, kw)},
                     f"remove {', '.join(removed)} from {summary(it, self.call.tz)}", it.kind,
                 )
             key, op = self._op("item_update", {"uid": it.uid, "changes": changes})
@@ -448,7 +449,8 @@ class VoiceItemTools:
                 return _err(str(exc))
             if destructive:
                 return self._ask_confirmation(
-                    "note_ops", [(it.uid, it.version)], {"text": "\n".join(new_lines), "highlight": highlight},
+                    "note_ops", [(it.uid, it.version)], {"text": "\n".join(new_lines), "highlight": highlight,
+                                                         "opens": note_ops_add_or_change(ops)},
                     f"delete {describe_deleted_lines(lines, ops)} from {summary(it, self.call.tz)}", it.kind,
                 )
             key, op = self._op("item_note_edit", {"uid": it.uid, "ops": ops})
@@ -625,7 +627,8 @@ def execute_confirmation(call: ToolCallCtx, pc: PendingConfirmation) -> ConfirmR
             if pc.op == "delete_items":
                 repo.delete_exact(call.account_id, pc.targets, op=op)
                 STORE.clear_open(ctx)
-                return ConfirmResult("done", f"deleted: {pc.facts[len('delete '):]}", open={"list": pc.payload.get("kind", "note")})
+                # Nothing to show after a deletion (showing what is missing makes no sense): stay on the dialog.
+                return ConfirmResult("done", f"deleted: {pc.facts[len('delete '):]}")
             uid, version = pc.targets[0]
             it = repo.get_by_uid(call.account_id, uid)
             if it is None:
@@ -635,10 +638,14 @@ def execute_confirmation(call: ToolCallCtx, pc: PendingConfirmation) -> ConfirmR
                 view = device_full(it2, call.tz)
                 view["changed_line"] = pc.payload.get("highlight")
                 STORE.refresh_version(ctx, it2.uid, it2.version)
+                if not pc.payload.get("opens", True):  # only lines deleted: stay on the dialog
+                    return ConfirmResult("done", f"done: {pc.facts}")
                 return ConfirmResult("done", f"done: {pc.facts}", open={"item": view}, open_uid=it2.uid)
             if pc.op == "reminder_change":
                 it2 = repo.update(it, **_unserial(pc.payload["changes"]), expected_version=version, op=op)
                 STORE.refresh_version(ctx, it2.uid, it2.version)
+                if not pc.payload.get("opens", True):  # only details removed: stay on the dialog
+                    return ConfirmResult("done", f"done: {pc.facts}")
                 return ConfirmResult("done", f"done: {pc.facts}", open={"item": device_full(it2, call.tz)}, open_uid=it2.uid)
         except ItemConflictError as exc:
             if exc.missing:
@@ -796,6 +803,24 @@ def resolve_people(people: list[str], said: list[str]) -> list[str]:
 
 def _has_empty(ch: dict[str, Any], key: str) -> bool:
     return key in ch and ch[key] in ("", None, 0, [])
+
+
+def note_ops_add_or_change(ops: Any) -> bool:
+    """Does the command add or change a line (not only delete)? Only then the chat opens the note."""
+    return isinstance(ops, list) and any(isinstance(o, dict) and o.get("op") not in ("delete", "clear") for o in ops)
+
+
+def reminder_add_or_change(it: Item, kw: dict[str, Any]) -> bool:
+    """Do the changes add or change something (not only remove a person, the place, the end, the alert)?
+    Only then the chat opens the reminder."""
+    old_people = {normalize(p) for p in _split(it.participants)}
+    for k, v in kw.items():
+        if k in ("location", "end_at", "notify_before_min") and v in ("", None):
+            continue
+        if k == "participants" and {normalize(p) for p in _split(v or "")} <= old_people:
+            continue
+        return True
+    return False
 
 
 def note_ops_destructive(ops: Any) -> bool:

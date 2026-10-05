@@ -334,7 +334,7 @@ def test_yes_in_next_turn_deletes_exactly_once() -> None:
     assert turn.expect_reply and _get(acc, mon) is not None
     turn, io, llm = chat.say("Da.", ["Am șters ședința."])
     assert _get(acc, mon) is None and _get(acc, thu) is not None
-    assert turn.pending_open == {"list": "reminder"} and turn.items_changed
+    assert turn.pending_open is None and turn.items_changed  # nothing to show after a deletion: stays on the dialog
     assert llm.requests[0].tools is None  # the reply only reports the server's result
     turn, _io, _ = chat.say("Da.", ["?"])  # a second yes: nothing pending, nothing else deleted
     assert _get(acc, thu) is not None and not turn.items_changed
@@ -580,3 +580,60 @@ def test_dst_gap_and_overlap_ask() -> None:
     acc = _account()
     body = Voice(acc, TZ).body("item_create", {"kind": "reminder", "text": "x", "due_local": "2027-03-28 03:30"})
     assert body["ok"] is False and "ask" in body["error"]
+
+
+# --- after a confirmed deletion in the dialog: open the item only when something was added or changed ------
+
+
+def _note_edit_call(query: dict[str, Any], ops: list[dict[str, Any]]) -> list[ToolCall]:
+    return [ToolCall("n1", "item_note_edit", json.dumps({"target": {"query": query}, "ops": ops}))]
+
+
+def _update_call(query: dict[str, Any], changes: dict[str, Any]) -> list[ToolCall]:
+    return [ToolCall("u1", "item_update", json.dumps({"target": {"query": query}, "changes": changes}))]
+
+
+def test_dialog_line_delete_stays_on_the_dialog() -> None:
+    acc = _account()
+    with session_scope() as db:
+        uid = ItemRepo(db).create(acc, "note", "Cumpărături\nlapte\npâine").uid
+    chat = Chat(acc, session="s-lines")
+    turn, _io, _ = chat.say("Șterge pâinea din cumpărături",
+                            [_note_edit_call({"text": "cumparaturi"}, [{"op": "delete", "line": 2}]), "Șterg pâinea?"])
+    assert turn.expect_reply
+    turn, _io, _ = chat.say("Da.", ["Am șters pâinea."])
+    assert _get(acc, uid).text == "Cumpărături\nlapte"
+    assert turn.items_changed and turn.pending_open is None
+
+
+def test_dialog_line_delete_with_an_addition_opens_the_note() -> None:
+    acc = _account()
+    with session_scope() as db:
+        uid = ItemRepo(db).create(acc, "note", "Cumpărături\nlapte\npâine").uid
+    chat = Chat(acc, session="s-mixed")
+    chat.say("Șterge pâinea și adaugă ouă",
+             [_note_edit_call({"text": "cumparaturi"}, [{"op": "delete", "line": 2}, {"op": "append", "text": "ouă"}]),
+              "Șterg pâinea și adaug ouă?"])
+    turn, _io, _ = chat.say("Da.", ["Gata."])
+    assert _get(acc, uid).text == "Cumpărături\nlapte\nouă"
+    assert turn.pending_uid == uid and turn.pending_open["item"]["changed_line"] is not None
+
+
+def test_dialog_removing_a_person_stays_on_the_dialog() -> None:
+    acc = _account()
+    _mon, thu = _two_stefans(acc)
+    chat = Chat(acc, session="s-person")
+    chat.say("Scoate-o pe Ana", [_update_call({"person": ["Ana"]}, {"remove_participants": ["Ana"]}), "O scot pe Ana?"])
+    turn, _io, _ = chat.say("Da.", ["Am scos-o pe Ana."])
+    assert "Ana" not in (_get(acc, thu).participants or "")
+    assert turn.items_changed and turn.pending_open is None
+
+
+def test_dialog_removing_a_person_and_changing_the_time_opens_the_reminder() -> None:
+    acc = _account()
+    _mon, thu = _two_stefans(acc)
+    chat = Chat(acc, session="s-person-time")
+    chat.say("Scoate-o pe Ana și mut-o la 15",
+             [_update_call({"person": ["Ana"]}, {"remove_participants": ["Ana"], "time_local": "15:00"}), "Bine?"])
+    turn, _io, _ = chat.say("Da.", ["Gata."])
+    assert turn.pending_uid == thu and turn.pending_open["item"]["due_local"].endswith("15:00")
