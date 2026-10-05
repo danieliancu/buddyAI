@@ -10,11 +10,13 @@ import { config, prices } from "../config";
 import { privacyLine } from "../data/features";
 
 const journey = [
-  { icon: "card" as const, title: "Order", text: "Buy the watch with secure Stripe checkout. olacare starts with " + prices.trialMonths + " months free." },
-  { icon: "mail" as const, title: "Set your password", text: "Your confirmation email has a link to set your ola account password." },
+  { icon: "card" as const, title: "Order", text: `Buy the watch with secure Stripe checkout. Your ${prices.trialMonths} free months of olacare start now.` },
+  { icon: "mail" as const, title: "Set your password", text: "We create your ola account with your checkout email and send you a link to set its password." },
   { icon: "truck" as const, title: "Delivery", text: "We email you tracking details when your watch ships." },
-  { icon: "wifi" as const, title: "Add watch", text: "Connect it to Wi-Fi, then sign in to your ola account in any web browser and choose Add watch. No app to install." },
-  { icon: "mic" as const, title: "Start talking", text: "Tap the mic button. That's it." },
+  { icon: "wifi" as const, title: "Connect to Wi-Fi", text: "Hold the side button to turn the watch on. On your phone, join the Wi-Fi network ola-XXXX; a page opens where you pick your 2.4 GHz Wi-Fi, enter its password and tap Save." },
+  { icon: "display" as const, title: "Add watch", text: "The watch shows a 6-digit code. Sign in to your ola account in any web browser, choose “Add watch” and type the code within 5 minutes. No app to install." },
+  { icon: "persona" as const, title: "Make it yours", text: "In the watch's settings choose the language (or Auto), persona, voice and speaking speed, theme, brightness, volume, screen timeout and time zone." },
+  { icon: "mic" as const, title: "Start talking", text: "Tap the mic button and ask a question, set a reminder or dictate a note. Notes, reminders, usage and billing are in your account." },
 ];
 ---
 <Base title="How the olawatch AI smartwatch works" crumb="How it works" description="Tap the mic, talk, and hear the AI answer out loud. How the olawatch voice assistant works, from ordering and Wi-Fi setup to your first conversation.">
@@ -41,7 +43,7 @@ const journey = [
 
   <section class="container-x mt-20" aria-labelledby="journey-title">
     <SectionHeading id="journey-title" title="From order to first conversation" />
-    <ol class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <ol class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {journey.map((j, i) => (
         <li class="glass p-5">
           <span class="icon-tile !h-10 !w-10"><Icon name={j.icon} size={20} /></span>

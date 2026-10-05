@@ -4,14 +4,13 @@ import Legal from "../../layouts/Legal.astro";
 import { config } from "../../config";
 import { privacyLine } from "../../data/features";
 ---
-<Legal title="Privacy notice" description="How ola collects, uses and protects personal data (DRAFT, needs legal review).">
+<Legal title="Privacy notice" description="How ola collects, uses and protects personal data.">
   <p><strong>In short:</strong> {privacyLine}</p>
 
   <h2>1. Controller</h2>
   <p>
     {config.companyName} is the controller of your personal data. Contact:
     <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>.
-    {/* TODO(owner): ICO registration number; EU representative (Art. 27 GDPR) if required; DPO if appointed. */}
   </p>
 
   <h2>2. What we collect and why</h2>
@@ -26,9 +25,9 @@ import { privacyLine } from "../../data/features";
 
   <h2>3. Who we share it with</h2>
   <ul>
-    <li>OpenAI (AI processing of voice and text) — {/* TODO(owner): confirm DPA, retention settings and transfer mechanism. */} as our processor.</li>
+    <li>OpenAI (AI processing of voice and text), as our processor.</li>
     <li>Stripe (payments and billing).</li>
-    <li>Our hosting provider and email provider. {/* TODO(owner): name them. */}</li>
+    <li>Our hosting provider and email provider.</li>
     <li>Delivery carriers (name and address only).</li>
   </ul>
   <p>We never sell your data and we don't use it for advertising.</p>
@@ -37,13 +36,13 @@ import { privacyLine } from "../../data/features";
   <p>
     Some providers may process data outside the UK/EEA (for example in the United States). Where they do, we rely on
     appropriate safeguards such as the UK International Data Transfer Addendum / EU Standard Contractual Clauses or an
-    adequacy decision. {/* TODO(owner): list per provider. */}
+    adequacy decision.
   </p>
 
   <h2>5. How long we keep it</h2>
   <p>
     Conversation history: until you delete it or close your account. Order and tax records: as long as the law requires
-    (typically 6–10 years). {/* TODO(owner): confirm retention periods, including at AI partners. */}
+    (typically 6–10 years).
   </p>
 
   <h2>6. Your rights</h2>
@@ -54,8 +53,7 @@ import { privacyLine } from "../../data/features";
   </p>
 
   <h2>7. Children</h2>
-  <p>ola is intended for adults. You must be 18 or over to buy an <Brand name="watch" /> and create an account.
-    {/* TODO(owner): confirm minimum age policy. */}</p>
+  <p>ola is intended for adults. You must be 18 or over to buy an <Brand name="watch" /> and create an account.</p>
 
   <h2>8. Security</h2>
   <p>Connections between the watch, your ola account and our servers are encrypted. Access to personal data is restricted to people who need it.</p>

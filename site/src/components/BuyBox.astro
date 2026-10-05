@@ -68,7 +68,7 @@ const trial = `${prices.trialMonths} months`;
 
 <script>
   import { getCurrency } from "../lib/currency";
-  import { shopStatus } from "../lib/shop";
+  import { shopStatus, canBuyIn, type ShopStatus } from "../lib/shop";
 
   const box = document.querySelector<HTMLElement>("[data-buybox]");
   if (box) {
@@ -77,6 +77,7 @@ const trial = `${prices.trialMonths} months`;
     const status = box.querySelector<HTMLElement>("[data-buy-status]")!;
     const panel = box.querySelector<HTMLElement>("[data-notify-panel]")!;
     let mode: "loading" | "buy" | "notify" = "loading";
+    let shop: ShopStatus = { open: false, currencies: [] };
 
     const showError = (msg: string) => {
       status.innerHTML = "";
@@ -94,6 +95,7 @@ const trial = `${prices.trialMonths} months`;
     };
 
     const statusPromise = shopStatus().then((s) => {
+      shop = s;
       if (s.open) mode = "buy";
       else setNotify();
     });
@@ -106,6 +108,13 @@ const trial = `${prices.trialMonths} months`;
         return;
       }
       status.textContent = "";
+      const currency = getCurrency();
+      if (!canBuyIn(shop, currency)) {
+        // The shop is open, but not in this currency yet: say so instead of a failed checkout.
+        const other = shop.currencies.includes("gbp") ? "£ GBP" : "€ EUR";
+        showError(`Checkout in ${currency} isn't available yet. Switch to ${other} above to buy now.`);
+        return;
+      }
       btn.disabled = true;
       label.textContent = "Opening secure checkout…";
       try {

@@ -35,13 +35,13 @@ export const features: Feature[] = [
     icon: "note",
     title: "Notes",
     short: "Create and edit notes just by talking.",
-    long: "Dictate a note, then add, change, move or delete lines by voice. Your notes and reminders are also in your ola account, where you can view and edit them.",
+    long: "Dictate a note, then add, change, move or delete lines by voice. Find, copy or delete notes and reminders just by asking; if several match, ola asks which one. Your notes and reminders are also in your ola account, where you can view and edit them.",
   },
   {
     icon: "search",
     title: "Live answers",
     short: "Weather, news, opening hours and more.",
-    long: "For things that change, ola looks them up: today's weather, the news, opening hours, addresses, travel updates and current prices. You can turn this off for each watch.",
+    long: "For things that change, ola looks them up: today's weather, the news, opening hours, addresses, travel updates and current prices.",
   },
   {
     icon: "globe",

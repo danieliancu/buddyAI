@@ -11,12 +11,12 @@ import Designed from "../components/Designed.astro";
 import Testimonials from "../components/Testimonials.astro";
 import BuyBox from "../components/BuyBox.astro";
 import { languageCount } from "../lib/languages";
-import { config, prices } from "../config";
+import { config, prices, formatPrice, shipCountryCodes } from "../config";
 import heroBg from "../assets/home/hero-bg.png";
 import heroWatch from "../assets/home/hero-watch.png";
 import watchBox from "../assets/home/watch-box.png";
 
-const description = `olawatch is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. £79, ships to the UK & EU.`;
+const description = `olawatch is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
 const site = Astro.site!;
 const heroImg = await getImage({ src: heroWatch, width: 1200, format: "png" });
 const boxImg = await getImage({ src: watchBox, width: 1200, format: "png" });
@@ -27,7 +27,7 @@ const offerBase = {
   seller: { "@id": new URL("/#organization", site).href },
   hasMerchantReturnPolicy: {
     "@type": "MerchantReturnPolicy",
-    applicableCountry: ["GB", "IE", "FR", "DE", "ES", "IT", "NL", "BE", "AT", "PT", "RO", "PL"],
+    applicableCountry: shipCountryCodes,
     returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
     merchantReturnDays: 14,
     returnMethod: "https://schema.org/ReturnByMail",
@@ -49,7 +49,7 @@ const jsonLd = [
       { "@type": "PropertyValue", name: "Display", value: "AMOLED touch screen, 410 × 502 pixels" },
       { "@type": "PropertyValue", name: "Connectivity", value: "Wi-Fi (2.4 GHz)" },
       { "@type": "PropertyValue", name: "Languages", value: `${languageCount} + Auto` },
-      { "@type": "PropertyValue", name: "Subscription", value: `olacare, £${prices.care.GBP.toFixed(2)}/month after ${prices.trialMonths} months free` },
+      { "@type": "PropertyValue", name: "Subscription", value: `olacare, ${formatPrice(prices.care.GBP, "GBP")}/month after ${prices.trialMonths} months free` },
     ],
     offers: [
       { ...offerBase, priceCurrency: "GBP", price: prices.watch.GBP.toFixed(2) },
@@ -164,3 +164,34 @@ const jsonLd = [
     </div>
   </section>
 </Base>
+
+<script>
+  // Offer availability follows the live shop status (/api/shop/status): only when checkout is open for a
+  // currency does its Offer say InStock. Closed, unreachable or not configured: no availability at all
+  // (never OutOfStock, which would be untrue). Matches the buy box, which uses the same status.
+  import { shopStatus } from "../lib/shop";
+
+  shopStatus().then((s) => {
+    if (!s.open) return;
+    for (const el of document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]')) {
+      let data: unknown;
+      try {
+        data = JSON.parse(el.textContent || "");
+      } catch {
+        continue;
+      }
+      const items = Array.isArray(data) ? data : [data];
+      let changed = false;
+      for (const item of items as { "@type"?: string; offers?: { priceCurrency?: string; availability?: string }[] }[]) {
+        if (item["@type"] !== "Product" || !Array.isArray(item.offers)) continue;
+        for (const offer of item.offers) {
+          if (offer.priceCurrency && s.currencies.includes(offer.priceCurrency.toLowerCase())) {
+            offer.availability = "https://schema.org/InStock";
+            changed = true;
+          }
+        }
+      }
+      if (changed) el.textContent = JSON.stringify(data);
+    }
+  });
+</script>

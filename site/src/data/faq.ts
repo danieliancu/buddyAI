@@ -1,5 +1,5 @@
 import { brandHtml } from "../lib/brand";
-import { config, prices, formatPrice, deliveryText } from "../config";
+import { config, prices, formatPrice, shipCountryNames } from "../config";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "./features";
 
@@ -31,7 +31,15 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. ola connects over Wi-Fi (2.4 GHz) — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection, so it can't answer without Wi-Fi.",
+        a: "Yes. ola connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set up Wi-Fi on the watch itself: it opens its own network called <em>ola-XXXX</em>; join it with your phone and a page opens where you pick your Wi-Fi and enter its password.",
+      },
+      {
+        q: "What works without an internet connection?",
+        a: "The clock keeps time, and notes and reminders the watch has already loaded stay on screen. Everything that needs the ola servers waits for a connection: talking to the assistant, opening a note's full text, marking a reminder done, and reminder alerts — reminders are sent to the watch by our servers when they are due, so the watch has to be online to alert you. If it was offline, reminders from the last 24 hours arrive when it reconnects.",
+      },
+      {
+        q: "What doesn't olawatch do?",
+        a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. It doesn't sync with Google, Outlook or other calendars: reminders live in your ola account.",
       },
       {
         q: "What does the screen look like?",
@@ -44,6 +52,31 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       {
         q: "Can the AI get things wrong?",
         a: "Yes. Like all AI assistants, ola can make mistakes. Please double-check anything important, and don't rely on it for medical, legal, financial or emergency advice.",
+      },
+    ],
+  },
+  {
+    title: "Notes & reminders by voice",
+    items: [
+      {
+        q: "What can I do with notes and reminders by voice?",
+        a: "Create them, find them by what they say (or by a person, a place or a day), change them, copy them and delete them. Reminders can have a time, an end time, an early alert, a place and people. Notes can be edited line by line: add, change, move or remove lines. Everything you create is also in your ola account, where you can view and edit it in a browser.",
+      },
+      {
+        q: "What if more than one note or reminder matches?",
+        a: "ola asks which one you mean, and continues once you answer.",
+      },
+      {
+        q: "Does it ask before deleting?",
+        a: "Yes, in a normal conversation: ola asks you to confirm, and deletes only after a clear yes. If you are already on a note's or reminder's own screen and ask to change it, the change — including removing a line — is applied straight away, and you can undo the last change. Deleting from the watch's Delete button needs two taps.",
+      },
+      {
+        q: "Can you give some examples?",
+        a: "Example commands (not recordings): “Remind me tomorrow at 9:30 to call the dentist.” · “Add oat milk to my shopping list.” · “Move my meeting with Anna to Friday at 3.” · “What reminders do I have on Monday?” · “Copy my packing list.” · “Delete the gym reminder.” — ola then asks you to confirm.",
+      },
+      {
+        q: "How many notes and reminders can I keep?",
+        a: "Up to 100 notes and 100 reminders per account.",
       },
     ],
   },
@@ -82,11 +115,19 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Why is there a subscription?",
-        a: `${brandHtml("care")} pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active ${brandHtml("care")} subscription to work. It includes a monthly fair-use allowance, described in the <a href=\"/legal/subscription-terms/\">subscription terms</a>.`,
+        a: `${brandHtml("care")} pays for the AI that answers you — speech recognition, the AI model and the voice — plus the servers and updates. The assistant needs an active ${brandHtml("care")} subscription to answer; without one, the assistant doesn't answer questions; your notes and reminders stay in your account. See the <a href=\"/legal/subscription-terms/\">subscription terms</a>.`,
+      },
+      {
+        q: "When does the free period start, and what happens after it?",
+        a: `The ${prices.trialMonths} free months of ${brandHtml("care")} start when you buy the watch. We email you a few days before the free period ends. After that the subscription renews every month and your card is charged, until you cancel.`,
+      },
+      {
+        q: "Is there a usage limit?",
+        a: `Yes. ${brandHtml("care")} includes a monthly fair-use allowance of AI usage, shared by all your watches — it is not unlimited. Different requests use different amounts (questions that search the web, long answers and long recordings use more), so it isn't a fixed number of minutes or conversations. Your account shows how much you've used as a percentage, and the date it resets; we let you know as you approach the limit. If you reach it, ola pauses new questions until the reset, or you can buy one-off extra usage for the rest of the period.`,
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,
-        a: `Anytime, from your account (Plan &amp; usage). If you cancel during the ${prices.trialMonths}-month free period you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
+        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the ${prices.trialMonths}-month free period you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],
   },
@@ -95,7 +136,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "Where do you ship?",
-        a: `To the United Kingdom and the European Union: ${config.shipping.countries.join(", ")}. Delivery times: UK ${deliveryText(config.shipping.deliveryTimes.UK)}, EU ${deliveryText(config.shipping.deliveryTimes.EU)}. ${config.shipping.costNote}`,
+        a: `To the United Kingdom and all 27 EU member states: ${shipCountryNames.join(", ")}. ${config.shipping.note}`,
       },
       {
         q: "Can I return it?",
@@ -107,7 +148,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What happens after I order?",
-        a: `You'll get an order confirmation email with a link to set your account password. When your watch ships, we email you tracking details. When it arrives, sign in to <a href="${config.appUrl}">your ola account</a> in any web browser and choose Add watch.`,
+        a: `We create your ola account with the email you used at checkout and send you a link to set your password, plus an order confirmation. When your watch ships, we email you tracking details. When it arrives, connect it to Wi-Fi, sign in to <a href="${config.appUrl}">your ola account</a> in any web browser, choose “Add watch” and type the 6-digit code shown on the watch. See <a href="/how-it-works/">how it works</a>.`,
       },
     ],
   },

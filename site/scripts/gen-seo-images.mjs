@@ -9,6 +9,11 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const pub = (f) => root + "public/" + f;
 const asset = (f) => root + "src/assets/home/" + f;
 
+// The watch price shown on the share image comes from src/config.ts (PRICE_GBP), so it can't drift from the site.
+const watchGbp = Number(/PRICE_GBP\s*=\s*\{\s*watch:\s*([\d.]+)/.exec(readFileSync(root + "src/config.ts", "utf8"))?.[1]);
+if (!watchGbp) throw new Error("PRICE_GBP.watch not found in src/config.ts");
+const priceLabel = Number.isInteger(watchGbp) ? `£${watchGbp}` : `£${watchGbp.toFixed(2)}`;
+
 // --- icons: the waveform mark on a white rounded square ---------------------------------------
 const mark = (size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32">
   <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#5b4cf0"/><stop offset="1" stop-color="#2f6bff"/></linearGradient></defs>
@@ -37,7 +42,7 @@ const text = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"
   <text x="80" y="268" font-family="Segoe UI, Arial, sans-serif" font-size="64" font-weight="800" fill="#0f1533">Your AI companion,</text>
   <text x="80" y="346" font-family="Segoe UI, Arial, sans-serif" font-size="64" font-weight="800" fill="url(#hl)">now on your wrist.</text>
   <text x="80" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="30" fill="#39415a">Talk, set reminders, take notes, get live answers.</text>
-  <text x="80" y="470" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#0f1533">£79 · ships to the UK &amp; EU</text>
+  <text x="80" y="470" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#0f1533">${priceLabel} · ships to the UK &amp; EU</text>
 </svg>`;
 await sharp(bg)
   .composite([

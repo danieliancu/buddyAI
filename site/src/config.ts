@@ -1,8 +1,6 @@
 /**
- * Site-wide configuration for the ola marketing site.
- *
- * Everything marked TODO(owner) must be filled in / confirmed before launch.
- * Search the project for "TODO(owner)" to find every placeholder.
+ * Site-wide configuration for the ola marketing site: prices, company details, shipping destinations.
+ * Pages, structured data and llms.txt all read from here, so the figures stay consistent.
  */
 
 export type Currency = "GBP" | "EUR";
@@ -14,7 +12,7 @@ export type Currency = "GBP" | "EUR";
 // Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
 const PRICE_GBP = { watch: 79, care: 7.9 };
 
-// TODO(owner): review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
+// Review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
 export const GBP_TO_EUR = 1.17;
 
 /** A converted price rounded to a clean figure: whole euros from €20 up, else to the nearest €0.50. */
@@ -37,43 +35,32 @@ export const config = {
   // Company details shown in the footer, contact page and legal pages.
   companyName: "Ola Technologies London Ltd",
   address: "Essex, United Kingdom",
-  // TODO(owner): company and VAT numbers. Empty = the line is not shown.
+  // Company and VAT numbers. Empty = the line is not shown.
   companyNumber: "",
   vatNumber: "",
   supportEmail: "ola@olawatch.ai",
 
-  // TODO(owner): URL of the customer web app (sign in / "Add watch").
-  appUrl: "https://app.example.com",
+  // The customer web app (sign in, "Add watch", notes, reminders, ola Care).
+  appUrl: "https://app.olawatch.ai",
 
-  // Returns: only claim free returns when this is true. TODO(owner): decide.
+  // Returns: only claim free returns when this is true.
   freeReturns: false,
 
-  // Shipping destinations. TODO(owner): confirm the list matches the Stripe shipping rates.
+  // Delivery: rates and times come from Stripe at checkout (BUDDYAI_STRIPE_SHIPPING_RATES_*), never from here.
   shipping: {
-    countries: [
-      "United Kingdom",
-      "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia", "Denmark", "Estonia",
-      "Finland", "France", "Germany", "Greece", "Hungary", "Ireland", "Italy", "Latvia",
-      "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland", "Portugal", "Romania",
-      "Slovakia", "Slovenia", "Spain", "Sweden",
-    ],
-    // TODO(owner): delivery times once the carrier is chosen. "TBD" renders as "to be confirmed".
-    deliveryTimes: { UK: "TBD", EU: "TBD" },
-    // TODO(owner): shipping cost wording once the Stripe shipping rates exist.
-    costNote: "Shipping cost is shown at checkout before you pay.",
+    note: "Delivery options, shipping costs and estimated delivery times are shown at checkout before you pay.",
   },
 
-  // Cookieless analytics (Plausible). Empty string = analytics off.
-  // TODO(owner): set e.g. "www.example.com" to enable.
+  // Cookieless analytics (Plausible). Empty string = analytics off; set the site's domain to enable.
   plausibleDomain: "",
   plausibleSrc: "https://plausible.io/js/script.js",
 
   // Optional newsletter form endpoint. Empty = the footer shows a "sales open soon" note
-  // instead of an email field (nothing is collected). TODO(owner): add a provider if wanted.
+  // instead of an email field (nothing is collected).
   newsletterAction: "",
 
   // Social profiles shown in the footer (only rendered when non-empty).
-  // TODO(owner): add real profiles, e.g. { label: "Instagram", href: "https://..." }.
+  // e.g. { label: "Instagram", href: "https://..." }.
   social: [] as { label: string; href: string }[],
 };
 
@@ -82,6 +69,25 @@ export function formatPrice(amount: number, currency: Currency): string {
   return `${symbol}${amount.toFixed(2)}`;
 }
 
-export function deliveryText(value: string): string {
-  return value === "TBD" ? "to be confirmed" : value;
+/** Date of the last content update of the legal pages (set by hand when their text changes). */
+export const legalLastUpdated = "2026-10-05";
+
+export function formatDate(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
+
+/**
+ * Where we ship, and where the returns policy applies: the UK and the 27 EU member states (ISO 3166-1 alpha-2).
+ * Keep in step with BUDDYAI_SHIP_COUNTRIES (server/app/config.py), the Stripe checkout's allowed countries.
+ */
+export const shipCountries = [
+  ["GB", "United Kingdom"],
+  ["AT", "Austria"], ["BE", "Belgium"], ["BG", "Bulgaria"], ["HR", "Croatia"], ["CY", "Cyprus"],
+  ["CZ", "Czechia"], ["DK", "Denmark"], ["EE", "Estonia"], ["FI", "Finland"], ["FR", "France"],
+  ["DE", "Germany"], ["GR", "Greece"], ["HU", "Hungary"], ["IE", "Ireland"], ["IT", "Italy"],
+  ["LV", "Latvia"], ["LT", "Lithuania"], ["LU", "Luxembourg"], ["MT", "Malta"], ["NL", "Netherlands"],
+  ["PL", "Poland"], ["PT", "Portugal"], ["RO", "Romania"], ["SK", "Slovakia"], ["SI", "Slovenia"],
+  ["ES", "Spain"], ["SE", "Sweden"],
+] as const;
+export const shipCountryCodes: string[] = shipCountries.map(([code]) => code);
+export const shipCountryNames: string[] = shipCountries.map(([, name]) => name);

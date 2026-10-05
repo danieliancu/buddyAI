@@ -8,7 +8,7 @@ import FaqList from "../components/FaqList.astro";
 import Price from "../components/Price.astro";
 import Icon from "../components/Icon.astro";
 import { faqGroups } from "../data/faq";
-import { config, prices, formatPrice, deliveryText } from "../config";
+import { config, prices, formatPrice, shipCountryNames } from "../config";
 import { languageCountLabel } from "../lib/languages";
 
 const included = [
@@ -17,7 +17,7 @@ const included = [
   "Personas — choose or write your own",
   "Conversation history in your account (export or delete anytime)",
   "Firmware updates over the air",
-  "A monthly fair-use allowance of AI usage",
+  "A monthly fair-use allowance of AI usage, shared by all your watches",
 ];
 const pricingFaq = [
   ...faqGroups.find((g) => g.title === "Price & subscription")!.items,
@@ -45,21 +45,18 @@ const description = `${formatPrice(prices.watch.GBP, "GBP")} today, then ${forma
           ))}
         </ul>
         <p class="mt-4 text-sm text-muted">
-          <Price item="care" class="font-semibold text-fg" />/month after {prices.trialMonths} months free. Cancel anytime
-          from your account; if you cancel during the free period you pay nothing for Care.
+          <Price item="care" class="font-semibold text-fg" />/month after {prices.trialMonths} months free. The free period
+          starts when you buy the watch; we email you before it ends, then your card is charged monthly. Cancel anytime
+          from your account ("Manage billing"); if you cancel during the free period you pay nothing for Care.
         </p>
       </div>
       <div class="glass p-6">
         <h2 class="text-lg font-semibold text-fg">Delivery</h2>
-        <p class="mt-2 text-sm text-muted">We ship to the United Kingdom and all EU member states.</p>
-        <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt class="text-fg">UK</dt><dd class="text-muted">Delivery time {deliveryText(config.shipping.deliveryTimes.UK)}</dd>
-          <dt class="text-fg">EU</dt><dd class="text-muted">Delivery time {deliveryText(config.shipping.deliveryTimes.EU)}</dd>
-        </dl>
-        <p class="mt-3 text-sm text-muted">{config.shipping.costNote}</p>
+        <p class="mt-2 text-sm text-muted">We ship to the United Kingdom and all 27 EU member states.</p>
+        <p class="mt-3 text-sm text-muted">{config.shipping.note}</p>
         <details class="mt-3 text-sm">
-          <summary class="cursor-pointer text-indigo-300">All destinations ({config.shipping.countries.length})</summary>
-          <p class="mt-2 text-muted">{config.shipping.countries.join(", ")}</p>
+          <summary class="cursor-pointer text-accent">All destinations ({shipCountryNames.length})</summary>
+          <p class="mt-2 text-muted">{shipCountryNames.join(", ")}</p>
         </details>
       </div>
     </div>

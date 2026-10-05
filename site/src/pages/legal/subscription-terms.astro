@@ -3,7 +3,7 @@ import Brand from "../../components/Brand.astro";
 import Legal from "../../layouts/Legal.astro";
 import { config, prices, formatPrice } from "../../config";
 ---
-<Legal title="Subscription terms" description="Terms for olacare, the subscription that powers the AI assistant (DRAFT, needs legal review).">
+<Legal title="Subscription terms" description="Terms for olacare, the subscription that powers the AI assistant.">
   <p>
     <Brand name="care" /> is the subscription that powers the AI voice assistant on your <Brand name="watch" />. The watch's assistant
     does not answer without an active <Brand name="care" /> subscription.
@@ -20,24 +20,24 @@ import { config, prices, formatPrice } from "../../config";
   <h2>2. Reminder before you are charged</h2>
   <p>
     We will email you before the free period ends, telling you the date of the first payment and how to cancel.
-    {/* TODO(owner): make sure this reminder email is actually sent (UK DMCC Act subscription rules). */}
   </p>
 
   <h2>3. What's included</h2>
   <ul>
     <li>Voice conversations with the AI assistant, in all supported languages.</li>
-    <li>Personas, custom colours, and your conversation history in your account (export or delete anytime).</li>
+    <li>Personas, the blue or white theme, and your conversation history in your account (export or delete anytime).</li>
     <li>Firmware updates over the air.</li>
     <li>
-      A monthly fair-use allowance of AI usage. If you reach it, the assistant pauses until your next monthly period
-      starts; we email you when you reach 80% of it.
-      {/* TODO(owner): state the allowance in plain terms (e.g. approximate minutes of conversation). */}
+      A monthly fair-use allowance of AI usage, shared by all your watches. It is not unlimited. Your account shows how
+      much of it you have used as a percentage, and the date it resets. We let you know as you approach it. If you reach
+      it, the assistant pauses new questions until your next billing period starts; you can also buy one-off extra usage
+      for the rest of the period.
     </li>
   </ul>
 
   <h2>4. Cancelling</h2>
   <p>
-    You can cancel anytime from your account (Plan &amp; usage), which opens our payment provider's secure billing
+    You can cancel anytime from your account (Account, then "Manage billing"), which opens our payment provider's secure billing
     portal. The subscription then ends at the end of the current paid period (or of the free period) and you won't be
     charged again. You also have a 14-day right to cancel the subscription from the day the contract starts.
   </p>

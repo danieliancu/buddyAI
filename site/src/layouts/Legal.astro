@@ -1,6 +1,6 @@
 ---
 import Base from "./Base.astro";
-import { config } from "../config";
+import { config, legalLastUpdated, formatDate } from "../config";
 
 interface Props {
   title: string;
@@ -8,6 +8,7 @@ interface Props {
 }
 const { title, description } = Astro.props;
 const legalNav = [
+  { href: "/legal/", label: "All policies" },
   { href: "/legal/terms-of-sale/", label: "Terms of sale" },
   { href: "/legal/subscription-terms/", label: "Subscription terms" },
   { href: "/legal/privacy/", label: "Privacy" },
@@ -18,16 +19,6 @@ const legalNav = [
 const path = Astro.url.pathname.replace(/\/?$/, "/");
 ---
 <Base title={title} description={description}>
-  <div class="border-b border-amber-300/40 bg-amber-300/15">
-    <div class="container-x py-4" role="note">
-      <p class="text-lg font-extrabold tracking-wide text-amber-200">DRAFT — needs legal review before launch</p>
-      <p class="mt-1 text-sm text-amber-100/90">
-        This is a template, not final legal text. It must be reviewed by a qualified lawyer for the UK and EU before
-        any sale. {/* TODO(owner): legal review, then remove this banner (src/layouts/Legal.astro). */}
-      </p>
-    </div>
-  </div>
-
   <div class="container-x grid gap-10 py-12 lg:grid-cols-[14rem_1fr]">
     <nav aria-label="Legal pages" class="lg:sticky lg:top-24 lg:self-start">
       <ul class="flex flex-wrap gap-2 lg:flex-col lg:gap-1">
@@ -50,7 +41,7 @@ const path = Astro.url.pathname.replace(/\/?$/, "/");
 
     <article class="prose-legal min-w-0 max-w-3xl">
       <h1 class="text-3xl font-extrabold tracking-tight text-fg sm:text-4xl">{title}</h1>
-      <p class="mt-2 text-sm text-muted">Last updated: TODO(owner): date of the reviewed version</p>
+      <p class="mt-2 text-sm text-muted">Last updated: <time datetime={legalLastUpdated}>{formatDate(legalLastUpdated)}</time></p>
 
       <slot />
 

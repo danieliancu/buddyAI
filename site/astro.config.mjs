@@ -14,17 +14,9 @@ export default defineConfig({
   trailingSlash: "ignore",
   build: { format: "directory" },
   integrations: [
+    // Indexable pages only (thank-you and 404 are noindex). No lastmod: a build date is not a content change.
     sitemap({
       filter: (page) => !page.includes("/thank-you") && !page.includes("/404"),
-      i18n: undefined,
-      lastmod: new Date(),
-      // Home and the product pages first, legal pages last.
-      serialize(item) {
-        const path = new URL(item.url).pathname;
-        if (path === "/") return { ...item, changefreq: "weekly", priority: 1.0 };
-        if (path.startsWith("/legal/")) return { ...item, changefreq: "yearly", priority: 0.3 };
-        return { ...item, changefreq: "monthly", priority: 0.8 };
-      },
     }),
   ],
   vite: {

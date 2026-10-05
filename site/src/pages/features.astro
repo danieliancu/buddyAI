@@ -17,9 +17,34 @@ const specs: [string, string][] = [
   ["Updates", "Firmware updates over the air"],
   ["Languages", `${languageCount} languages + Auto (answers in the language you speak)`],
   ["Battery life", "We'll publish measured figures before shipping"],
-  ["Size, weight & water resistance", "To be confirmed before shipping"],
-  ["What you need", `Wi-Fi, an ola account and an olacare subscription (first ${prices.trialMonths} months free)`],
+  ["Size, weight & water resistance", "We'll publish them before shipping"],
+  ["What you need", `2.4 GHz Wi-Fi with internet access, a web browser for setup (no app to install), an ola account and an olacare subscription (first ${prices.trialMonths} months free)`],
+  ["Not included", "No GPS, no SIM or mobile connection, no calls, no health or fitness sensors, no calendar sync"],
 ];
+
+// Example commands only (not recordings of real conversations); every one maps to something the assistant can do.
+const examples = [
+  "“Remind me tomorrow at 9:30 to call the dentist.”",
+  "“Remind me on Friday at 6 to pick up Sam, and alert me 15 minutes before.”",
+  "“Make a shopping list: eggs, bread, oat milk.”",
+  "“Add apples to my shopping list.”",
+  "“Move my meeting with Anna to 3 pm.”",
+  "“What reminders do I have on Monday?”",
+  "“Copy my packing list.”",
+  "“Delete the gym reminder.” — ola asks you to confirm first.",
+];
+const offline = {
+  works: [
+    "The clock",
+    "Notes and reminders the watch has already loaded stay on screen",
+  ],
+  needs: [
+    "Talking to the assistant and live answers",
+    "Reminder alerts — our servers send them to the watch when they're due (missed ones from the last 24 hours arrive when it reconnects)",
+    "Opening a note's full text, marking a reminder done, deleting or pinning",
+    "Changes you make in your ola account reaching the watch",
+  ],
+};
 ---
 <Base
   title="Features: AI voice assistant, reminders, notes & live answers"
@@ -40,6 +65,36 @@ const specs: [string, string][] = [
   <section class="container-x mt-6" aria-labelledby="core-title">
     <h2 id="core-title" class="sr-only">Core features</h2>
     <FeatureGrid detailed />
+  </section>
+
+  <section class="container-x mt-20 grid gap-8 lg:grid-cols-2" aria-label="Notes, reminders and connectivity">
+    <div class="glass p-6 sm:p-8">
+      <h2 id="voice-title" class="text-xl font-semibold text-fg">Notes &amp; reminders, by voice</h2>
+      <p class="mt-2 text-muted">
+        Create, find, change, copy and delete notes and reminders just by asking. If more than one matches, ola asks which
+        one you mean. In a conversation, it asks you to confirm before deleting anything. Up to 100 notes and 100
+        reminders per account, also editable in your ola account.
+      </p>
+      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Example commands</h3>
+      <ul class="mt-2 space-y-1.5 text-sm text-fg">
+        {examples.map((e) => <li class="flex gap-2"><Icon name="mic" size={16} class="mt-0.5 shrink-0 text-accent" />{e}</li>)}
+      </ul>
+    </div>
+    <div class="glass p-6 sm:p-8">
+      <h2 id="wifi-title" class="text-xl font-semibold text-fg">What needs Wi-Fi</h2>
+      <p class="mt-2 text-muted">
+        <Brand name="watch" /> connects over 2.4 GHz Wi-Fi (home, office or a phone hotspot). It has no mobile connection,
+        and there is no phone app: setup and your account are in a web browser.
+      </p>
+      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Works without a connection</h3>
+      <ul class="mt-2 space-y-1.5 text-sm text-muted">
+        {offline.works.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
+      </ul>
+      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Needs a connection</h3>
+      <ul class="mt-2 space-y-1.5 text-sm text-muted">
+        {offline.needs.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
+      </ul>
+    </div>
   </section>
 
   <section class="container-x mt-20" aria-labelledby="privacy-title">
