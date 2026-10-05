@@ -4,13 +4,22 @@ interface Props {
   gradient?: string;
   lead?: string;
   eyebrow?: string;
+  /** Phones: the title's lines never wrap, the size follows the screen. Width in em of the longest phone line (see .fit-title). */
+  fitEm?: number;
+  /** Phones: title and gradient on one line (from sm up they are on two). */
+  oneLineOnPhone?: boolean;
 }
-const { title, gradient, lead, eyebrow } = Astro.props;
+const { title, gradient, lead, eyebrow, fitEm, oneLineOnPhone = false } = Astro.props;
+const line = fitEm ? "whitespace-nowrap" : undefined;
 ---
 <section class="container-x pb-6 pt-14 sm:pt-20" aria-labelledby="page-title">
   {eyebrow && <p class="eyebrow">{eyebrow}</p>}
-  <h1 id="page-title" class="mt-2 max-w-4xl text-4xl font-extrabold leading-tight tracking-tight text-fg sm:text-5xl">
-    {title}{gradient && <><br /><span class="text-gradient">{gradient}</span></>}
+  <h1
+    id="page-title"
+    style={fitEm ? `--fit-em: ${fitEm}` : undefined}
+    class:list={["mt-2 max-w-4xl font-extrabold leading-tight tracking-tight text-fg sm:text-5xl", fitEm ? "fit-title" : "text-4xl", oneLineOnPhone && "whitespace-nowrap sm:whitespace-normal"]}
+  >
+    <span class={line}>{title}</span>{gradient && <>{" "}<br class={oneLineOnPhone ? "hidden sm:inline" : undefined} /><span class:list={["text-gradient", line]}>{gradient}</span></>}
   </h1>
   {lead && <p class="mt-5 max-w-2xl text-lg text-muted">{lead}</p>}
   <slot />

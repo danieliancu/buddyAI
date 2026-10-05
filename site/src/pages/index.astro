@@ -70,23 +70,23 @@ const jsonLd = [
       class="absolute inset-0 -z-10 h-full w-full object-cover"
     />
     <div class="absolute inset-0 -z-10 bg-gradient-to-r from-white/85 via-white/55 to-white/10" aria-hidden="true"></div>
-    <div class="container-x relative grid items-center gap-6 pb-10 pt-10 lg:grid-cols-[1.15fr_1fr] lg:pb-14 lg:pt-12">
+    <div class="container-x relative grid items-center gap-3 pb-10 pt-6 sm:gap-6 sm:pt-10 lg:grid-cols-[1.15fr_1fr] lg:pb-14 lg:pt-12">
       <div>
-        <h1 id="hero-title" class="hero-title font-extrabold leading-[1.08] tracking-tight text-fg sm:text-5xl lg:text-[3.4rem]">
+        <h1 id="hero-title" style="--fit-em: 10.2" class="fit-title font-extrabold leading-[1.08] tracking-tight text-fg sm:text-5xl lg:text-[3.4rem]">
           <span class="whitespace-nowrap">Your AI companion,</span><br /><span class="text-gradient whitespace-nowrap">now on your wrist.</span>
         </h1>
-        <p class="mt-5 max-w-xl text-lg text-[#39415a]">
+        <p class="mt-3 max-w-xl text-base text-[#39415a] sm:mt-5 sm:text-lg">
           Talk naturally. Get reminders, take notes, get live answers and more. <Brand name="watch" /> is an AI smartwatch designed to
           make everyday life easier, in {languageCount} languages.
         </p>
-        <div class="mt-7 grid gap-3 sm:w-fit sm:grid-cols-2">
+        <div class="mt-5 grid gap-3 sm:mt-7 sm:w-fit sm:grid-cols-2">
           <a href="#buy" class="btn btn-primary text-base sm:min-w-48">Buy Now <Icon name="arrow" size={18} /></a>
-          <a href="/how-it-works/" class="btn btn-ghost text-base sm:min-w-48"><Icon name="play" size={20} class="text-accent" /> How It Works</a>
+          <a href="/how-it-works/" class="btn btn-ghost hidden text-base sm:inline-flex sm:min-w-48"><Icon name="play" size={20} class="text-accent" /> How It Works</a>
         </div>
       </div>
       <div class="relative mx-auto w-fit lg:-my-6 xl:-ml-16">
-        <!-- phones and tablets: bottom right, beside the watch; desktop: lower left, 50px above the bottom of the hero (the hero ends 32px below this box: its lg:pb-14 minus lg:-my-6) -->
-        <p class="absolute -right-8 bottom-4 z-10 grid h-32 w-32 place-content-center gap-1 rounded-full bg-blue text-center font-display text-base font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_10px_28px_rgba(47,107,255,.4)] ring-4 ring-white/70 sm:-right-16 sm:h-36 sm:w-36 sm:text-lg lg:-left-10 lg:right-auto lg:bottom-[18px] lg:h-36 lg:w-36">
+        <!-- phones: bottom right, 20px above the bottom of the hero (which ends pb-10 = 40px below this box); tablets: bottom right of the watch; desktop: lower left, 50px above the bottom of the hero (the hero ends 32px below this box: its lg:pb-14 minus lg:-my-6) -->
+        <p class="absolute -right-8 -bottom-5 sm:bottom-4 z-10 grid h-32 w-32 place-content-center gap-1 rounded-full bg-blue text-center font-display text-base font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_10px_28px_rgba(47,107,255,.4)] ring-4 ring-white/70 sm:-right-16 sm:h-36 sm:w-36 sm:text-lg lg:-left-10 lg:right-auto lg:bottom-[18px] lg:h-36 lg:w-36">
           <span>No App</span>
           <span>To Install</span>
         </p>
@@ -97,7 +97,7 @@ const jsonLd = [
           sizes="(min-width: 1024px) 440px, 80vw"
           loading="eager"
           fetchpriority="high"
-          class="w-72 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] sm:w-80 lg:w-[27rem]"
+          class="w-64 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] sm:w-80 lg:w-[27rem]"
         />
       </div>
       <HeroChat class="z-10 hidden xl:absolute xl:bottom-0 xl:top-10 xl:-right-24 xl:block xl:w-[21rem]" />

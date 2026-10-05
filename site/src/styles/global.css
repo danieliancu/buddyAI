@@ -91,11 +91,11 @@ h3 {
     border-radius: 0.875rem;
     box-shadow: 0 1px 2px rgba(15, 21, 51, 0.04), 0 8px 24px rgba(40, 50, 120, 0.06);
   }
-  /* Home hero title on phones: sized to the screen so each of its two lines fits on one line
-     ("Your AI companion," is the longer one: 9.96em in Montserrat 800, tracking-tight; --hero-em adds a margin). From sm up, sm:text-5xl takes over. */
-  .hero-title {
-    --hero-em: 10.2;
-    font-size: min(2.25rem, calc((100vw - 2rem) / var(--hero-em)));
+  /* Titles on phones sized to the screen so each of their lines fits on one line (the lines are nowrap):
+     --fit-em is the width of the longest line in em (Montserrat 800, tracking-tight), plus a small margin.
+     Never larger than --fit-max (default text-4xl); from sm up the title's sm:text-* size takes over. */
+  .fit-title {
+    font-size: min(var(--fit-max, 2.25rem), calc((100vw - 2rem) / var(--fit-em, 10)));
   }
   .text-gradient {
     background: linear-gradient(90deg, #2f6bff 0%, #5b4cf0 45%, #8b3dff 100%);
