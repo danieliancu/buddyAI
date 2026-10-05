@@ -85,6 +85,6 @@ export const highlights: { icon: IconName; tint?: "blue" | "green" | "teal"; tit
   { icon: "bell", tint: "blue", title: "Smart Reminders", text: "Time, place, people and early alerts." },
   { icon: "note", tint: "green", title: "Notes by Voice", text: "Create and edit notes without typing." },
   { icon: "search", tint: "blue", title: "Live Answers", text: "Weather, news, opening hours and more." },
-  { icon: "lock", tint: "blue", title: "Private & Secure", text: "See, export or delete your history anytime." },
+  { icon: "tapRays", tint: "blue", title: "No App to Install", text: "Just connect it to Wi-Fi. No phone app needed." },
   { icon: "globe", tint: "teal", title: `${languageCount} Languages`, text: "Or Auto: it answers in the language you speak." },
 ];

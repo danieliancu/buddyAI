@@ -1,5 +1,5 @@
-// The product names as one word. In markup (brandHtml): "olacompanion" with "companion" in the accent colour,
-// plus the logo's leaf above the "a" when it is set bold; "olacare" bold, in the text colour.
+// The product names as one word. In markup (brandHtml): in running text "olacompanion" is bold, in the text
+// colour; with `bold` (headings) it is set like the logo, "companion" in the accent colour and the leaf above the "a"; "olacare" bold, in the text colour.
 // brandText() is the plain form for titles, alt texts and meta data.
 export type BrandName = "watch" | "care";
 
@@ -12,8 +12,8 @@ export function brandHtml(name: BrandName, opts: { bold?: boolean } = {}): strin
   if (name === "care") {
     return '<strong class="whitespace-nowrap font-bold">olacare</strong>';
   }
-  const ola = opts.bold ? `ol<span class="relative">a${LEAF}</span>` : "ola";
-  return `<span class="whitespace-nowrap${opts.bold ? " font-bold" : ""}">${ola}<span class="text-accent">companion</span></span>`;
+  if (!opts.bold) return '<strong class="whitespace-nowrap font-bold">olacompanion</strong>';
+  return `<span class="whitespace-nowrap font-bold">ol<span class="relative">a${LEAF}</span><span class="text-accent">companion</span></span>`;
 }
 
 export function brandText(name: BrandName): string {
