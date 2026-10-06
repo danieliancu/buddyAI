@@ -3,7 +3,7 @@
  *
  *  - Wi-Fi station with automatic reconnect and exponential backoff
  *  - SoftAP "ola-XXXX" + captive portal (DNS hijack + HTTP form) for
- *    SSID / password / optional server_url
+ *    SSID / password (+ optional server_url in development builds)
  *  - SNTP time sync (system clock; the app mirrors it to the RTC)
  *  - optional mDNS discovery of the server (_buddyai._tcp)
  */

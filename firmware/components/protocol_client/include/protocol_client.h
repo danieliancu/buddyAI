@@ -1,8 +1,8 @@
 /*
  * ola - device side of protocol/PROTOCOL.md v1
  *
- * Owns the WebSocket session: server selection (server_url -> last-known ->
- * mDNS), hello / pairing, envelope + sequence numbers, turn management with
+ * Owns the WebSocket session: server selection (release: the built-in server
+ * only; development: server_url -> last-known -> mDNS), hello / pairing, envelope + sequence numbers, turn management with
  * stale-frame dropping, tap-to-interrupt, playback_started / playback_done,
  * ping (15 s), status telemetry (60 s) and settings sync.
  *

@@ -66,9 +66,12 @@ idf.py -p COM5 flash monitor        # replace COM5 with your port
 
 1. Without Wi-Fi credentials the watch starts a SoftAP **`ola-XXXX`** and shows the Wi-Fi setup screen.
 2. Join that network with a phone; the captive portal opens (otherwise browse to `http://192.168.4.1`).
-3. Choose the Wi-Fi network, enter the password and optionally a **server URL**:
-   - development: `ws://<pc-ip>:8765/ws/device` or `wss://…`; empty = default URL / last server / mDNS;
-   - release builds: **`wss://` only**; empty = the built-in default (`CONFIG_BUDDYAI_DEFAULT_SERVER_URL`).
+3. Choose the Wi-Fi network and enter the password.
+   - development builds also show an optional **server URL**: `ws://<pc-ip>:8765/ws/device` or
+     `wss://…`; empty = default URL / last server / mDNS;
+   - release builds have **no server URL field**: the watch connects only to the built-in
+     `CONFIG_BUDDYAI_DEFAULT_SERVER_URL` (anyone near the open `ola-XXXX` network could otherwise
+     point it at their own server).
 4. Save → the watch restarts, joins Wi-Fi and connects.
 5. An unpaired watch shows a **6-digit pairing code**. In the ola web app choose *Add watch* and
    enter the code. The watch stores its device token and shows the watchface.
@@ -109,8 +112,8 @@ A release build is the development firmware plus `sdkconfig.release`:
 | | Development | Release |
 |---|---|---|
 | `CONFIG_BUDDYAI_RELEASE_BUILD` | n | **y** |
-| Server URL | any `ws://` / `wss://`, mDNS discovery | **`wss://` only** (portal, stored and default URLs), mDNS off |
-| Default server | empty | `wss://api.example.com/ws/device` — **replace example.com** |
+| Server URL | portal field, last server, mDNS discovery; `ws://` or `wss://` | **built-in default only** (no portal field; stored / last-known URLs ignored), mDNS off |
+| Default server | empty | `wss://api.olacompanion.com/ws/device` (moving watches to another domain needs a firmware update) |
 | OTA | `http://` or `https://`, unsigned | **`https://` only**, image **signature verified** (RSA-3072, SBV2 scheme) |
 | App rollback | on | on (image confirmed after the first server session) |
 | Log level | INFO | WARN |
@@ -129,8 +132,8 @@ The key is **never committed** (`keys/.gitignore`, `*.pem` in `.gitignore`). Cop
 
 ### 7.2 Configure
 
-Edit `sdkconfig.release` and replace `api.example.com` with the real API domain in
-`CONFIG_BUDDYAI_DEFAULT_SERVER_URL`.
+`sdkconfig.release` sets `CONFIG_BUDDYAI_DEFAULT_SERVER_URL` to `wss://api.olacompanion.com/ws/device`.
+Release watches connect only to this server, so check it before building units.
 
 ### 7.3 Build
 

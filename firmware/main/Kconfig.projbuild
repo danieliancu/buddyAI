@@ -5,19 +5,21 @@ menu "BuddyAI"
         default n
         help
             Set by sdkconfig.release. Hardens the firmware for customer units:
-            the setup portal accepts only wss:// server URLs, stored or
-            discovered ws:// URLs are ignored, and OTA URLs must be https://.
+            the setup portal has no Server URL field, the watch connects only
+            to BUDDYAI_DEFAULT_SERVER_URL (wss://), and OTA URLs must be
+            https://.
             Development builds (default) keep plain ws:// / http:// for a LAN
             server.
 
     config BUDDYAI_DEFAULT_SERVER_URL
-        string "Default server URL (development)"
+        string "Default server URL"
         default ""
         help
-            WebSocket URL used when no server_url was configured through the
-            SoftAP portal, e.g. ws://192.168.1.10:8765/ws/device.
-            Leave empty for production builds (server comes from provisioning,
-            last-known server or mDNS discovery).
+            Development builds: WebSocket URL used when no server_url was
+            configured through the SoftAP portal, e.g.
+            ws://192.168.1.10:8765/ws/device (empty: last-known server or mDNS).
+            Release builds: the only server the watch connects to (set in
+            sdkconfig.release, must be wss://).
 
     config BUDDYAI_HW_MODEL
         string "Hardware model string sent in hello"

@@ -4,7 +4,9 @@
  * AP "ola-XXXX" (open, XXXX = last MAC bytes). A tiny DNS server answers
  * every query with the AP address so phones pop up the portal; unknown HTTP
  * paths (generate_204, hotspot-detect.html, ...) redirect to the form.
- * The form stores SSID / password / optional server_url in NVS.
+ * The form stores SSID / password in NVS. Development builds also offer an
+ * optional server_url; release builds have no such field, so a stranger on the
+ * open AP cannot point the watch at their own server.
  */
 #include <string.h>
 #include <stdlib.h>
@@ -29,16 +31,10 @@ static const char *TAG = "portal";
 #define MAX_SCAN_RESULTS    16
 #define DNS_PORT            53
 
-/* Release builds accept only wss:// server URLs (TLS); development builds also
- * accept plain ws:// for a LAN server. */
-#if CONFIG_BUDDYAI_RELEASE_BUILD
-#define PORTAL_URL_PLACEHOLDER  "wss://api.example.com/ws/device"
-#define PORTAL_URL_HINT         "wss:// only &mdash; leave empty to use the default server."
-#define PORTAL_URL_RULE         "must start with wss://"
-#else
+/* Development builds only: the optional Server URL field (e.g. a LAN server). */
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
 #define PORTAL_URL_PLACEHOLDER  "ws://192.168.1.10:8765/ws/device"
 #define PORTAL_URL_HINT         "ws:// or wss:// &mdash; leave empty for automatic discovery."
-#define PORTAL_URL_RULE         "must start with ws:// or wss://"
 #endif
 
 static httpd_handle_t s_httpd;
@@ -191,16 +187,18 @@ static esp_err_t root_get(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req,
         "</datalist>"
         "<label>Password</label>"
-        "<input name='password' type='password' maxlength='64'>"
+        "<input name='password' type='password' maxlength='64'>");
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+    httpd_resp_sendstr_chunk(req,
         "<label>Server URL <small>(optional)</small></label>"
         "<input name='server_url' maxlength='190' placeholder='" PORTAL_URL_PLACEHOLDER "' value=\"");
     char url[SETTINGS_URL_MAX];
     if (settings_get_server_url(url, sizeof(url))) {
         send_escaped(req, url);
     }
-    httpd_resp_sendstr_chunk(req,
-        "\"><small>" PORTAL_URL_HINT "</small>"
-        "<button type='submit'>Save</button></form></main></body></html>");
+    httpd_resp_sendstr_chunk(req, "\"><small>" PORTAL_URL_HINT "</small>");
+#endif
+    httpd_resp_sendstr_chunk(req, "<button type='submit'>Save</button></form></main></body></html>");
     httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;
 }
@@ -238,25 +236,29 @@ static esp_err_t save_post(httpd_req_t *req)
     char ssid[SETTINGS_SSID_MAX * 3], pass[SETTINGS_PASS_MAX * 3], url[SETTINGS_URL_MAX * 3];
     form_field(body, "ssid", ssid, sizeof(ssid));
     form_field(body, "password", pass, sizeof(pass));
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    url[0] = '\0';     /* no Server URL field: a posted value is ignored */
+#else
     form_field(body, "server_url", url, sizeof(url));
+#endif
     free(body);
 
-    bool url_ok = url[0] == '\0' || strncmp(url, "wss://", 6) == 0;
-#if !CONFIG_BUDDYAI_RELEASE_BUILD
-    url_ok = url_ok || strncmp(url, "ws://", 5) == 0;   /* plain ws:// for LAN development only */
-#endif
+    bool url_ok = url[0] == '\0' || strncmp(url, "wss://", 6) == 0 || strncmp(url, "ws://", 5) == 0;
     if (ssid[0] == '\0' || strlen(ssid) >= SETTINGS_SSID_MAX || strlen(pass) >= SETTINGS_PASS_MAX ||
         strlen(url) >= SETTINGS_URL_MAX || !url_ok) {
         httpd_resp_set_type(req, "text/html; charset=utf-8");
         httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-        httpd_resp_sendstr_chunk(req, "<h1>Invalid input</h1><p>Check the network name and the server URL "
-                                      "(" PORTAL_URL_RULE ").</p><a href='/'>Back</a></main></body></html>");
+        httpd_resp_sendstr_chunk(req, "<h1>Invalid input</h1><p>Check the network name"
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+                                      " and the server URL (must start with ws:// or wss://)"
+#endif
+                                      ".</p><a href='/'>Back</a></main></body></html>");
         httpd_resp_sendstr_chunk(req, NULL);
         return ESP_OK;
     }
 
     settings_set_wifi(ssid, pass);
-    settings_set_server_url(url);
+    settings_set_server_url(url);   /* release: always "", clearing a URL an older firmware stored */
     ESP_LOGI(TAG, "credentials saved for '%s' (server_url %s)", ssid, url[0] ? url : "<auto>");
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");

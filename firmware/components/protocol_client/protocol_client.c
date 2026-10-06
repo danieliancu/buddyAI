@@ -1198,13 +1198,25 @@ static void add_candidate(const char *url)
     strlcpy(s_candidates[s_cand_count++], url, SETTINGS_URL_MAX);
 }
 
-/* Order (plan section 11): configured server_url -> last-known -> mDNS. */
+#if CONFIG_BUDDYAI_RELEASE_BUILD && CONFIG_BUDDYAI_MDNS_DISCOVERY
+#error "release builds must not enable mDNS discovery (see sdkconfig.release)"
+#endif
+
+/* Release builds: only the built-in server. A URL stored by the setup portal or
+ * remembered from an earlier session is ignored, so nobody can point a customer's
+ * watch at another server.
+ * Development builds (plan section 11): configured server_url -> last-known -> mDNS. */
 static void build_candidates(void)
 {
-    char url[SETTINGS_URL_MAX];
     s_cand_count = 0;
     s_cand_idx = 0;
     s_mdns_tried = false;
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    _Static_assert(sizeof(CONFIG_BUDDYAI_DEFAULT_SERVER_URL) > sizeof("wss://"),
+                   "release builds need CONFIG_BUDDYAI_DEFAULT_SERVER_URL (see sdkconfig.release)");
+    add_candidate(CONFIG_BUDDYAI_DEFAULT_SERVER_URL);
+#else
+    char url[SETTINGS_URL_MAX];
     if (settings_get_server_url(url, sizeof(url))) {
         add_candidate(url);
     } else if (CONFIG_BUDDYAI_DEFAULT_SERVER_URL[0]) {
@@ -1213,6 +1225,7 @@ static void build_candidates(void)
     if (settings_get_last_server(url, sizeof(url))) {
         add_candidate(url);
     }
+#endif
 }
 
 static void enter_backoff(void)

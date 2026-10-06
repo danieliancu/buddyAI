@@ -15,9 +15,10 @@
 
 # ---- BuddyAI -----------------------------------------------------------------
 CONFIG_BUDDYAI_RELEASE_BUILD=y
-# !!! The owner MUST replace example.com with the real API domain before
-# !!! building units for customers (wss:// only - the CA bundle is enabled).
-CONFIG_BUDDYAI_DEFAULT_SERVER_URL="wss://api.example.com/ws/device"
+# The only server a release watch talks to (wss:// only - the CA bundle is
+# enabled). Release builds have no Server URL field in the setup portal and
+# ignore any stored or remembered URL, so changing this needs a firmware update.
+CONFIG_BUDDYAI_DEFAULT_SERVER_URL="wss://api.olacompanion.com/ws/device"
 # LAN discovery would let any device on the customer's network offer a server.
 # CONFIG_BUDDYAI_MDNS_DISCOVERY is not set
 
