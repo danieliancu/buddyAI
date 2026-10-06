@@ -1,5 +1,4 @@
 ---
-import Brand from "../components/Brand.astro";
 import Base from "../layouts/Base.astro";
 import PageHero from "../components/PageHero.astro";
 import BuyBox from "../components/BuyBox.astro";
@@ -23,7 +22,7 @@ const pricingFaq = [
   ...faqGroups.find((g) => g.title === "Price & subscription")!.items,
   ...faqGroups.find((g) => g.title.startsWith("Delivery"))!.items,
 ];
-const description = `${formatPrice(prices.watch.GBP, "GBP")} today, then ${formatPrice(prices.care.GBP, "GBP")}/month for olacare after ${prices.trialMonths} months free. Cancel anytime. 14-day right to cancel, UK statutory rights and a 2-year EU legal guarantee.`;
+const description = `${formatPrice(prices.watch.GBP, "GBP")} today, then ${formatPrice(prices.care.GBP, "GBP")}/month for olacare after a free ${prices.trialMonths}-month subscription. Cancel anytime. 14-day right to cancel, UK statutory rights and a 2-year EU legal guarantee.`;
 ---
 <Base title={`Price: olacompanion £${prices.watch.GBP.toFixed(2)}, olacare £${prices.care.GBP.toFixed(2)}/month`} crumb="Pricing" description={description}>
   <PageHero
@@ -38,14 +37,14 @@ const description = `${formatPrice(prices.watch.GBP, "GBP")} today, then ${forma
 
     <div class="space-y-6">
       <div class="glass p-6">
-        <h2 class="text-lg font-semibold text-fg"><Brand name="care" /> includes</h2>
+        <h2 class="text-lg font-semibold text-fg">Monthly subscription includes</h2>
         <ul class="mt-4 space-y-2.5">
           {included.map((i) => (
             <li class="flex gap-2.5 text-sm text-muted"><Icon name="check" size={18} class="mt-0.5 shrink-0 text-ok" />{i}</li>
           ))}
         </ul>
         <p class="mt-4 text-sm text-muted">
-          <Price item="care" class="font-semibold text-fg" />/month after {prices.trialMonths} months free. The free period
+          <Price item="care" class="font-semibold text-fg" />/month after your free {prices.trialMonths}-month subscription. The free period
           starts when you buy the watch; we email you before it ends, then your card is charged monthly. Cancel anytime
           from your account ("Manage billing"); if you cancel during the free period you pay nothing for Care.
         </p>

@@ -11,7 +11,7 @@ export interface Faq {
 
 const w = prices.watch;
 const c = prices.care;
-const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after ${prices.trialMonths} months free. Cancel anytime.`;
+const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after your free ${prices.trialMonths}-month subscription. Cancel anytime.`;
 
 export const faqGroups: { title: string; items: Faq[] }[] = [
   {
@@ -119,7 +119,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "When does the free period start, and what happens after it?",
-        a: `The ${prices.trialMonths} free months of ${brandHtml("care")} start when you buy the watch. We email you a few days before the free period ends. After that the subscription renews every month and your card is charged, until you cancel.`,
+        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} subscription starts when you buy the watch. We email you a few days before the free period ends. After that the subscription renews every month and your card is charged, until you cancel.`,
       },
       {
         q: "Is there a usage limit?",
@@ -127,7 +127,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,
-        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the ${prices.trialMonths}-month free period you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
+        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the free ${prices.trialMonths}-month subscription you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],
   },

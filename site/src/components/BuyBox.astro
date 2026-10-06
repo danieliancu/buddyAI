@@ -16,14 +16,14 @@ interface Props {
 }
 const { headingLevel = "h2", compact = false, anchor = true } = Astro.props;
 const H = headingLevel;
-const trial = `${prices.trialMonths} months`;
+const trial = `free ${prices.trialMonths}-month subscription`;
 ---
 <div id={anchor ? "buy" : undefined} class="glass relative p-6 sm:p-7" data-buybox>
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <H class="text-xl font-bold text-fg"><Brand name="watch" bold /></H>
       <p class="mt-1 text-sm text-muted">AMOLED display · Voice AI · Built for everyday life</p>
-    </div>
+    </div>
   </div>
 
   <div class="mt-5 flex items-end gap-3">
@@ -32,7 +32,7 @@ const trial = `${prices.trialMonths} months`;
   </div>
 
   <p class="mt-3 text-sm text-fg" data-price-sentence>
-    Then <strong><Price item="care" />/month</strong> for <Brand name="care" /> after <strong>{trial} free</strong>. Cancel anytime.
+    Then <strong><Price item="care" />/month</strong> after your <strong>{trial}</strong>. Cancel anytime.
   </p>
   {!compact && (
     <p class="mt-2 text-sm text-muted">

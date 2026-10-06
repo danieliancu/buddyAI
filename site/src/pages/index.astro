@@ -49,7 +49,7 @@ const jsonLd = [
       { "@type": "PropertyValue", name: "Display", value: "AMOLED touch screen, 410 × 502 pixels" },
       { "@type": "PropertyValue", name: "Connectivity", value: "Wi-Fi (2.4 GHz)" },
       { "@type": "PropertyValue", name: "Languages", value: `${languageCount} + Auto` },
-      { "@type": "PropertyValue", name: "Subscription", value: `olacare, ${formatPrice(prices.care.GBP, "GBP")}/month after ${prices.trialMonths} months free` },
+      { "@type": "PropertyValue", name: "Subscription", value: `olacare, ${formatPrice(prices.care.GBP, "GBP")}/month after a free ${prices.trialMonths}-month subscription` },
     ],
     offers: [
       { ...offerBase, priceCurrency: "GBP", price: prices.watch.GBP.toFixed(2) },
@@ -95,6 +95,13 @@ const jsonLd = [
           fetchpriority="high"
           class="w-64 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] max-sm:absolute max-sm:bottom-0 max-sm:left-1/2 max-sm:h-full max-sm:max-h-[115vw] max-sm:max-w-none max-sm:w-auto max-sm:-translate-x-1/2 sm:w-80 lg:w-[27rem]"
         />
+        <!-- phones: a corner ribbon on the watch picture, flush with the screen's right edge (the top bar is hidden here) -->
+        <div class="pointer-events-none absolute -right-4 top-0 size-44 overflow-hidden sm:hidden" aria-hidden="true">
+          <div class="absolute right-[-3.6rem] top-[2.6rem] w-64 rotate-45 bg-[#ea580c] py-1.5 text-center font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_4px_10px_rgba(234,88,12,.35)]">
+            <span class="block text-sm">Free {prices.trialMonths}-month</span><span class="block text-[11px]">subscription</span>
+          </div>
+        </div>
+        <p class="sr-only sm:hidden">Free {prices.trialMonths}-month subscription</p>
       </div>
       <HeroChat class="z-10 hidden xl:absolute xl:bottom-0 xl:top-10 xl:-right-24 xl:block xl:w-[21rem]" />
     </div>
@@ -145,11 +152,6 @@ const jsonLd = [
         <p class="mt-3 max-w-md text-muted">
           Get your <Brand name="watch" /> and be part of the next generation of AI-powered wearables.
         </p>
-        <ul class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-fg">
-          <li class="flex items-center gap-2"><Icon name="rocket" size={18} class="text-accent" /> Early Access</li>
-          <li class="flex items-center gap-2"><Icon name="gift" size={18} class="text-accent" /> <span>{prices.trialMonths} months of <Brand name="care" /> free</span></li>
-          <li class="flex items-center gap-2"><Icon name="truck" size={18} class="text-accent" /> Ships to the UK &amp; EU</li>
-        </ul>
       </div>
       <Image
         src={watchBox}
