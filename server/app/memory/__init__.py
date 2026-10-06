@@ -1,4 +1,4 @@
-"""Long-term memory: facts the user asked the assistant to keep (and, opt-in, facts learned from
+"""Long-term memory: facts the user asked the assistant to keep (and facts learned from
 conversations), recalled in later conversations. See docs/MEMORY.md."""
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ class Prefs:
     available: memory exists for this account (the server switches); listing, correcting and forgetting work.
     save: "remember that..." is stored (account switch, on by default).
     use: memories are recalled in conversations (account switch, on by default, separate from saving).
-    learn: facts are learned from conversations (opt-in: off until the account switches it on).
+    learn: facts are learned from conversations (account switch, on by default; the server switch too).
     """
 
     available: bool = False

@@ -619,13 +619,14 @@ def test_operator_diagnostics_show_memory_counts_not_content() -> None:
 # --- the account's switches ---------------------------------------------------------------------------------
 
 
-def test_defaults_save_and_use_on_learning_opt_in() -> None:
+def test_defaults_save_use_and_learn_on(memory_on) -> None:
     from app.config import Settings
     from app.memory import prefs
 
-    assert Settings().memory_enabled is True and Settings().memory_inference_enabled is False
+    assert Settings().memory_enabled is True and Settings().memory_inference_enabled is True
+    memory_on.memory_inference_enabled = True
     p = prefs(_account())
-    assert (p.available, p.save, p.use, p.learn) == (True, True, True, False)
+    assert (p.available, p.save, p.use, p.learn) == (True, True, True, True)
 
 
 def test_saving_off_keeps_recall_and_forgetting() -> None:
@@ -665,12 +666,16 @@ def test_using_off_keeps_saving_but_recalls_nothing() -> None:
     assert v.body("memory_list", {})["total"] == 1  # still listed when asked
 
 
-def test_learning_needs_the_account_opt_in(memory_on) -> None:
+def test_learning_can_be_switched_off(memory_on) -> None:
     from app.memory import prefs
 
     memory_on.memory_inference_enabled = True
     acc = _account()
+    assert prefs(acc).learn is True
+    with session_scope() as db:
+        MemoryRepo(db).set_prefs(acc, learn=False)
     assert prefs(acc).learn is False
     with session_scope() as db:
         MemoryRepo(db).set_prefs(acc, learn=True)
-    assert prefs(acc).learn is True
+    memory_on.memory_inference_enabled = False  # the server switch turns it off for everyone
+    assert prefs(acc).learn is False

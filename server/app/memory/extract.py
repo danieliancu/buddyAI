@@ -1,4 +1,4 @@
-"""Learning facts from a conversation (opt-in per account, BUDDYAI_MEMORY_INFERENCE_ENABLED).
+"""Learning facts from a conversation (on by default; each account can switch it off; BUDDYAI_MEMORY_INFERENCE_ENABLED).
 
 One model call per conversation, after it went quiet (a debounced `extract` job), never per turn. The
 model proposes; the server decides: only allowed kinds, never the block-list or special categories, at

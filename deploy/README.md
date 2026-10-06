@@ -160,9 +160,9 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec -T postg
 ## 9. Memory (long-term memory, staged rollout)
 
 Memory lets the watch keep facts the user asks it to remember ("remember that my granddaughter is called
-Maria"). Remembering on request is **on by default**; vectors and learning from conversations stay off until
-you switch them on. Each customer can switch off saving, using memories, or both on their Memory page;
-learning is off until they switch it on. Design and rules: `docs/MEMORY.md`. Every switch below can be undone
+Maria"). Remembering on request and learning from conversations are **on by default**; vectors stay off until
+you switch them on. Each customer can switch off saving, using memories and learning, each on its own, on
+their Memory page. Before this goes live, the privacy policy must describe memory and learning. Design and rules: `docs/MEMORY.md`. Every switch below can be undone
 by setting it back (nothing is deleted). Never roll the server image back to a
 release older than the newest migration that has run: the server would not start. Use the switches instead.
 
@@ -211,9 +211,9 @@ library), so the data volume is used as it is.
    shows in **Usage** as kind `embedding` (tiny).
 4. `BUDDYAI_MEMORY_VECTOR_RETRIEVAL=true`: accounts with more than 30 memories get semantic recall. Watch the
    time to first audio in **Usage → Diagnostics** before and after; the query embedding is capped at 350 ms.
-5. Learning from conversations, only after the privacy policy says so: `BUDDYAI_MEMORY_INFERENCE_ENABLED=true`
-   (with `BUDDYAI_MEMORY_ACCOUNTS` first). Each customer must also switch on "Learn from conversations" on
-   their Memory page. Costs show as operations of kind `memory`.
+5. Learning from conversations is on by default (`BUDDYAI_MEMORY_INFERENCE_ENABLED=true`; set `false` to stop
+   it for everyone). Customers can switch it off on their Memory page. Costs show as operations of kind
+   `memory` (one small model call per conversation, counted in the customer's allowance).
 
 What to watch: the server log lines `memory retrieve|save|forget|extract|job` (account id, path, timing, never
 memory text) and `GET /api/diagnostics` → `memory` (job queue and failures).

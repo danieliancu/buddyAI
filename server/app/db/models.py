@@ -49,7 +49,7 @@ class Account(SQLModel, table=True):
     # Long-term memory (app/memory): "remember that..." on request, and learning from conversations (opt-in).
     memory_explicit: bool = True  # "remember that..." is stored
     memory_use: bool = True  # memories are recalled in conversations
-    memory_learn: bool = False
+    memory_learn: bool = True  # facts are learned from conversations (the customer can switch it off)
 
 
 class Order(SQLModel, table=True):

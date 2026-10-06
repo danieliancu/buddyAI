@@ -10,7 +10,7 @@ Operator and developer reference. Code: `server/app/memory/`. Rollout steps: `de
 - **Recall.** In every chat turn, the account's relevant memories go into the prompt as data.
 - **Inspect, correct, forget.** By voice (`memory_list`, `memory_change`, `memory_forget_all` with a spoken
   yes) and on the web Memory page (edit, confirm, forget, "forget everything" with the account password).
-- **Learn (opt-in).** After a conversation goes quiet, one background model call may propose up to 3 lasting
+- **Learn (on by default, the customer can switch it off).** After a conversation goes quiet, one background model call may propose up to 3 lasting
   facts. The server accepts only safe, confident ones.
 
 Conversation history (`conversations`, `turns`) is untouched: it stays the archive. `history_turns` and
@@ -23,7 +23,7 @@ Conversation history (`conversations`, `turns`) is untouched: it stays the archi
 | `memories` | One atomic fact per row. Owner `account_id` (every query filters on it); optional `device_id` = only that watch's wearer. `kind` (profile, person, preference, routine, goal, project, other), `origin` (explicit, inferred, web), `status` (active, pending = learned and waiting for the user, superseded = replaced by a correction), `sensitivity` (normal, special), optional `subject` + `attribute` (a new value for the same key supersedes the old one), `supersedes_id`, `source_turn_id`, `valid_until`, `confidence` (learned only), `confirmed_at`. |
 | `memory_embeddings` | Vectors (migration 0022). One row per memory and `model_key` (`provider:model:dims`); `text_hash` says which text it was made from. Searches only compare vectors of the current `model_key`. PostgreSQL: pgvector `vector`, exact `<=>` search (an account has at most `BUDDYAI_MEMORY_MAX_ACTIVE` = 300 memories, so no approximate index). SQLite: JSON, searched in Python. |
 | `memory_jobs` | Durable background work: `embed` and `extract`. A job is claimed with a lease (as usage operations do), retried with backoff and ends as `dead` after 6 failures. Errors are stored as a class name only. |
-| `accounts.memory_explicit` / `memory_use` / `memory_learn` | The customer's three separate switches: "Remember what I ask" (default on: `memory_save` is offered), "Use my memories in conversations" (default on: recall), "Learn from conversations" (default off: opt-in). With saving off, listing / correcting / forgetting still work and the assistant says saving can be switched on in the app; with using off, memories are kept but never put into conversations. |
+| `accounts.memory_explicit` / `memory_use` / `memory_learn` | The customer's three separate switches: "Remember what I ask" (default on: `memory_save` is offered), "Use my memories in conversations" (default on: recall), "Learn from conversations" (default on; the customer can switch it off). With saving off, listing / correcting / forgetting still work and the assistant says saving can be switched on in the app; with using off, memories are kept but never put into conversations. |
 
 Forgetting deletes the row, its earlier versions, its vectors and its jobs. Superseded versions are purged
 after 90 days. There are no `ON DELETE` rules in this schema: deleting turns or conversations first clears
@@ -67,7 +67,7 @@ byte-identical.
 | `BUDDYAI_MEMORY_ACCOUNTS` | empty | Comma-separated account ids during rollout (empty = all) |
 | `BUDDYAI_MEMORY_EMBEDDINGS_ENABLED` | false | Background vectors (needs migration 0022 / pgvector) |
 | `BUDDYAI_MEMORY_VECTOR_RETRIEVAL` | false | Semantic recall above the small-set size |
-| `BUDDYAI_MEMORY_INFERENCE_ENABLED` | false | Learning (each account must also opt in) |
+| `BUDDYAI_MEMORY_INFERENCE_ENABLED` | true | Learning (each account can switch it off) |
 | `BUDDYAI_MEMORY_MAX_ACTIVE` | 300 | Active memories per account |
 | `BUDDYAI_MEMORY_EMBED_TIMEOUT_MS` | 350 | Query embedding budget inside a turn |
 | `BUDDYAI_MEMORY_MAX_DISTANCE` | 0.55 | Relevance cut-off (cosine distance) |
@@ -87,7 +87,7 @@ Until it finishes, recall uses word matching.
   small-set size). At about $0.02 per million tokens, this is negligible.
 - **Prompt (the real cost).** Recalled memories add about 150 to 600 uncached input tokens to each chat
   turn. The tool definitions add about 400 tokens to the cached prefix.
-- **Learning.** About 1.5k input and 150 output tokens per conversation (opt-in).
+- **Learning.** About 1.5k input and 150 output tokens per conversation (on by default).
 
 Measure the real numbers in **Usage** (kinds `embedding`, `memory`) and the time to first audio in
 **Diagnostics**.
