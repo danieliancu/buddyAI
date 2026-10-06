@@ -452,7 +452,11 @@ def test_memory_api_is_scoped_and_clear_needs_password() -> None:
     assert r.status_code == 200 and r.json()["outcome"] == "superseded"
     assert c1.post("/api/me/memories/clear", json={"password": "wrong-one"}).status_code == 403
     assert c1.post("/api/me/memories/clear", json={"password": "correct-horse-1"}).json()["deleted"] == 2
-    assert c1.put("/api/me/memories/settings", json={"learn": True}).json() == {"remember_requests": True, "learn": True}
+    assert c1.put("/api/me/memories/settings", json={"learn": True}).json() == {
+        "remember_requests": True, "use_memories": True, "learn": True}
+    assert c1.put("/api/me/memories/settings", json={"use_memories": False}).json()["use_memories"] is False
+    listed = c1.get("/api/me/memories").json()
+    assert listed["remember_requests"] is True and listed["use_memories"] is False
 
 
 def test_memory_api_hidden_when_disabled(memory_on) -> None:
@@ -610,3 +614,63 @@ def test_operator_diagnostics_show_memory_counts_not_content() -> None:
     mem = r.json()["memory"]
     assert mem["enabled"] is True and mem["by_status"]["active"] >= 1 and mem["per_account_max"] >= 1
     assert "saffron" not in r.text
+
+
+# --- the account's switches ---------------------------------------------------------------------------------
+
+
+def test_defaults_save_and_use_on_learning_opt_in() -> None:
+    from app.config import Settings
+    from app.memory import prefs
+
+    assert Settings().memory_enabled is True and Settings().memory_inference_enabled is False
+    p = prefs(_account())
+    assert (p.available, p.save, p.use, p.learn) == (True, True, True, False)
+
+
+def test_saving_off_keeps_recall_and_forgetting() -> None:
+    from app.memory import prefs
+    from app.memory.retrieve import recall
+
+    acc = _account()
+    uid = Voice(acc).body("memory_save", {"fact": "User's cat is called Tom", "kind": "person"})["id"]
+    with session_scope() as db:
+        MemoryRepo(db).set_prefs(acc, explicit=False)
+    names = [t["name"] for t in AssistantTools().definitions(acc)]
+    assert "memory_save" not in names and "memory_list" in names and "memory_change" in names
+    assert "saving is off" in " ".join(AssistantTools().rules(acc))
+    refused = Voice(acc).body("memory_save", {"fact": "User likes tea", "kind": "preference"})
+    assert refused["ok"] is False and "switched off" in refused["error"]
+    assert prefs(acc).use and asyncio.run(recall(None, acc, "dev", "cat", [])).memories  # still used
+    assert Voice(acc).body("memory_change", {"id": uid, "action": "forget"})["ok"] is True
+
+
+def test_using_off_keeps_saving_but_recalls_nothing() -> None:
+    acc = _account()
+    with session_scope() as db:
+        MemoryRepo(db).set_prefs(acc, use=False)
+    v = Voice(acc)
+    assert v.body("memory_save", {"fact": "User's granddaughter is called Maria", "kind": "person"})["status"] == "saved"
+    assert "switched off using their memories" in " ".join(AssistantTools().rules(acc))
+    llm = _SeeLLM()
+    pipeline = ConversationPipeline(
+        FakeRouter(llm), ChunkerConfig(),
+        messages_builder=lambda turn, text: [{"role": "system", "content": "sys"}, {"role": "user", "content": text}],
+        tools=AssistantTools(),
+    )
+    turn = TurnContext(1, "s-nouse", "dev", "en", DeviceSettings(), 16000, account_id=acc)
+    turn.user_text = "what's my granddaughter called?"
+    asyncio.run(pipeline._reply(turn, FakeIO()))
+    assert not any("Maria" in (m.get("content") or "") for m in llm.requests[-1].messages)
+    assert v.body("memory_list", {})["total"] == 1  # still listed when asked
+
+
+def test_learning_needs_the_account_opt_in(memory_on) -> None:
+    from app.memory import prefs
+
+    memory_on.memory_inference_enabled = True
+    acc = _account()
+    assert prefs(acc).learn is False
+    with session_scope() as db:
+        MemoryRepo(db).set_prefs(acc, learn=True)
+    assert prefs(acc).learn is True

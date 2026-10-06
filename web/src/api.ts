@@ -76,12 +76,20 @@ export interface MemoryItem {
   updated_at: string;
 }
 
+/** The account's memory switches: saving on request and using memories default on; learning is opt-in. */
+export interface MemorySettings {
+  remember_requests?: boolean;
+  use_memories?: boolean;
+  learn?: boolean;
+}
+
 export type MemoryList =
   | { available: false }
   | {
       available: true;
       learning_available: boolean;
       remember_requests: boolean;
+      use_memories: boolean;
       learn: boolean;
       max: number;
       kinds: MemoryKind[];
@@ -925,8 +933,7 @@ const meApi = {
     forget: (id: string) => me.del<{ ok: boolean }>(`/api/me/memories/${enc(id)}`),
     /** Forget everything (needs the account password). */
     clear: (password: string) => me.post<{ deleted: number }>("/api/me/memories/clear", { password }),
-    settings: (body: { remember_requests?: boolean; learn?: boolean }) =>
-      me.put<{ remember_requests: boolean; learn: boolean }>("/api/me/memories/settings", body),
+    settings: (body: MemorySettings) => me.put<Required<MemorySettings>>("/api/me/memories/settings", body),
   },
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),

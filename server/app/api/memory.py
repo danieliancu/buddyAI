@@ -47,6 +47,7 @@ def list_memories(acc: Account = Depends(current_account), db: Session = Depends
         "available": True,
         "learning_available": s.memory_inference_enabled,
         "remember_requests": acc.memory_explicit,
+        "use_memories": acc.memory_use,
         "learn": acc.memory_learn,
         "max": s.memory_max_active,
         "kinds": list(policy.KINDS),
@@ -67,6 +68,7 @@ class MemoryPatch(BaseModel):
 
 class PrefsBody(BaseModel):
     remember_requests: bool | None = None
+    use_memories: bool | None = None
     learn: bool | None = None
 
 
@@ -133,6 +135,6 @@ def clear_memories(body: ClearBody, acc: Account = Depends(current_account), db:
 @router.put("/settings")
 def memory_settings(body: PrefsBody, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
     _available(acc)
-    MemoryRepo(db).set_prefs(acc.id, explicit=body.remember_requests, learn=body.learn)
+    MemoryRepo(db).set_prefs(acc.id, explicit=body.remember_requests, learn=body.learn, use=body.use_memories)
     db.refresh(acc)
-    return {"remember_requests": acc.memory_explicit, "learn": acc.memory_learn}
+    return {"remember_requests": acc.memory_explicit, "use_memories": acc.memory_use, "learn": acc.memory_learn}

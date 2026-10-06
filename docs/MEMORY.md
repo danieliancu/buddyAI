@@ -23,7 +23,7 @@ Conversation history (`conversations`, `turns`) is untouched: it stays the archi
 | `memories` | One atomic fact per row. Owner `account_id` (every query filters on it); optional `device_id` = only that watch's wearer. `kind` (profile, person, preference, routine, goal, project, other), `origin` (explicit, inferred, web), `status` (active, pending = learned and waiting for the user, superseded = replaced by a correction), `sensitivity` (normal, special), optional `subject` + `attribute` (a new value for the same key supersedes the old one), `supersedes_id`, `source_turn_id`, `valid_until`, `confidence` (learned only), `confirmed_at`. |
 | `memory_embeddings` | Vectors (migration 0022). One row per memory and `model_key` (`provider:model:dims`); `text_hash` says which text it was made from. Searches only compare vectors of the current `model_key`. PostgreSQL: pgvector `vector`, exact `<=>` search (an account has at most `BUDDYAI_MEMORY_MAX_ACTIVE` = 300 memories, so no approximate index). SQLite: JSON, searched in Python. |
 | `memory_jobs` | Durable background work: `embed` and `extract`. A job is claimed with a lease (as usage operations do), retried with backoff and ends as `dead` after 6 failures. Errors are stored as a class name only. |
-| `accounts.memory_explicit` / `memory_learn` | The customer's switches: "Use my memories" (default on) and "Learn from conversations" (default off). |
+| `accounts.memory_explicit` / `memory_use` / `memory_learn` | The customer's three separate switches: "Remember what I ask" (default on: `memory_save` is offered), "Use my memories in conversations" (default on: recall), "Learn from conversations" (default off: opt-in). With saving off, listing / correcting / forgetting still work and the assistant says saving can be switched on in the app; with using off, memories are kept but never put into conversations. |
 
 Forgetting deletes the row, its earlier versions, its vectors and its jobs. Superseded versions are purged
 after 90 days. There are no `ON DELETE` rules in this schema: deleting turns or conversations first clears
@@ -63,7 +63,7 @@ byte-identical.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `BUDDYAI_MEMORY_ENABLED` | false | Tools, recall, Memory page, job loop |
+| `BUDDYAI_MEMORY_ENABLED` | true | Tools, recall, Memory page, job loop (false = off for everyone) |
 | `BUDDYAI_MEMORY_ACCOUNTS` | empty | Comma-separated account ids during rollout (empty = all) |
 | `BUDDYAI_MEMORY_EMBEDDINGS_ENABLED` | false | Background vectors (needs migration 0022 / pgvector) |
 | `BUDDYAI_MEMORY_VECTOR_RETRIEVAL` | false | Semantic recall above the small-set size |

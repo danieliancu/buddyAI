@@ -102,8 +102,9 @@ class Settings(BaseSettings):
     pairing_code_ttl_s: int = 300
     conversation_idle_minutes: int = 30
 
-    # Long-term memory (app/memory). Everything is off by default; switch on in stages (deploy/README.md).
-    memory_enabled: bool = False  # "remember that...", recall, the Memory page
+    # Long-term memory (app/memory). Remembering on request is on by default; vectors and learning are off until
+    # switched on in stages (deploy/README.md), and learning also needs each account's opt-in.
+    memory_enabled: bool = True  # "remember that...", recall, the Memory page (each account can switch parts off)
     memory_accounts: str = ""  # comma-separated account ids allowed while rolling out; "" = every account
     memory_embeddings_enabled: bool = False  # vectors for memories (needs pgvector on PostgreSQL, migration 0022)
     memory_vector_retrieval: bool = False  # semantic recall when an account has more memories than fit the prompt

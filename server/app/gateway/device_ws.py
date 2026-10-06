@@ -617,7 +617,7 @@ class DeviceConnection:
             from app.memory import prefs
             from app.memory.extract import schedule
 
-            if not prefs(turn.account_id)[1]:
+            if not prefs(turn.account_id).learn:
                 return
             with session_scope() as db:
                 schedule(db, turn.account_id, turn.conversation_id, turn.db_id, get_settings().conversation_idle_minutes)

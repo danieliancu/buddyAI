@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Brain, Check, History, Pencil, Plus, ShieldAlert, Trash2, X } from "lucide-react";
-import { api, ApiError, type MemoryItem, type MemoryKind } from "../../api";
+import { api, ApiError, type MemoryItem, type MemoryKind, type MemorySettings } from "../../api";
 import { fmtDate } from "../../format";
 import {
   Badge,
@@ -61,7 +61,7 @@ export default function MemoryPage() {
       setError(e);
     }
   };
-  const setPref = (body: { remember_requests?: boolean; learn?: boolean }) =>
+  const setPref = (body: MemorySettings) =>
     act(async () => {
       const r = await api.me.memories.settings(body);
       data.setData({ ...d, ...r });
@@ -89,11 +89,20 @@ export default function MemoryPage() {
             <Toggle
               checked={d.remember_requests}
               onChange={(v) => void setPref({ remember_requests: v })}
-              label={<span className="font-medium">Use my memories</span>}
+              label={<span className="font-medium">Remember what I ask</span>}
             />
             <p className="mt-1 pl-14 text-xs text-muted">
-              ola remembers what you ask it to and uses it in conversations. Off: nothing new is saved or used (what is saved stays until you
-              forget it).
+              When you say “remember that…”, ola keeps it. Off: nothing new is saved (what is already saved stays until you forget it).
+            </p>
+          </div>
+          <div>
+            <Toggle
+              checked={d.use_memories}
+              onChange={(v) => void setPref({ use_memories: v })}
+              label={<span className="font-medium">Use my memories in conversations</span>}
+            />
+            <p className="mt-1 pl-14 text-xs text-muted">
+              ola uses what it remembers to give you more personal answers. Off: your memories stay here but are not used.
             </p>
           </div>
           {d.learning_available && (

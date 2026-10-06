@@ -415,17 +415,17 @@ class AssistantTools:
 
     def definitions(self, account_id: int | None) -> list[dict[str, Any]]:
         from app.memory import prefs
-        from app.memory.tools import MEMORY_TOOL_DEFS
+        from app.memory.tools import memory_tool_defs
 
-        memory = MEMORY_TOOL_DEFS if account_id is not None and prefs(account_id)[0] else []
+        memory = memory_tool_defs(prefs(account_id)) if account_id is not None else []
         return [SETTINGS_TOOL, *(TOOL_DEFS if account_id is not None else []), *memory]
 
     def rules(self, account_id: int | None) -> list[str]:
         from app.memory import prefs
-        from app.memory.tools import MEMORY_RULE
+        from app.memory.tools import memory_rule
 
-        memory = [MEMORY_RULE] if account_id is not None and prefs(account_id)[0] else []
-        return [SETTINGS_RULE, *([TOOLS_RULE] if account_id is not None else []), *memory]
+        rule = memory_rule(prefs(account_id)) if account_id is not None else ""
+        return [SETTINGS_RULE, *([TOOLS_RULE] if account_id is not None else []), *([rule] if rule else [])]
 
     def execute(
         self, account_id: int | None, tz: str, name: str, arguments: str, device_id: str = "", call: Any = None
@@ -449,8 +449,11 @@ class AssistantTools:
                 from app.memory import prefs
                 from app.memory.tools import MemoryTools
 
-                if not prefs(account_id)[0]:
+                p = prefs(account_id)
+                if not p.available:
                     return ToolOutcome(_err("memory is switched off for this account"))
+                if name == "memory_save" and not p.save:
+                    return ToolOutcome(_err("saving memories is switched off by the user (Memory page in the ola app)"))
                 return MemoryTools(call).run(name, {k: v for k, v in args.items() if k not in ("account_id", "device_id")})
             return VoiceItemTools(call).run(name, args)
         except ItemLimitError:

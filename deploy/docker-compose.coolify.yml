@@ -56,8 +56,9 @@ services:
       BUDDYAI_STRIPE_SHIPPING_RATES_GBP: ${BUDDYAI_STRIPE_SHIPPING_RATES_GBP:-}
       BUDDYAI_STRIPE_SHIPPING_RATES_EUR: ${BUDDYAI_STRIPE_SHIPPING_RATES_EUR:-}
       BUDDYAI_CARE_TRIAL_DAYS: ${BUDDYAI_CARE_TRIAL_DAYS:-90}
-      # Long-term memory: everything off until switched on in stages (deploy/README.md, "Memory").
-      BUDDYAI_MEMORY_ENABLED: ${BUDDYAI_MEMORY_ENABLED:-false}
+      # Long-term memory: remembering on request is on; vectors and learning stay off until switched on
+      # in stages (deploy/README.md, "Memory"). Customers can switch each part off on their Memory page.
+      BUDDYAI_MEMORY_ENABLED: ${BUDDYAI_MEMORY_ENABLED:-true}
       BUDDYAI_MEMORY_ACCOUNTS: ${BUDDYAI_MEMORY_ACCOUNTS:-}
       BUDDYAI_MEMORY_EMBEDDINGS_ENABLED: ${BUDDYAI_MEMORY_EMBEDDINGS_ENABLED:-false}
       BUDDYAI_MEMORY_VECTOR_RETRIEVAL: ${BUDDYAI_MEMORY_VECTOR_RETRIEVAL:-false}

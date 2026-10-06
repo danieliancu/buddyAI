@@ -253,7 +253,8 @@ class MemoryRepo:
         ).values(last_used_at=now))
         self.s.commit()
 
-    def set_prefs(self, account_id: int, explicit: bool | None = None, learn: bool | None = None) -> None:
+    def set_prefs(self, account_id: int, explicit: bool | None = None, learn: bool | None = None,
+                  use: bool | None = None) -> None:
         from app.db.models import Account
 
         acc = self.s.get(Account, account_id)
@@ -263,6 +264,8 @@ class MemoryRepo:
             acc.memory_explicit = explicit
         if learn is not None:
             acc.memory_learn = learn
+        if use is not None:
+            acc.memory_use = use
         self.s.add(acc)
         self.s.commit()
 

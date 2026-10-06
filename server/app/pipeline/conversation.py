@@ -475,7 +475,7 @@ class ConversationPipeline:
         tool_defs = tool_defs or None
         # server state goes right before the user's sentence (the cached system prompt stays identical)
         extra_msgs = [{"role": "system", "content": facts}] if facts else self._context_messages(turn)
-        if not facts and turn.account_id is not None and memory_prefs(turn.account_id)[0]:
+        if not facts and turn.account_id is not None and memory_prefs(turn.account_id).use:
             recalled = (await recall(self.router, turn.account_id, turn.device_id, turn.user_text, turn.usage)).message()
             if recalled:
                 extra_msgs = [recalled, *extra_msgs]

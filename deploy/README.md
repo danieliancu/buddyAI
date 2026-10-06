@@ -160,8 +160,10 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec -T postg
 ## 9. Memory (long-term memory, staged rollout)
 
 Memory lets the watch keep facts the user asks it to remember ("remember that my granddaughter is called
-Maria"). It is **off** until you switch it on. Design and rules: `docs/MEMORY.md`. Every step below can be
-undone by switching the setting back to `false` (nothing is deleted). Never roll the server image back to a
+Maria"). Remembering on request is **on by default**; vectors and learning from conversations stay off until
+you switch them on. Each customer can switch off saving, using memories, or both on their Memory page;
+learning is off until they switch it on. Design and rules: `docs/MEMORY.md`. Every switch below can be undone
+by setting it back (nothing is deleted). Never roll the server image back to a
 release older than the newest migration that has run: the server would not start. Use the switches instead.
 
 On Coolify, set the variables in the resource's Environment Variables and redeploy. With the plain compose
@@ -172,10 +174,11 @@ file, add them to `deploy/.env` and run the update command from section 7.
 1. Take a fresh dump and test that it restores (section 8). Keep a copy off the server.
 2. Deploy the release. Migration 0021 adds the `memories` and `memory_jobs` tables. Check `/readyz` and a few
    normal watch conversations.
-3. Switch on for your own accounts first: `BUDDYAI_MEMORY_ENABLED=true` and
-   `BUDDYAI_MEMORY_ACCOUNTS=<your account ids, comma-separated>`. Test on a watch: "remember that…", start a
-   new conversation (30 minutes later, or another day), ask about it, then "forget that". Check the **Memory**
-   page in the web app and the data export.
+3. Memory is on for everyone after this deploy. To try it on your own accounts first, set
+   `BUDDYAI_MEMORY_ACCOUNTS=<your account ids, comma-separated>` **before** deploying (or
+   `BUDDYAI_MEMORY_ENABLED=false` to keep it off entirely). Test on a watch: "remember that…", start a new
+   conversation (30 minutes later, or another day), ask about it, then "forget that". Check the **Memory** page
+   in the web app (the three switches) and the data export.
 4. Everyone: empty `BUDDYAI_MEMORY_ACCOUNTS`.
 
 ### Milestone B: pgvector, semantic recall, learning
