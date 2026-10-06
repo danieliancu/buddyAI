@@ -1,5 +1,10 @@
 {
 	auto_https off
+	# Coolify's Traefik sits in front on the Docker network: trust its X-Forwarded-For so the
+	# server sees each visitor's real IP (rate limits, device last_ip) instead of Traefik's.
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
 (common_headers) {
