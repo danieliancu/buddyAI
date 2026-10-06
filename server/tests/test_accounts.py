@@ -219,3 +219,20 @@ def test_wrong_current_password_is_403():
     r = c.post("/api/me/password/change", json={"current_password": "nope-nope-1", "new_password": "another-pass-1"})
     assert r.status_code == 403
     assert c.get("/api/me").status_code == 200  # still signed in
+
+
+def test_account_emails_have_a_designed_version_and_plain_text():
+    from email.message import EmailMessage
+
+    from app import email
+
+    for e in (email.verify_email("a@b.com", "https://app.x/verify-email?token=T<1>"),
+              email.reset_password("a@b.com", "https://app.x/reset-password?token=T"),
+              email.welcome_set_password("a@b.com", "https://app.x/reset-password?token=T")):
+        assert "token=T" in e.text  # the plain-text version keeps the link
+        assert e.html and 'href="https://app.x/' in e.html
+        assert "T<1>" not in e.html  # the link is escaped in the HTML
+        msg = EmailMessage()
+        msg.set_content(e.text)
+        msg.add_alternative(e.html, subtype="html")
+        assert msg.get_content_type() == "multipart/alternative"
