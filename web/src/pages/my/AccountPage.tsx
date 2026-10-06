@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router";
-import { AlertTriangle, BadgeCheck, Download, KeyRound, LogOut, Trash2, UserRound } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { AlertTriangle, BadgeCheck, Brain, ChevronRight, Download, KeyRound, LogOut, Trash2, UserRound } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { fmtDate } from "../../format";
 import { Badge, Button, buttonCls, Card, Dialog, ErrorBox, Field, Input } from "../../components/ui";
@@ -17,11 +17,18 @@ export default function AccountPage() {
         <p className="mt-1 text-sm text-muted">Member since {fmtDate(account.created_at)}</p>
       </div>
       <PlanCard />
+      {account.memory && (
+        <Link to="/my/memory" className="block">
+          <Card title={<Title icon={<Brain className="size-4" />}>Memory</Title>} actions={<ChevronRight className="size-4 text-muted" />}>
+            <p className="text-sm text-muted">What ola remembers about you: see, correct or forget it.</p>
+          </Card>
+        </Link>
+      )}
       <ProfileCard />
       <PasswordCard />
       <Card title="Your data">
         <p className="mb-3 text-sm text-muted">
-          Download everything we store about you: your profile, watch settings, conversation history and personas (JSON file).
+          Download everything we store about you: your profile, watch settings, conversation history, personas, notes and reminders, and memories (JSON file).
         </p>
         <a href={api.me.exportUrl} download="ola-my-data.json" className={buttonCls("secondary")}>
           <Download className="size-4" /> Download my data
@@ -204,7 +211,7 @@ function DeleteAccountCard() {
           <div className="rounded-lg border border-danger/30 bg-danger-bg px-3 py-3 text-danger">
             <p className="font-medium">This cannot be undone. We will:</p>
             <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
-              <li>erase your profile, personas and all conversation history;</li>
+              <li>erase your profile, personas, memories and all conversation history;</li>
               <li>remove your watches from the account (they go back to the pairing screen);</li>
               <li>sign you out everywhere.</li>
             </ul>

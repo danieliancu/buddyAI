@@ -102,6 +102,23 @@ class Settings(BaseSettings):
     pairing_code_ttl_s: int = 300
     conversation_idle_minutes: int = 30
 
+    # Long-term memory (app/memory). Everything is off by default; switch on in stages (deploy/README.md).
+    memory_enabled: bool = False  # "remember that...", recall, the Memory page
+    memory_accounts: str = ""  # comma-separated account ids allowed while rolling out; "" = every account
+    memory_embeddings_enabled: bool = False  # vectors for memories (needs pgvector on PostgreSQL, migration 0022)
+    memory_vector_retrieval: bool = False  # semantic recall when an account has more memories than fit the prompt
+    memory_inference_enabled: bool = False  # learn facts from conversations (also needs the account's opt-in)
+    memory_max_active: int = 300  # per account
+    memory_embed_timeout_ms: int = 350  # the query embedding inside a turn; slower -> word matching instead
+    memory_max_distance: float = 0.55  # cosine distance above which a memory is not relevant
+    memory_job_interval_s: int = 15
+
+    def memory_on_for(self, account_id: int | None) -> bool:
+        if not self.memory_enabled or account_id is None:
+            return False
+        allowed = {a.strip() for a in self.memory_accounts.split(",") if a.strip()}
+        return not allowed or str(account_id) in allowed
+
     def model_post_init(self, __context: Any) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         if self.providers_config is None:

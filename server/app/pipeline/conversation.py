@@ -23,6 +23,8 @@ from app.db.repositories import ConversationRepo, PersonaRepo
 from app.db.session import session_scope
 from app.db.repositories import ItemRepo, ItemTextError
 from app.items import AssistantTools, device_full
+from app.memory import prefs as memory_prefs
+from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
@@ -202,7 +204,7 @@ class ConversationPipeline:
     def _call_ctx(self, turn: TurnContext) -> ToolCallCtx:
         assert turn.account_id is not None
         return ToolCallCtx(turn.account_id, turn.device_id, turn.session_id, turn.turn_id, turn.settings.timezone,
-                           turn.mode, self._edit_lang(turn), turn.user_text)
+                           turn.mode, self._edit_lang(turn), turn.user_text, getattr(turn, "db_id", None))
 
     def _answer_languages(self, turn: TurnContext) -> list[str]:
         s = turn.settings
@@ -473,6 +475,10 @@ class ConversationPipeline:
         tool_defs = tool_defs or None
         # server state goes right before the user's sentence (the cached system prompt stays identical)
         extra_msgs = [{"role": "system", "content": facts}] if facts else self._context_messages(turn)
+        if not facts and turn.account_id is not None and memory_prefs(turn.account_id)[0]:
+            recalled = (await recall(self.router, turn.account_id, turn.device_id, turn.user_text, turn.usage)).message()
+            if recalled:
+                extra_msgs = [recalled, *extra_msgs]
         if facts:
             tool_defs = None
         if extra_msgs and messages:
@@ -856,7 +862,10 @@ class ConversationPipeline:
             self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id,
             call_ctx,
         )
-        log.info("tool %s(%s) -> %s", call.name, call.arguments, out.result[:200])
+        if call.name.startswith("memory_"):  # memory contents never go to the logs
+            log.info("tool %s -> ok=%s", call.name, '"ok": true' in out.result)
+        else:
+            log.info("tool %s(%s) -> %s", call.name, call.arguments, out.result[:200])
         turn.items_changed |= out.changed
         turn.settings_changed |= out.settings_changed
         turn.expect_reply |= out.awaits_answer

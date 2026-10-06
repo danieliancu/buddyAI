@@ -68,6 +68,7 @@ class ToolCallCtx:
     mode: str = "chat"
     language: str = "en"
     user_text: str = ""  # the user's sentence (to tell whether a line or a person was named ambiguously)
+    turn_db_id: int | None = None  # the turn's row (memories record where they came from)
 
 
 def _json(body: dict[str, Any]) -> str:
@@ -618,6 +619,19 @@ def execute_confirmation(call: ToolCallCtx, pc: PendingConfirmation) -> ConfirmR
     op = VoiceOperation(op_key=key, account_id=call.account_id, device_id=call.device_id,
                         session_id=call.session_id, turn_id=call.turn_id, tool="confirm",
                         summary=pc.facts[:300], result="{}")
+    ctx = STORE.get(call.account_id, call.device_id, call.session_id)
+    if pc.op == "forget_memories":
+        from app.memory.repo import MemoryRepo
+
+        with session_scope() as db:
+            if VoiceOpRepo(db).get(key) is not None:
+                return ConfirmResult("done", "already done")
+            n = MemoryRepo(db).forget_all(call.account_id, commit=False)
+            op.summary = "forgot all memories"
+            db.add(op)
+            db.commit()
+        log.info("memory forget_all account=%s rows=%s", call.account_id, n)
+        return ConfirmResult("done", "everything remembered about the user is forgotten")
     ctx = STORE.get(call.account_id, call.device_id, call.session_id)
     with session_scope() as db:
         repo = ItemRepo(db)

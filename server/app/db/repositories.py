@@ -312,6 +312,12 @@ class ConversationRepo:
 
     def delete_device_history(self, device_id: str, commit: bool = True) -> int:
         turns = self.s.exec(select(Turn).where(Turn.device_id == device_id)).all()
+        # memories stay (they are not history): only their link to these turns / conversations goes
+        from app.memory.repo import MemoryRepo
+
+        conv_ids = list(self.s.exec(select(Conversation.id).where(Conversation.device_id == device_id)).all())
+        MemoryRepo(self.s).detach_turns([t.id for t in turns])
+        MemoryRepo(self.s).detach_conversations(conv_ids)
         for usage in self.s.exec(
             select(UsageRecord).where(col(UsageRecord.turn_id).in_([t.id for t in turns]))
         ).all():

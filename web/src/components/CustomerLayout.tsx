@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
-import { CalendarClock, LogOut, MailWarning, NotebookPen, Sparkles, UserRound, Watch } from "lucide-react";
+import { Brain, CalendarClock, LogOut, MailWarning, NotebookPen, Sparkles, UserRound, Watch } from "lucide-react";
 import { api } from "../api";
 import { useCustomer } from "../pages/my/session";
 import { Button, cx } from "./ui";
@@ -13,6 +13,8 @@ const NAV = [
   { to: "/my/personas", label: "Personas", icon: Sparkles, end: false },
   { to: "/my/account", label: "Account", icon: UserRound, end: false },
 ];
+// Desktop only (the phone tab bar keeps five tabs; on phones Memory is reached from Account).
+const MEMORY = { to: "/my/memory", label: "Memory", icon: Brain, end: false };
 
 /**
  * Customer shell, mobile-first: a slim top bar, a bottom tab bar on phones (top links from `sm`).
@@ -32,7 +34,7 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
             <span className="font-semibold tracking-tight">ola</span>
           </NavLink>
           <nav className="ml-6 hidden items-center gap-1 sm:flex">
-            {NAV.map(({ to, label, end }) => (
+            {(account.memory ? [...NAV.slice(0, 4), MEMORY, NAV[4]] : NAV).map(({ to, label, end }) => (
               <NavLink
                 key={to}
                 to={to}

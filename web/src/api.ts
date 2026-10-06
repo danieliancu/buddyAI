@@ -53,7 +53,40 @@ export interface Account {
   status: AccountStatus | string;
   has_password: boolean;
   created_at: string;
+  /** Long-term memory is switched on for this account (the Memory page is shown). */
+  memory?: boolean;
 }
+
+export type MemoryKind = "preference" | "profile" | "person" | "routine" | "goal" | "project" | "other";
+
+/** One remembered fact (GET /api/me/memories). */
+export interface MemoryItem {
+  id: string;
+  fact: string;
+  kind: MemoryKind;
+  status: "active" | "pending" | "superseded";
+  origin: "explicit" | "inferred" | "web";
+  sensitive: boolean;
+  confirmed: boolean;
+  version: number;
+  /** Watch name when the memory is only for that watch's wearer. */
+  watch: string | null;
+  valid_until: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MemoryList =
+  | { available: false }
+  | {
+      available: true;
+      learning_available: boolean;
+      remember_requests: boolean;
+      learn: boolean;
+      max: number;
+      kinds: MemoryKind[];
+      memories: MemoryItem[];
+    };
 
 /** Row of GET /api/accounts (operator). */
 export interface AccountRow extends Account {
@@ -881,6 +914,19 @@ const meApi = {
     remove: (kind: ItemKind, number: number) => me.del<{ ok: boolean }>(`/api/me/items/${kind}/${number}`),
     setDone: (number: number, done: boolean) => me.put<Item>(`/api/me/items/reminder/${number}/done`, { done }),
     setPinned: (number: number, pinned: boolean) => me.put<Item>(`/api/me/items/note/${number}/pin`, { pinned }),
+  },
+  memories: {
+    list: () => me.get<MemoryList>("/api/me/memories"),
+    add: (fact: string, kind: MemoryKind) => me.post<{ id: string; outcome: string }>("/api/me/memories", { fact, kind }),
+    /** A correction: the new text replaces this memory (the old one is kept as history). */
+    update: (id: string, fact: string, version: number) =>
+      me.patch<{ id: string; outcome: string }>(`/api/me/memories/${enc(id)}`, { fact, version }),
+    confirm: (id: string) => me.post<{ id: string; status: string }>(`/api/me/memories/${enc(id)}/confirm`),
+    forget: (id: string) => me.del<{ ok: boolean }>(`/api/me/memories/${enc(id)}`),
+    /** Forget everything (needs the account password). */
+    clear: (password: string) => me.post<{ deleted: number }>("/api/me/memories/clear", { password }),
+    settings: (body: { remember_requests?: boolean; learn?: boolean }) =>
+      me.put<{ remember_requests: boolean; learn: boolean }>("/api/me/memories/settings", body),
   },
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),

@@ -24,6 +24,8 @@ STAGES = {
     "qwen_tts": "tts",
     "azure_tts": "tts",
     "openai_tts": "tts",
+    "openai_embed": "embedding",
+    "qwen_embed": "embedding",
 }
 
 # LLM providers that implement the hosted web search tool (LLMRequest.web_search).
@@ -129,6 +131,13 @@ class ProviderRouter:
         model_id = settings.llm_model if settings.llm_model in models else cfg["default_model"]
         return self._build(models[model_id]["provider"], model_id), model_id
 
+    def llm_default(self) -> tuple[LLMProvider, str]:
+        """The profile's default (cheapest) chat model, for background work such as memory learning."""
+        cfg = self.config["llm"]
+        models = {m["id"]: m for m in cfg["models"]}
+        model_id = cfg["default_model"]
+        return self._build(models[model_id]["provider"], model_id), model_id
+
     def llm_params(self) -> dict[str, Any]:
         return dict(self.config["llm"].get("params", {}))
 
@@ -147,6 +156,30 @@ class ProviderRouter:
     def hosted_search_tool(web_search: dict[str, Any]) -> dict[str, Any]:
         """The provider's hosted-tool fields only (drops our own settings such as cache_ttl_s)."""
         return {k: v for k, v in web_search.items() if k in ("search_context_size", "user_location")}
+
+    def embedding(self):
+        """The embedding provider of the profile (its own model and size, independent of the chat model), or
+        None when the profile has none."""
+        cfg = self.config.get("embedding")
+        if not cfg:
+            return None
+        s = self.settings
+        dims = int(cfg.get("dimensions") or 512)
+        if s.mock_providers:
+            from app.providers.mock import MockEmbeddings
+
+            return self._cached(("mock_embed", dims), lambda: MockEmbeddings(min(dims, 64)))
+        from app.providers.embeddings.openai import OpenAICompatibleEmbeddings
+
+        if cfg["provider"] == "qwen_embed":
+            key = s.provider_key("dashscope_api_key")
+            return self._cached(("qwen_embed", cfg["model"], dims, key), lambda: OpenAICompatibleEmbeddings(
+                "qwen_embed", key, s.dashscope_llm_base_url, cfg["model"], dims))
+        if cfg["provider"] == "openai_embed":
+            key = s.provider_key("openai_api_key")
+            return self._cached(("openai_embed", cfg["model"], dims, key), lambda: OpenAICompatibleEmbeddings(
+                "openai_embed", key, s.openai_base_url, cfg["model"], dims))
+        raise ValueError(f"unknown embedding provider {cfg['provider']!r}")
 
     def _tts_entry(self, language: str) -> dict[str, Any]:
         tts = self.config["tts"]

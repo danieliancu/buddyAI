@@ -180,6 +180,7 @@ def public(acc: Account) -> dict[str, Any]:
         "status": acc.status,
         "has_password": acc.password_hash is not None,
         "created_at": acc.created_at,
+        "memory": get_settings().memory_on_for(acc.id),
     }
 
 
@@ -212,6 +213,10 @@ def export(db: Session, account: Account) -> dict[str, Any]:
         )
     personas = db.exec(select(Persona).where(Persona.account_id == account.id)).all()
     items = db.exec(select(Item).where(Item.account_id == account.id).order_by(Item.kind, Item.number)).all()
+    from app.db.models import Memory
+
+    names = {d.id: d.name for d in devices}
+    memories = db.exec(select(Memory).where(Memory.account_id == account.id).order_by(Memory.id)).all()
     return {
         "exported_at": utcnow(),
         "account": public(account),
@@ -220,6 +225,15 @@ def export(db: Session, account: Account) -> dict[str, Any]:
         "notes_and_reminders": [
             {"kind": i.kind, "number": i.number, "text": i.text, "due_at": i.due_at}
             for i in items
+        ],
+        "memories": [
+            {
+                "id": m.uid, "fact": m.content, "kind": m.kind, "status": m.status, "origin": m.origin,
+                "sensitivity": m.sensitivity, "confidence": m.confidence, "confirmed_at": m.confirmed_at,
+                "watch": names.get(m.device_id, m.device_id) if m.device_id else None,
+                "valid_until": m.valid_until, "created_at": m.created_at, "updated_at": m.updated_at,
+            }
+            for m in memories
         ],
     }
 
@@ -233,6 +247,12 @@ def delete_account(db: Session, account: Account) -> list[str]:
     device_ids = [d.id for d in db.exec(select(Device).where(Device.account_id == account.id)).all()]
     turns = db.exec(select(Turn).where(Turn.account_id == account.id)).all()
     turn_ids = [t.id for t in turns]
+    from app.memory.repo import MemoryRepo
+
+    MemoryRepo(db).forget_all(account.id, commit=False)  # memories, their vectors and jobs
+    MemoryRepo(db).detach_turns(turn_ids)
+    MemoryRepo(db).detach_conversations(list(db.exec(
+        select(Conversation.id).where(col(Conversation.device_id).in_(device_ids or [""]))).all()))
     if turn_ids:
         for u in db.exec(select(UsageRecord).where(col(UsageRecord.turn_id).in_(turn_ids))).all():
             u.turn_id = None

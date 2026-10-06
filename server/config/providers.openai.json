@@ -69,7 +69,19 @@
     "idle_flush_ms": 300,
     "idle_min_chars": 20
   },
+  "embedding": {
+    "provider": "openai_embed",
+    "model": "text-embedding-3-small",
+    "dimensions": 512
+  },
   "pricing_defaults": [
+    {
+      "provider": "openai_embed",
+      "model": "text-embedding-3-small",
+      "unit": "input_token",
+      "price_usd": 2e-08,
+      "note": "$0.02 / 1M tokens (OpenAI). Verify."
+    },
     {
       "provider": "openai_stt",
       "model": "gpt-live-transcribe",

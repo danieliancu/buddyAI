@@ -17,6 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages, usage_ops
 from app.api import accounts_admin, auth, devices, finance, firmware, issues, live, me, shop, system, usage
+from app.api import memory as memory_api
 from app.config import get_settings, load_providers_config
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
@@ -54,6 +55,10 @@ async def lifespan(app: FastAPI):
     reminders = asyncio.create_task(reminder_loop(app.state.hub), name="reminders")
     # Usage operations: queued settlements and expired leases (each process runs it; see app/usage_ops.py).
     usage_maint = asyncio.create_task(usage_ops.maintenance_loop(), name="usage-maintenance")
+    # Long-term memory: vectors and opt-in learning (durable jobs; idle unless BUDDYAI_MEMORY_ENABLED).
+    from app.memory.jobs import job_loop
+
+    memory_jobs = asyncio.create_task(job_loop(app.state.router), name="memory-jobs")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -73,6 +78,7 @@ async def lifespan(app: FastAPI):
     warmup.cancel()
     reminders.cancel()
     usage_maint.cancel()
+    memory_jobs.cancel()
     # Graceful shutdown: running turns stop now (not charged, reason "shutdown") and are settled here;
     # what cannot be settled is expired by another process (or this one after a restart) when its lease ends.
     for conn in list(app.state.hub.connections.values()):
@@ -100,6 +106,7 @@ def create_app() -> FastAPI:
     )
     for r in (
         auth.router,
+        memory_api.router,
         me.router,
         shop.router,
         accounts_admin.router,

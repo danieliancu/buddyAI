@@ -13,6 +13,7 @@ import WatchHistoryPage from "./WatchHistoryPage";
 import { MyNotesPage, MyRemindersPage } from "./MyItemsPages";
 import MyPersonasPage from "./MyPersonasPage";
 import AccountPage from "./AccountPage";
+import MemoryPage from "./MemoryPage";
 
 type State = { status: "loading" } | { status: "in"; account: Account } | { status: "out" } | { status: "error"; error: unknown };
 
@@ -86,6 +87,7 @@ export default function CustomerApp() {
               <Route path="reminders" element={<MyRemindersPage />} />
               <Route path="personas" element={<MyPersonasPage />} />
               <Route path="account" element={<AccountPage />} />
+              <Route path="memory" element={<MemoryPage />} />
               <Route path="*" element={<Navigate to="/my" replace />} />
             </Routes>
           </CustomerLayout>

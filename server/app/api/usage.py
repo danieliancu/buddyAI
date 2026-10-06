@@ -101,6 +101,7 @@ def diagnostics(days: int = Query(7, ge=1, le=90), device_id: str | None = None,
         "by_language": {k: stats(v) for k, v in by_lang.items()},
         "by_provider": {k: stats(v) for k, v in by_provider.items()},
         "status_counts": status_counts,
+        "memory": _memory_stats(db),
         "recent": [
             {
                 "id": t.id,
@@ -116,6 +117,29 @@ def diagnostics(days: int = Query(7, ge=1, le=90), device_id: str | None = None,
             }
             for t in turns[-50:][::-1]
         ],
+    }
+
+
+def _memory_stats(db: Session) -> dict:
+    """Long-term memory health for the operator: switches, job queue, sizes. Counts only, never content."""
+    from sqlalchemy import func
+    from sqlmodel import select
+
+    from app.config import get_settings
+    from app.db.models import Memory
+    from app.memory.jobs import queue_stats
+
+    s = get_settings()
+    rows = db.exec(select(Memory.status, func.count()).group_by(Memory.status)).all()
+    per_account = [int(c) for c in db.exec(
+        select(func.count()).select_from(Memory).where(Memory.status == "active").group_by(Memory.account_id)).all()]
+    return {
+        "enabled": s.memory_enabled, "embeddings": s.memory_embeddings_enabled,
+        "vector_retrieval": s.memory_vector_retrieval, "inference": s.memory_inference_enabled,
+        "by_status": {k: int(v) for k, v in rows},
+        "accounts_with_memories": len(per_account),
+        "per_account_p50": percentile(per_account, 50), "per_account_max": max(per_account, default=0),
+        "jobs": queue_stats(),
     }
 
 

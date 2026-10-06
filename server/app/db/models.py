@@ -12,6 +12,8 @@ from typing import Any, Optional
 from sqlalchemy import JSON, BigInteger, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+from app.db.vector import EmbeddingVector
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -44,6 +46,9 @@ class Account(SQLModel, table=True):
     allowance_warned_month: Optional[str] = Field(default=None, max_length=7)  # legacy (pre-0007 80% email)
     # Internal/operator account (the built-in owner of operator stock): never limited, costs still tracked.
     internal: bool = False
+    # Long-term memory (app/memory): "remember that..." on request, and learning from conversations (opt-in).
+    memory_explicit: bool = True
+    memory_learn: bool = False
 
 
 class Order(SQLModel, table=True):
@@ -444,3 +449,68 @@ class FirmwareRelease(SQLModel, table=True):
     size: int
     notes: str = ""
     uploaded_at: datetime = Field(default_factory=utcnow)
+
+
+class Memory(SQLModel, table=True):
+    """One remembered fact about the user or their people (app/memory). Owned by one account; every query
+    filters on account_id. device_id set = only that watch's wearer. Forgetting deletes the row."""
+
+    __tablename__ = "memories"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uid: str = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, unique=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    device_id: Optional[str] = Field(default=None, foreign_key="devices.id", max_length=64)
+    kind: str = Field(max_length=16)  # preference | profile | person | routine | goal | project | other
+    content: str = Field(max_length=300)  # one atomic fact
+    content_hash: str = Field(max_length=64)  # sha256 of the normalized content (dedup)
+    subject: Optional[str] = Field(default=None, max_length=60)  # e.g. "user", "person:maria"
+    attribute: Optional[str] = Field(default=None, max_length=60)  # e.g. "favourite_drink"
+    origin: str = Field(max_length=12)  # explicit | inferred | web
+    status: str = Field(default="active", max_length=12)  # active | pending | superseded
+    confidence: Optional[float] = None  # inferred only (0-1, after server validation)
+    confirmed_at: Optional[datetime] = None  # the user asked for it or confirmed it; None = unconfirmed inference
+    sensitivity: str = Field(default="normal", max_length=12)  # normal | special
+    source_turn_id: Optional[int] = Field(default=None, foreign_key="turns.id")  # nulled before turns are deleted
+    supersedes_id: Optional[int] = Field(default=None, foreign_key="memories.id")
+    valid_until: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    version: int = 1
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryJob(SQLModel, table=True):
+    """Durable background work for memories (embed / extract / purge), leased like usage operations."""
+
+    __tablename__ = "memory_jobs"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uid: str = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, unique=True)
+    kind: str = Field(max_length=12)  # embed | extract | purge
+    account_id: int = Field(index=True)
+    memory_id: Optional[int] = Field(default=None, foreign_key="memories.id")
+    conversation_id: Optional[int] = Field(default=None, foreign_key="conversations.id")
+    upto_turn_id: Optional[int] = None  # extract: the last turn included
+    state: str = Field(default="pending", max_length=12)  # pending | running | done | failed | dead
+    attempts: int = 0
+    run_after: datetime = Field(default_factory=utcnow, index=True)
+    lease_expires_at: Optional[datetime] = None
+    owner: Optional[str] = Field(default=None, max_length=80)
+    last_error: Optional[str] = Field(default=None, max_length=200)  # error class only, never user content
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryEmbedding(SQLModel, table=True):
+    """A memory's vector in one model space (model_key = provider:model:dims). Derived data: deleted with
+    the memory, recomputed when the text (text_hash) or the model changes."""
+
+    __tablename__ = "memory_embeddings"
+    __table_args__ = (UniqueConstraint("memory_id", "model_key", name="uq_memory_embeddings_model"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    memory_id: int = Field(foreign_key="memories.id")
+    account_id: int
+    model_key: str = Field(max_length=96)
+    dims: int
+    text_hash: str = Field(max_length=64)
+    embedding: Any = Field(sa_column=Column("embedding", EmbeddingVector(), nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)

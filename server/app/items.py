@@ -414,10 +414,18 @@ class AssistantTools:
     """The assistant's tools: watch_settings (every watch) and the item_* tools (watches with an owner)."""
 
     def definitions(self, account_id: int | None) -> list[dict[str, Any]]:
-        return [SETTINGS_TOOL, *(TOOL_DEFS if account_id is not None else [])]
+        from app.memory import prefs
+        from app.memory.tools import MEMORY_TOOL_DEFS
+
+        memory = MEMORY_TOOL_DEFS if account_id is not None and prefs(account_id)[0] else []
+        return [SETTINGS_TOOL, *(TOOL_DEFS if account_id is not None else []), *memory]
 
     def rules(self, account_id: int | None) -> list[str]:
-        return [SETTINGS_RULE, *([TOOLS_RULE] if account_id is not None else [])]
+        from app.memory import prefs
+        from app.memory.tools import MEMORY_RULE
+
+        memory = [MEMORY_RULE] if account_id is not None and prefs(account_id)[0] else []
+        return [SETTINGS_RULE, *([TOOLS_RULE] if account_id is not None else []), *memory]
 
     def execute(
         self, account_id: int | None, tz: str, name: str, arguments: str, device_id: str = "", call: Any = None
@@ -437,6 +445,13 @@ class AssistantTools:
                 return ToolOutcome(_err("notes and reminders need a watch linked to an account"))
             if call is None or call.account_id != account_id:
                 return ToolOutcome(_err("notes and reminders are only available in a voice session"))
+            if name.startswith("memory_"):
+                from app.memory import prefs
+                from app.memory.tools import MemoryTools
+
+                if not prefs(account_id)[0]:
+                    return ToolOutcome(_err("memory is switched off for this account"))
+                return MemoryTools(call).run(name, {k: v for k, v in args.items() if k not in ("account_id", "device_id")})
             return VoiceItemTools(call).run(name, args)
         except ItemLimitError:
             return ToolOutcome(_err(f"limit reached ({ItemRepo.MAX_PER_KIND}); delete some first"))

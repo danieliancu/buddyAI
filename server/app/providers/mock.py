@@ -85,3 +85,31 @@ class MockTTS(TTSProvider):
             for off in range(0, len(tone), step):
                 yield PCMChunk(tone[off : off + step], self.rate)
                 await asyncio.sleep(0)
+
+
+class MockEmbeddings:
+    """Deterministic bag-of-words vectors: texts sharing words are close (enough to test recall)."""
+
+    name = "mock_embedding"
+    model = "mock-embed"
+
+    def __init__(self, dims: int = 64) -> None:
+        self.dims = dims
+
+    @property
+    def model_key(self) -> str:
+        return f"{self.name}:{self.model}:{self.dims}"
+
+    async def embed(self, texts: list[str]):
+        import hashlib
+
+        from app.item_search import tokens
+        from app.providers.embeddings.base import EmbeddingResult
+
+        out = []
+        for t in texts:
+            v = [0.0] * self.dims
+            for w in tokens(t):
+                v[int(hashlib.md5(w.encode()).hexdigest(), 16) % self.dims] += 1.0
+            out.append(v)
+        return EmbeddingResult(out, sum(len(t.split()) for t in texts))

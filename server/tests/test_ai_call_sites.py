@@ -1,6 +1,6 @@
 """Every place that calls an AI provider must be covered by usage admission or be a documented exception.
 
-Scans app/ (outside app/providers/) for provider calls - `.stream(...)`, `.web_search(...)` and STT `.start(...)` on a provider
+Scans app/ (outside app/providers/) for provider calls - `.stream(...)`, `.web_search(...)`, `.embed(...)` and STT `.start(...)` on a provider
 object - and compares them with the list below. A new call site fails this test until it is admitted (a
 watch turn, app/usage_ops.py) or added here with its reason.
 """
@@ -22,6 +22,9 @@ ALLOWED = {
     ("pipeline/conversation.py", "_edit_llm"): "watch turn: admitted (edit-mode LLM)",
     ("api/common.py", "voice_sample"): "voice sample: free (owner decision), rate-limited, recorded non-billable",
     ("api/system.py", "_run_test"): "operator provider test: documented exception, recorded as operator_test",
+    ("memory/retrieve.py", "_recall"): "watch turn: admitted (query embedding, usage on the turn)",
+    ("memory/jobs.py", "run_embed"): "memory vectors: recorded as a non-billable 'memory' operation (tiny cost)",
+    ("memory/extract.py", "run_extract"): "memory learning: admitted against the account (kind memory, s:memx:<job>)",
 }
 
 
@@ -42,7 +45,7 @@ def _calls() -> set[tuple[str, str]]:
                 target = ast.unparse(node.func.value)
                 name = node.func.attr
                 provider_like = any(w in target for w in ("llm", "provider", "stt", "tts", "sel"))
-                if provider_like and (name in ("stream", "web_search") or (name == "start" and "stt" in target)):
+                if provider_like and (name in ("stream", "web_search", "embed") or (name == "start" and "stt" in target)):
                     found.add((rel, stack[-1] if stack else "<module>"))
             for child in ast.iter_child_nodes(node):
                 visit(child)

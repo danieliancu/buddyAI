@@ -577,6 +577,7 @@ class DeviceConnection:
                 )
                 turn.db_id = row.id
         self._persist(turn, result)
+        self._schedule_learning(turn, result)
         lease_task = getattr(turn, "lease_task", None)
         if lease_task is not None:
             lease_task.cancel()
@@ -605,6 +606,23 @@ class DeviceConnection:
                 **turn.marks.as_db_fields(),
             }
         )
+
+    def _schedule_learning(self, turn: TurnContext, result: TurnResult) -> None:
+        """Opt-in memory learning: after a completed chat turn, the conversation is (re)scheduled to be read
+        once it has gone quiet (one model call per conversation, app/memory/extract.py)."""
+        if (result.status != "completed" or turn.mode != "chat" or turn.account_id is None
+                or not turn.conversation_id or turn.db_id is None):
+            return
+        try:
+            from app.memory import prefs
+            from app.memory.extract import schedule
+
+            if not prefs(turn.account_id)[1]:
+                return
+            with session_scope() as db:
+                schedule(db, turn.account_id, turn.conversation_id, turn.db_id, get_settings().conversation_idle_minutes)
+        except Exception as exc:  # noqa: BLE001 - learning never affects the turn
+            log.warning("memory learning not scheduled: %s", type(exc).__name__)
 
     def _persist(self, turn: TurnContext, result: TurnResult) -> None:
         if turn.db_id is None:

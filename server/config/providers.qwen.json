@@ -75,7 +75,19 @@
     "idle_flush_ms": 300,
     "idle_min_chars": 20
   },
+  "embedding": {
+    "provider": "qwen_embed",
+    "model": "text-embedding-v4",
+    "dimensions": 512
+  },
   "pricing_defaults": [
+    {
+      "provider": "qwen_embed",
+      "model": "text-embedding-v4",
+      "unit": "input_token",
+      "price_usd": 7e-08,
+      "note": "Model Studio Singapore estimate. Verify in the console."
+    },
     {
       "provider": "qwen_asr",
       "model": "qwen-audio-3.1-asr-flash-streaming",
