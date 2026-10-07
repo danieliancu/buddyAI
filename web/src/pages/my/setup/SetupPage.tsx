@@ -250,6 +250,14 @@ function Notice({ tone, icon, children }: { tone: "warn" | "ok" | "neutral"; ico
 export function CareSummary({ care, plan }: { care: CareActivation | null; plan: MyPlan | null }) {
   const price = plan ? pence(plan.prices.care_price_pence) : "";
   const days = care?.trial_days ?? 90;
+  if (plan?.status.kind === "trial" && plan.status.trial_end && plan.status.cancel_at_period_end) {
+    return (
+      <p className="text-sm" data-testid="care-trial-cancelled">
+        ola Care is cancelled: your free trial still works until <b>{fmtDayMonth(plan.status.trial_end)}</b> and nothing will be
+        charged. To keep it, open Account → ola Care → “Keep ola Care”.
+      </p>
+    );
+  }
   if (plan?.status.kind === "trial" && plan.status.trial_end) {
     return (
       <p className="text-sm" data-testid="care-trial-active">

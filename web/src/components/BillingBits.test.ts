@@ -31,6 +31,9 @@ describe("ola Care status shown to the customer", () => {
   it("Stripe's confirmed status wins once the subscription exists", () => {
     expect(carePlanStatus(base({ kind: "trial", trial_end: "2027-01-05T00:00:00Z" }, care("active"))).text).toMatch(/Free trial until 5 Jan/);
     expect(carePlanStatus(base({ kind: "past_due" }, care("active"))).problem).toBe(true);
+    const cancelled = carePlanStatus(base({ kind: "trial", trial_end: "2027-01-05T00:00:00Z", cancel_at_period_end: true }, care("active")));
+    expect(cancelled.text).toBe("Cancelled — free trial until 5 Jan 2027");
+    expect(cancelled.tone).toBe("warn");
   });
 
   it("legacy accounts without a pending trial", () => {

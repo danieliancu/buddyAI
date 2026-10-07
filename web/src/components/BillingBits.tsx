@@ -55,17 +55,13 @@ export function carePlanStatus(plan: MyPlan): { text: string; tone: Tone; proble
   const s = plan.status;
   switch (s.kind) {
     case "trial":
-      return {
-        text: s.cancel_at_period_end ? `Free trial — ends ${fmtDayMonth(s.trial_end)}` : `Free trial until ${fmtDayMonth(s.trial_end)}`,
-        tone: "accent",
-        problem: false,
-      };
+      return s.cancel_at_period_end
+        ? { text: `Cancelled — free trial until ${fmtDayMonth(s.trial_end)}`, tone: "warn", problem: false }
+        : { text: `Free trial until ${fmtDayMonth(s.trial_end)}`, tone: "accent", problem: false };
     case "active":
-      return {
-        text: s.cancel_at_period_end ? `Active — ends ${fmtDayMonth(s.period_end)}` : `Active — renews ${fmtDayMonth(s.period_end)}`,
-        tone: "ok",
-        problem: false,
-      };
+      return s.cancel_at_period_end
+        ? { text: `Cancelled — works until ${fmtDayMonth(s.period_end)}`, tone: "warn", problem: false }
+        : { text: `Active — renews ${fmtDayMonth(s.period_end)}`, tone: "ok", problem: false };
     case "past_due":
       return { text: "Payment problem — update your card", tone: "danger", problem: true };
     case "complimentary":

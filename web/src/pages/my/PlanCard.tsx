@@ -117,12 +117,17 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
   const care = plan.care_activation;
   const price = pence(plan.prices.care_price_pence);
 
+  // Cancelled but still running (until the end of the trial or of the paid month).
+  const endsOn = plan.status.kind === "trial" ? plan.status.trial_end : plan.status.period_end;
+  if ((plan.status.kind === "trial" || plan.status.kind === "active") && plan.status.cancel_at_period_end && endsOn) {
+    return <CareCancelled plan={plan} endsOn={fmtDayMonth(endsOn)} />;
+  }
   if (plan.status.kind === "trial" && plan.status.trial_end) {
     const end = fmtDayMonth(plan.status.trial_end);
     return (
       <p className="rounded-lg bg-accent-bg px-3 py-2 text-sm" data-testid="care-trial">
-        Free until <b>{end}</b>. Then {price} a month, charged automatically to your saved card until you cancel.{" "}
-        {plan.status.cancel_at_period_end ? "You cancelled: nothing will be charged." : `Cancel before ${end} with “Manage billing” to pay nothing.`}
+        Free until <b>{end}</b>. Then {price} a month, charged automatically to your saved card until you cancel. Cancel
+        before {end} with “Manage billing” to pay nothing.
       </p>
     );
   }
@@ -160,6 +165,46 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
       <Button variant="secondary" size="sm" loading={busy} onClick={retry}>
         Try again
       </Button>
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
+/** ola Care was cancelled: what still works, until when, what it costs (nothing), and how to keep it. */
+function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const trial = plan.status.kind === "trial";
+  const keep = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      window.location.assign((await api.me.billingPortal()).url);
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-3 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm" data-testid="care-cancelled">
+      <p className="font-semibold text-warn">ola Care is cancelled</p>
+      <ul className="space-y-1.5 text-fg">
+        <li>
+          • Your {trial ? "free trial" : "plan"} still works until <b>{endsOn}</b>.
+        </li>
+        <li>
+          • <b>Nothing more will be charged</b> — {trial ? "the free trial won't turn into a paid plan" : "it won't renew"}.
+        </li>
+        <li>• After {endsOn} the assistant stops answering. Your notes and reminders stay in your account.</li>
+      </ul>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" size="sm" loading={busy} icon={<ShieldCheck className="size-4" />} onClick={keep}>
+          Keep ola Care
+        </Button>
+        <span className="text-xs text-muted">
+          Then {pence(plan.prices.care_price_pence)} a month{trial ? ` from ${endsOn}` : ""}. You can change your mind any time before {endsOn}.
+        </span>
+      </div>
       <ErrorBox error={error} />
     </div>
   );
