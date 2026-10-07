@@ -30,7 +30,8 @@ export default function WatchHistoryPage() {
       setDevice((d) => d && { ...d, battery_pct: e.battery_pct ?? d.battery_pct, charging: e.charging ?? d.charging });
   });
 
-  const list = convs.data ?? [];
+  // Newest first: conversations (already sorted by the server) and the exchanges inside each one.
+  const list = (convs.data ?? []).map((c) => ({ ...c, turns: [...c.turns].reverse() }));
   const count = list.reduce((n, c) => n + c.turns.length, 0);
   const notFound = convs.error instanceof ApiError && convs.error.status === 404;
 

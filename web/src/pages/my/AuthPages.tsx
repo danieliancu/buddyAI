@@ -5,18 +5,19 @@ import { api, ApiError } from "../../api";
 import { Button, buttonCls, ErrorBox, Field, Input, Spinner } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import { safeNext } from "./session";
+import { SITE_URL } from "../../site";
 
 /** Centered card used by all customer sign-in pages (mobile-first). */
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pt-10 pb-6 sm:justify-center sm:pt-6">
       <div className="w-full max-w-sm">
-        <Link to="/" className="mb-6 flex items-center justify-center gap-2.5">
+        <a href={SITE_URL} className="mb-6 flex items-center justify-center gap-2.5" title="olacompanion website">
           <span className="grid size-10 place-items-center rounded-xl bg-accent-bg text-accent">
             <Watch className="size-5" />
           </span>
           <span className="text-lg font-semibold tracking-tight">ola</span>
-        </Link>
+        </a>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xl sm:p-6">
           <h1 className="text-lg font-semibold">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
