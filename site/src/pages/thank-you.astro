@@ -76,6 +76,9 @@ const next = [
       app.classList.toggle("hidden", !(v.showNext || v.tone === "wait"));
       retry.classList.toggle("hidden", v.tone !== "error" && v.tone !== "warn");
       icon.classList.toggle("text-ok", v.tone === "ok");
+      title.classList.toggle("text-ok", v.tone === "ok");
+      title.classList.toggle("text-danger", v.tone === "error");
+      title.classList.toggle("text-fg", v.tone !== "ok" && v.tone !== "error");
       icon.classList.toggle("text-danger", v.tone === "error");
       return v;
     };
