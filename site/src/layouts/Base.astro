@@ -130,11 +130,10 @@ const allData = [...siteData, ...pageData];
       Skip to content
     </a>
     <div class="hidden bg-[#ea580c] text-white sm:block">
-      <ul class="container-x flex min-h-8 flex-wrap items-center justify-center gap-x-6 gap-y-0.5 py-1.5 text-xs font-semibold">
-        <li class="flex items-center gap-1.5"><Icon name="truck" size={15} /> Ships to the UK &amp; EU</li>
-        <li class="flex items-center gap-1.5"><Icon name="gift" size={15} /> Free {prices.trialMonths}-month subscription</li>
-        <li class="flex items-center gap-1.5"><Icon name="undo" size={15} /> 14-day right to cancel</li>
-      </ul>
+      <p class="container-x flex min-h-8 items-center justify-center gap-2 py-1.5 text-xs font-semibold leading-none">
+        <Icon name="gift" size={18} class="block shrink-0" />
+        <span class="leading-none">Free {prices.trialMonths}-month subscription</span>
+      </p>
     </div>
     <Header />
     <main id="main" tabindex="-1" class="focus:outline-none">
