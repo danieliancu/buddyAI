@@ -22,7 +22,9 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
     server: {
-      proxy: { "/api": { target: API_TARGET, changeOrigin: true } },
+      // changeOrigin false: keep Host = localhost:4321 so the server's same-origin check (Origin vs Host)
+      // passes for POST /api/shop/checkout, as it does behind Caddy in production.
+      proxy: { "/api": { target: API_TARGET, changeOrigin: false } },
     },
   },
 });
