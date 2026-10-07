@@ -131,6 +131,15 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
       </p>
     );
   }
+  if (plan.status.kind === "active" && plan.status.period_end) {
+    return (
+      <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm" data-testid="care-next-payment">
+        Next payment: <b>{price}</b> on <b>{fmtDayMonth(plan.status.period_end)}</b>, charged to your saved card. Cancel anytime with
+        “Manage billing”.
+      </p>
+    );
+  }
+  if (plan.status.kind === "canceled") return <CareEnded plan={plan} />;
   if (!care || plan.status.kind !== "none") return null;
   if (care.status === "awaiting_pairing") {
     return (
@@ -165,6 +174,43 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
       <Button variant="secondary" size="sm" loading={busy} onClick={retry}>
         Try again
       </Button>
+      <ErrorBox error={error} />
+    </div>
+  );
+}
+
+/** ola Care has ended: why the watch is quiet, what is kept, and how to come back (paid from today). */
+function CareEnded({ plan }: { plan: MyPlan }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const ended = plan.status.period_end ? fmtDayMonth(plan.status.period_end) : null;
+  const subscribe = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      window.location.assign((await api.me.subscribe()).url);
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm" data-testid="care-ended">
+      <p className="font-semibold">{ended ? `ola Care ended on ${ended}` : "ola Care has ended"}</p>
+      <ul className="space-y-1.5">
+        <li>• Your watch's assistant doesn't answer until you subscribe again.</li>
+        <li>• Your notes and reminders are kept in your account.</li>
+      </ul>
+      {plan.can_subscribe && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="primary" className="h-11 px-5 text-base" loading={busy} icon={<ShieldCheck className="size-5" />} onClick={subscribe}>
+            Subscribe again — {pence(plan.prices.care_price_pence)} / month
+          </Button>
+          <span className="text-xs text-muted">
+            Charged today, then every month until you cancel. No new free trial: this account has already had one.
+          </span>
+        </div>
+      )}
       <ErrorBox error={error} />
     </div>
   );
@@ -264,7 +310,7 @@ function Actions({ plan }: { plan: MyPlan }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {plan.can_subscribe && (
+        {plan.can_subscribe && plan.status.kind !== "canceled" && (
           <Button variant="primary" loading={busy === "subscribe"} icon={<ShieldCheck className="size-4" />} onClick={() => run("subscribe")}>
             Subscribe — {pence(plan.prices.care_price_pence)} / month
           </Button>

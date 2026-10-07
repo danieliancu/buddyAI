@@ -69,7 +69,7 @@ export function carePlanStatus(plan: MyPlan): { text: string; tone: Tone; proble
     case "expired":
       return { text: `Pilot ended on ${fmtDayMonth(s.period_end)}`, tone: "warn", problem: true };
     case "canceled":
-      return { text: "Cancelled", tone: "neutral", problem: false };
+      return { text: s.period_end ? `Ended on ${fmtDayMonth(s.period_end)}` : "Cancelled", tone: "neutral", problem: false };
     case "internal":
       return { text: "Internal account — no usage limit", tone: "neutral", problem: false };
     default: {
