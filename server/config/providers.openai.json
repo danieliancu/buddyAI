@@ -1,5 +1,5 @@
 {
-  "supported_languages": "all",
+  "supported_languages": ["en", "ro", "de", "fr", "es", "it", "pt", "nl", "ca", "gl", "sv", "da", "no", "is", "fi", "et", "lv", "lt", "cy", "pl", "cs", "sk", "hu", "sl", "hr", "bs", "sr", "el", "bg", "mk", "uk"],
   "stt": {
     "prompt": "Write numbers, amounts, times, dates, measurements and calculations with digits and symbols (15 × 3, 2 + 2, 14:30, £3.50, 21°C, 10%), but keep words like 'one of them' or 'o dată' as spoken.",
     "default": {

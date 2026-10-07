@@ -4,6 +4,22 @@ from app import languages
 from app.device_settings import DeviceSettings, device_view, merge
 from app.providers.router import ProviderRouter
 
+WATCH_31 = languages.WATCH_UI_LANGUAGES
+
+
+@pytest.fixture
+def all_languages(monkeypatch):
+    """Detection tests cover every language the engine knows (a profile with supported_languages = "all");
+    the shipped OpenAI profile is limited to the 31 watch languages."""
+    from app import config as config_mod
+
+    real = config_mod.load_providers_config
+
+    def with_all(*a, **kw):
+        return {**real(*a, **kw), "supported_languages": "all"}
+
+    monkeypatch.setattr(languages, "load_providers_config", with_all)
+
 
 def test_registry_and_profile_support():
     reg = languages.registry()
@@ -11,7 +27,9 @@ def test_registry_and_profile_support():
     assert {"en", "ro", "de", "fr", "es", "pl", "uk", "el", "zh", "ar", "cy"} <= set(reg)
     assert reg["ru"].captions and reg["el"].captions and reg["ro"].captions
     assert not reg["zh"].captions and not reg["ar"].captions and reg["ar"].rtl
-    assert len(languages.supported_codes()) == len(reg)  # openai profile = "all"
+    # The shipped OpenAI profile: exactly the 31 languages the watch screens are translated into.
+    assert set(languages.supported_codes()) == set(WATCH_31)
+    assert "ar" not in languages.supported_codes() and "af" not in languages.supported_codes()
 
 
 @pytest.mark.parametrize(
@@ -31,12 +49,12 @@ def test_registry_and_profile_support():
         ("Hur blir vädret i morgon?", "sv"),
     ],
 )
-def test_detect_short_phrases(text, code):
+def test_detect_short_phrases(text, code, all_languages):
     detected, confidence = languages.detect(text)
     assert detected == code, (text, detected, confidence)
 
 
-def test_close_languages_follow_preference():
+def test_close_languages_follow_preference(all_languages):
     # No letters unique to Ukrainian: ambiguous with Russian, so the owner's language decides.
     assert languages.detect("Яка завтра буде погода?", prefer=["uk"])[0] == "uk"
     assert languages.detect("Какая завтра будет погода?", prefer=["uk"])[0] == "ru"  # clearly Russian: preference ignored
