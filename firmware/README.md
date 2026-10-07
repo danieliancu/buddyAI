@@ -12,7 +12,9 @@ main/                 app_main.c (wiring, app loop, factory reset), Kconfig.proj
 components/board      pins, PMU/RTC, display + touch, audio codecs
 components/ui         LVGL screens (watchface, settings, pairing, errors, OTA, reset)
 components/audio      Opus capture / playback
-components/net        Wi-Fi, SoftAP setup portal, SNTP, mDNS
+components/net        Wi-Fi, SoftAP setup portal (WPA2), SNTP, mDNS
+components/ble_prov   Bluetooth LE Wi-Fi setup (protocomm security 2) for Android
+components/prov_util  setup password + Wi-Fi credential checks (pure C, host-tested)
 components/protocol_client  WebSocket session, turns, pairing, errors
 components/settings   NVS storage (namespace "buddyai")
 components/ota        esp_https_ota + SHA-256 check (+ signature check in release)
@@ -28,7 +30,7 @@ the environment:
 
 ```powershell
 . "C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1"
-cd C:\_work\ola\firmware
+cd C:\_work\BuddyAI\firmware
 ```
 
 Component dependencies (LVGL, esp_lvgl_port, codecs, Opus, websocket client, mDNS…) are fetched by
@@ -40,7 +42,10 @@ the component manager on the first build (`managed_components/`, `dependencies.l
 idf.py build
 ```
 
-Uses `sdkconfig.defaults` only (`sdkconfig` is generated and not committed). Development builds:
+Uses `sdkconfig.defaults` only (`sdkconfig` is generated and not committed). An `sdkconfig` generated
+before Bluetooth setup was added keeps `# CONFIG_BT_ENABLED is not set`: delete it (or build in a fresh
+directory, e.g. `idf.py -B build-ble -D SDKCONFIG=build-ble/sdkconfig build`) so the new defaults apply.
+Development builds:
 
 - accept `ws://` and `wss://` server URLs, try mDNS `_buddyai._tcp` discovery on the LAN;
 - accept `http://` and `https://` OTA URLs (LAN test server), SHA-256 checked, **unsigned**;
@@ -62,21 +67,39 @@ idf.py -p COM5 flash monitor        # replace COM5 with your port
   (or plug in USB while holding BOOT), release BOOT, flash again, then press RESET.
 - Erase everything (NVS, OTA data) during development: `idf.py -p COM5 erase-flash`.
 
-## 4. First boot (setup portal)
+## 4. First boot: Wi-Fi setup
 
-1. Without Wi-Fi credentials the watch starts a SoftAP **`ola-XXXX`** and shows the Wi-Fi setup screen.
-2. Join that network with a phone; the captive portal opens (otherwise browse to `http://192.168.4.1`).
-3. Choose the Wi-Fi network and enter the password.
+Without Wi-Fi credentials (or after *Wi-Fi setup* in quick settings / an error screen) the watch enters
+Wi-Fi setup. The screen shows:
+
+- the setup network **`ola-XXXX`** (XXXX = last MAC bytes);
+- its **setup password**, 8 characters such as `K7P4 M9XQ`, and a **Wi-Fi QR code** for the phone camera.
+  The password is random for each watch, stored in NVS (`setup_pass`), never sent anywhere or logged. It
+  is replaced after every successful setup and by a factory reset, so a password seen earlier stops working.
+
+Two ways in, both protected by that password:
+
+1. **iPhone (and Android recovery): the `ola-XXXX` network (WPA2).** Scan the QR code with the camera, or
+   join `ola-XXXX` and type the password. The captive portal opens (otherwise browse to `http://192.168.4.1`).
+   Choose the Wi-Fi network and enter its password:
    - development builds also show an optional **server URL**: `ws://<pc-ip>:8765/ws/device` or
      `wss://…`; empty = default URL / last server / mDNS;
    - release builds have **no server URL field**: the watch connects only to the built-in
-     `CONFIG_BUDDYAI_DEFAULT_SERVER_URL` (anyone near the open `ola-XXXX` network could otherwise
-     point it at their own server).
-4. Save → the watch restarts, joins Wi-Fi and connects.
-5. An unpaired watch shows a **6-digit pairing code**. In the ola web app choose *Add watch* and
-   enter the code. The watch stores its device token and shows the watchface.
+     `CONFIG_BUDDYAI_DEFAULT_SERVER_URL`.
+   Save → the watch restarts, joins Wi-Fi and connects.
+2. **Android: Bluetooth from the ola account** (Chrome, `https://app…/my/setup`). The watch advertises
+   `ola-XXXX` over Bluetooth LE **only while in Wi-Fi setup**. The phone proves it knows the setup password
+   (SRP6a), then sends the Wi-Fi credentials encrypted (AES-256-GCM). The watch checks them, tries to join,
+   reports "connected" / "wrong password" / "network not found", and saves them **only after it got an IP
+   address**; a failed attempt changes nothing, so a retry is safe. On success it restarts after 4 s.
+   After 3 failed sessions (wrong setup password) Bluetooth setup pauses for 30 s.
+   Protocol and security: `../protocol/BLE_PROVISIONING.md`.
 
-The portal can be reopened any time from quick settings (swipe left/up on the watchface → *Wi-Fi setup*).
+The watch uses **2.4 GHz** Wi-Fi only.
+
+An unpaired watch then shows a **6-digit pairing code**. In the ola account (setup page or *Add watch*)
+enter the code. The watch stores its device token and shows the watchface. Pairing is what starts a
+pending ola Care free trial on the server.
 
 ## 5. Factory reset (unpair locally)
 
@@ -271,5 +294,20 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
   current (400 mA) and battery percentage.
 - **Speaker**: ES8311 output + NS4150B PA (GPIO46) — volume range, hiss when idle, clipping at 100 %.
 - **BOOT button (GPIO0)**: level while running (factory-reset long press).
+- **Wi-Fi setup** (see `docs/SETUP_TEST_CHECKLIST.md`): the WPA2 `ola-XXXX` network with the setup password
+  and with the QR code on an iPhone (captive sheet opens); Bluetooth setup from Chrome on Android (chooser
+  shows `ola-XXXX`, wrong setup password refused, wrong Wi-Fi password / 5 GHz-only network reported,
+  success saves and restarts); Bluetooth + Wi-Fi coexistence with the display running; BLE stops
+  advertising after setup; internal heap after `ble_prov_start` (NimBLE uses PSRAM, the controller needs
+  internal RAM).
 - **Release/production**: signed OTA accepted and a foreign-key image rejected; NVS encryption and
   flash encryption on a production unit (§8) — on a *sacrificial* unit first.
+
+## 10. Tests
+
+- `components/prov_util/test/test_prov_util.c`: Unity tests for the setup password (length, alphabet,
+  no modulo bias, rotation) and the Wi-Fi credential and QR payload checks. On a PC (no watch needed):
+  `components/prov_util/test/host/run.sh` with a C compiler and `IDF_PATH` set, or in Docker (see the
+  script header). The same checks are mirrored in the web app (`web/src/ble/validate.ts`, vitest).
+- The Bluetooth protocol client is tested in the web app against ESP-IDF's own `esp_prov` vectors and a
+  simulated watch (`web/src/ble/ble.test.ts`).

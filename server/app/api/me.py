@@ -200,6 +200,28 @@ def reset_password(body: ResetBody, request: Request, db: Session = Depends(get_
     return accounts.public(acc)
 
 
+@router.get("/badge")
+def badge(request: Request, response: Response, db: Session = Depends(get_session)) -> dict:
+    """The marketing site's header asks whether the visitor is signed in (first name + green lock instead of
+    "Sign in"). The session cookie reaches us because the site is same-site; only our own site origin may
+    read the answer (CORS), and it contains nothing but a first name."""
+    from app.config import get_settings
+
+    site = get_settings().site_url.rstrip("/")
+    origin = request.headers.get("origin", "")
+    if site and origin == site:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Vary"] = "Origin"
+    response.headers["Cache-Control"] = "no-store"
+    acc_id = request.session.get("account_id")
+    acc = db.get(Account, acc_id) if acc_id else None
+    if acc is None or acc.status != "active" or request.session.get("account_v") != acc.session_version:
+        return {"signed_in": False}
+    first = (acc.name or "").strip().split(" ")[0] or acc.email.split("@")[0]
+    return {"signed_in": True, "name": first[:24]}
+
+
 # --- profile ----------------------------------------------------------------------------------
 
 

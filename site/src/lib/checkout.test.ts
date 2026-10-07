@@ -66,3 +66,15 @@ describe("buy box: the ola Care terms must be accepted", () => {
     });
   });
 });
+
+import { parseBadge } from "./account";
+
+describe("header: signed-in badge", () => {
+  it("first name only when signed in, otherwise Sign in stays", () => {
+    expect(parseBadge({ signed_in: true, name: "Jane" })).toEqual({ signedIn: true, name: "Jane" });
+    expect(parseBadge({ signed_in: false })).toEqual({ signedIn: false, name: "" });
+    expect(parseBadge({ signed_in: true, name: "" }).signedIn).toBe(false);
+    expect(parseBadge(null).signedIn).toBe(false);
+    expect(parseBadge({ signed_in: true, name: "x".repeat(40) }).name).toHaveLength(24);
+  });
+});

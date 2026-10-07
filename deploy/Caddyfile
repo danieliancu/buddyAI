@@ -44,7 +44,8 @@
 	encode zstd gzip
 	header {
 		X-Frame-Options "DENY"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# bluetooth=(self): Android watch setup uses Web Bluetooth from /my/setup (never from other origins).
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), bluetooth=(self)"
 		Content-Security-Policy "default-src 'self'; connect-src 'self' wss:; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 	reverse_proxy server:8765

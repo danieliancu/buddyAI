@@ -171,6 +171,90 @@ deploy, or a second host for a short overlap, is safe for billing.
 | Complimentary | expired / revoked | no ("Pilot ended") |
 | Internal account (`accounts.internal`) | — | always, costs still tracked |
 
+## Watch purchase → ola Care trial at pairing
+
+Since migration 0025, the shop sells the **watch alone** and starts ola Care when the watch is first paired. The code is in `app/billing.py` (checkout and webhooks), `app/care_terms.py` (consent text) and `app/care_activation.py` (the trial).
+
+### 1. Before payment: consent to future charges
+
+- `GET /api/shop/status` publishes, per currency, the ola Care terms. They are rendered from the **Stripe Care price** (amount and interval), `BUDDYAI_CARE_TRIAL_DAYS`, and the rule that the trial starts at pairing. Each version (`CARE_TERMS_VERSION`) carries its text and a SHA-256.
+- The site shows that exact text next to a **required checkbox**. `POST /api/shop/checkout` refuses requests without `care_terms_accepted`, or whose version or hash differ from the current terms (409 "reload").
+- Checkout Session settings:
+  - `mode=payment` with the watch price only;
+  - `customer_creation=always`;
+  - `payment_intent_data.setup_future_usage=off_session`, so the card is saved for later charges;
+  - `consent_collection.terms_of_service=required`;
+  - `custom_text.terms_of_service_acceptance`, holding the same terms text;
+  - metadata `kind=watch` plus the terms version and hash.
+- Unchanged from before: automatic tax, shipping countries and rates, billing address and phone, promotion codes.
+- **Proof of consent**: a `billing_consents` row is written when the session is created. It holds:
+  - the exact text and its hash, the amount, currency, interval and trial days, and `trial_start_rule=on_pairing`;
+  - the time, IP address and user agent of the site acceptance.
+
+  The paid webhook completes it with:
+  - Stripe's `consent.terms_of_service` value (must be `accepted`);
+  - the customer, payment method, account and order.
+
+  Consent rows are billing records: account deletion keeps them, as it keeps orders.
+
+### 2. Payment → order (webhooks only, never the redirect)
+
+| Event (session with `kind=watch`) | Effect |
+|---|---|
+| `checkout.session.completed`, `payment_status=paid` | Account (created or linked), order `paid`, revenue, consent completed, `care_activations` row `awaiting_pairing` (card's customer + payment method). Welcome email (7-day set-password link) and order email repeating the agreed terms. **No subscription.** |
+| `checkout.session.completed`, `unpaid` (delayed methods) | Order `payment_pending`, no account, no email. |
+| `checkout.session.async_payment_succeeded` | As "paid" (the pending order becomes `paid`). |
+| `checkout.session.async_payment_failed` | Order `payment_failed`, "could not be paid" email. |
+| `checkout.session.expired` | A `payment_pending` order becomes `cancelled`; an abandoned checkout leaves nothing. |
+
+- The thank-you page polls `GET /api/shop/checkout-status?session_id=…`. It answers only from these rows: `processing`, `paid`, `failed`, `cancelled` or `unknown`.
+- The PaymentIntent is read before anything is written. If Stripe fails, the event is released and retried, and nothing is left half done.
+- If the account already pays through another Stripe customer, it keeps that customer for billing.
+
+### 3. Pairing → trial
+
+"Connected" means only the **server-side pairing** of a watch to the account: the customer or operator pairing endpoint, after `DeviceHub.pair`. Joining Wi-Fi, a Bluetooth session, the WebSocket or a displayed code start nothing.
+
+1. **Claim with a lease.** One conditional `UPDATE` moves the row to `activating` (lease 120 s), from `awaiting_pairing`, `failed`, or an `activating` row whose lease has expired. If no row changes, the call is a no-op. This covers double clicks, concurrent pairing, a second watch and refreshes.
+2. **Stripe first.** `Subscription.list(customer)` runs, and a subscription whose `metadata.activation_id` matches is **adopted**. Nothing is created a second time after a crash, an ambiguous error or a retry outside Stripe's 24 h idempotency window.
+3. **Eligibility**, checked on every attempt. No new trial for:
+   - an entitled complimentary grant (`complimentary`);
+   - an internal account;
+   - any earlier Stripe subscription row (`trial_used`, which covers legacy buyers and current payers);
+   - missing consent (`no_consent`).
+
+   These rows become `not_eligible`, and the account offers the normal paid Subscribe checkout.
+4. **Create**: `Subscription.create` with the Care price, `trial_period_days=BUDDYAI_CARE_TRIAL_DAYS` and the saved card as `default_payment_method`.
+   - Other parameters: `off_session`, `trial_settings.end_behavior.missing_payment_method=cancel`, automatic tax, and metadata `account_id`, `activation_id` and `consent_id`.
+   - Idempotency key: `care-activation-<id>-<payment method>`.
+   - The card also becomes the customer's invoice default, so the billing portal shows it.
+5. Success: the subscription is upserted, the row becomes `active`, and the "trial started" email gives the end date, the price and how to cancel.
+6. Failure: the row becomes `failed` with a code (`missing_payment_method`, `card_error`, `payment_method_invalid`, `stripe_error` or `stripe_unreachable`). The watch **stays paired**, and the account shows "Subscription setup pending" with Retry (`POST /api/me/care/activate`). Pairing never fails because of billing.
+7. `customer.subscription.*` webhooks also complete an `activating` row: the metadata names it.
+8. **Recovery**: `care_activation.recover_loop` runs 60 s after start, then every 5 minutes. It retries stuck rows (expired lease) and failed rows of paired watches, with exponential backoff, up to 5 automatic attempts. After that the customer's Retry, or the operator's `POST /api/accounts/{id}/care/activate`, still works, and the account view flags `needs_attention`.
+
+The displayed plan always comes from the `subscriptions` rows that Stripe webhooks keep up to date. `care_activation` only explains the time before a subscription exists.
+
+### 4. Who can set up a watch
+
+`POST /api/me/devices/pair` and `/my/setup` need a confirmed email, as before, and, when Stripe is configured, at least one of:
+- a paid, shipped or delivered order;
+- any ola Care subscription row, including complimentary pilots;
+- an already paired watch;
+- an internal account.
+
+Without Stripe, as in development or private use, nothing changes.
+
+### 5. Legacy orders and existing customers
+
+- **Orders from before 0025**, and any in-flight session without `metadata.kind`, keep the old path: the trial started at purchase and their subscription rows are untouched. They have no `care_activations` row, so pairing never starts anything for them.
+- **Current payers or former trial users** buying another watch get an order and a `not_eligible / trial_used` activation: no second trial.
+- **Complimentary pilots** keep their grant. Pairing is allowed and no trial is created.
+
+### Local / test setup
+
+See `deploy/README.md` §6, "Stripe TEST MODE", and the manual checklist in `docs/SETUP_TEST_CHECKLIST.md`.
+
 ## Complimentary / test access
 
 - **Where to grant it:**
@@ -224,9 +308,11 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
 - [ ] Create the Stripe products and prices in **test** mode, set `BUDDYAI_STRIPE_*` test keys and the webhook secret, and run the checkout, top-up and refund journey with the Stripe CLI (`stripe listen --forward-to …/api/stripe/webhook`).
 - [ ] Webhook events to enable:
   - `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`
-  - `customer.subscription.*`
+  - `customer.subscription.*` (created / updated / deleted / trial_will_end — `created` also completes a trial activation)
   - `invoice.paid`, `invoice.payment_failed`
   - `charge.refunded`
+- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive; the regular £99.99 is display-only on the site) and the Care price, both in test mode first.
+- [ ] Have the ola Care consent wording, the subscription terms and the "was £99.99" claim reviewed (UK price-reduction and subscription-contract rules).
 - [ ] Stripe Tax and VAT registration. The extra-usage price is VAT-inclusive (`tax_behavior=inclusive`).
 - [ ] Have consumer-law and fair-use wording reviewed (UK CMA / subscription rules): no "unlimited" claims, a clear renewal/reset date and refund wording.
 - [x] Usage admission and reservations live in PostgreSQL (multi-process safe). Before running more than one server worker, move the other process-local parts to shared stores (see "What is still process-local").

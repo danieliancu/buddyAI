@@ -48,8 +48,19 @@ const isActive = (href: string) => path === href;
         class="hidden h-10 w-10 place-items-center rounded-full text-fg hover:bg-bg-2 sm:grid"
         aria-label="Sign in to your ola account"
         title="Sign in"
+        data-account-out
       >
         <Icon name="user" size={20} />
+      </a>
+      <a
+        href={`${config.appUrl}/my`}
+        class="hidden h-10 max-w-48 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-medium text-fg hover:bg-bg-2"
+        title="Your ola account (signed in)"
+        data-account-in
+      >
+        <Icon name="lock" size={16} class="shrink-0 text-ok" />
+        <span class="truncate" data-account-name></span>
+        <span class="sr-only">, signed in</span>
       </a>
       <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" >
         Buy now
@@ -90,12 +101,32 @@ const isActive = (href: string) => path === href;
           </a>
         </li>
       ))}
-      <li><a href={config.appUrl} class="block rounded-lg px-2 py-3 text-base font-medium text-fg">Sign in</a></li>
+      <li data-account-out-mobile><a href={config.appUrl} class="block rounded-lg px-2 py-3 text-base font-medium text-fg">Sign in</a></li>
+      <li class="hidden" data-account-in-mobile>
+        <a href={`${config.appUrl}/my`} class="flex items-center gap-2 rounded-lg px-2 py-3 text-base font-medium text-fg">
+          <Icon name="lock" size={18} class="text-ok" /><span data-account-name></span>
+        </a>
+      </li>
     </ul>
   </nav>
 </header>
 
 <script>
+  import { fetchBadge } from "../lib/account";
+  import { config as siteConfig } from "../config";
+
+  // Signed in to the ola account: first name with a green lock instead of "Sign in".
+  void fetchBadge(siteConfig.appUrl).then((b) => {
+    if (!b.signedIn) return;
+    document.querySelectorAll<HTMLElement>("[data-account-name]").forEach((el) => (el.textContent = b.name));
+    const out = document.querySelector<HTMLElement>("[data-account-out]");
+    const inn = document.querySelector<HTMLElement>("[data-account-in]");
+    out?.classList.remove("sm:grid");
+    inn?.classList.add("sm:inline-flex");
+    document.querySelector("[data-account-out-mobile]")?.classList.add("hidden");
+    document.querySelector("[data-account-in-mobile]")?.classList.remove("hidden");
+  });
+
   const btn = document.querySelector<HTMLButtonElement>("[data-nav-toggle]");
   const menu = document.getElementById("mobile-nav");
   if (btn && menu) {

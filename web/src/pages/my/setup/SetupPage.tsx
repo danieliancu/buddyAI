@@ -10,8 +10,8 @@ import AndroidWifi, { type ConnectWatch } from "./AndroidWifi";
 import { AndroidIcon, AppleIcon } from "./PlatformIcons";
 import { SetupNetworkSteps } from "./SetupNetworkSteps";
 import type { BleSupport } from "../../../ble/transport";
+import { SITE_URL } from "../../../site";
 
-const SITE_URL = "https://www.olacompanion.com";
 
 /** Remembered on this device only: whether the customer finished the Wi-Fi step (the server can't know). */
 function wifiDoneKey(accountId: number) {

@@ -93,36 +93,81 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec server p
 ## 6. Stripe (shop + ola Care subscription)
 
 Everything below is done in **test mode** first. Switch to live mode only after a full test purchase.
+How it works: `docs/BILLING.md` ("Watch purchase → ola Care trial at pairing"). The watch is charged once
+at checkout and the card is saved; the ola Care subscription (with its free trial) is created only when
+the watch is paired to the customer's account.
 
 1. **Account:** create it, then complete your business details and bank account.
 2. **Products** (Product catalogue):
-   - **"ola Watch"**: a *one-off* price in GBP and one in EUR.
-   - **"ola Care"**: a *recurring monthly* price in GBP and one in EUR. The 90-day trial is added
-     by the server at checkout (`BUDDYAI_CARE_TRIAL_DAYS`).
-   - Copy the four `price_…` ids into `deploy/.env`.
+   - **"ola Watch"**: a *one-off* price in GBP (currently the sale price, **£79.99**) and one in EUR. The
+     regular £99.99 shown struck through on the site is display only (`site/src/config.ts`).
+   - **"ola Care"**: a *recurring monthly* price in GBP (£7.90) and one in EUR. The server reads its
+     amount to write the consent text, and adds the trial (`BUDDYAI_CARE_TRIAL_DAYS`) when the watch is paired.
+   - Copy the four `price_…` ids into `deploy/.env` (`BUDDYAI_STRIPE_PRICE_WATCH_GBP/EUR`,
+     `BUDDYAI_STRIPE_PRICE_CARE_GBP/EUR`).
 3. **Tax:** enable Stripe Tax and add your registrations: UK VAT, and **EU OSS** for EU consumers.
    Mark prices as tax-inclusive or exclusive, consistently with the website.
 4. **Shipping:** create shipping rates (e.g. "UK standard", "EU standard") in GBP and EUR and put
    their `shr_…` ids in `.env`.
 5. **Checkout settings:**
    - set your Terms of Service and Privacy Policy URLs (`https://www.<domain>/legal/...`);
-   - the server requires customers to accept the terms.
+     Checkout shows the ola Care terms next to the terms checkbox, so the ToS URL is required;
+   - payment methods: keep only methods that can be saved for later (cards, wallets). Checkout with
+     `setup_future_usage` hides the others automatically.
 6. **Customer portal:** enable it, allowing customers to update cards, see invoices and cancel.
 7. **Webhook:**
    - add the endpoint `https://app.<domain>/api/stripe/webhook`;
-   - select the events `checkout.session.completed`, `customer.subscription.created`,
-     `customer.subscription.updated`, `customer.subscription.deleted`,
-     `customer.subscription.trial_will_end` (trial reminder email), `invoice.paid`,
-     `invoice.payment_failed` and `charge.refunded`;
+   - select the events:
+     - `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`;
+     - `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`;
+     - `invoice.paid`, `invoice.payment_failed`;
+     - `charge.refunded`;
    - copy the signing secret into `BUDDYAI_STRIPE_WEBHOOK_SECRET`.
 8. Restart the server:
    `docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d server`.
-9. **Test purchase:** on the website click **Buy now** and pay with card `4242 4242 4242 4242`.
-   Then check that:
-   - an order appears under **Admin → Orders**;
-   - a customer account appears under **Customers**, with a "set your password" email;
-   - the subscription status shows "trialing".
+9. **Test purchase** (test card `4242 4242 4242 4242`, any future date, any CVC). On the website,
+   tick the ola Care terms box and click **Buy now**. Then check that:
+   - the thank-you page says "Confirming your payment…", then "Payment confirmed";
+   - an order appears under **Admin → Orders**, and the account's ola Care shows "starts when you
+     pair your watch" (no subscription in Stripe yet);
+   - after pairing a watch, Stripe shows a **trialing** subscription on the same customer, with the
+     saved card as default payment method.
+
+   The full manual list is in `docs/SETUP_TEST_CHECKLIST.md`.
 10. Repeat with live keys when everything works.
+
+### Stripe TEST MODE: local machine and a Coolify test environment
+
+Never commit keys or secrets: they go in `server/.env` (local, git-ignored) or in the Coolify
+environment variables of a **test** resource, never the production one.
+
+- **Local**
+  1. In the Stripe dashboard, switch to *Test mode*.
+  2. Copy the test secret key (`sk_test_…`) and the four test `price_…` ids into `server/.env`:
+     ```
+     BUDDYAI_STRIPE_SECRET_KEY=sk_test_...
+     BUDDYAI_STRIPE_PRICE_WATCH_GBP=price_...
+     BUDDYAI_STRIPE_PRICE_CARE_GBP=price_...
+     BUDDYAI_SITE_URL=http://localhost:4321
+     BUDDYAI_APP_URL=http://localhost:5173
+     ```
+  3. Forward webhooks with the Stripe CLI:
+     `stripe listen --forward-to http://127.0.0.1:8765/api/stripe/webhook`. It prints a `whsec_…`
+     signing secret: put it in `BUDDYAI_STRIPE_WEBHOOK_SECRET` and restart the server.
+  4. Run the site (`npm run dev` in `site/`) and the app (`npm run dev` in `web/`).
+
+  Web Bluetooth needs a secure page. `http://localhost` counts as one on the PC, but a phone needs
+  HTTPS: test Bluetooth setup on a test deployment, or through an HTTPS tunnel to the app.
+- **Coolify test environment**: a separate application with its own domain and database. Set the
+  same `BUDDYAI_STRIPE_*` variables with **test** values, and add a test-mode webhook endpoint in
+  Stripe pointing at that domain (its own `whsec_…`).
+- **Test cards**:
+  - `4242 4242 4242 4242`: success.
+  - `4000 0025 0000 3155`: 3-D Secure.
+  - `4000 0000 0000 9995`: declined.
+  - To test a failed ola Care activation and the Retry: after a test purchase, detach the saved card from the customer in the Stripe dashboard, then pair the watch. The account shows "Subscription setup pending". Add a card in "Manage billing", then press Try again.
+- **Delayed payments**: methods such as Bacs Direct Debit or SEPA exercise `payment_pending`, then
+  `async_payment_succeeded` or `async_payment_failed`.
 
 **Shipping to the EU from the UK (or the reverse)** involves customs. For consumer parcels up to
 €150, register for the EU **IOSS** scheme, or ship from an EU fulfilment partner. Talk to your
