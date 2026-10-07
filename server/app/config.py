@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     stripe_shipping_rates_gbp: str = ""  # comma-separated shipping rate ids
     stripe_shipping_rates_eur: str = ""
     care_trial_days: int = 90
+    # Local tests only (ignored with a live key, see the properties below): checkout without Stripe Tax, and
+    # without Stripe's Terms of Service checkbox (needs a ToS URL in the dashboard). With the checkbox off,
+    # consent rests on the site's ola Care checkbox alone and the terms are shown above Stripe's Pay button.
+    stripe_automatic_tax: bool = True
+    stripe_require_tos: bool = True
     # Plan prices, allowances and thresholds are operator settings (table billing_settings, app/plan.py).
     site_url: str = ""  # public marketing site, for checkout success/cancel redirects
     # UK + EU (post-Brexit shipping to the EU needs customs/IOSS handling — see deploy/README.md)
@@ -82,6 +87,18 @@ class Settings(BaseSettings):
     @property
     def billing_enabled(self) -> bool:
         return bool(self.stripe_secret_key)
+
+    @property
+    def stripe_live(self) -> bool:
+        return self.stripe_secret_key.startswith(("sk_live", "rk_live"))
+
+    @property
+    def stripe_tax_on(self) -> bool:
+        return self.stripe_automatic_tax or self.stripe_live
+
+    @property
+    def stripe_tos_on(self) -> bool:
+        return self.stripe_require_tos or self.stripe_live
 
     # Production
     forwarded_allow_ips: str = "127.0.0.1"  # proxies trusted for X-Forwarded-For ("*" inside Docker behind Caddy)

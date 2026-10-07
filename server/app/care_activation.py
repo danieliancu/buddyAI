@@ -215,7 +215,7 @@ def _subscription_params(db: Session, row: CareActivation, pm: str) -> dict[str,
         "off_session": True,
         "payment_settings": {"save_default_payment_method": "on_subscription"},
         "trial_settings": {"end_behavior": {"missing_payment_method": "cancel"}},
-        "automatic_tax": {"enabled": True},
+        "automatic_tax": {"enabled": get_settings().stripe_tax_on},
         "metadata": meta,
     }
 

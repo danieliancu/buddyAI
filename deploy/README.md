@@ -151,6 +151,10 @@ environment variables of a **test** resource, never the production one.
      BUDDYAI_SITE_URL=http://localhost:4321
      BUDDYAI_APP_URL=http://localhost:5173
      ```
+     Without Stripe Tax or a Terms of Service URL in the test dashboard, add
+     `BUDDYAI_STRIPE_AUTOMATIC_TAX=false` and `BUDDYAI_STRIPE_REQUIRE_TOS=false`. They are local test
+     switches: they are ignored with a live key. Consent then rests on the site's ola Care checkbox, and the
+     terms are shown above Stripe's Pay button.
   3. Forward webhooks with the Stripe CLI:
      `stripe listen --forward-to http://127.0.0.1:8765/api/stripe/webhook`. It prints a `whsec_…`
      signing secret: put it in `BUDDYAI_STRIPE_WEBHOOK_SECRET` and restart the server.

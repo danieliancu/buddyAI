@@ -279,3 +279,43 @@ def test_signed_webhook_route_applies_watch_events(client, fake, monkeypatch):
     assert again.json()["processed"] is False
     with session_scope() as db:
         assert db.exec(select(Order).where(Order.stripe_session_id == cs_id)).one().status == "paid"
+
+
+# --- local test switches (no Stripe Tax, no Terms of Service URL) -------------------------------------
+
+
+def test_local_switches_drop_tax_and_stripe_tos_but_keep_the_terms_visible(client, fake, monkeypatch):
+    from app.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "stripe_automatic_tax", False)
+    monkeypatch.setattr(s, "stripe_require_tos", False)
+    start_checkout(client, fake)
+    p = fake.last
+    assert p["automatic_tax"] == {"enabled": False}
+    assert "consent_collection" not in p
+    assert "£7.90 per month" in p["custom_text"]["submit"]["message"]  # terms above the Pay button
+
+
+async def test_without_stripe_tos_the_site_checkbox_is_the_consent(client, fake, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "stripe_require_tos", False)
+    addr, cus = _addr(), f"cus_{secrets.token_hex(4)}"
+    cs_id = start_checkout(client, fake)
+    await _deliver(event("checkout.session.completed", session_obj(cs_id, addr, cus, consent=None)))
+    with session_scope() as db:
+        consent = db.exec(select(BillingConsent).where(BillingConsent.stripe_checkout_session_id == cs_id)).one()
+        assert consent.status == "accepted" and consent.stripe_tos_consent == "not_required"
+        acc = db.exec(select(Account).where(Account.email == addr)).one()
+        assert db.exec(select(CareActivation).where(CareActivation.account_id == acc.id)).one().status == "awaiting_pairing"
+
+
+def test_live_keys_ignore_the_local_switches(monkeypatch):
+    from app.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "stripe_automatic_tax", False)
+    monkeypatch.setattr(s, "stripe_require_tos", False)
+    monkeypatch.setattr(s, "stripe_secret_key", "sk_live_x")
+    assert s.stripe_tax_on and s.stripe_tos_on

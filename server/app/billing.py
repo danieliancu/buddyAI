@@ -110,20 +110,21 @@ def create_checkout(db: Session, currency: str, consent: SiteConsent, customer_e
             "description": "ola watch (card saved for ola Care, trial starts when the watch is paired)",
             "metadata": meta,
         },
-        "automatic_tax": {"enabled": True},
+        "automatic_tax": {"enabled": s.stripe_tax_on},
         "shipping_address_collection": {"allowed_countries": [c.strip() for c in s.ship_countries.split(",")]},
         "billing_address_collection": "required",
         "phone_number_collection": {"enabled": True},  # carriers need it for delivery
         "allow_promotion_codes": True,
-        "consent_collection": {"terms_of_service": "required"},  # needs the ToS URL set in the Stripe dashboard
-        "custom_text": {
-            "terms_of_service_acceptance": {"message": terms.text},
-            "submit": {"message": "You pay for the watch today. ola Care is not charged today: its free trial starts when you pair your watch."},
-        },
         "success_url": f"{site}/thank-you?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{site}/#buy",
         "metadata": meta,
     }
+    submit_note = "You pay for the watch today. ola Care is not charged today: its free trial starts when you pair your watch."
+    if s.stripe_tos_on:
+        params["consent_collection"] = {"terms_of_service": "required"}  # needs the ToS URL in the Stripe dashboard
+        params["custom_text"] = {"terms_of_service_acceptance": {"message": terms.text}, "submit": {"message": submit_note}}
+    else:  # local tests without a ToS URL: the agreed terms stay visible above the Pay button
+        params["custom_text"] = {"submit": {"message": f"{terms.text} {submit_note}"}}
     if rates:
         params["shipping_options"] = [{"shipping_rate": r} for r in rates]
     if customer_email:
@@ -176,7 +177,7 @@ def create_subscription_checkout(db: Session, account: Account) -> str:
         "client_reference_id": str(account.id),
         "metadata": {"kind": "subscription", "account_id": str(account.id)},
         "subscription_data": {"metadata": {"account_id": str(account.id)}},
-        "automatic_tax": {"enabled": True},
+        "automatic_tax": {"enabled": s.stripe_tax_on},
         "success_url": f"{_app_base()}/my/account?subscribed=1",
         "cancel_url": f"{_app_base()}/my/account",
         **_stripe_customer(account),
@@ -232,7 +233,7 @@ def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
         "client_reference_id": str(account.id),
         "metadata": meta,
         "payment_intent_data": {"metadata": meta},
-        "automatic_tax": {"enabled": True},
+        "automatic_tax": {"enabled": s.stripe_tax_on},
         "success_url": f"{_app_base()}/my/account?topup=success",
         "cancel_url": f"{_app_base()}/my/account?topup=cancel",
         **_stripe_customer(account),
@@ -432,10 +433,11 @@ def _complete_consent(
     row.account_id, row.order_id = acc.id, order.id
     row.stripe_customer_id = cs.get("customer") or row.stripe_customer_id
     row.stripe_payment_method_id = pm or row.stripe_payment_method_id
-    row.stripe_tos_consent = tos
+    tos_required = get_settings().stripe_tos_on
+    row.stripe_tos_consent = tos if tos_required else (tos or "not_required")  # local tests: site checkbox only
     row.stripe_consent_at = _ts(cs.get("created")) or utcnow()
     matches = meta.get("care_terms_version") == row.terms_version and meta.get("care_terms_sha256") == row.terms_sha256
-    row.status = "accepted" if tos == "accepted" and matches else "missing"
+    row.status = "accepted" if matches and (tos == "accepted" or not tos_required) else "missing"
     row.updated_at = utcnow()
     db.add(row)
     db.commit()
