@@ -45,7 +45,7 @@ const isActive = (href: string) => path === href;
     <div class="flex items-center gap-3">
       <a
         href={config.appUrl}
-        class="hidden h-10 w-10 place-items-center rounded-full text-fg hover:bg-bg-2 sm:grid"
+        class="grid h-10 w-10 place-items-center rounded-full text-fg hover:bg-bg-2"
         aria-label="Sign in to your ola account"
         title="Sign in"
         data-account-out
@@ -59,7 +59,7 @@ const isActive = (href: string) => path === href;
         data-account-in
       >
         <Icon name="lock" size={20} class="shrink-0 text-ok" />
-        <span class="truncate text-sm font-medium" data-account-full></span>
+        <span class="hidden truncate text-sm font-medium sm:inline" data-account-full></span>
         <span class="sr-only">, signed in</span>
       </a>
       <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" data-header-buy>
@@ -128,8 +128,9 @@ const isActive = (href: string) => path === href;
     // Already a customer: "Buy again" on the page's buy buttons (data-when + global.css, before the first paint).
     document.documentElement.dataset.customer = signedIn ? "1" : "";
     all("[data-buy-label]", function (el) { el.textContent = signedIn ? "Buy again" : "Buy now"; });
-    if (out) out.classList.toggle("sm:grid", !signedIn);
-    if (inn) inn.classList.toggle("sm:inline-flex", signedIn);
+    // Phones too: the user icon / green lock sits left of the menu button (the name only from sm up).
+    if (out) { out.classList.toggle("grid", !signedIn); out.classList.toggle("hidden", signedIn); }
+    if (inn) { inn.classList.toggle("inline-flex", signedIn); inn.classList.toggle("hidden", !signedIn); }
     var om = q("[data-account-out-mobile]"), im = q("[data-account-in-mobile]");
     if (om) om.classList.toggle("hidden", signedIn);
     if (im) im.classList.toggle("hidden", !signedIn);
