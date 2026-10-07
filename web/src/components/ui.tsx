@@ -29,7 +29,7 @@ const VARIANTS: Record<Variant, string> = {
 
 export function buttonCls(variant: Variant = "secondary", size: "sm" | "md" = "md", className?: string): string {
   return cx(
-    "inline-flex items-center justify-center gap-2 rounded-lg border font-medium transition",
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border font-medium transition",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
     "disabled:cursor-not-allowed disabled:opacity-50",
     size === "sm" ? "h-8 px-2.5 text-xs" : "h-10 px-4 text-sm",

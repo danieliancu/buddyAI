@@ -198,7 +198,7 @@ function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
         <li>• After {endsOn} the assistant stops answering. Your notes and reminders stay in your account.</li>
       </ul>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="primary" size="sm" loading={busy} icon={<ShieldCheck className="size-4" />} onClick={keep}>
+        <Button variant="primary" className="h-11 px-5 text-base" loading={busy} icon={<ShieldCheck className="size-5" />} onClick={keep}>
           Keep ola Care
         </Button>
         <span className="text-xs text-muted">
