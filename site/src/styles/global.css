@@ -229,3 +229,9 @@ h3 {
 main:has(> section:last-child.bg-bg-2) + .site-footer {
   margin-top: 0;
 }
+
+/* Signed-in customers (html[data-customer="1"], set by the header before the first paint): "Buy again". */
+html[data-customer="1"] [data-when="guest"],
+html:not([data-customer="1"]) [data-when="customer"] {
+  display: none !important;
+}
