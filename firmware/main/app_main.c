@@ -454,15 +454,17 @@ static void start_portal(void)
         ESP_LOGE(TAG, "no setup password - Wi-Fi setup unavailable");
         return;
     }
+    /* Bluetooth first: its controller needs a large block of internal RAM, which the setup network's
+     * HTTP server and scan would otherwise fragment. It refuses to start (instead of crashing) if RAM is short. */
+    if (!ble_prov_active() && ble_prov_start(net_portal_ssid(), pass, on_ble_prov_done) != ESP_OK) {
+        ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
+    }
     if (!net_portal_active()) {
         proto_network_down();
         if (net_portal_start(pass) != ESP_OK) {
             memset(pass, 0, sizeof(pass));
             return;
         }
-    }
-    if (!ble_prov_active() && ble_prov_start(net_portal_ssid(), pass, on_ble_prov_done) != ESP_OK) {
-        ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
     }
     ui_show_wifi_setup(net_portal_ssid(), pass);
     memset(pass, 0, sizeof(pass));

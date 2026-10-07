@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "cJSON.h"
@@ -39,6 +40,10 @@ static const char *TAG = "ble_prov";
 #define CONNECT_ATTEMPTS        2
 #define SCAN_JSON_BUDGET        440     /* a BLE attribute holds at most 512 bytes (with the GCM tag) */
 #define SCAN_MAX_APS            12
+/* The BLE controller allocates ~30 KB of contiguous internal RAM at start (ROM code: a failure is an
+ * assert, i.e. a reboot loop). Start only when it fits, with margin for the NimBLE host and protocomm. */
+#define BLE_MIN_INTERNAL_BLOCK  (36 * 1024)
+#define BLE_MIN_INTERNAL_FREE   (56 * 1024)
 
 /* 6f6cffff-6177-4f6c-a5e7-3c9d0b1e5a01, little-endian as NimBLE stores it. Characteristic UUIDs replace
  * bytes 12..13 (the "ffff" of the first group) with the endpoint's 16-bit id. */
@@ -310,6 +315,15 @@ esp_err_t ble_prov_start(const char *device_name, const char *setup_pass, ble_pr
     s_sec2_params.salt_len = SRP_SALT_LEN;
     s_sec2_params.verifier = s_verifier;
     s_sec2_params.verifier_len = (uint16_t)s_verifier_len;
+
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t free_int = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG, "internal RAM before Bluetooth: %u free, largest block %u", (unsigned)free_int, (unsigned)largest);
+    if (largest < BLE_MIN_INTERNAL_BLOCK || free_int < BLE_MIN_INTERNAL_FREE) {
+        ESP_LOGW(TAG, "not enough internal RAM for Bluetooth setup - skipped (the setup network still works)");
+        free_srp();
+        return ESP_ERR_NO_MEM;
+    }
 
     s_pc = protocomm_new();
     if (!s_pc) {
