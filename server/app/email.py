@@ -11,6 +11,7 @@ import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
+from datetime import datetime, timezone
 from html import escape
 from typing import Protocol
 
@@ -109,8 +110,30 @@ def reset_password(to: str, link: str) -> Email:
     )
 
 
-def watch_paired(to: str, watch_name: str) -> Email:
-    return Email(to, "Your ola watch is connected", f"Hi,\n\n\"{watch_name}\" is now linked to your account.{_footer()}")
+def _app_link(path: str) -> str:
+    s = get_settings()
+    return f"{(s.app_url.rstrip('/') or f'http://localhost:{s.port}')}{path}"
+
+
+def watch_paired(to: str, watch_name: str, paired_at=None) -> Email:
+    when = (paired_at or datetime.now(timezone.utc)).strftime("%d %B %Y, %H:%M UTC")
+    link = _app_link("/my")
+    return Email(
+        to,
+        "Your ola watch is connected",
+        f"Hi,\n\n\"{watch_name}\" is now linked to your ola account ({when}).\n"
+        "Tap the watch and start talking: your assistant is ready.\n"
+        f"Open your account to choose the voice, language and companions:\n{link}\n\n"
+        "Didn't connect a watch? Remove it in your account and change your password." + _footer(),
+        html=designed(
+            "Your watch is connected",
+            f"“{watch_name}” is now linked to your ola account. Tap the watch and start talking: "
+            "your assistant is ready.",
+            "Open my ola account", link,
+            "Didn't connect a watch? Remove it from your account and change your password.",
+            details=[("Watch", watch_name), ("Account", to), ("Connected", when)],
+        ),
+    )
 
 
 def _money(minor: int, currency: str) -> str:
@@ -118,31 +141,91 @@ def _money(minor: int, currency: str) -> str:
     return f"{symbol}{minor / 100:,.2f}"
 
 
-def welcome_set_password(to: str, link: str) -> Email:
+def welcome_set_password(to: str, link: str, days_valid: int = 7) -> Email:
     return Email(
         to,
         "Welcome to ola — set your password",
         "Hi,\n\nThank you for your order! We created your ola account with this email address.\n"
-        f"Set your password here (valid for 1 hour, you can request a new link any time):\n{link}\n\n"
-        "When your watch arrives, sign in and choose \"Add watch\".{footer}".replace("{footer}", _footer()),
+        f"Set your password here (valid for {days_valid} days, you can request a new link any time):\n{link}\n\n"
+        "Then, when your watch arrives: sign in, choose your phone (Android or iPhone), connect the watch to "
+        "Wi-Fi and pair it. Your ola Care free trial starts when the watch is paired.{footer}".replace("{footer}", _footer()),
         html=designed(
             "Welcome to ola",
             "Thank you for your order! We created your ola account with this email address. Set a password now; "
-            "when your watch arrives, sign in and choose \u201cAdd watch\u201d.",
+            "when your watch arrives, sign in and follow the setup: choose your phone, connect the watch to Wi-Fi "
+            "and pair it. Your ola Care free trial starts when the watch is paired.",
             "Set my password", link,
-            "The link is valid for 1 hour. You can ask for a new one any time from the sign-in page.",
+            f"The link is valid for {days_valid} days. You can ask for a new one any time from the sign-in page.",
         ),
     )
 
 
-def order_confirmed(to: str, order_id: int, amount_minor: int, currency: str) -> Email:
+def order_confirmed(to: str, order_id: int, amount_minor: int, currency: str, care_terms: str | None = None) -> Email:
+    care = (
+        "\n\nola Care - what you agreed to at checkout:\n" + care_terms + "\n"
+        "Nothing has been charged for ola Care. The free trial starts when you pair your watch; we'll email you "
+        "the trial end date then, and again before the first payment."
+        if care_terms else ""
+    )
     return Email(
         to,
         f"Your ola order #{order_id}",
         f"Hi,\n\nWe received your order #{order_id} ({_money(amount_minor, currency)} incl. VAT and shipping).\n"
         "We'll email you the tracking number as soon as it ships.\n\n"
         "You can cancel within 14 days of delivery for a full refund (your statutory right to cancel)."
+        + care
         + _footer(),
+        html=designed(
+            "Thank you for your order",
+            "We received your order and we're getting your ola watch ready. We'll email you the tracking number "
+            "as soon as it ships.",
+            "Open my ola account", _app_link("/my/setup"),
+            ("ola Care, as agreed at checkout: " + care_terms + " " if care_terms else "")
+            + "You can cancel the watch within 14 days of delivery for a full refund (your statutory right to cancel).",
+            details=[("Order", f"#{order_id}"), ("Paid today", f"{_money(amount_minor, currency)} incl. VAT and shipping")]
+            + ([("ola Care", "Free trial starts when you pair your watch")] if care_terms else []),
+        ),
+    )
+
+
+def order_payment_failed(to: str) -> Email:
+    site = (get_settings().site_url or "").rstrip("/") or _app_link("")
+    return Email(
+        to,
+        "Your ola order could not be paid",
+        "Hi,\n\nYour bank did not confirm the payment for your ola watch, so the order was not placed and "
+        f"nothing was charged. You can order again with another payment method:\n{site}\n" + _footer(),
+        html=designed(
+            "Your order could not be paid",
+            "Your bank did not confirm the payment for your ola watch, so the order was not placed and nothing "
+            "was charged.",
+            "Order again", site,
+            "You can use another card or payment method. Nothing was charged for ola Care either.",
+        ),
+    )
+
+
+def care_trial_started(to: str, trial_end, amount_minor: int, currency: str, interval: str = "month") -> Email:
+    when = trial_end.strftime("%d %B %Y") if trial_end else "the end of your free trial"
+    price = f"{_money(amount_minor, currency)} per {interval}"
+    link = _app_link("/my/account")
+    return Email(
+        to,
+        "Your ola Care free trial has started",
+        "Hi,\n\nYour watch is paired, so your ola Care free trial has started.\n"
+        f"Free until: {when}\n"
+        f"Then: {price}, charged to the card you saved at checkout, until you cancel.\n\n"
+        "To cancel, go to Account > Manage subscription before the trial ends and you won't be charged. "
+        f"We'll remind you a few days before the first payment.\n{link}\n" + _footer(),
+        html=designed(
+            "Your free trial has started",
+            "Your watch is paired, so ola Care is on: your assistant, reminders and notes, free until the end of "
+            "the trial.",
+            "See my plan", link,
+            "To cancel, go to Account > Manage subscription before the trial ends and you won't be charged. "
+            "We'll remind you a few days before the first payment.",
+            details=[("Free until", when), ("Then", price), ("Paid with", "The card you saved at checkout")],
+        ),
     )
 
 
@@ -196,10 +279,30 @@ def _logo_html() -> str:
             '<span style="color:#5b4cf0">companion</span></span>')
 
 
-def designed(title: str, intro: str, button: str, link: str, note: str) -> str:
-    """One centred card: logo, title, text, button, small print, footer."""
+def _details_html(details: list[tuple[str, str]] | None, font: str) -> str:
+    """A small summary box (label / value rows) between the text and the button."""
+    if not details:
+        return ""
+    rows = "".join(
+        f'<tr><td style="font-family:{font};font-size:13px;line-height:20px;color:#7a8099;padding:6px 12px 6px 0;'
+        f'white-space:nowrap;vertical-align:top">{escape(k)}</td>'
+        f'<td align="right" style="font-family:{font};font-size:14px;line-height:20px;font-weight:600;color:#0f1533;'
+        f'padding:6px 0;word-break:break-word">{escape(v)}</td></tr>'
+        for k, v in details
+    )
+    return (
+        '<tr><td style="padding:0 0 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'border="0" style="background:#f6f7fd;border:1px solid #eceef6;border-radius:14px">'
+        f'<tr><td style="padding:12px 18px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0">{rows}</table></td></tr></table></td></tr>'
+    )
+
+
+def designed(title: str, intro: str, button: str, link: str, note: str, details: list[tuple[str, str]] | None = None) -> str:
+    """One centred card: logo, title, text, optional summary box, button, small print, footer."""
     t, i, b, n, url = escape(title), escape(intro), escape(button), escape(note), escape(link, quote=True)
     font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+    box = _details_html(details, font)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>{t}</title></head>
@@ -213,6 +316,7 @@ def designed(title: str, intro: str, button: str, link: str, note: str) -> str:
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr><td align="center" style="font-family:{font};font-size:24px;line-height:32px;font-weight:700;color:#0f1533;padding:0 0 12px">{t}</td></tr>
     <tr><td align="center" style="font-family:{font};font-size:16px;line-height:25px;color:#4a5170;padding:0 0 28px">{i}</td></tr>
+    {box}
     <tr><td align="center" style="padding:0 0 28px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
       <td align="center" bgcolor="#5b4cf0" style="border-radius:12px;background:#5b4cf0;background-image:linear-gradient(90deg,#4f6bff,#7b4cf0)">

@@ -90,6 +90,26 @@ def account_detail(account_id: int, request: Request, db: Session = Depends(get_
             "unpriced_rows": a.unpriced_rows,
         },
         "orders": [o.model_dump() for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()],
+        # ola Care started at pairing: status, attempts, last error code (retry: POST .../care/activate).
+        "care_activation": _care_activation(db, acc.id),
+    }
+
+
+def _care_activation(db: Session, account_id: int) -> dict | None:
+    from app.db.models import CareActivation
+
+    row = db.exec(select(CareActivation).where(CareActivation.account_id == account_id)).first()
+    if row is None:
+        return None
+    return {
+        "status": row.status,
+        "reason": row.reason,
+        "attempts": row.attempts,
+        "last_error_code": row.last_error_code,
+        "needs_attention": row.status == "failed" and row.attempts >= 5,
+        "stripe_subscription_id": row.stripe_subscription_id,
+        "activated_at": row.activated_at,
+        "updated_at": row.updated_at,
     }
 
 

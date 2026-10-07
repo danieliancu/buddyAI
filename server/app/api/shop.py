@@ -11,14 +11,14 @@ from sqlmodel import Session, col, select
 
 from datetime import datetime, timezone
 
-from app import accounts, billing, email, entitlements, plan as plan_mod, usage_notices
+from app import accounts, billing, care_activation, care_terms, email, entitlements, plan as plan_mod, usage_notices
 from app import allowance as allowance_mod
 from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
 from app.db.models import Account, Order, TopUp, utcnow
 from app.db.session import get_session
-from app.ratelimit import SIGNUP_PER_IP, client_ip
+from app.ratelimit import CHECKOUT_STATUS_PER_IP, SIGNUP_PER_IP, client_ip
 from app.security import require_admin
 
 router = APIRouter(tags=["shop"])
@@ -33,25 +33,68 @@ def _http(exc: billing.BillingError) -> HTTPException:
 
 @router.get("/api/shop/status")
 def shop_status() -> dict:
+    """Shop availability and, per currency, the ola Care terms the buyer must accept before paying
+    (the exact text, its version and hash; the monthly amount comes from the Stripe Care price)."""
     s = get_settings()
     currencies = [c for c in ("gbp", "eur") if getattr(s, f"stripe_price_watch_{c}") and getattr(s, f"stripe_price_care_{c}")]
-    return {"open": s.billing_enabled and bool(currencies), "currencies": currencies, "trial_days": s.care_trial_days}
+    terms: dict[str, dict] = {}
+    if s.billing_enabled:
+        for c in currencies:
+            try:
+                t = care_terms.current(c)
+            except Exception:  # noqa: BLE001 - a currency without readable terms cannot be sold
+                continue
+            terms[c] = {
+                "version": t.version,
+                "sha256": t.sha256,
+                "text": t.text,
+                "amount_minor": t.price.amount_minor,
+                "interval": t.price.interval,
+            }
+        currencies = [c for c in currencies if c in terms]
+    return {
+        "open": s.billing_enabled and bool(currencies),
+        "currencies": currencies,
+        "trial_days": s.care_trial_days,
+        "trial_starts": "on_pairing",
+        "care_terms": terms,
+    }
 
 
 class CheckoutBody(BaseModel):
     currency: Literal["gbp", "eur"] | None = None
     country: str | None = Field(None, max_length=2)
     email: str | None = None
+    # The buyer ticked "I agree ..." next to these exact ola Care terms (GET /api/shop/status).
+    care_terms_accepted: bool = False
+    care_terms_version: str = Field("", max_length=32)
+    care_terms_sha256: str = Field("", max_length=64)
 
 
 @router.post("/api/shop/checkout")
-def checkout(body: CheckoutBody, request: Request) -> dict:
+def checkout(body: CheckoutBody, request: Request, db: Session = Depends(get_session)) -> dict:
     SIGNUP_PER_IP.hit(f"checkout|{client_ip(request)}")
+    if not get_settings().billing_enabled:
+        raise HTTPException(503, "the shop is not open yet")
+    if not (body.care_terms_accepted and body.care_terms_version and body.care_terms_sha256):
+        raise HTTPException(400, "please accept the ola Care terms first")
     currency = body.currency or billing.currency_for(body.country)
+    consent = billing.SiteConsent(
+        body.care_terms_version, body.care_terms_sha256, client_ip(request), request.headers.get("user-agent", "")
+    )
     try:
-        return {"url": billing.create_checkout(currency, body.email)}
+        return {"url": billing.create_checkout(db, currency, consent, body.email)}
     except billing.BillingError as exc:
         raise _http(exc) from exc
+
+
+@router.get("/api/shop/checkout-status")
+def checkout_status(session_id: str, request: Request, db: Session = Depends(get_session)) -> dict:
+    """The thank-you page asks whether Stripe confirmed the payment (webhook), never trusting the redirect."""
+    CHECKOUT_STATUS_PER_IP.hit(client_ip(request))
+    if not (session_id.startswith("cs_") and 10 <= len(session_id) <= 255):
+        raise HTTPException(422, "invalid session id")
+    return billing.checkout_status(db, session_id)
 
 
 @router.post("/api/stripe/webhook")
@@ -146,6 +189,8 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
         "can_subscribe": s.billing_enabled and bool(s.stripe_price_care_gbp) and not paying and not acc.internal,
         "topup_available": s.billing_enabled and entitled and not acc.internal,
         "can_manage_billing": s.billing_enabled and bool(acc.stripe_customer_id),
+        # ola Care that starts when the watch is paired (watch-only orders); None for legacy accounts.
+        "care_activation": care_activation.public_state(db, acc.id),
         "topups": [
             {
                 "id": t.id,
@@ -167,6 +212,31 @@ def subscribe(request: Request, acc: Account = Depends(current_account), db: Ses
         return {"url": billing.create_subscription_checkout(db, acc)}
     except billing.BillingError as exc:
         raise _http(exc) from exc
+
+
+@router.post("/api/me/care/activate")
+async def retry_care_activation(request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
+    """Retry starting ola Care after a failure (needs a paired watch). Never creates a second subscription."""
+    SIGNUP_PER_IP.hit(f"care|{client_ip(request)}")
+    state = care_activation.public_state(db, acc.id)
+    if state is None:
+        raise HTTPException(404, "nothing to activate")
+    if not care_activation.has_paired_watch(db, acc.id):
+        raise HTTPException(409, "pair your watch first")
+    care_activation.audit_retry(db, f"account:{acc.id}", acc.id)
+    await care_activation.activate(acc.id)
+    db.expire_all()
+    return {"care_activation": care_activation.public_state(db, acc.id)}
+
+
+@router.post("/api/accounts/{account_id}/care/activate", dependencies=[Depends(require_admin)])
+async def operator_retry_care_activation(account_id: int, request: Request, db: Session = Depends(get_session)) -> dict:
+    if care_activation.public_state(db, account_id) is None:
+        raise HTTPException(404, "nothing to activate")
+    care_activation.audit_retry(db, request.session["admin"], account_id)
+    await care_activation.activate(account_id)
+    db.expire_all()
+    return {"care_activation": care_activation.public_state(db, account_id)}
 
 
 @router.post("/api/me/topups/checkout")

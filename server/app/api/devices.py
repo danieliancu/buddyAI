@@ -63,6 +63,13 @@ async def pair(body: PairBody, request: Request, db: Session = Depends(get_sessi
     except PairingError as exc:
         raise HTTPException(404, str(exc)) from exc
     accounts.audit(db, request.session["admin"], "device.pair", body.account_id, device_id)
+    if body.account_id is not None:  # paired to a customer: a pending ola Care trial starts now
+        from app import care_activation
+
+        try:
+            await care_activation.activate(body.account_id)
+        except Exception:  # noqa: BLE001 - the pairing stands; the activation is retried
+            pass
     return {"device_id": device_id}
 
 

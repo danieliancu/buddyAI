@@ -134,26 +134,8 @@ async def test_allowance_warns_then_blocks(billing_on, monkeypatch):
     assert not d.allowed and d.code == "limit_reached"
 
 
-def test_checkout_parameters(billing_on, monkeypatch):
-    captured = {}
-
-    def fake_create(**kwargs):
-        captured.update(kwargs)
-        return {"url": "https://checkout.stripe.com/c/pay/test"}
-
-    monkeypatch.setattr(stripe.checkout.Session, "create", staticmethod(fake_create))
-    c = TestClient(app)
-    with c:
-        r = c.post("/api/shop/checkout", json={"country": "GB"})
-    assert r.status_code == 200 and r.json()["url"].startswith("https://checkout.stripe.com")
-    assert captured["mode"] == "subscription"
-    assert [li["price"] for li in captured["line_items"]] == ["price_care_gbp", "price_watch_gbp"]
-    assert captured["subscription_data"]["trial_period_days"] == 90
-    assert captured["automatic_tax"] == {"enabled": True}
-    countries = captured["shipping_address_collection"]["allowed_countries"]
-    assert "GB" in countries and "DE" in countries and "US" not in countries
-    assert captured["shipping_options"] == [{"shipping_rate": "shr_uk"}]
-    assert captured["success_url"].startswith("https://www.example.com/thank-you")
+# The checkout parameters (watch-only, card saved, consent) are tested in test_watch_checkout_v2.py.
+# The webhook tests above replay legacy bundle sessions (no metadata.kind): they must keep working.
 
 
 def test_shop_closed_without_stripe():

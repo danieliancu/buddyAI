@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
-from app import accounts, email
+from app import accounts, care_activation, email
 from app.api.common import (
     ItemBody,
     ItemDoneBody,
@@ -30,7 +31,7 @@ from app.api.common import (
     read_settings,
     voice_sample,
 )
-from app.db.models import Account, Device, Persona
+from app.db.models import Account, Device, Order, Persona
 from app.db.repositories import (
     ConversationRepo,
     DeviceRepo,
@@ -47,6 +48,7 @@ from app.ratelimit import LOGIN_PER_ACCOUNT, LOGIN_PER_IP, RESET_PER_EMAIL, SIGN
 from app.security import is_valid_pairing_code
 
 router = APIRouter(prefix="/api/me", tags=["customer"])
+log = logging.getLogger(__name__)
 
 
 # --- session ----------------------------------------------------------------------------------
@@ -188,8 +190,9 @@ def reset_password(body: ResetBody, request: Request, db: Session = Depends(get_
     """Also used to set the first password of an account created at checkout."""
     try:
         accounts.check_password(body.password)
-        acc = accounts.consume_token(db, body.token, "reset_password")
+        acc = accounts.consume_token(db, body.token, ("reset_password", "set_password"))
         accounts.set_password(db, acc, body.password)
+        accounts.invalidate_tokens(db, acc, ("reset_password", "set_password"))  # one password link works once
     except accounts.AccountError as exc:
         raise _err(exc) from exc
     accounts.mark_verified(db, acc)  # the reset link proves the address
@@ -258,15 +261,63 @@ class PairBody(BaseModel):
 
 
 @router.post("/devices/pair")
-async def pair(body: PairBody, request: Request, acc: Account = Depends(verified_account)) -> dict:
+async def pair(body: PairBody, request: Request, acc: Account = Depends(verified_account), db: Session = Depends(get_session)) -> dict:
     if not is_valid_pairing_code(body.code):
         raise HTTPException(400, "the code has 6 digits")
+    if not care_activation.can_set_up_watch(db, acc):
+        raise HTTPException(403, "no watch order found for this account")
     try:
         device_id = await hub_of(request).pair(body.code, body.name, acc.id)
     except PairingError as exc:
         raise HTTPException(404, "code not found or expired — check the code on your watch") from exc
     await email.send(email.watch_paired(acc.email, body.name))
-    return {"device_id": device_id}
+    # The watch is paired (server-side): this, and only this, starts a pending ola Care trial. A failure
+    # leaves the watch paired and the activation retryable; it never fails the pairing.
+    try:
+        await care_activation.activate(acc.id)
+    except Exception:  # noqa: BLE001
+        log.warning("care activation after pairing failed for account %s", acc.id, exc_info=True)
+    db.expire_all()
+    return {"device_id": device_id, "care": care_activation.public_state(db, acc.id)}
+
+
+# --- watch setup (onboarding) ----------------------------------------------------------------------
+
+
+def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
+    """Setup progress, derived from the server state (only the phone choice is stored), so a refresh, a new
+    sign-in or the link in the welcome email resumes where the customer left off."""
+    order = db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).first()
+    watches = [d for d in DeviceRepo(db).list(acc.id) if d.paired_at is not None and d.revoked_at is None]
+    care = care_activation.public_state(db, acc.id)
+    return {
+        "eligible": care_activation.can_set_up_watch(db, acc),
+        "order": None if order is None else {"id": order.id, "status": order.status, "created_at": order.created_at},
+        "has_password": acc.password_hash is not None,
+        "email_verified": acc.email_verified_at is not None,
+        "platform": acc.setup_platform,
+        "watches": len(watches),
+        "care": care,
+        "complete": bool(watches) and (care is None or care["status"] in ("active", "not_eligible")),
+    }
+
+
+@router.get("/onboarding")
+def get_onboarding(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
+    return _onboarding(db, acc)
+
+
+class OnboardingBody(BaseModel):
+    platform: Literal["android", "iphone"] | None = None
+
+
+@router.put("/onboarding")
+def put_onboarding(body: OnboardingBody, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
+    acc.setup_platform = body.platform
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return _onboarding(db, acc)
 
 
 class RenameBody(BaseModel):

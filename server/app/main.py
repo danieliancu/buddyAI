@@ -59,6 +59,10 @@ async def lifespan(app: FastAPI):
     from app.memory.jobs import job_loop
 
     memory_jobs = asyncio.create_task(job_loop(app.state.router), name="memory-jobs")
+    # ola Care trials waiting for a retry (failed, or stuck after a crash while activating).
+    from app import care_activation
+
+    care_recovery = asyncio.create_task(care_activation.recover_loop(), name="care-activation")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -79,6 +83,7 @@ async def lifespan(app: FastAPI):
     reminders.cancel()
     usage_maint.cancel()
     memory_jobs.cancel()
+    care_recovery.cancel()
     # Graceful shutdown: running turns stop now (not charged, reason "shutdown") and are settled here;
     # what cannot be settled is expired by another process (or this one after a restart) when its lease ends.
     for conn in list(app.state.hub.connections.values()):

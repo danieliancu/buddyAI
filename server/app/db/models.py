@@ -50,6 +50,8 @@ class Account(SQLModel, table=True):
     memory_explicit: bool = True  # "remember that..." is stored
     memory_use: bool = True  # memories are recalled in conversations
     memory_learn: bool = True  # facts are learned from conversations (the customer can switch it off)
+    # Watch setup: the phone the customer chose in the onboarding (android | iphone); None = not chosen yet.
+    setup_platform: Optional[str] = Field(default=None, max_length=8)
 
 
 class Order(SQLModel, table=True):
@@ -65,7 +67,8 @@ class Order(SQLModel, table=True):
     amount_total: int  # minor units (pence / cents), including tax and shipping
     amount_tax: int = 0
     amount_shipping: int = 0
-    status: str = Field(default="paid", max_length=16)  # paid | shipped | delivered | refunded | cancelled
+    # paid | shipped | delivered | refunded | cancelled | payment_pending | payment_failed (delayed methods)
+    status: str = Field(default="paid", max_length=16)
     shipping_name: str = Field(default="", max_length=200)
     shipping_address: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     country: Optional[str] = Field(default=None, max_length=2)
@@ -74,6 +77,9 @@ class Order(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
     shipped_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
+    # None = legacy bundle checkout (watch + Care trial started at purchase); "watch" = the watch alone,
+    # card saved, ola Care trial started when the watch is paired (app/care_activation.py).
+    checkout_flow: Optional[str] = Field(default=None, max_length=16)
 
 
 class Subscription(SQLModel, table=True):
@@ -94,6 +100,62 @@ class Subscription(SQLModel, table=True):
     allowance_pence: Optional[int] = None  # complimentary grants: allowance per period (None = plan default)
     granted_by: Optional[str] = Field(default=None, max_length=80)
     note: str = Field(default="", max_length=200)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class BillingConsent(SQLModel, table=True):
+    """Proof that the buyer agreed to future ola Care charges on the card saved at checkout: the exact
+    terms shown, their version and hash, and both acceptances (site checkbox + Stripe Checkout terms).
+    A billing record: kept when the account is deleted, like orders."""
+
+    __tablename__ = "billing_consents"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    stripe_checkout_session_id: str = Field(index=True, unique=True, max_length=255)
+    account_id: Optional[int] = Field(default=None, index=True)
+    order_id: Optional[int] = Field(default=None, index=True)
+    stripe_customer_id: Optional[str] = Field(default=None, max_length=64)
+    stripe_payment_method_id: Optional[str] = Field(default=None, max_length=255)
+    status: str = Field(default="pending", max_length=16)  # pending | accepted | missing
+    terms_version: str = Field(max_length=32)
+    terms_text: str
+    terms_sha256: str = Field(max_length=64)
+    amount_minor: int  # the recurring Care price agreed, minor units of `currency`
+    currency: str = Field(max_length=3)
+    interval: str = Field(default="month", max_length=8)
+    trial_days: int
+    trial_start_rule: str = Field(default="on_pairing", max_length=16)
+    site_accepted_at: datetime
+    site_ip: str = Field(default="", max_length=64)
+    site_user_agent: str = Field(default="", max_length=300)
+    stripe_tos_consent: Optional[str] = Field(default=None, max_length=16)  # session.consent.terms_of_service
+    stripe_consent_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CareActivation(SQLModel, table=True):
+    """The ola Care trial waiting for the watch: created when a watch-only order is paid, turned into a
+    Stripe subscription when a watch is first paired to the account. One row per account.
+
+    awaiting_pairing -> activating (leased) -> active | failed (retried) ; not_eligible (no trial)."""
+
+    __tablename__ = "care_activations"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", unique=True, index=True)
+    order_id: Optional[int] = Field(default=None, index=True)
+    consent_id: Optional[int] = Field(default=None)
+    stripe_customer_id: str = Field(max_length=64)
+    payment_method_id: Optional[str] = Field(default=None, max_length=255)
+    currency: str = Field(default="gbp", max_length=3)
+    status: str = Field(default="awaiting_pairing", max_length=20)
+    reason: str = Field(default="", max_length=40)  # not_eligible: why (complimentary, trial_used, ...)
+    stripe_subscription_id: Optional[str] = Field(default=None, unique=True, max_length=255)
+    attempts: int = 0
+    last_error_code: str = Field(default="", max_length=40)
+    lease_until: Optional[datetime] = None
+    next_retry_at: Optional[datetime] = None
+    activated_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -199,7 +261,7 @@ class AuthToken(SQLModel, table=True):
     __tablename__ = "auth_tokens"
     id: Optional[int] = Field(default=None, primary_key=True)
     account_id: int = Field(foreign_key="accounts.id", index=True)
-    purpose: str = Field(max_length=16)  # verify_email | reset_password
+    purpose: str = Field(max_length=16)  # verify_email | reset_password | set_password (welcome, 7 days)
     token_hash: str = Field(index=True, max_length=64)
     expires_at: datetime
     used_at: Optional[datetime] = None

@@ -30,7 +30,8 @@ from app.security import hash_password, verify_password
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_PASSWORD = 8
-TOKEN_TTL = {"verify_email": timedelta(hours=48), "reset_password": timedelta(hours=1)}
+# set_password: the welcome link of an account created at checkout (it also has to survive shipping).
+TOKEN_TTL = {"verify_email": timedelta(hours=48), "reset_password": timedelta(hours=1), "set_password": timedelta(days=7)}
 
 
 class AccountError(Exception):
@@ -129,8 +130,11 @@ def issue_token(db: Session, account: Account, purpose: str) -> str:
     return token
 
 
-def consume_token(db: Session, token: str, purpose: str) -> Account:
-    row = db.exec(select(AuthToken).where(AuthToken.token_hash == _hash(token or ""), AuthToken.purpose == purpose)).first()
+def consume_token(db: Session, token: str, purpose: str | tuple[str, ...]) -> Account:
+    purposes = (purpose,) if isinstance(purpose, str) else purpose
+    row = db.exec(
+        select(AuthToken).where(AuthToken.token_hash == _hash(token or ""), col(AuthToken.purpose).in_(purposes))
+    ).first()
     if row is None or row.used_at is not None or _aware(row.expires_at) < utcnow():
         raise AccountError(400, "this link is invalid or has expired")
     acc = db.get(Account, row.account_id)
@@ -142,10 +146,28 @@ def consume_token(db: Session, token: str, purpose: str) -> Account:
     return acc
 
 
-def link(path: str, token: str) -> str:
+def invalidate_tokens(db: Session, account: Account, purposes: tuple[str, ...]) -> None:
+    for old in db.exec(
+        select(AuthToken).where(
+            AuthToken.account_id == account.id, col(AuthToken.purpose).in_(purposes), col(AuthToken.used_at).is_(None)
+        )
+    ).all():
+        old.used_at = utcnow()
+        db.add(old)
+    db.commit()
+
+
+def link(path: str, token: str, query: str = "") -> str:
+    """App link carrying a one-time token (kept last in the URL). `query`: extra "a=b&" parameters."""
     s = get_settings()
     base = s.app_url.rstrip("/") or f"http://localhost:{s.port}"
-    return f"{base}{path}?token={token}"
+    return f"{base}{path}?{query}token={token}"
+
+
+def welcome_link(db: Session, account: Account) -> str:
+    """Set-password link for an account created at checkout (7 days; opens the setup afterwards)."""
+    token = issue_token(db, account, "set_password")
+    return link("/reset-password", token, "welcome=1&")
 
 
 def set_password(db: Session, account: Account, password: str) -> None:

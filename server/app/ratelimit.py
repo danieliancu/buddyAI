@@ -41,4 +41,5 @@ LOGIN_PER_ACCOUNT = RateLimiter(5, 300)  # 5 failures / 5 min per email+ip
 LOGIN_PER_IP = RateLimiter(30, 300)
 SIGNUP_PER_IP = RateLimiter(10, 3600)
 RESET_PER_EMAIL = RateLimiter(3, 3600)
+CHECKOUT_STATUS_PER_IP = RateLimiter(120, 600)  # the thank-you page polls every 2 s for about a minute
 VOICE_SAMPLE_PER_ACCOUNT = RateLimiter(30, 3600)  # free TTS samples (not billed): bounded instead

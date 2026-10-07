@@ -1,8 +1,11 @@
 """Stripe shop, "ola Care" subscription, extra-usage top-ups, complimentary grants.
 
-- Shop: one Checkout Session sells the watch (one-time price, charged now) together with the monthly
-  subscription (free trial first). Stripe Tax computes UK VAT / EU VAT; addresses are collected for
-  UK + EU shipping.
+- Shop: one Checkout Session (mode=payment) sells the watch (one-time price, charged now) and saves the
+  card for ola Care with the buyer's recorded consent (BillingConsent). No subscription is created at
+  purchase: the Care trial starts when the watch is paired (app/care_activation.py). Orders and accounts
+  are created only from verified webhooks of paid sessions; delayed payment methods wait for
+  async_payment_succeeded. Stripe Tax computes UK VAT / EU VAT; addresses are collected for UK + EU
+  shipping. Legacy sessions (watch + Care trial in one subscription Checkout) are still handled.
 - Existing accounts can subscribe from the app (subscription-only Checkout).
 - Top-ups: one-time Checkout (mode=payment, never recurring) for extra allowance in the current
   period. A pending TopUp row is created first; it is granted only by a verified webhook whose
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -26,10 +30,10 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from app import accounts, email
+from app import accounts, care_activation, care_terms, email
 from app.account_lock import lock_account
 from app.config import get_settings
-from app.db.models import Account, Order, RevenueEvent, StripeEvent, Subscription, TopUp, utcnow
+from app.db.models import Account, BillingConsent, CareActivation, Order, RevenueEvent, StripeEvent, Subscription, TopUp, utcnow
 from app.plan import get_plan
 
 log = logging.getLogger(__name__)
@@ -62,29 +66,63 @@ def _prices(currency: str) -> tuple[str, str, list[str]]:
     return watch, care, rates
 
 
-def create_checkout(currency: str, customer_email: str | None = None) -> str:
-    """Returns the Stripe Checkout URL."""
+@dataclass(frozen=True)
+class SiteConsent:
+    """What the buyer ticked on the site before checkout (the request that started it)."""
+
+    version: str
+    sha256: str
+    ip: str = ""
+    user_agent: str = ""
+
+
+def create_checkout(db: Session, currency: str, consent: SiteConsent, customer_email: str | None = None) -> str:
+    """Watch-only Checkout: the watch is charged once now and the card is saved (off-session) for ola Care,
+    whose trial starts when the watch is paired (app/care_activation.py). No subscription is created here.
+    The buyer must have accepted the current Care terms on the site (version + hash checked). Returns the URL."""
     s = get_settings()
     if not s.billing_enabled:
         raise BillingError(503, "the shop is not open yet")
     currency = currency.lower()
     if currency not in ("gbp", "eur"):
         raise BillingError(422, "currency must be GBP or EUR")
-    watch, care, rates = _prices(currency)
+    watch, _care, rates = _prices(currency)
+    try:
+        terms = care_terms.current(currency)
+    except (LookupError, stripe.StripeError) as exc:
+        log.warning("ola Care terms unavailable for %s: %s", currency, type(exc).__name__)
+        raise BillingError(503, "the shop is not configured for this currency yet") from exc
+    if consent.version != terms.version or consent.sha256 != terms.sha256:
+        raise BillingError(409, "the ola Care terms have changed, please reload the page and review them")
     site = (s.site_url or s.app_url or f"http://localhost:{s.port}").rstrip("/")
+    meta = {
+        "source": "buddyai-site",
+        "kind": "watch",
+        "care_terms_version": terms.version,
+        "care_terms_sha256": terms.sha256,
+    }
     params: dict[str, Any] = {
-        "mode": "subscription",
-        "line_items": [{"price": care, "quantity": 1}, {"price": watch, "quantity": 1}],
-        "subscription_data": {"trial_period_days": s.care_trial_days},
+        "mode": "payment",  # the watch, once; ola Care is a separate subscription created at pairing
+        "line_items": [{"price": watch, "quantity": 1}],
+        "customer_creation": "always",  # the saved card belongs to a Stripe Customer
+        "payment_intent_data": {
+            "setup_future_usage": "off_session",
+            "description": "ola watch (card saved for ola Care, trial starts when the watch is paired)",
+            "metadata": meta,
+        },
         "automatic_tax": {"enabled": True},
         "shipping_address_collection": {"allowed_countries": [c.strip() for c in s.ship_countries.split(",")]},
         "billing_address_collection": "required",
         "phone_number_collection": {"enabled": True},  # carriers need it for delivery
         "allow_promotion_codes": True,
         "consent_collection": {"terms_of_service": "required"},  # needs the ToS URL set in the Stripe dashboard
+        "custom_text": {
+            "terms_of_service_acceptance": {"message": terms.text},
+            "submit": {"message": "You pay for the watch today. ola Care is not charged today: its free trial starts when you pair your watch."},
+        },
         "success_url": f"{site}/thank-you?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{site}/#buy",
-        "metadata": {"source": "buddyai-site"},
+        "metadata": meta,
     }
     if rates:
         params["shipping_options"] = [{"shipping_rate": r} for r in rates]
@@ -93,8 +131,24 @@ def create_checkout(currency: str, customer_email: str | None = None) -> str:
     try:
         session = stripe.checkout.Session.create(api_key=s.stripe_secret_key, **params)
     except stripe.StripeError as exc:
-        log.warning("checkout creation failed: %s", exc)
+        log.warning("checkout creation failed: %s", type(exc).__name__)
         raise BillingError(502, "payment provider unavailable, please try again") from exc
+    db.add(
+        BillingConsent(
+            stripe_checkout_session_id=session["id"],
+            terms_version=terms.version,
+            terms_text=terms.text,
+            terms_sha256=terms.sha256,
+            amount_minor=terms.price.amount_minor,
+            currency=currency,
+            interval=terms.price.interval,
+            trial_days=terms.trial_days,
+            site_accepted_at=utcnow(),
+            site_ip=consent.ip[:64],
+            site_user_agent=consent.user_agent[:300],
+        )
+    )
+    db.commit()
     return session["url"]
 
 
@@ -273,29 +327,29 @@ def upsert_subscription(db: Session, sub: dict[str, Any]) -> Subscription:
     return row
 
 
-async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
-    if db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).first():
-        return
+def _session_parties(cs: dict[str, Any]) -> tuple[str, dict, dict, dict]:
     details = cs.get("customer_details") or {}
     addr_email = (details.get("email") or cs.get("customer_email") or "").lower()
     shipping = (cs.get("collected_information") or {}).get("shipping_details") or cs.get("shipping_details") or {}
     address = shipping.get("address") or details.get("address") or {}
+    return addr_email, details, shipping, address
 
+
+def _account_for_session(db: Session, cs: dict[str, Any]) -> tuple[Account, bool]:
+    addr_email, details, _shipping, address = _session_parties(cs)
     acc = accounts.by_email(db, addr_email) if addr_email else None
-    new_account = acc is None
-    if acc is None:
-        acc = accounts.create(db, addr_email, None, details.get("name") or "", address.get("country"))
-    if cs.get("customer") and acc.stripe_customer_id != cs["customer"]:
-        acc.stripe_customer_id = cs["customer"]
-        db.add(acc)
-        db.commit()
-        db.refresh(acc)
+    if acc is not None:
+        return acc, False
+    return accounts.create(db, addr_email, None, details.get("name") or "", address.get("country")), True
 
+
+def _new_order(cs: dict[str, Any], account_id: int | None, status: str = "paid", flow: str | None = None) -> Order:
+    addr_email, details, shipping, address = _session_parties(cs)
     totals = cs.get("total_details") or {}
-    order = Order(
+    return Order(
         stripe_session_id=cs["id"],
-        stripe_payment_intent=cs.get("payment_intent"),
-        account_id=acc.id,
+        stripe_payment_intent=cs.get("payment_intent") if isinstance(cs.get("payment_intent"), str) else None,
+        account_id=account_id,
         email=addr_email,
         currency=(cs.get("currency") or "").lower(),
         amount_total=int(cs.get("amount_total") or 0),
@@ -304,7 +358,23 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
         shipping_name=shipping.get("name") or details.get("name") or "",
         shipping_address=address,
         country=address.get("country"),
+        status=status,
+        checkout_flow=flow,
     )
+
+
+async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
+    """Legacy bundle session (watch + Care subscription with the trial started at purchase)."""
+    if db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).first():
+        return
+    acc, new_account = _account_for_session(db, cs)
+    if cs.get("customer") and acc.stripe_customer_id != cs["customer"]:
+        acc.stripe_customer_id = cs["customer"]
+        db.add(acc)
+        db.commit()
+        db.refresh(acc)
+
+    order = _new_order(cs, acc.id)
     db.add(order)
     db.commit()
     _revenue(db, cs["id"], acc.id, "watch", order.amount_total, order.currency, order.amount_tax)
@@ -312,9 +382,163 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
         upsert_subscription(db, fetch_subscription(cs["subscription"]))
 
     if new_account or acc.password_hash is None:
-        token = accounts.issue_token(db, acc, "reset_password")
-        await email.send(email.welcome_set_password(acc.email, accounts.link("/reset-password", token)))
+        await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
     await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency))
+
+
+# --- watch-only sessions (card saved, ola Care started at pairing) ----------------------------------
+
+
+def _fetch_payment_intent(pi_id: str) -> dict[str, Any]:
+    s = get_settings()
+    return stripe.PaymentIntent.retrieve(pi_id, api_key=s.stripe_secret_key).to_dict()
+
+
+def _payment_method_of(cs: dict[str, Any], fetch_payment_intent: Callable[[str], dict]) -> str | None:
+    pi = cs.get("payment_intent")
+    if isinstance(pi, dict):
+        data = pi
+    elif pi:
+        data = fetch_payment_intent(pi)  # raises on Stripe errors: the event is released and retried
+    else:
+        return None
+    pm = data.get("payment_method")
+    return pm.get("id") if isinstance(pm, dict) else pm
+
+
+def _link_customer(db: Session, acc: Account, customer: str | None) -> None:
+    """The Stripe customer that owns the saved card. An account that already pays through another Stripe
+    customer keeps it (billing portal, invoices); the activation row stores the card's customer."""
+    if not customer or acc.stripe_customer_id == customer:
+        return
+    has_stripe_sub = db.exec(
+        select(Subscription.id).where(Subscription.account_id == acc.id, Subscription.source == "stripe")
+    ).first() is not None
+    if acc.stripe_customer_id is None or not has_stripe_sub:
+        acc.stripe_customer_id = customer
+        db.add(acc)
+        db.commit()
+        db.refresh(acc)
+
+
+def _complete_consent(
+    db: Session, cs: dict[str, Any], acc: Account, order: Order, pm: str | None
+) -> BillingConsent | None:
+    row = db.exec(select(BillingConsent).where(BillingConsent.stripe_checkout_session_id == cs["id"])).first()
+    if row is None:
+        return None
+    meta = cs.get("metadata") or {}
+    tos = (cs.get("consent") or {}).get("terms_of_service")
+    row.account_id, row.order_id = acc.id, order.id
+    row.stripe_customer_id = cs.get("customer") or row.stripe_customer_id
+    row.stripe_payment_method_id = pm or row.stripe_payment_method_id
+    row.stripe_tos_consent = tos
+    row.stripe_consent_at = _ts(cs.get("created")) or utcnow()
+    matches = meta.get("care_terms_version") == row.terms_version and meta.get("care_terms_sha256") == row.terms_sha256
+    row.status = "accepted" if tos == "accepted" and matches else "missing"
+    row.updated_at = utcnow()
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _watch_order_pending(db: Session, cs: dict[str, Any]) -> None:
+    """Completed but not paid yet (delayed payment method): an order row only, no account, no email."""
+    if db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).first():
+        return
+    db.add(_new_order(cs, None, status="payment_pending", flow="watch"))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+async def _watch_order_paid(db: Session, cs: dict[str, Any], fetch_payment_intent: Callable[[str], dict]) -> None:
+    if cs.get("payment_status") not in ("paid", "no_payment_required"):
+        _watch_order_pending(db, cs)
+        return
+    pm = _payment_method_of(cs, fetch_payment_intent)  # before any write: a failure leaves nothing half done
+    order = db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).first()
+    newly_paid = False
+    acc: Account | None = None
+    new_account = False
+    if order is None or order.status == "payment_pending":
+        acc, new_account = _account_for_session(db, cs)
+        if order is None:
+            order = _new_order(cs, acc.id, status="paid", flow="watch")
+            db.add(order)
+            try:
+                db.commit()
+                newly_paid = True
+            except IntegrityError:  # a concurrent delivery created it
+                db.rollback()
+                order = db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).one()
+        if not newly_paid and order.status == "payment_pending":
+            result = db.exec(  # type: ignore[call-overload]
+                update(Order)
+                .where(col(Order.id) == order.id, col(Order.status) == "payment_pending")
+                .values(status="paid", account_id=acc.id)
+            )
+            db.commit()
+            newly_paid = result.rowcount == 1
+        db.refresh(order)
+    if order.account_id is None or order.status not in care_activation.ELIGIBLE_ORDER_STATUSES:
+        return  # refunded / cancelled meanwhile: nothing to set up
+    acc = acc if acc is not None and acc.id == order.account_id else db.get(Account, order.account_id)
+    if acc is None:
+        return
+    _link_customer(db, acc, cs.get("customer"))
+    consent = _complete_consent(db, cs, acc, order, pm)
+    care_activation.ensure_for_paid_order(db, acc, order, consent, cs.get("customer"), pm)
+    if not newly_paid:
+        return
+    _revenue(db, cs["id"], acc.id, "watch", order.amount_total, order.currency, order.amount_tax)
+    accounts.audit(db, "system", "order.paid", acc.id, detail=f"order {order.id} (watch; ola Care starts at pairing)")
+    if new_account or acc.password_hash is None:
+        await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
+    terms = consent.terms_text if consent is not None and consent.status == "accepted" else None
+    await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency, terms))
+
+
+async def _watch_order_failed(db: Session, cs: dict[str, Any]) -> None:
+    order = db.exec(select(Order).where(Order.stripe_session_id == cs["id"])).first()
+    if order is None:
+        order = _new_order(cs, None, status="payment_failed", flow="watch")
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+        changed = True
+    else:
+        result = db.exec(  # type: ignore[call-overload]
+            update(Order).where(col(Order.id) == order.id, col(Order.status) == "payment_pending").values(status="payment_failed")
+        )
+        db.commit()
+        changed = result.rowcount == 1
+    if changed and order.email:
+        await email.send(email.order_payment_failed(order.email))
+
+
+def _watch_session_expired(db: Session, cs: dict[str, Any]) -> None:
+    db.exec(  # type: ignore[call-overload]
+        update(Order).where(col(Order.stripe_session_id) == cs["id"], col(Order.status) == "payment_pending").values(status="cancelled")
+    )
+    db.commit()
+
+
+def checkout_status(db: Session, session_id: str) -> dict[str, Any]:
+    """For the thank-you page: only what our verified webhooks recorded, never the redirect itself."""
+    order = db.exec(select(Order).where(Order.stripe_session_id == session_id)).first()
+    if order is None:
+        known = db.exec(select(BillingConsent.id).where(BillingConsent.stripe_checkout_session_id == session_id)).first()
+        return {"state": "processing" if known is not None else "unknown", "needs_password": False}
+    state = {
+        "paid": "paid", "shipped": "paid", "delivered": "paid",
+        "payment_pending": "processing", "payment_failed": "failed",
+        "cancelled": "cancelled", "refunded": "cancelled",
+    }.get(order.status, "unknown")
+    acc = db.get(Account, order.account_id) if order.account_id else None
+    return {"state": state, "needs_password": bool(state == "paid" and acc is not None and acc.password_hash is None)}
 
 
 def _revenue(
@@ -420,8 +644,13 @@ def _invoice_paid(db: Session, inv: dict[str, Any]) -> None:
     _revenue(db, inv["id"], acc.id if acc else None, "subscription", amount, inv.get("currency") or "gbp", tax)
 
 
-async def _checkout_session(db: Session, cs: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
+async def _checkout_session(
+    db: Session, cs: dict[str, Any], fetch_subscription: Callable[[str], dict], fetch_payment_intent: Callable[[str], dict]
+) -> None:
     kind = (cs.get("metadata") or {}).get("kind")
+    if kind == "watch":
+        await _watch_order_paid(db, cs, fetch_payment_intent)  # waits (pending order) unless paid
+        return
     if kind == "topup":
         _topup_paid(db, cs)
         return
@@ -456,24 +685,36 @@ def _release(db: Session, event_id: str) -> None:
 
 
 async def handle_event(
-    db: Session, event: dict[str, Any], fetch_subscription: Callable[[str], dict] = _fetch_subscription
+    db: Session,
+    event: dict[str, Any],
+    fetch_subscription: Callable[[str], dict] = _fetch_subscription,
+    fetch_payment_intent: Callable[[str], dict] = _fetch_payment_intent,
 ) -> bool:
     """Apply one webhook event. Returns False if it was already processed (or is being processed)."""
     if not _claim(db, event):
         return False
     try:
-        await _apply(db, event, fetch_subscription)
+        await _apply(db, event, fetch_subscription, fetch_payment_intent)
     except Exception:
         _release(db, event["id"])  # let Stripe's retry apply it
         raise
     return True
 
 
-async def _apply(db: Session, event: dict[str, Any], fetch_subscription: Callable[[str], dict]) -> None:
+async def _apply(
+    db: Session, event: dict[str, Any], fetch_subscription: Callable[[str], dict], fetch_payment_intent: Callable[[str], dict]
+) -> None:
     kind = event["type"]
     obj = event["data"]["object"]
+    watch = kind.startswith("checkout.session.") and (obj.get("metadata") or {}).get("kind") == "watch"
     if kind == "checkout.session.completed":
-        await _checkout_session(db, obj, fetch_subscription)
+        await _checkout_session(db, obj, fetch_subscription, fetch_payment_intent)
+    elif watch and kind == "checkout.session.async_payment_succeeded":
+        await _watch_order_paid(db, obj, fetch_payment_intent)
+    elif watch and kind == "checkout.session.async_payment_failed":
+        await _watch_order_failed(db, obj)
+    elif watch and kind == "checkout.session.expired":
+        _watch_session_expired(db, obj)
     elif kind == "checkout.session.async_payment_succeeded":
         _topup_paid(db, obj)
     elif kind in ("checkout.session.expired", "checkout.session.async_payment_failed"):
@@ -484,11 +725,13 @@ async def _apply(db: Session, event: dict[str, Any], fetch_subscription: Callabl
         # Stripe sends this 3 days before the trial ends. UK subscription rules require a reminder
         # before the first paid period; the subscription terms promise it.
         row = upsert_subscription(db, obj)
+        care_activation.complete_from_subscription(db, obj)
         acc = db.get(Account, row.account_id) if row.account_id else None
         if acc and acc.status == "active" and not row.cancel_at_period_end:
             await email.send(email.trial_ending(acc.email, row.trial_end))
     elif kind.startswith("customer.subscription."):
         upsert_subscription(db, obj)
+        care_activation.complete_from_subscription(db, obj)
     elif kind == "invoice.payment_failed":
         acc = db.exec(select(Account).where(Account.stripe_customer_id == obj.get("customer"))).first()
         if acc:
