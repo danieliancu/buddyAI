@@ -54,15 +54,12 @@ const isActive = (href: string) => path === href;
       </a>
       <a
         href={`${config.appUrl}/my`}
-        class="hidden max-w-40 items-center gap-1.5 rounded-lg px-1.5 py-1 text-fg hover:bg-bg-2"
+        class="hidden max-w-56 items-center gap-1.5 rounded-lg px-1.5 py-1 text-fg hover:bg-bg-2"
         title="Your ola account (signed in)"
         data-account-in
       >
         <Icon name="lock" size={20} class="shrink-0 text-ok" />
-        <span class="flex min-w-0 flex-col leading-tight">
-          <span class="truncate text-sm font-medium" data-account-name></span>
-          <span class="truncate text-sm font-medium" data-account-last></span>
-        </span>
+        <span class="truncate text-sm font-medium" data-account-full></span>
         <span class="sr-only">, signed in</span>
       </a>
       <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" data-header-buy>
