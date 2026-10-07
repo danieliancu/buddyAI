@@ -21,6 +21,7 @@
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "debug_snap.h"
@@ -57,6 +58,7 @@ typedef struct {
 } app_ev_t;
 
 static QueueHandle_t s_app_q;
+static bool s_audio_ready;   /* false in Wi-Fi setup mode (audio not started) */
 static bool          s_wifi_configured;
 static bool          s_server_error_shown;
 static bool          s_low_batt_warned;
@@ -122,7 +124,9 @@ static void sync_rtc_from_system(void)
 static void on_settings(const buddy_settings_t *s, void *ctx)
 {
     net_set_timezone(s->tz_posix);
-    audio_set_volume(s->volume);
+    if (s_audio_ready) {
+        audio_set_volume(s->volume);
+    }
     ui_apply_settings(s);
 }
 
@@ -439,6 +443,13 @@ static int ui_audio_level(void)
 /* App loop                                                                   */
 /* ------------------------------------------------------------------------- */
 
+/* Wi-Fi setup mode: entered at boot (no Wi-Fi saved, or "Wi-Fi setup" was chosen, which restarts into
+ * it). Bluetooth starts first, before the display and audio take internal RAM; audio is not started
+ * (setup always ends with a restart). RTC_NOINIT survives a software restart only. */
+#define SETUP_BOOT_MAGIC 0x5E7B0070u
+static RTC_NOINIT_ATTR uint32_t s_setup_boot;
+static bool s_setup_mode;
+
 static void on_ble_prov_done(void)
 {
     post_app(APP_EV_PROV_DONE, 0);
@@ -550,7 +561,15 @@ static void app_loop(void)
             if (ev.type == APP_EV_NET) {
                 handle_net_event((net_event_t)ev.arg);
             } else if (ev.type == APP_EV_START_PORTAL) {
-                start_portal();
+                if (s_setup_mode) {
+                    start_portal();
+                } else {
+                    ESP_LOGI(TAG, "restarting into Wi-Fi setup mode");
+                    s_setup_boot = SETUP_BOOT_MAGIC;
+                    proto_network_down();
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    esp_restart();
+                }
             } else if (ev.type == APP_EV_FACTORY_RESET) {
                 factory_reset();
             } else if (ev.type == APP_EV_PROV_DONE) {
@@ -604,6 +623,22 @@ void app_main(void)
     net_set_timezone(st.tz_posix);
     board_rtc_restore_system_time();
 
+    char ssid[SETTINGS_SSID_MAX], pass[SETTINGS_PASS_MAX];
+    bool have_wifi = settings_get_wifi(ssid, pass);
+    s_setup_mode = !have_wifi || s_setup_boot == SETUP_BOOT_MAGIC;
+    s_setup_boot = 0;
+    if (s_setup_mode) {
+        ESP_LOGI(TAG, "Wi-Fi setup mode (internal RAM free %u KB)",
+                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+        char setup_pass[SETTINGS_SETUP_PASS_MAX];
+        if (settings_get_setup_pass(setup_pass) &&
+            ble_prov_start(net_portal_ssid(), setup_pass, on_ble_prov_done) != ESP_OK) {
+            ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
+        }
+        memset(setup_pass, 0, sizeof(setup_pass));
+        board_display_set_draw_lines(10);
+    }
+
     lv_display_t *disp = board_display_init();
     if (!disp) {
         ESP_LOGE(TAG, "display init failed - continuing headless");
@@ -629,9 +664,12 @@ void app_main(void)
         }
     }
 
-    if (board_audio_init() == ESP_OK) {
+    if (s_setup_mode) {
+        ESP_LOGI(TAG, "audio not started in Wi-Fi setup mode");
+    } else if (board_audio_init() == ESP_OK) {
         ESP_ERROR_CHECK(audio_init());
         audio_set_volume(st.volume);
+        s_audio_ready = true;
     } else {
         ESP_LOGE(TAG, "audio init failed");
     }
@@ -649,8 +687,7 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(proto_init(&pcfg));
 
-    char ssid[SETTINGS_SSID_MAX], pass[SETTINGS_PASS_MAX];
-    if (settings_get_wifi(ssid, pass)) {
+    if (!s_setup_mode) {
         s_wifi_configured = true;
         ui_set_hint(ui_text_connecting());
         net_wifi_connect(ssid, pass);

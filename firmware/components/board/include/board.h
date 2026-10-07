@@ -59,6 +59,9 @@ bool      board_rtc_restore_system_time(void);
 
 /* ---- display / touch ---- */
 lv_display_t *board_display_init(void);
+/* Before board_display_init(): draw buffer height in lines (internal DMA RAM: 2 x 410 x lines x 2 bytes).
+ * Wi-Fi setup mode uses fewer lines to leave room for the Bluetooth controller. */
+void board_display_set_draw_lines(int lines);
 esp_err_t board_display_set_brightness(int percent);   /* 0..100 */
 esp_err_t board_display_power(bool on);                 /* panel on/off (keeps LVGL running) */
 bool      board_display_lock(uint32_t timeout_ms);

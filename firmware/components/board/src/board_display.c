@@ -34,6 +34,15 @@ static lv_display_t *s_disp;
 /* One flush = one SPI transaction. */
 #define SPI_MAX_TRANSFER    (BOARD_LCD_H_RES * DRAW_BUF_LINES * sizeof(uint16_t))
 
+static int s_draw_lines = DRAW_BUF_LINES;
+
+void board_display_set_draw_lines(int lines)
+{
+    if (lines >= 4 && lines <= DRAW_BUF_LINES) {
+        s_draw_lines = lines;
+    }
+}
+
 /* Vendor init sequence for this panel [WS-BSP lcd_init_cmds]. */
 static const co5300_lcd_init_cmd_t s_lcd_init_cmds[] = {
     {0x11, (uint8_t[]){0x00}, 0, 120},              /* sleep out */
@@ -139,7 +148,7 @@ lv_display_t *board_display_init(void)
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = s_io,
         .panel_handle = s_panel,
-        .buffer_size = BOARD_LCD_H_RES * DRAW_BUF_LINES,
+        .buffer_size = BOARD_LCD_H_RES * s_draw_lines,
         .double_buffer = true,
         .hres = BOARD_LCD_H_RES,
         .vres = BOARD_LCD_V_RES,
