@@ -1,38 +1,47 @@
 ---
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
-import { config } from "../config";
+import { config, prices } from "../config";
 
+// Shown only once the server confirms the payment (Stripe webhook): the full path to a working watch.
 const next = [
-  { icon: "mail" as const, title: "Check your email", text: "Your order confirmation is on its way, with a link to set your ola account password." },
-  { icon: "truck" as const, title: "Shipping", text: "When your watch ships, we'll email you the tracking details." },
-  { icon: "wifi" as const, title: "When it arrives", text: "Connect it to Wi-Fi, then sign in to your ola account in any web browser and choose Add watch. No app to install. Then tap the mic and say hello." },
+  { icon: "mail" as const, title: "Set your password", text: "Open the email from ola and choose a password for your account (or sign in if you already have one)." },
+  { icon: "truck" as const, title: "Wait for the watch", text: "We'll email you the tracking details when it ships." },
+  { icon: "wifi" as const, title: "Choose your phone, connect Wi-Fi", text: "In your ola account, choose Android or iPhone and follow the steps to connect the watch to your 2.4 GHz Wi-Fi." },
+  { icon: "check" as const, title: "Pair it — the trial starts", text: `Type the code shown on the watch. Your free ${prices.trialMonths}-month olacare trial starts then, not before.` },
 ];
 ---
-<Base title="Thank you for your order" description="Your ola order is confirmed." noindex>
-  <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title">
-    <span class="icon-tile !h-14 !w-14 text-ok"><Icon name="check" size={28} /></span>
-    <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-fg sm:text-5xl">
-      Thank you — <span class="text-gradient">your order is confirmed.</span>
+<Base title="Thank you for your order" description="Your ola order status." noindex>
+  <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title" data-thankyou>
+    <span class="icon-tile !h-14 !w-14" data-ty-icon><Icon name="mail" size={28} /></span>
+    <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-fg sm:text-5xl" data-ty-title>
+      Confirming your payment…
     </h1>
-    <p class="mt-4 max-w-2xl text-lg text-muted">
-      We've received your payment. An email is on its way with your order details and a link to set your account
-      password.
+    <p class="mt-4 max-w-2xl text-lg text-muted" role="status" aria-live="polite" data-ty-body>
+      This usually takes a few seconds.
     </p>
+    <noscript>
+      <p class="mt-4 max-w-2xl text-lg text-muted">
+        We'll email you as soon as your payment is confirmed, with a link to set your account password.
+      </p>
+    </noscript>
 
-    <h2 class="mt-12 text-xl font-bold text-fg">What happens next</h2>
-    <ol class="mt-6 grid gap-4 md:grid-cols-3">
-      {next.map((n, i) => (
-        <li class="glass p-5">
-          <span class="icon-tile !h-10 !w-10"><Icon name={n.icon} size={20} /></span>
-          <h3 class="mt-3 font-semibold text-fg"><span class="text-muted">{i + 1}.</span> {n.title}</h3>
-          <p class="mt-1 text-sm text-muted">{n.text}</p>
-        </li>
-      ))}
-    </ol>
+    <div class="hidden" data-ty-next>
+      <h2 class="mt-12 text-xl font-bold text-fg">What happens next</h2>
+      <ol class="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {next.map((n, i) => (
+          <li class="glass p-5">
+            <span class="icon-tile !h-10 !w-10"><Icon name={n.icon} size={20} /></span>
+            <h3 class="mt-3 font-semibold text-fg"><span class="text-muted">{i + 1}.</span> {n.title}</h3>
+            <p class="mt-1 text-sm text-muted">{n.text}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
 
     <div class="mt-10 flex flex-col gap-3 sm:flex-row">
-      <a class="btn btn-primary" href={config.appUrl}>Go to your ola account <Icon name="arrow" size={18} /></a>
+      <a class="btn btn-primary hidden" href={`${config.appUrl}/my/setup`} data-ty-app>Go to your ola account <Icon name="arrow" size={18} /></a>
+      <a class="btn btn-primary hidden" href="/#buy" data-ty-retry>Try again <Icon name="arrow" size={18} /></a>
       <a class="btn btn-ghost" href="/">Back to home</a>
     </div>
     <p class="mt-8 text-sm text-muted">
@@ -42,3 +51,52 @@ const next = [
     </p>
   </section>
 </Base>
+
+<script>
+  import { sessionIdFrom, viewFor, type CheckoutStatus } from "../lib/checkoutStatus";
+
+  const root = document.querySelector<HTMLElement>("[data-thankyou]");
+  if (root) {
+    const title = root.querySelector<HTMLElement>("[data-ty-title]")!;
+    const body = root.querySelector<HTMLElement>("[data-ty-body]")!;
+    const nextBox = root.querySelector<HTMLElement>("[data-ty-next]")!;
+    const app = root.querySelector<HTMLElement>("[data-ty-app]")!;
+    const retry = root.querySelector<HTMLElement>("[data-ty-retry]")!;
+    const icon = root.querySelector<HTMLElement>("[data-ty-icon]")!;
+    const sessionId = sessionIdFrom(window.location.search);
+    const started = Date.now();
+    const POLL_MS = 2000;
+    const MAX_MS = 60000;
+
+    const render = (status: CheckoutStatus | null, opts: { timedOut?: boolean; missingSession?: boolean } = {}) => {
+      const v = viewFor(status, opts);
+      title.textContent = v.title;
+      body.textContent = v.body;
+      nextBox.classList.toggle("hidden", !v.showNext);
+      app.classList.toggle("hidden", !(v.showNext || v.tone === "wait"));
+      retry.classList.toggle("hidden", v.tone !== "error" && v.tone !== "warn");
+      icon.classList.toggle("text-ok", v.tone === "ok");
+      icon.classList.toggle("text-danger", v.tone === "error");
+      return v;
+    };
+
+    const tick = async () => {
+      let status: CheckoutStatus | null = null;
+      try {
+        const r = await fetch(`/api/shop/checkout-status?session_id=${encodeURIComponent(sessionId!)}`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (r.ok) status = (await r.json()) as CheckoutStatus;
+      } catch {
+        /* offline for a moment: keep trying */
+      }
+      const timedOut = Date.now() - started > MAX_MS;
+      const v = render(status, { timedOut });
+      if (v.poll && !timedOut) window.setTimeout(tick, POLL_MS);
+    };
+
+    if (!sessionId) render(null, { missingSession: true });
+    else void tick();
+  }
+</script>

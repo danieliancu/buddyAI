@@ -21,13 +21,13 @@ export const GET: APIRoute = ({ site }) => {
 
 ## Setup and connectivity
 - No phone app: the customer web app (${config.appUrl}) runs in any browser.
-- Wi-Fi setup on the watch: it opens a network called ola-XXXX; a setup page asks for the Wi-Fi network and password.
-- Pairing: the watch shows a 6-digit code, entered under "Add watch" in the web app.
+- Wi-Fi setup from the ola account: on Android, Chrome sends the Wi-Fi network and password to the watch over Bluetooth (encrypted, unlocked with a setup password shown on the watch); on iPhone, the watch opens a network called ola-XXXX (protected by the password shown on the watch, with a QR code) and a setup page asks for the Wi-Fi network and password. The watch uses 2.4 GHz Wi-Fi.
+- Pairing: the watch shows a 6-digit code, entered in the web app. Pairing starts the free olacare trial.
 - Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the ola servers). Offline, the clock and already loaded notes and reminders stay visible.
 
 ## Price
 - olacompanion: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off, VAT included.
-- olacare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after a free ${prices.trialMonths}-month subscription (it starts at purchase). Cancel anytime from the account ("Manage billing").
+- olacare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after a free ${prices.trialMonths}-month trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olacare before the trial ends). Cancel anytime from the account ("Manage billing").
 - olacare includes a monthly fair-use allowance of AI usage (not unlimited), shown in the account as a percentage; at the limit the assistant pauses until the reset, or one-off extra usage can be bought.
 - 14-day right to cancel; UK statutory rights and the EU 2-year legal guarantee.
 

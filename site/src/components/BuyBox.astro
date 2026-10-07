@@ -3,7 +3,6 @@ import Brand from "./Brand.astro";
 import { prices } from "../config";
 import Icon from "./Icon.astro";
 import Price from "./Price.astro";
-import CurrencyToggle from "./CurrencyToggle.astro";
 import LegalFacts from "./LegalFacts.astro";
 import PaymentLogos from "./PaymentLogos.astro";
 
@@ -16,7 +15,7 @@ interface Props {
 }
 const { headingLevel = "h2", compact = false, anchor = true } = Astro.props;
 const H = headingLevel;
-const trial = `free ${prices.trialMonths}-month subscription`;
+const trial = `free ${prices.trialMonths}-month trial`;
 ---
 <div id={anchor ? "buy" : undefined} class="glass relative p-6 sm:p-7" data-buybox>
   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -26,13 +25,20 @@ const trial = `free ${prices.trialMonths}-month subscription`;
     </div>
   </div>
 
-  <div class="mt-5 flex items-end gap-3">
+  <div class="mt-5 flex flex-wrap items-end gap-x-3 gap-y-1">
     <Price item="watch" class="font-display text-5xl font-extrabold tracking-tight text-fg" />
+    {prices.watchWas && (
+      <span class="pb-1.5 text-lg text-muted">
+        <span class="sr-only">Regular price </span><s><Price item="watchWas" /></s>
+      </span>
+    )}
+    {prices.watchWas && <span class="mb-2 rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-semibold text-accent">Sale</span>}
     <span class="pb-1.5 text-sm text-muted">one-off, VAT included</span>
   </div>
 
   <p class="mt-3 text-sm text-fg" data-price-sentence>
-    Then <strong><Price item="care" />/month</strong> after your <strong>{trial}</strong>. Cancel anytime.
+    <Brand name="care" />: <strong>{trial}</strong> that starts when you pair your watch, then
+    <strong><Price item="care" />/month</strong>. Nothing is charged for it today. Cancel anytime.
   </p>
   {!compact && (
     <p class="mt-2 text-sm text-muted">
@@ -42,6 +48,13 @@ const trial = `free ${prices.trialMonths}-month subscription`;
   )}
 
   <div class="mt-5">
+    <label class="mb-3 hidden cursor-pointer items-start gap-3 rounded-xl border border-line-strong bg-bg-2 p-3 text-sm text-fg" data-terms>
+      <input type="checkbox" class="mt-1 size-4 shrink-0 accent-accent" data-terms-box />
+      <span>
+        <span data-terms-text></span>
+        <a class="link ml-1" href="/legal/subscription-terms/" target="_blank" rel="noopener">Subscription terms</a>
+      </span>
+    </label>
     <button type="button" class="btn btn-primary w-full text-base" data-buy-btn>
       <span data-buy-label>Buy now</span>
       <Icon name="arrow" size={18} />
@@ -67,7 +80,7 @@ const trial = `free ${prices.trialMonths}-month subscription`;
 
 <script>
   import { getCurrency } from "../lib/currency";
-  import { shopStatus, canBuyIn, type ShopStatus } from "../lib/shop";
+  import { shopStatus, canBuyIn, checkoutBody, type ShopStatus } from "../lib/shop";
 
   const box = document.querySelector<HTMLElement>("[data-buybox]");
   if (box) {
@@ -75,6 +88,9 @@ const trial = `free ${prices.trialMonths}-month subscription`;
     const label = box.querySelector<HTMLElement>("[data-buy-label]")!;
     const status = box.querySelector<HTMLElement>("[data-buy-status]")!;
     const panel = box.querySelector<HTMLElement>("[data-notify-panel]")!;
+    const termsRow = box.querySelector<HTMLElement>("[data-terms]")!;
+    const termsBox = box.querySelector<HTMLInputElement>("[data-terms-box]")!;
+    const termsText = box.querySelector<HTMLElement>("[data-terms-text]")!;
     let mode: "loading" | "buy" | "notify" = "loading";
     let shop: ShopStatus = { open: false, currencies: [] };
 
@@ -93,10 +109,26 @@ const trial = `free ${prices.trialMonths}-month subscription`;
       btn.setAttribute("aria-controls", "notify-panel");
     };
 
+    // The exact ola Care terms the server will record as accepted (amount, trial, start at pairing, cancelling).
+    const showTerms = () => {
+      const terms = shop.careTerms?.[getCurrency().toLowerCase()];
+      if (!terms) return;
+      termsText.textContent = terms.text;
+      termsRow.classList.remove("hidden");
+      termsRow.classList.add("flex");
+      btn.disabled = !termsBox.checked;
+    };
+    termsBox.addEventListener("change", () => {
+      btn.disabled = !termsBox.checked;
+      if (termsBox.checked) status.textContent = "";
+    });
+
     const statusPromise = shopStatus().then((s) => {
       shop = s;
-      if (s.open) mode = "buy";
-      else setNotify();
+      if (s.open) {
+        mode = "buy";
+        showTerms();
+      } else setNotify();
     });
 
     btn.addEventListener("click", async () => {
@@ -113,13 +145,19 @@ const trial = `free ${prices.trialMonths}-month subscription`;
         showError(`Checkout in ${currency === "GBP" ? "pounds" : "euros"} isn't available yet. Please check back soon.`);
         return;
       }
+      const terms = shop.careTerms![currency.toLowerCase()];
+      if (!termsBox.checked) {
+        showError("Please tick the box to agree to the ola Care terms first.");
+        termsBox.focus();
+        return;
+      }
       btn.disabled = true;
       label.textContent = "Opening secure checkout…";
       try {
         const res = await fetch("/api/shop/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ currency: getCurrency().toLowerCase() }),
+          body: JSON.stringify(checkoutBody(currency, terms, termsBox.checked)),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.url) {

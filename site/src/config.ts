@@ -10,7 +10,10 @@ export type Currency = "GBP" | "EUR";
 // STRIPE_PRICE_WATCH_GBP/EUR and STRIPE_PRICE_CARE_GBP/EUR in server/.env. After changing a price or
 // the rate, create Stripe prices with the new amounts.
 // Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
-const PRICE_GBP = { watch: 79, care: 7.9 };
+// watch = what checkout charges (the Stripe watch price); watchWas = the regular price shown struck through
+// while the sale runs (set it equal to `watch`, or remove the line, when the sale ends). A "was" price must
+// be a price the watch was genuinely sold at (UK/EU price-reduction rules).
+const PRICE_GBP = { watch: 79.99, watchWas: 99.99 as number | null, care: 7.9 };
 
 // Review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
 export const GBP_TO_EUR = 1.17;
@@ -23,6 +26,11 @@ export function toEur(gbp: number): number {
 
 export const prices = {
   watch: { GBP: PRICE_GBP.watch, EUR: toEur(PRICE_GBP.watch) },
+  /** Regular price while on sale (null = no sale). */
+  watchWas:
+    PRICE_GBP.watchWas && PRICE_GBP.watchWas > PRICE_GBP.watch
+      ? { GBP: PRICE_GBP.watchWas, EUR: toEur(PRICE_GBP.watchWas) }
+      : null,
   care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
   trialMonths: 3,
   currencyDefault: "GBP" as Currency,

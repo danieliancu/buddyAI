@@ -31,7 +31,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. ola connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set up Wi-Fi on the watch itself: it opens its own network called <em>ola-XXXX</em>; join it with your phone and a page opens where you pick your Wi-Fi and enter its password.",
+        a: "Yes. ola connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your ola account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password.",
       },
       {
         q: "What works without an internet connection?",
@@ -119,7 +119,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "When does the free period start, and what happens after it?",
-        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} subscription starts when you buy the watch. We email you a few days before the free period ends. After that the subscription renews every month and your card is charged, until you cancel.`,
+        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} trial starts when you pair your watch with your ola account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
       },
       {
         q: "Is there a usage limit?",
@@ -127,7 +127,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,
-        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the free ${prices.trialMonths}-month subscription you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
+        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the free ${prices.trialMonths}-month trial you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],
   },

@@ -2,11 +2,11 @@
 // A price in the visitor's currency (£ in the UK, € elsewhere, see lib/currency.ts). Renders the default currency statically (works without JS).
 import { prices, formatPrice } from "../config";
 interface Props {
-  item: "watch" | "care";
+  item: "watch" | "care" | "watchWas";
   class?: string;
 }
 const { item, class: cls } = Astro.props;
-const p = prices[item];
+const p = prices[item] ?? prices.watch;
 const gbp = formatPrice(p.GBP, "GBP");
 const eur = formatPrice(p.EUR, "EUR");
 ---

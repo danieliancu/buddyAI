@@ -8,7 +8,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "check": "astro build && node scripts/check-dist.mjs"
+    "check": "vitest run && astro build && node scripts/check-dist.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
@@ -20,6 +21,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "simple-icons": "^16.33.0"
+    "simple-icons": "^16.33.0",
+    "vitest": "^3.2.7"
   }
 }
