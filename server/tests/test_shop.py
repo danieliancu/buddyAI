@@ -164,3 +164,20 @@ async def test_trial_ending_reminder_email(billing_on):
             db, {"id": f"evt_{secrets.token_hex(6)}", "type": "customer.subscription.trial_will_end", "data": {"object": _sub(sub_id, cus)}}
         )
     assert any("free period ends" in m.subject for m in ConsoleEmailSender.sent if m.to == addr)
+
+
+async def test_cancel_at_from_the_billing_portal_counts_as_cancelled(billing_on):
+    """Newer Stripe API versions cancel 'at period end' by setting cancel_at, not cancel_at_period_end."""
+    addr = f"cancel-{secrets.token_hex(3)}@example.com"
+    cus, sub_id = f"cus_{secrets.token_hex(4)}", f"sub_{secrets.token_hex(4)}"
+    with session_scope() as db:
+        await billing.handle_event(db, _session_event(addr, cus, sub_id), fetch_subscription=lambda sid: _sub(sid, cus))
+        cancelled = _sub(sub_id, cus) | {"cancel_at_period_end": False, "cancel_at": int(time.time()) + 90 * 86400}
+        await billing.handle_event(db, {"id": f"evt_{secrets.token_hex(6)}", "type": "customer.subscription.updated", "data": {"object": cancelled}})
+        acc = db.exec(select(Account).where(Account.email == addr)).one()
+        sub = billing.active_subscription(db, acc.id)
+        assert sub.status == "trialing" and sub.cancel_at_period_end is True  # still entitled until the end date
+        # The trial reminder is not sent to someone who cancelled.
+        before = len([m for m in ConsoleEmailSender.sent if m.to == addr])
+        await billing.handle_event(db, {"id": f"evt_{secrets.token_hex(6)}", "type": "customer.subscription.trial_will_end", "data": {"object": cancelled}})
+        assert len([m for m in ConsoleEmailSender.sent if m.to == addr]) == before

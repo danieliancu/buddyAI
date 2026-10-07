@@ -320,7 +320,11 @@ def upsert_subscription(db: Session, sub: dict[str, Any]) -> Subscription:
     row.trial_end = _ts(sub.get("trial_end"))
     row.current_period_start = _period(sub, "current_period_start")
     row.current_period_end = _period_end(sub)
-    row.cancel_at_period_end = bool(sub.get("cancel_at_period_end"))
+    # Cancelled, still running until the end of the trial / period. Newer Stripe API versions (and the billing
+    # portal) set `cancel_at` (the end date) instead of `cancel_at_period_end`; both mean "will not renew".
+    row.cancel_at_period_end = bool(sub.get("cancel_at_period_end")) or (
+        bool(sub.get("cancel_at")) and sub.get("status") not in ("canceled", "incomplete_expired")
+    )
     row.updated_at = utcnow()
     db.add(row)
     db.commit()
