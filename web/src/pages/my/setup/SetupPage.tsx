@@ -67,7 +67,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
   const paired = ob.watches > 0;
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
+    <div className="mx-auto max-w-3xl space-y-5">
       <header>
         <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Set up your ola watch</h1>
         <p className="mt-1 text-sm text-muted">About five minutes. Keep the watch charged and next to your phone.</p>
