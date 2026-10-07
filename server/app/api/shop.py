@@ -166,6 +166,9 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
         select(TopUp).where(TopUp.account_id == acc.id, col(TopUp.status).in_(("paid", "refunded"))).order_by(col(TopUp.id).desc()).limit(20)
     ).all()
     base = p.care_allowance_pence or 1
+    care = care_activation.public_state(db, acc.id)
+    # A trial waiting for the watch (or being set up) is not replaced by a paid subscription.
+    trial_pending = care is not None and care["status"] in ("awaiting_pairing", "activating", "failed")
     return {
         "billing_enabled": s.billing_enabled,
         "enforced": p.enforced and not acc.internal,
@@ -186,11 +189,12 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
             "topup_adds_pct": round(p.topup_allowance_pence * 100 / base),
         },
         # A complimentary pilot can be turned into a paid plan at any time.
-        "can_subscribe": s.billing_enabled and bool(s.stripe_price_care_gbp) and not paying and not acc.internal,
+        "can_subscribe": s.billing_enabled and bool(s.stripe_price_care_gbp) and not paying and not acc.internal
+        and not trial_pending,
         "topup_available": s.billing_enabled and entitled and not acc.internal,
         "can_manage_billing": s.billing_enabled and bool(acc.stripe_customer_id),
         # ola Care that starts when the watch is paired (watch-only orders); None for legacy accounts.
-        "care_activation": care_activation.public_state(db, acc.id),
+        "care_activation": care,
         "topups": [
             {
                 "id": t.id,

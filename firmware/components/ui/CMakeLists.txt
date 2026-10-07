@@ -5,5 +5,5 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     REQUIRES settings json
-    PRIV_REQUIRES board
+    PRIV_REQUIRES board prov_util
 )

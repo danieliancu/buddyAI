@@ -42,6 +42,22 @@ CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 # CONFIG_ESP_WIFI_RX_IRAM_OPT is not set
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
 
+# ---- Bluetooth LE Wi-Fi setup (components/ble_prov) --------------------------
+# NimBLE host, peripheral only, one connection; it runs only while the watch is in
+# Wi-Fi setup. Its memory goes to PSRAM: internal RAM is scarce (see above).
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+# CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
+# CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+# CONFIG_BT_NIMBLE_NVS_PERSIST is not set
+# Setup sessions: security scheme 2 only (SRP6a + AES-256-GCM); no unauthenticated
+# or weaker scheme can be negotiated.
+# CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0 is not set
+# CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1 is not set
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2=y
+
 # ---- TLS: wss:// and https OTA with the Mozilla CA bundle ------------------
 CONFIG_ESP_TLS_USING_MBEDTLS=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
@@ -65,6 +81,8 @@ CONFIG_LV_DEF_REFR_PERIOD=20
 # CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM is not set
 CONFIG_LV_USE_FLOAT=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
+# Wi-Fi setup screen: QR code that joins the "ola-XXXX" setup network from a phone camera
+CONFIG_LV_USE_QRCODE=y
 CONFIG_LV_USE_LOG=n
 CONFIG_LV_USE_PERF_MONITOR=n
 CONFIG_LV_USE_SYSMON=n

@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { CalendarSync, ChevronDown, CircleCheck, ExternalLink, MessagesSquare, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { api, ApiError, type MyPlan } from "../../api";
 import { fmtDate } from "../../format";
-import { carePlanStatus, fmtDayMonth, OrderStatusBadge, pence, UsageGauge } from "../../components/BillingBits";
+import { careErrorText, carePlanStatus, fmtDayMonth, OrderStatusBadge, pence, UsageGauge } from "../../components/BillingBits";
 import { Button, Card, ErrorBox, cx, useAsync } from "../../components/ui";
 import { useLive } from "../../live";
 
@@ -66,6 +66,7 @@ export default function PlanCard() {
       <div className="space-y-5">
         {returned && <ReturnNotice kind={returned} waiting={waiting} onClose={() => setParams({}, { replace: true })} />}
         <StatusLine plan={p} />
+        <CareDetails plan={p} onChange={plan.reload} />
         {p.enforced && (
           <>
             <UsageGauge pct={p.usage.used_pct} />
@@ -105,6 +106,61 @@ function StatusLine({ plan }: { plan: MyPlan }) {
       {plan.status.kind !== "complimentary" && plan.status.kind !== "internal" && (
         <span className="text-sm text-muted">{pence(plan.prices.care_price_pence)} / month</span>
       )}
+    </div>
+  );
+}
+
+/** What the trial means in money terms, and the pending / failed states before Stripe confirms. */
+export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const care = plan.care_activation;
+  const price = pence(plan.prices.care_price_pence);
+
+  if (plan.status.kind === "trial" && plan.status.trial_end) {
+    const end = fmtDayMonth(plan.status.trial_end);
+    return (
+      <p className="rounded-lg bg-accent-bg px-3 py-2 text-sm" data-testid="care-trial">
+        Free until <b>{end}</b>. Then {price} a month, charged automatically to your saved card until you cancel.{" "}
+        {plan.status.cancel_at_period_end ? "You cancelled: nothing will be charged." : `Cancel before ${end} with “Manage billing” to pay nothing.`}
+      </p>
+    );
+  }
+  if (!care || plan.status.kind !== "none") return null;
+  if (care.status === "awaiting_pairing") {
+    return (
+      <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted" data-testid="care-awaiting">
+        Your {care.trial_days}-day free trial starts when your watch is paired — nothing is charged before it ends. Then {price} a
+        month until you cancel.{" "}
+        <Link to="/my/setup" className="font-medium text-accent hover:underline">
+          Set up your watch
+        </Link>
+      </p>
+    );
+  }
+  if (care.status === "activating") {
+    return <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">Starting your free trial — this takes a few seconds.</p>;
+  }
+  if (care.status !== "failed") return null;
+  const retry = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.me.activateCare();
+      onChange();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-lg bg-warn-bg px-3 py-2.5 text-sm text-warn" data-testid="care-failed">
+      <p>Your watch is paired, but your ola Care subscription isn't set up yet. {careErrorText(care.error)}</p>
+      <Button variant="secondary" size="sm" loading={busy} onClick={retry}>
+        Try again
+      </Button>
+      <ErrorBox error={error} />
     </div>
   );
 }

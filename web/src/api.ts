@@ -143,7 +143,7 @@ export interface Subscription extends SubscriptionInfo {
   updated_at: string;
 }
 
-export type OrderStatus = "paid" | "shipped" | "delivered" | "refunded" | "cancelled" | string;
+export type OrderStatus = "paid" | "shipped" | "delivered" | "refunded" | "cancelled" | "payment_pending" | "payment_failed" | string;
 
 export interface Order {
   id: number;
@@ -395,7 +395,34 @@ export interface MyPlan {
   can_subscribe: boolean;
   topup_available: boolean;
   can_manage_billing: boolean;
+  /** ola Care that starts when the watch is paired (watch-only orders); null for older accounts. */
+  care_activation: CareActivation | null;
   topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; period_end: string; current: boolean }[];
+}
+
+/** The ola Care trial waiting for the watch to be paired (server: app/care_activation.py). */
+export interface CareActivation {
+  status: "awaiting_pairing" | "activating" | "active" | "failed" | "not_eligible";
+  reason: string | null; // not_eligible: complimentary | trial_used | internal | no_consent | ...
+  error: string | null; // failed: missing_payment_method | card_error | payment_method_invalid | stripe_error | stripe_unreachable
+  can_retry: boolean;
+  trial_days: number;
+  currency: string;
+  activated_at: string | null;
+}
+
+export type SetupPlatform = "android" | "iphone";
+
+/** GET/PUT /api/me/onboarding: watch setup progress, derived from the server (only the phone is stored). */
+export interface Onboarding {
+  eligible: boolean;
+  order: { id: number; status: OrderStatus; created_at: string } | null;
+  has_password: boolean;
+  email_verified: boolean;
+  platform: SetupPlatform | null;
+  watches: number;
+  care: CareActivation | null;
+  complete: boolean;
 }
 
 export interface UsageNotice {
@@ -897,7 +924,9 @@ const meApi = {
 
   devices: {
     list: () => me.get<Device[]>("/api/me/devices"),
-    pair: (code: string, name: string) => me.post<{ device_id: string }>("/api/me/devices/pair", { code, name }),
+    /** Pairing also starts a pending ola Care trial (care: its state afterwards). */
+    pair: (code: string, name: string) =>
+      me.post<{ device_id: string; care: CareActivation | null }>("/api/me/devices/pair", { code, name }),
     rename: (id: string, name: string) => me.patch<Device>(`/api/me/devices/${enc(id)}`, { name }),
     /** Unpairs the watch and erases its history. */
     remove: (id: string) => me.del<{ ok: boolean }>(`/api/me/devices/${enc(id)}`),
@@ -938,6 +967,10 @@ const meApi = {
   usage: () => me.get<MyUsage>("/api/me/usage"),
   subscription: () => me.get<MySubscription>("/api/me/subscription"),
   plan: () => me.get<MyPlan>("/api/me/plan"),
+  onboarding: () => me.get<Onboarding>("/api/me/onboarding"),
+  setPlatform: (platform: SetupPlatform | null) => me.put<Onboarding>("/api/me/onboarding", { platform }),
+  /** Retry starting ola Care after a failure (never creates a second subscription). */
+  activateCare: () => me.post<{ care_activation: CareActivation | null }>("/api/me/care/activate"),
   /** Stripe Checkout URL for ola Care (existing account). */
   subscribe: () => me.post<{ url: string }>("/api/me/subscribe"),
   /** Stripe Checkout URL for a one-off extra-usage purchase (granted only after payment). */

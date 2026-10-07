@@ -26,7 +26,7 @@ PRIV_H = FW / "components" / "ui" / "ui_priv.h"
 OUT = FW / "components" / "ui" / "ui_i18n_tables.c"
 WEB_OUT = FW.parent / "web" / "src" / "watchDates.ts"
 MODULES = ["lang_en", "lang_west", "lang_north", "lang_central", "lang_east"]
-OPTIONAL = {"CARE"}  # brand names: the English text is used everywhere
+OPTIONAL = {"CARE", "WIFI_PASS", "WIFI_HINT"}  # brand names + setup texts not translated yet: English is used
 FORMAT_IDS = {"NOTICE_FMT", "STARTS_IN_FMT"}  # printf formats with exactly one %s
 ALIASES = {"nb": "no", "nn": "no"}
 

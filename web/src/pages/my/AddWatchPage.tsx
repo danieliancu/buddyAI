@@ -1,33 +1,14 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, MailWarning, Power, Smartphone, Watch } from "lucide-react";
-import { api, ApiError } from "../../api";
-import { Button, Card, ErrorBox, Field, Input } from "../../components/ui";
+import { ArrowLeft, MailWarning, Power, Smartphone, Watch, Sparkles } from "lucide-react";
+import PairCodeForm from "./PairCodeForm";
 import { useCustomer } from "./session";
 
+/** Pair another watch (or re-pair one). New owners get the guided setup at /my/setup. */
 export default function AddWatchPage() {
   const { account } = useCustomer();
   const navigate = useNavigate();
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("My ola");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const verified = account.email_verified;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!/^\d{6}$/.test(code)) return setError(new Error("The code has 6 digits — you'll find it on the watch screen."));
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.me.devices.pair(code, name.trim() || "My ola");
-      navigate(`/my/watch/${encodeURIComponent(r.device_id)}`, { replace: true });
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 403) setError(new Error("Please confirm your email address first."));
-      else setError(err);
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="mx-auto max-w-lg">
@@ -35,15 +16,21 @@ export default function AddWatchPage() {
         <ArrowLeft className="size-4" /> My watches
       </Link>
       <h1 className="mb-1 text-xl font-semibold tracking-tight sm:text-2xl">Add a watch</h1>
-      <p className="mb-5 text-sm text-muted">Three quick steps. Keep your phone close to the watch.</p>
+      <p className="mb-5 text-sm text-muted">
+        Three quick steps. Keep your phone close to the watch.{" "}
+        <Link to="/my/setup" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+          <Sparkles className="size-3.5" /> Guided setup for Android and iPhone
+        </Link>
+      </p>
 
       <ol className="mb-5 space-y-3">
         <Step n={1} icon={<Power className="size-4" />} title="Turn on the watch">
           Hold the side button until the screen lights up.
         </Step>
         <Step n={2} icon={<Smartphone className="size-4" />} title="Connect it to your Wi-Fi">
-          On your phone, open Wi-Fi settings and join the network <b className="font-mono text-fg">ola-XXXX</b>. A page opens:
-          pick your home Wi-Fi and enter its password.
+          On Android, use <b className="text-fg">Connect to watch</b> in the guided setup. On iPhone, join the network{" "}
+          <b className="font-mono text-fg">ola-XXXX</b> with the password shown on the watch (or scan its QR code with the
+          Camera); a page opens: pick your home Wi-Fi (2.4 GHz) and enter its password.
         </Step>
         <Step n={3} icon={<Watch className="size-4" />} title="Enter the code">
           The watch shows a 6-digit code. Type it below — it's valid for 5 minutes.
@@ -59,30 +46,7 @@ export default function AddWatchPage() {
           </p>
         </div>
       ) : (
-        <Card>
-          <form onSubmit={submit} className="space-y-4">
-            <Field label="Code shown on the watch" htmlFor="pair-code">
-              <Input
-                id="pair-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                placeholder="000000"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="h-16 text-center font-mono text-3xl tracking-[0.4em]"
-                autoFocus
-              />
-            </Field>
-            <Field label="Watch name" htmlFor="pair-name" hint="For example the name of the person wearing it.">
-              <Input id="pair-name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <ErrorBox error={error} />
-            <Button type="submit" variant="primary" className="h-12 w-full text-base" loading={busy} disabled={code.length !== 6}>
-              Add watch
-            </Button>
-          </form>
-        </Card>
+        <PairCodeForm onPaired={(id) => navigate(`/my/watch/${encodeURIComponent(id)}`, { replace: true })} />
       )}
     </div>
   );

@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "board.h"
 #include "ui_priv.h"
+#include "prov_util.h"
 
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
@@ -713,12 +714,73 @@ void ui_show_pairing(const char *code)
     UNLOCK();
 }
 
-void ui_show_wifi_setup(const char *ap_ssid)
+/* Wi-Fi setup: the setup network, its password (also the Bluetooth setup password) and a Wi-Fi QR code
+ * that an iPhone camera joins directly. The password exists only on this screen. */
+static lv_obj_t *s_wifi_scr, *s_wifi_qr, *s_wifi_net, *s_wifi_pass, *s_wifi_hint;
+
+static void build_wifi_setup(void)
+{
+    s_wifi_scr = lv_obj_create(NULL);
+    lv_obj_add_style(s_wifi_scr, ui_style_screen(), 0);
+    lv_obj_remove_flag(s_wifi_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(s_wifi_scr, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_wifi_scr, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(s_wifi_scr, 8, 0);
+    lv_obj_set_style_pad_hor(s_wifi_scr, 24, 0);
+
+    lv_obj_t *title = lv_label_create(s_wifi_scr);
+    lv_obj_set_style_text_font(title, &buddy_font_28, 0);
+    lv_label_set_text(title, ui_str(STR_WIFI_TITLE));
+
+    s_wifi_qr = lv_qrcode_create(s_wifi_scr);
+    lv_qrcode_set_size(s_wifi_qr, 168);
+    lv_qrcode_set_dark_color(s_wifi_qr, lv_color_black());
+    lv_qrcode_set_light_color(s_wifi_qr, lv_color_white());
+    lv_obj_set_style_border_color(s_wifi_qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(s_wifi_qr, 6, 0);   /* quiet zone: cameras need it */
+
+    s_wifi_net = lv_label_create(s_wifi_scr);
+    lv_obj_set_style_text_align(s_wifi_net, LV_TEXT_ALIGN_CENTER, 0);
+
+    s_wifi_pass = lv_label_create(s_wifi_scr);
+    lv_obj_set_style_text_font(s_wifi_pass, &buddy_font_28, 0);
+    lv_obj_set_style_text_letter_space(s_wifi_pass, 4, 0);
+
+    s_wifi_hint = lv_label_create(s_wifi_scr);
+    lv_obj_set_width(s_wifi_hint, LV_PCT(100));
+    lv_label_set_long_mode(s_wifi_hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(s_wifi_hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_opa(s_wifi_hint, LV_OPA_70, 0);
+}
+
+void ui_show_wifi_setup(const char *ap_ssid, const char *setup_pass)
 {
     LOCK();
-    char body[160];
-    snprintf(body, sizeof(body), "%s\n\n%s\n\n192.168.4.1", ui_str(STR_WIFI_BODY), ap_ssid ? ap_ssid : "ola");
-    ui_msg_show(ICON_WIFI, g_ui_theme.accent, ui_str(STR_WIFI_TITLE), body, NULL, NULL, NULL, false, 0);
+    if (!s_wifi_scr) {
+        build_wifi_setup();
+    }
+    const char *ssid = ap_ssid ? ap_ssid : "ola";
+    char qr[96];
+    if (setup_pass && wifi_qr_payload(ssid, setup_pass, qr, sizeof(qr))) {
+        lv_qrcode_update(s_wifi_qr, qr, strlen(qr));
+        lv_obj_remove_flag(s_wifi_qr, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_wifi_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    memset(qr, 0, sizeof(qr));
+    char line[96];
+    snprintf(line, sizeof(line), "%s\n%s", ui_str(STR_WIFI_BODY), ssid);
+    lv_label_set_text(s_wifi_net, line);
+    char grouped[12];
+    setup_pass_grouped(setup_pass, grouped, sizeof(grouped));
+    snprintf(line, sizeof(line), "%s  %s", ui_str(STR_WIFI_PASS), grouped[0] ? grouped : "-");
+    lv_label_set_text(s_wifi_pass, line);
+    lv_obj_set_style_text_color(s_wifi_pass, g_ui_theme.accent, 0);
+    lv_label_set_text(s_wifi_hint, ui_str(STR_WIFI_HINT));
+    ui_note_activity();
+    if (lv_screen_active() != s_wifi_scr) {
+        ui_load_screen(s_wifi_scr, true);
+    }
     UNLOCK();
 }
 

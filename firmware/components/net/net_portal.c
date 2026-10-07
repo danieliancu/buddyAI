@@ -1,12 +1,14 @@
 /*
  * ola - SoftAP provisioning with captive portal.
  *
- * AP "ola-XXXX" (open, XXXX = last MAC bytes). A tiny DNS server answers
- * every query with the AP address so phones pop up the portal; unknown HTTP
- * paths (generate_204, hotspot-detect.html, ...) redirect to the form.
- * The form stores SSID / password in NVS. Development builds also offer an
- * optional server_url; release builds have no such field, so a stranger on the
- * open AP cannot point the watch at their own server.
+ * AP "ola-XXXX" (XXXX = last MAC bytes), WPA2-protected with the watch's setup
+ * password, which only the watch screen shows (text + Wi-Fi QR code). A tiny DNS
+ * server answers every query with the AP address so phones pop up the portal;
+ * unknown HTTP paths (generate_204, hotspot-detect.html, ...) redirect to the form.
+ * The form stores SSID / password in NVS and a new setup password is made, so a
+ * password seen earlier stops working. Development builds also offer an optional
+ * server_url; release builds have no such field, so nobody can point the watch at
+ * their own server.
  */
 #include <string.h>
 #include <stdlib.h>
@@ -42,8 +44,10 @@ static TaskHandle_t   s_dns_task;
 static volatile bool  s_dns_run;
 static bool           s_active;
 static char           s_ap_ssid[20];
-static char           s_scan[MAX_SCAN_RESULTS][33];
+static net_ap_info_t  s_scan[MAX_SCAN_RESULTS];
 static int            s_scan_count;
+static volatile bool  s_async_scan;
+static portMUX_TYPE   s_scan_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* ------------------------------------------------------------------------- */
 /* DNS hijack                                                                 */
@@ -181,7 +185,7 @@ static esp_err_t root_get(httpd_req_t *req)
         "<input name='ssid' list='nets' required maxlength='32' autocomplete='off'><datalist id='nets'>");
     for (int i = 0; i < s_scan_count; i++) {
         httpd_resp_sendstr_chunk(req, "<option value=\"");
-        send_escaped(req, s_scan[i]);
+        send_escaped(req, s_scan[i].ssid);
         httpd_resp_sendstr_chunk(req, "\">");
     }
     httpd_resp_sendstr_chunk(req,
@@ -259,6 +263,7 @@ static esp_err_t save_post(httpd_req_t *req)
 
     settings_set_wifi(ssid, pass);
     settings_set_server_url(url);   /* release: always "", clearing a URL an older firmware stored */
+    settings_rotate_setup_pass();   /* the password shown during this setup stops working */
     ESP_LOGI(TAG, "credentials saved for '%s' (server_url %s)", ssid, url[0] ? url : "<auto>");
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
@@ -282,19 +287,17 @@ static esp_err_t redirect_any(httpd_req_t *req)
 
 /* ------------------------------------------------------------------------- */
 
-static void scan_networks(void)
+/* Copy the driver's AP list into the cache (strongest first, de-duplicated, hidden ones skipped). */
+static void collect_scan_results(void)
 {
-    s_scan_count = 0;
-    wifi_scan_config_t sc = { .show_hidden = false };
-    if (esp_wifi_scan_start(&sc, true) != ESP_OK) {
-        return;
-    }
     uint16_t n = MAX_SCAN_RESULTS;
     wifi_ap_record_t *recs = calloc(n, sizeof(wifi_ap_record_t));
     if (!recs) {
         esp_wifi_clear_ap_list();
         return;
     }
+    net_ap_info_t found[MAX_SCAN_RESULTS];
+    int count = 0;
     if (esp_wifi_scan_get_ap_records(&n, recs) == ESP_OK) {
         for (int i = 0; i < n; i++) {
             const char *name = (const char *)recs[i].ssid;
@@ -302,19 +305,72 @@ static void scan_networks(void)
                 continue;
             }
             bool dup = false;
-            for (int j = 0; j < s_scan_count; j++) {
-                if (strcmp(s_scan[j], name) == 0) {
+            for (int j = 0; j < count; j++) {
+                if (strcmp(found[j].ssid, name) == 0) {
                     dup = true;
                     break;
                 }
             }
             if (!dup) {
-                strlcpy(s_scan[s_scan_count++], name, sizeof(s_scan[0]));
+                strlcpy(found[count].ssid, name, sizeof(found[0].ssid));
+                found[count].rssi = recs[i].rssi;
+                found[count].auth = (uint8_t)recs[i].authmode;
+                found[count].channel = recs[i].primary;
+                count++;
             }
         }
     }
     free(recs);
-    ESP_LOGI(TAG, "scan found %d networks", s_scan_count);
+    taskENTER_CRITICAL(&s_scan_mux);
+    memcpy(s_scan, found, sizeof(net_ap_info_t) * count);
+    s_scan_count = count;
+    taskEXIT_CRITICAL(&s_scan_mux);
+    ESP_LOGI(TAG, "scan found %d networks", count);
+}
+
+static void scan_networks(void)
+{
+    wifi_scan_config_t sc = { .show_hidden = false };
+    if (esp_wifi_scan_start(&sc, true) != ESP_OK) {
+        return;
+    }
+    collect_scan_results();
+}
+
+void net_portal_scan_done(void)
+{
+    if (s_async_scan) {
+        collect_scan_results();
+        s_async_scan = false;
+    }
+}
+
+esp_err_t net_scan_refresh(void)
+{
+    if (s_async_scan) {
+        return ESP_OK;
+    }
+    wifi_scan_config_t sc = { .show_hidden = false };
+    s_async_scan = true;
+    esp_err_t err = esp_wifi_scan_start(&sc, false);
+    if (err != ESP_OK) {
+        s_async_scan = false;
+    }
+    return err;
+}
+
+bool net_scan_running(void)
+{
+    return s_async_scan;
+}
+
+int net_scan_results(net_ap_info_t *out, int max)
+{
+    taskENTER_CRITICAL(&s_scan_mux);
+    int n = s_scan_count < max ? s_scan_count : max;
+    memcpy(out, s_scan, sizeof(net_ap_info_t) * n);
+    taskEXIT_CRITICAL(&s_scan_mux);
+    return n;
 }
 
 const char *net_portal_ssid(void)
@@ -332,10 +388,14 @@ bool net_portal_active(void)
     return s_active;
 }
 
-esp_err_t net_portal_start(void)
+esp_err_t net_portal_start(const char *ap_pass)
 {
     if (s_active) {
         return ESP_OK;
+    }
+    if (!ap_pass || strlen(ap_pass) < 8 || strlen(ap_pass) > 63) {
+        ESP_LOGE(TAG, "no valid setup password: the setup network is not started");
+        return ESP_ERR_INVALID_ARG;
     }
     ESP_LOGI(TAG, "starting SoftAP portal '%s'", net_portal_ssid());
 
@@ -344,7 +404,10 @@ esp_err_t net_portal_start(void)
     ap.ap.ssid_len = strlen(net_portal_ssid());
     ap.ap.channel = 1;
     ap.ap.max_connection = 4;
-    ap.ap.authmode = WIFI_AUTH_OPEN;
+    ap.ap.authmode = WIFI_AUTH_WPA2_PSK;     /* WPA2: every phone joins it, including older iPhones */
+    strlcpy((char *)ap.ap.password, ap_pass, sizeof(ap.ap.password));
+    ap.ap.pmf_cfg.capable = true;
+    ap.ap.pmf_cfg.required = false;
 
     s_active = true;    /* pauses STA reconnect attempts */
     esp_wifi_disconnect();

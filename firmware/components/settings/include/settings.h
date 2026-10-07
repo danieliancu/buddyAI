@@ -98,6 +98,13 @@ bool      settings_get_token(char *out, size_t len);
 esp_err_t settings_set_token(const char *token);
 esp_err_t settings_erase_token(void);
 
+/* The watch's setup password (8 characters, shown on the setup screen): the WPA2 key of the "ola-XXXX"
+ * setup network and the Bluetooth setup (Security 2) password. Created on first use, kept in NVS, never
+ * sent anywhere or logged. Rotated after every successful Wi-Fi setup and erased by a factory reset. */
+#define SETTINGS_SETUP_PASS_MAX 9
+bool      settings_get_setup_pass(char out[SETTINGS_SETUP_PASS_MAX]);
+esp_err_t settings_rotate_setup_pass(void);
+
 /* Factory reset: erase Wi-Fi credentials, server URLs, device token and the
  * device-facing settings (the whole "buddyai" NVS namespace). The caller
  * restarts the device afterwards; it then boots into the setup portal. */

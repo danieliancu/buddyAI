@@ -33,6 +33,7 @@
 #include "ui.h"
 #include "audio.h"
 #include "net.h"
+#include "ble_prov.h"
 #include "protocol_client.h"
 #include "ota.h"
 
@@ -47,6 +48,7 @@ typedef enum {
     APP_EV_NET,             /* arg = net_event_t */
     APP_EV_START_PORTAL,
     APP_EV_FACTORY_RESET,   /* user confirmed the reset screen */
+    APP_EV_PROV_DONE,       /* Bluetooth setup: joined the new Wi-Fi and saved it */
 } app_ev_type_t;
 
 typedef struct {
@@ -437,16 +439,33 @@ static int ui_audio_level(void)
 /* App loop                                                                   */
 /* ------------------------------------------------------------------------- */
 
+static void on_ble_prov_done(void)
+{
+    post_app(APP_EV_PROV_DONE, 0);
+}
+
+/* Wi-Fi setup: the "ola-XXXX" network (iPhone, and recovery for Android) and Bluetooth setup (Android,
+ * from the ola account) run together, both protected by the setup password shown on the watch. Bluetooth
+ * only advertises while the watch is in setup. */
 static void start_portal(void)
 {
-    if (net_portal_active()) {
-        ui_show_wifi_setup(net_portal_ssid());
+    char pass[SETTINGS_SETUP_PASS_MAX];
+    if (!settings_get_setup_pass(pass)) {
+        ESP_LOGE(TAG, "no setup password - Wi-Fi setup unavailable");
         return;
     }
-    proto_network_down();
-    if (net_portal_start() == ESP_OK) {
-        ui_show_wifi_setup(net_portal_ssid());
+    if (!net_portal_active()) {
+        proto_network_down();
+        if (net_portal_start(pass) != ESP_OK) {
+            memset(pass, 0, sizeof(pass));
+            return;
+        }
     }
+    if (!ble_prov_active() && ble_prov_start(net_portal_ssid(), pass, on_ble_prov_done) != ESP_OK) {
+        ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
+    }
+    ui_show_wifi_setup(net_portal_ssid(), pass);
+    memset(pass, 0, sizeof(pass));
 }
 
 /* Erase Wi-Fi, server URL, token and settings, then restart into the setup
@@ -532,6 +551,11 @@ static void app_loop(void)
                 start_portal();
             } else if (ev.type == APP_EV_FACTORY_RESET) {
                 factory_reset();
+            } else if (ev.type == APP_EV_PROV_DONE) {
+                ESP_LOGI(TAG, "Bluetooth setup finished - restarting");
+                vTaskDelay(pdMS_TO_TICKS(4000));   /* the phone reads "connected" first */
+                ble_prov_stop();
+                esp_restart();
             }
         }
 

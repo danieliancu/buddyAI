@@ -22,6 +22,8 @@ LANGS = {
             "PAIR_BODY": "Open the ola web app, choose\n\"Add watch\" and enter this code:",
             "WIFI_TITLE": "Wi-Fi setup",
             "WIFI_BODY": "On your phone, join the Wi-Fi network",
+            "WIFI_PASS": "Password",
+            "WIFI_HINT": "iPhone: scan the code with the Camera.\nAndroid: tap Connect to watch in your ola account.",
             "ERR_NO_WIFI_T": "No Wi-Fi",
             "ERR_NO_WIFI_B": "Reconnecting automatically.\nTap setup to change the network.",
             "ERR_SERVER_T": "Server unreachable",

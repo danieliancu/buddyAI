@@ -241,6 +241,8 @@ export function ResetPasswordPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
+  // The welcome email after a purchase: first password, then straight on to the watch setup.
+  const welcome = params.get("welcome") === "1";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -254,7 +256,7 @@ export function ResetPasswordPage() {
     setBusy(true);
     try {
       await api.me.resetPassword(token, password);
-      navigate("/my", { replace: true });
+      navigate(welcome ? "/my/setup" : "/my", { replace: true });
     } catch (err) {
       setError(err);
       setBusy(false);
@@ -271,11 +273,15 @@ export function ResetPasswordPage() {
 
   return (
     <AuthShell
-      title="Choose a password"
-      subtitle="Set a new password for your ola account. You'll be signed in right after."
+      title={welcome ? "Set your password" : "Choose a password"}
+      subtitle={
+        welcome
+          ? "Welcome to ola! Choose a password for your account; next you'll set up your watch."
+          : "Set a new password for your ola account. You'll be signed in right after."
+      }
       footer={
         <Link to="/forgot-password" className="hover:text-fg hover:underline">
-          Link expired? Request a new one
+          Link expired? Send a new one
         </Link>
       }
     >

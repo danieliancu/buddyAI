@@ -94,7 +94,9 @@ void ui_set_hint(const char *text);        /* small status line, NULL clears */
 void ui_set_status(int battery_pct, bool charging, ui_link_t link);
 
 void ui_show_pairing(const char *code);
-void ui_show_wifi_setup(const char *ap_ssid);
+/* Wi-Fi setup screen: setup network "ola-XXXX", its password (also the Bluetooth setup password)
+ * and a Wi-Fi QR code for the phone camera. */
+void ui_show_wifi_setup(const char *ap_ssid, const char *setup_pass);
 void ui_show_error(ui_error_t err, const char *detail);
 void ui_show_ota(int pct);                  /* -1 = failed */
 /* Factory reset: "Reset watch?" confirmation (auto-cancels) and the

@@ -76,8 +76,38 @@ export function carePlanStatus(plan: MyPlan): { text: string; tone: Tone; proble
       return { text: "Cancelled", tone: "neutral", problem: false };
     case "internal":
       return { text: "Internal account — no usage limit", tone: "neutral", problem: false };
+    default: {
+      const care = careSetupStatus(plan.care_activation);
+      return care ?? { text: "No plan yet", tone: "neutral", problem: false };
+    }
+  }
+}
+
+/** Before Stripe confirms a subscription: the trial waiting for the watch, being set up, or stuck. */
+export function careSetupStatus(care: MyPlan["care_activation"]): { text: string; tone: Tone; problem: boolean } | null {
+  if (!care) return null;
+  switch (care.status) {
+    case "awaiting_pairing":
+      return { text: `Free ${care.trial_days}-day trial — starts when you pair your watch`, tone: "accent", problem: false };
+    case "activating":
+      return { text: "Starting your free trial…", tone: "accent", problem: false };
+    case "failed":
+      return { text: "Subscription setup pending", tone: "warn", problem: true };
     default:
-      return { text: "No plan yet", tone: "neutral", problem: false };
+      return null; // active: the subscription status shows; not_eligible: no trial
+  }
+}
+
+/** Why starting ola Care failed, in plain words. */
+export function careErrorText(error: string | null): string {
+  switch (error) {
+    case "missing_payment_method":
+      return "We couldn't find the card you saved at checkout. Add a card with “Manage billing”, then try again.";
+    case "card_error":
+    case "payment_method_invalid":
+      return "Your bank didn't accept the saved card for the subscription. Update your card with “Manage billing”, then try again.";
+    default:
+      return "We couldn't reach our payment provider. Your watch works and is paired; try again in a moment.";
   }
 }
 
@@ -107,6 +137,8 @@ const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
   delivered: { label: "Delivered", tone: "neutral" },
   refunded: { label: "Refunded", tone: "warn" },
   cancelled: { label: "Cancelled", tone: "neutral" },
+  payment_pending: { label: "Payment processing", tone: "warn" },
+  payment_failed: { label: "Payment failed", tone: "danger" },
 };
 
 export function OrderStatusBadge({ status, operator }: { status: OrderStatus; operator?: boolean }) {

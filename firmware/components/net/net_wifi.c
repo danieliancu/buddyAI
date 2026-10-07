@@ -28,6 +28,7 @@ static esp_timer_handle_t s_reconnect_timer;
 static uint32_t         s_backoff_ms = BACKOFF_MIN_MS;
 static volatile bool    s_connected;
 static volatile int     s_last_disc_reason;    /* wifi_err_reason_t of the last drop, 0 = none */
+static volatile int     s_attempt_reason;      /* last failed attempt since net_wifi_connect(), 0 = none */
 static bool             s_sta_configured;
 static bool             s_mdns_ready;
 static bool             s_sntp_started;
@@ -82,6 +83,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             if (was && d) {
                 s_last_disc_reason = d->reason;
             }
+            if (d) {
+                s_attempt_reason = d->reason;
+            }
             if (was) {
                 net_emit(NET_EVT_STA_DISCONNECTED);
             }
@@ -92,6 +96,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             }
             break;
         }
+        case WIFI_EVENT_SCAN_DONE:
+            net_portal_scan_done();
+            break;
         default:
             break;
         }
@@ -144,6 +151,7 @@ esp_err_t net_wifi_connect(const char *ssid, const char *pass)
     wc.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 
     s_sta_configured = true;
+    s_attempt_reason = 0;
     wifi_mode_t mode = WIFI_MODE_NULL;
     esp_wifi_get_mode(&mode);
     if (mode != WIFI_MODE_APSTA) {
@@ -171,6 +179,11 @@ bool net_wifi_connected(void)
 int net_wifi_last_disconnect_reason(void)
 {
     return s_last_disc_reason;
+}
+
+int net_wifi_attempt_reason(void)
+{
+    return s_attempt_reason;
 }
 
 int net_wifi_rssi(void)

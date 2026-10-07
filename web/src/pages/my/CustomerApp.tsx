@@ -14,6 +14,7 @@ import { MyNotesPage, MyRemindersPage } from "./MyItemsPages";
 import MyPersonasPage from "./MyPersonasPage";
 import AccountPage from "./AccountPage";
 import MemoryPage from "./MemoryPage";
+import SetupPage from "./setup/SetupPage";
 
 type State = { status: "loading" } | { status: "in"; account: Account } | { status: "out" } | { status: "error"; error: unknown };
 
@@ -81,6 +82,7 @@ export default function CustomerApp() {
             <Routes>
               <Route index element={<MyWatchesPage />} />
               <Route path="add-watch" element={<AddWatchPage />} />
+              <Route path="setup" element={<SetupPage />} />
               <Route path="watch/:id" element={<DeviceSettingsPage mode="customer" />} />
               <Route path="watch/:id/history" element={<WatchHistoryPage />} />
               <Route path="notes" element={<MyNotesPage />} />

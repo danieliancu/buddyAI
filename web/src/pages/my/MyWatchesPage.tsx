@@ -88,15 +88,13 @@ export default function MyWatchesPage() {
         <Spinner />
       ) : list.length === 0 ? (
         <Card>
-          <Empty icon={<Watch className="size-8" />} title="Add your first watch">
-            Turn on your ola watch and follow the steps. It takes about a minute.
-            {account.email_verified && (
-              <div className="mt-4">
-                <Link to="/my/add-watch" className={buttonCls("primary")}>
-                  <Plus className="size-4" /> Add watch
-                </Link>
-              </div>
-            )}
+          <Empty icon={<Watch className="size-8" />} title="Set up your first watch">
+            Choose your phone, connect the watch to Wi-Fi and pair it. It takes about five minutes.
+            <div className="mt-4">
+              <Link to="/my/setup" className={buttonCls("primary")}>
+                <Plus className="size-4" /> Set up my watch
+              </Link>
+            </div>
           </Empty>
         </Card>
       ) : (

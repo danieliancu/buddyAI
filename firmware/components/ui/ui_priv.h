@@ -97,6 +97,8 @@ typedef enum {
     STR_PAIR_BODY,
     STR_WIFI_TITLE,
     STR_WIFI_BODY,
+    STR_WIFI_PASS,      /* "Password" (setup network + Bluetooth setup) */
+    STR_WIFI_HINT,      /* how iPhone and Android continue */
     STR_ERR_NO_WIFI_T,
     STR_ERR_NO_WIFI_B,
     STR_ERR_SERVER_T,
