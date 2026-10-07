@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { ChevronRight, CircleCheck, Circle, MailWarning, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
+import { ChevronRight, CircleCheck, Circle, MailWarning, QrCode, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
 import { api, type CareActivation, type MyPlan, type Onboarding, type SetupPlatform } from "../../../api";
 import { careErrorText, fmtDayMonth, pence } from "../../../components/BillingBits";
 import { Button, Card, ErrorBox, Spinner, buttonCls, cx, useAsync } from "../../../components/ui";
@@ -47,9 +47,23 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
   const another = params.get("another") === "1";
   const [wifiDone, setWifiDone] = useState(() => !another && readWifiDone(account.id));
   const [saving, setSaving] = useState(false);
+  // What the watch shows decides the path: a 6-digit code (already online: pair) or Wi-Fi setup.
+  const [shows, setShows] = useState<WatchShows | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => writeWifiDone(account.id, wifiDone), [account.id, wifiDone]);
+
+  // A watch this account just removed may come back online with a code: keep the page up to date.
+  const ob0 = onboarding.data;
+  const waiting = !!ob0 && (ob0.watches === 0 || another);
+  useEffect(() => {
+    if (!waiting) return;
+    const t = window.setInterval(() => {
+      api.me.onboarding().then(onboarding.setData).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
 
   if (onboarding.error) return <ErrorBox error={onboarding.error} onRetry={onboarding.reload} />;
   const ob = onboarding.data;
@@ -59,7 +73,10 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
     setSaving(true);
     try {
       onboarding.setData(await api.me.setPlatform(platform));
-      if (platform === null) setWifiDone(false);
+      if (platform === null) {
+        setWifiDone(false);
+        setShows("wifi"); // changing the phone stays on the Wi-Fi path
+      }
     } finally {
       setSaving(false);
     }
@@ -68,6 +85,30 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
   if (!ob.eligible) return <NoOrder />;
   const paymentPending = ob.order?.status === "payment_pending";
   const paired = ob.watches > 0 && !another;
+  // Default path: an announced waiting watch -> the code; a phone already chosen -> Wi-Fi (resuming).
+  const path: WatchShows | null = shows ?? (ob.waiting_watch ? "code" : ob.platform || wifiDone ? "wifi" : null);
+  const onPaired = (id: string) =>
+    another ? navigate(`/my/watch/${encodeURIComponent(id)}`, { replace: true }) : (setWifiDone(true), onboarding.reload(), plan.reload());
+  const pairSection = (n: number) => (
+    <Section icon={<Watch className="size-4" />} title={`${n}. Pair the watch with your account`} done={false}>
+      {!ob.email_verified ? (
+        <Notice tone="warn" icon={<MailWarning className="size-4" />}>
+          Confirm your email address first: use the link we sent to <b className="break-all">{account.email}</b>, or “Resend email”
+          above.
+        </Notice>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">Type the 6-digit code shown on the watch — it's valid for 5 minutes.</p>
+          <PairCodeForm onPaired={onPaired} />
+        </div>
+      )}
+    </Section>
+  );
+  const careSection = (n: number) => (
+    <Section icon={<Sparkles className="size-4" />} title={`${n}. ola Care free trial`} done={false} muted>
+      <CareSummary care={ob.care} plan={plan.data} />
+    </Section>
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -76,7 +117,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
         <p className="mt-1 text-sm text-muted">About five minutes. Keep the watch charged and next to your phone.</p>
       </header>
 
-      <Progress ob={ob} wifiDone={wifiDone || paired} />
+      <Progress ob={ob} wifiDone={wifiDone || paired || path === "code"} />
 
       {paymentPending ? (
         <Notice tone="warn">
@@ -84,70 +125,129 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
         </Notice>
       ) : paired ? (
         <Done ob={ob} plan={plan.data} onPlanChange={() => (onboarding.reload(), plan.reload())} onFinish={() => navigate("/my")} />
-      ) : !ob.platform ? (
-        <PlatformChoice onChoose={choose} busy={saving} />
       ) : (
         <>
-          <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5 text-sm">
-            <span className="inline-flex items-center gap-2 font-medium">
-              {ob.platform === "android" ? <AndroidIcon className="size-4 text-[#3ddc84]" /> : <AppleIcon className="size-4" />}
-              {ob.platform === "android" ? "Android phone" : "iPhone"}
-            </span>
-            <button type="button" className="text-accent hover:underline" onClick={() => choose(null)} disabled={saving}>
-              Change phone
-            </button>
-          </div>
-
-          <Section icon={<Wifi className="size-4" />} title="1. Connect the watch to your Wi-Fi" done={wifiDone}>
-            {wifiDone ? (
-              <p className="text-sm text-muted">
-                Done.{" "}
-                <button type="button" className="text-accent hover:underline" onClick={() => setWifiDone(false)}>
-                  Set up Wi-Fi again
+          {ob.waiting_watch && (
+            <Notice tone="ok" icon={<Watch className="size-4" />}>
+              <span data-testid="waiting-watch">
+                Your watch “{ob.waiting_watch.name}” is online. Enter the 6-digit code it shows — no Wi-Fi setup needed.
+              </span>
+            </Notice>
+          )}
+          {path === null ? (
+            <WatchShowsChoice onPick={setShows} />
+          ) : path === "code" ? (
+            <>
+              <PathSwitch text="My watch shows Wi-Fi setup (QR code and password)" onClick={() => setShows("wifi")} />
+              {pairSection(1)}
+              {careSection(2)}
+            </>
+          ) : !ob.platform ? (
+            <>
+              <PathSwitch text="My watch shows a 6-digit code" onClick={() => setShows("code")} />
+              <PlatformChoice onChoose={choose} busy={saving} />
+            </>
+          ) : (
+            <>
+              <PathSwitch text="My watch shows a 6-digit code" onClick={() => setShows("code")} />
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5 text-sm">
+                <span className="inline-flex items-center gap-2 font-medium">
+                  {ob.platform === "android" ? <AndroidIcon className="size-4 text-[#3ddc84]" /> : <AppleIcon className="size-4" />}
+                  {ob.platform === "android" ? "Android phone" : "iPhone"}
+                </span>
+                <button type="button" className="text-accent hover:underline" onClick={() => choose(null)} disabled={saving}>
+                  Change phone
                 </button>
-              </p>
-            ) : ob.platform === "android" ? (
-              <AndroidWifi onDone={() => setWifiDone(true)} support={bleSupport} connect={connectWatch} />
-            ) : (
-              <div className="space-y-3">
-                <SetupNetworkSteps platform="iphone" />
-                <Button variant="primary" className="h-11 w-full" onClick={() => setWifiDone(true)}>
-                  The watch is on my Wi-Fi
-                </Button>
               </div>
-            )}
-          </Section>
 
-          <Section icon={<Watch className="size-4" />} title="2. Pair the watch with your account" done={false}>
-            {!ob.email_verified ? (
-              <Notice tone="warn" icon={<MailWarning className="size-4" />}>
-                Confirm your email address first: use the link we sent to <b className="break-all">{account.email}</b>, or “Resend email”
-                above.
-              </Notice>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-muted">
-                  {wifiDone
-                    ? "After joining your Wi-Fi the watch shows a 6-digit code. Type it here — it's valid for 5 minutes."
-                    : "Once the watch is on your Wi-Fi it shows a 6-digit code. Type it here — it's valid for 5 minutes."}
-                </p>
-                <PairCodeForm
-                  onPaired={(id) =>
-                    another
-                      ? navigate(`/my/watch/${encodeURIComponent(id)}`, { replace: true })
-                      : (setWifiDone(true), onboarding.reload(), plan.reload())
-                  }
-                />
-              </div>
-            )}
-          </Section>
-
-          <Section icon={<Sparkles className="size-4" />} title="3. ola Care free trial" done={false} muted>
-            <CareSummary care={ob.care} plan={plan.data} />
-          </Section>
+              <Section icon={<Wifi className="size-4" />} title="1. Connect the watch to your Wi-Fi" done={wifiDone}>
+                {wifiDone ? (
+                  <p className="text-sm text-muted">
+                    Done.{" "}
+                    <button type="button" className="text-accent hover:underline" onClick={() => setWifiDone(false)}>
+                      Set up Wi-Fi again
+                    </button>
+                  </p>
+                ) : ob.platform === "android" ? (
+                  <AndroidWifi onDone={() => setWifiDone(true)} support={bleSupport} connect={connectWatch} />
+                ) : (
+                  <div className="space-y-3">
+                    <SetupNetworkSteps platform="iphone" />
+                    <Button variant="primary" className="h-11 w-full" onClick={() => setWifiDone(true)}>
+                      The watch is on my Wi-Fi
+                    </Button>
+                  </div>
+                )}
+              </Section>
+              {pairSection(2)}
+              {careSection(3)}
+            </>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+type WatchShows = "code" | "wifi";
+
+/** The first question: what the watch screen shows decides whether Wi-Fi setup is needed at all. */
+function WatchShowsChoice({ onPick }: { onPick: (w: WatchShows) => void }) {
+  const [help, setHelp] = useState(false);
+  return (
+    <section aria-labelledby="watch-shows" className="space-y-3">
+      <h2 id="watch-shows" className="text-lg font-semibold">
+        What does your watch show?
+      </h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => onPick("code")}
+          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-4 text-center transition hover:border-accent hover:bg-surface-2"
+        >
+          <span className="font-mono text-3xl font-semibold tracking-widest text-accent" aria-hidden>
+            123 456
+          </span>
+          <span>
+            <span className="block text-base font-semibold">A 6-digit code</span>
+            <span className="block text-xs text-muted">The watch is online — pair it now</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onPick("wifi")}
+          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-4 text-center transition hover:border-accent hover:bg-surface-2"
+        >
+          <QrCode className="size-10 text-accent" aria-hidden />
+          <span>
+            <span className="block text-base font-semibold">Wi-Fi setup</span>
+            <span className="block text-xs text-muted">A QR code and a password — connect it to Wi-Fi first</span>
+          </span>
+        </button>
+      </div>
+      <button type="button" className="cursor-pointer text-sm text-accent hover:underline" onClick={() => setHelp((v) => !v)} aria-expanded={help}>
+        Something else, or not sure?
+      </button>
+      {help && (
+        <div className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted" data-testid="watch-shows-help">
+          <p>
+            <b className="text-fg">The clock:</b> the watch is already set up. To connect it to another Wi-Fi, open Settings on the watch
+            and tap <b className="text-fg">Wi-Fi setup</b>, then choose “Wi-Fi setup” here.
+          </p>
+          <p className="mt-2">
+            <b className="text-fg">A black screen:</b> charge it, then hold the side button until the screen lights up.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PathSwitch({ text, onClick }: { text: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="cursor-pointer text-sm text-accent hover:underline">
+      {text}
+    </button>
   );
 }
 

@@ -86,10 +86,44 @@ beforeEach(() => {
   me.setPlatform.mockImplementation(async (platform) => onboarding({ platform }));
 });
 
-describe("choose the phone", () => {
-  it("asks which phone, with Android and iPhone choices", async () => {
+describe("what the watch shows, then the phone", () => {
+  it("first asks what the watch shows", async () => {
     me.onboarding.mockResolvedValue(onboarding());
     renderSetup();
+    expect(await screen.findByRole("heading", { name: "What does your watch show?" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /A 6-digit code/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Wi-Fi setup/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Something else, or not sure?" }));
+    expect(screen.getByTestId("watch-shows-help").textContent).toMatch(/Settings on the watch/);
+  });
+
+  it("a 6-digit code: straight to pairing, no Wi-Fi step", async () => {
+    me.onboarding.mockResolvedValue(onboarding());
+    renderSetup();
+    fireEvent.click(await screen.findByRole("button", { name: /A 6-digit code/ }));
+    expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
+    expect(screen.queryByText("1. Connect the watch to your Wi-Fi")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Which phone are you using?" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /My watch shows Wi-Fi setup/ })); // one tap to switch
+    expect(await screen.findByRole("heading", { name: "Which phone are you using?" })).toBeTruthy();
+  });
+
+  it("a watch this account just removed is announced and goes straight to the code", async () => {
+    me.onboarding.mockResolvedValue(onboarding({ waiting_watch: { name: "Gran's ola", expires_in_s: 250 } }));
+    renderSetup();
+    expect((await screen.findByTestId("waiting-watch")).textContent).toMatch(/Gran's ola” is online/);
+    expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "What does your watch show?" })).toBeNull();
+  });
+
+  async function chooseWifiPath() {
+    fireEvent.click(await screen.findByRole("button", { name: /Wi-Fi setup/ }));
+  }
+
+  it("Wi-Fi setup: asks which phone, with Android and iPhone choices", async () => {
+    me.onboarding.mockResolvedValue(onboarding());
+    renderSetup();
+    await chooseWifiPath();
     expect(await screen.findByRole("heading", { name: "Which phone are you using?" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Android/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /iPhone/ })).toBeTruthy();
@@ -98,6 +132,7 @@ describe("choose the phone", () => {
   it("Android: Bluetooth first, the ola-XXXX network stays hidden until help is needed", async () => {
     me.onboarding.mockResolvedValue(onboarding());
     renderSetup({ bleSupport: "supported" });
+    await chooseWifiPath();
     fireEvent.click(await screen.findByRole("button", { name: /Android/ }));
     expect(me.setPlatform).toHaveBeenCalledWith("android");
     expect(await screen.findByRole("button", { name: "Connect to watch" })).toBeTruthy();
@@ -110,6 +145,7 @@ describe("choose the phone", () => {
   it("iPhone: only the ola-XXXX steps, with the password and QR code from the watch, no Bluetooth", async () => {
     me.onboarding.mockResolvedValue(onboarding());
     renderSetup({ bleSupport: "ios" });
+    await chooseWifiPath();
     fireEvent.click(await screen.findByRole("button", { name: /iPhone/ }));
     const steps = await screen.findByTestId("softap-steps");
     expect(within(steps).getAllByText(/ola-XXXX/).length).toBeGreaterThan(0);

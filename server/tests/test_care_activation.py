@@ -429,3 +429,32 @@ async def test_welcome_link_lasts_a_week_and_works_once(fake, gw):
     reset = last_link(addr, "/reset-password?token=")
     assert c.post("/api/me/password/reset", json={"token": reset, "password": "correct-horse-2"}).status_code == 200
     assert c.post("/api/me/password/reset", json={"token": reset, "password": "correct-horse-3"}).status_code == 400
+
+
+async def test_a_removed_watch_waiting_with_a_code_is_announced_to_its_account(fake, gw):
+    c = _client()
+    addr, _cus = await _buy(c, fake)
+    _sign_in_from_welcome(c, addr)
+    device_id, code = watch_waiting(c)
+    assert c.post("/api/me/devices/pair", json={"code": code, "name": "Gran's ola"}).status_code == 200
+    assert c.get("/api/me/onboarding").json()["waiting_watch"] is None
+    assert c.delete(f"/api/me/devices/{device_id}").status_code == 200
+    from tests.watch_helpers import FakeWatchConn
+
+    c.app.state.hub.add_pending("424242", FakeWatchConn(device_id), "hw", "0.1.0")  # the same watch, new code
+    w = c.get("/api/me/onboarding").json()["waiting_watch"]
+    assert w["name"] == "Gran's ola" and w["expires_in_s"] > 0
+    # Re-pairing the same watch never starts a second subscription.
+    assert c.post("/api/me/devices/pair", json={"code": "424242", "name": "Gran's ola"}).status_code == 200
+    assert len(gw.created) == 1
+    assert c.get("/api/me/onboarding").json()["waiting_watch"] is None  # paired again: nothing waiting
+
+
+def test_a_waiting_watch_is_never_announced_to_another_account(gw):
+    c, _addr = _signup()
+    hub = c.app.state.hub
+    from tests.watch_helpers import FakeWatchConn
+
+    hub.note_removed("buddy-someone-else", 999999, "Not yours")
+    hub.add_pending("515151", FakeWatchConn("buddy-someone-else"), "hw", "0.1.0")
+    assert c.get("/api/me/onboarding").json()["waiting_watch"] is None

@@ -43,6 +43,10 @@ class DeviceHub:
         # Live-event subscribers: queue -> account filter (None = operator, sees everything)
         self._listeners: dict[asyncio.Queue, int | None] = {}
         self.owners: dict[str, int | None] = {}  # device_id -> account_id (for event filtering)
+        # Watches an account removed a moment ago: device_id -> (account_id, name, time). If the same watch then
+        # waits with a pairing code, that account's setup page says so ("your watch is online"). Memory only:
+        # it is a convenience, never an authorisation (pairing still needs the code shown on the watch).
+        self.recently_removed: dict[str, tuple[int, str, float]] = {}
 
     # --- live events (web UI) --------------------------------------------------------
 
@@ -73,6 +77,26 @@ class DeviceHub:
                 dev = DeviceRepo(db).get(device_id)
                 self.owners[device_id] = dev.account_id if dev else None
         return self.owners[device_id]
+
+    REMOVED_MEMORY_S = 3600.0
+
+    def note_removed(self, device_id: str, account_id: int, name: str) -> None:
+        self.recently_removed[device_id] = (account_id, name, time.monotonic())
+
+    def waiting_watch(self, account_id: int) -> dict[str, Any] | None:
+        """A watch this account removed within the last hour that is now waiting with a pairing code."""
+        self._expire()
+        now = time.monotonic()
+        for device_id, (acc, name, at) in list(self.recently_removed.items()):
+            if now - at > self.REMOVED_MEMORY_S:
+                del self.recently_removed[device_id]
+                continue
+            if acc != account_id:
+                continue
+            for p in self.pending.values():
+                if p.device_id == device_id:
+                    return {"name": name, "expires_in_s": int(p.expires_at - now)}
+        return None
 
     def forget_owner(self, device_id: str) -> None:
         self.owners.pop(device_id, None)

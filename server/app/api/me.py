@@ -327,8 +327,9 @@ def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
 
 
 @router.get("/onboarding")
-def get_onboarding(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    return _onboarding(db, acc)
+def get_onboarding(request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
+    # A watch this account just removed, now online and showing a pairing code: no Wi-Fi step needed.
+    return _onboarding(db, acc) | {"waiting_watch": hub_of(request).waiting_watch(acc.id)}
 
 
 class OnboardingBody(BaseModel):
@@ -357,11 +358,13 @@ def rename(body: RenameBody, request: Request, dev: Device = Depends(owned_devic
 @router.delete("/devices/{device_id}")
 async def remove(request: Request, dev: Device = Depends(owned_device), db: Session = Depends(get_session)) -> dict:
     """Remove the watch from the account: its history is erased and the watch returns to pairing."""
-    device_id = dev.id
+    device_id, owner_id, name = dev.id, dev.account_id, dev.name
     ConversationRepo(db).delete_device_history(device_id)
     DeviceRepo(db).revoke(device_id, unassign=True)
     hub = hub_of(request)
     hub.forget_owner(device_id)
+    if owner_id is not None:
+        hub.note_removed(device_id, owner_id, name)
     await hub.revoke(device_id)
     return {"ok": True}
 

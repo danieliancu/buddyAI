@@ -423,6 +423,8 @@ export interface Onboarding {
   watches: number;
   care: CareActivation | null;
   complete: boolean;
+  /** A watch this account just removed, online again and waiting with a pairing code. */
+  waiting_watch?: { name: string; expires_in_s: number } | null;
 }
 
 export interface UsageNotice {
