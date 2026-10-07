@@ -11,6 +11,9 @@ os.environ.setdefault("BUDDYAI_MDNS_ENABLED", "false")
 # Never use the developer's real Stripe settings from server/.env (tests fake Stripe explicitly).
 for _name in ("SECRET_KEY", "WEBHOOK_SECRET", "PRICE_CARE_GBP", "PRICE_CARE_EUR", "PRICE_WATCH_GBP", "PRICE_WATCH_EUR"):
     os.environ[f"BUDDYAI_STRIPE_{_name}"] = ""
+# The local test switches (no Stripe Tax / no ToS URL) stay at their production defaults in tests.
+os.environ["BUDDYAI_STRIPE_AUTOMATIC_TAX"] = "true"
+os.environ["BUDDYAI_STRIPE_REQUIRE_TOS"] = "true"
 
 import pytest  # noqa: E402
 

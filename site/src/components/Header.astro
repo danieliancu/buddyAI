@@ -54,15 +54,18 @@ const isActive = (href: string) => path === href;
       </a>
       <a
         href={`${config.appUrl}/my`}
-        class="hidden h-10 max-w-48 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-medium text-fg hover:bg-bg-2"
+        class="hidden max-w-40 items-center gap-1.5 rounded-lg px-1.5 py-1 text-fg hover:bg-bg-2"
         title="Your ola account (signed in)"
         data-account-in
       >
-        <Icon name="lock" size={16} class="shrink-0 text-ok" />
-        <span class="truncate" data-account-name></span>
+        <Icon name="lock" size={20} class="shrink-0 text-ok" />
+        <span class="flex min-w-0 flex-col text-[11px] font-medium leading-tight">
+          <span class="truncate" data-account-name></span>
+          <span class="truncate text-muted" data-account-last></span>
+        </span>
         <span class="sr-only">, signed in</span>
       </a>
-      <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" >
+      <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" data-header-buy>
         Buy now
       </a>
       <button
@@ -104,27 +107,53 @@ const isActive = (href: string) => path === href;
       <li data-account-out-mobile><a href={config.appUrl} class="block rounded-lg px-2 py-3 text-base font-medium text-fg">Sign in</a></li>
       <li class="hidden" data-account-in-mobile>
         <a href={`${config.appUrl}/my`} class="flex items-center gap-2 rounded-lg px-2 py-3 text-base font-medium text-fg">
-          <Icon name="lock" size={18} class="text-ok" /><span data-account-name></span>
+          <Icon name="lock" size={18} class="text-ok" /><span data-account-full></span>
         </a>
       </li>
     </ul>
   </nav>
 </header>
 
+<!-- Before the first paint: show the remembered signed-in state at once (no "Buy now" flash on refresh);
+     the check against the account below confirms or clears it. -->
+<script is:inline>
+  window.__olaBadge = function (b) {
+    var signedIn = !!(b && b.signedIn);
+    var q = function (s) { return document.querySelector(s); };
+    var all = function (s, f) { document.querySelectorAll(s).forEach(f); };
+    if (signedIn) {
+      all("[data-account-name]", function (el) { el.textContent = b.name; });
+      all("[data-account-last]", function (el) { el.textContent = b.lastName || ""; });
+      all("[data-account-full]", function (el) { el.textContent = (b.name + " " + (b.lastName || "")).trim(); });
+    }
+    var buy = q("[data-header-buy]"), out = q("[data-account-out]"), inn = q("[data-account-in]");
+    if (buy) buy.classList.toggle("sm:inline-flex", !signedIn); // already a customer: no "Buy now"
+    if (out) out.classList.toggle("sm:grid", !signedIn);
+    if (inn) inn.classList.toggle("sm:inline-flex", signedIn);
+    var om = q("[data-account-out-mobile]"), im = q("[data-account-in-mobile]");
+    if (om) om.classList.toggle("hidden", signedIn);
+    if (im) im.classList.toggle("hidden", !signedIn);
+  };
+  try {
+    var cached = JSON.parse(localStorage.getItem("ola.badge") || "null");
+    if (cached && cached.signedIn) window.__olaBadge(cached);
+  } catch (e) {}
+</script>
+
 <script>
   import { fetchBadge } from "../lib/account";
   import { config as siteConfig } from "../config";
 
-  // Signed in to the ola account: first name with a green lock instead of "Sign in".
+  // Signed in to the ola account: green lock + name instead of "Sign in" (and no "Buy now"). The answer is
+  // remembered on this device so the next page shows it before the first paint (inline script above).
   void fetchBadge(siteConfig.appUrl).then((b) => {
-    if (!b.signedIn) return;
-    document.querySelectorAll<HTMLElement>("[data-account-name]").forEach((el) => (el.textContent = b.name));
-    const out = document.querySelector<HTMLElement>("[data-account-out]");
-    const inn = document.querySelector<HTMLElement>("[data-account-in]");
-    out?.classList.remove("sm:grid");
-    inn?.classList.add("sm:inline-flex");
-    document.querySelector("[data-account-out-mobile]")?.classList.add("hidden");
-    document.querySelector("[data-account-in-mobile]")?.classList.remove("hidden");
+    (window as unknown as { __olaBadge?: (x: unknown) => void }).__olaBadge?.(b);
+    try {
+      if (b.signedIn) localStorage.setItem("ola.badge", JSON.stringify(b));
+      else localStorage.removeItem("ola.badge");
+    } catch {
+      /* private mode: the header just updates a moment later */
+    }
   });
 
   const btn = document.querySelector<HTMLButtonElement>("[data-nav-toggle]");

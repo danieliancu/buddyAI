@@ -13,7 +13,7 @@ export type Currency = "GBP" | "EUR";
 // watch = what checkout charges (the Stripe watch price); watchWas = the regular price shown struck through
 // while the sale runs (set it equal to `watch`, or remove the line, when the sale ends). A "was" price must
 // be a price the watch was genuinely sold at (UK/EU price-reduction rules).
-const PRICE_GBP = { watch: 79.99, watchWas: 99.99 as number | null, care: 7.9 };
+const PRICE_GBP = { watch: 79.99, watchWas: 99.99 as number | null, care: 7.99 };
 
 // Review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
 export const GBP_TO_EUR = 1.17;
@@ -49,7 +49,8 @@ export const config = {
   supportEmail: "ola@olacompanion.com",
 
   // The customer web app (sign in, "Add watch", notes, reminders, ola Care).
-  appUrl: "https://app.olacompanion.com",
+  // Local development (npm run dev): PUBLIC_APP_URL in .env.development points at the local app.
+  appUrl: (import.meta.env.PUBLIC_APP_URL as string | undefined) || "https://app.olacompanion.com",
 
   // Returns: only claim free returns when this is true.
   freeReturns: false,

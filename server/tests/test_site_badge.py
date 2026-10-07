@@ -26,7 +26,7 @@ def test_badge_signed_out_and_in(monkeypatch):
         addr = f"badge-{secrets.token_hex(3)}@example.com"
         assert c.post("/api/me/signup", json={"email": addr, "password": "correct-horse-1", "name": "Jane Buyer"}).status_code == 200
         r = c.get("/api/me/badge", headers={"Origin": SITE})
-        assert r.json() == {"signed_in": True, "name": "Jane"}
+        assert r.json() == {"signed_in": True, "name": "Jane", "last_name": "Buyer"}
 
         evil = c.get("/api/me/badge", headers={"Origin": "https://evil.example"})
         assert "access-control-allow-origin" not in evil.headers  # the browser hides the answer from other sites

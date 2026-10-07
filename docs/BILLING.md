@@ -6,7 +6,7 @@ Operator and developer reference. Customer-facing wording lives in the web app (
 
 | Setting (operator: Usage → Plan settings) | Default | Meaning |
 |---|---|---|
-| Care selling price | £7.90 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match. |
+| Care selling price | £7.99 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match (set it in Usage → Plan settings; existing databases keep their value). |
 | Included AI allowance | £2.50 / period | Internal provider-cost budget per account (never shown in £ to customers). |
 | Extra usage price | £1.99 one-off | Stripe Checkout `mode=payment`, `price_data` from settings. Never recurring. |
 | Extra usage allowance | £0.65 | Added to the current period only. |
@@ -311,7 +311,7 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
   - `customer.subscription.*` (created / updated / deleted / trial_will_end — `created` also completes a trial activation)
   - `invoice.paid`, `invoice.payment_failed`
   - `charge.refunded`
-- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive; the regular £99.99 is display-only on the site) and the Care price, both in test mode first.
+- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive; the regular £99.99 is display-only on the site) and the Care price (£7.99/month), both in test mode first.
 - [ ] Have the ola Care consent wording, the subscription terms and the "was £99.99" claim reviewed (UK price-reduction and subscription-contract rules).
 - [ ] Stripe Tax and VAT registration. The extra-usage price is VAT-inclusive (`tax_behavior=inclusive`).
 - [ ] Have consumer-law and fair-use wording reviewed (UK CMA / subscription rules): no "unlimited" claims, a clear renewal/reset date and refund wording.

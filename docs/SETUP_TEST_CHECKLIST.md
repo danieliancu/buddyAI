@@ -64,7 +64,7 @@ firmware.
 - [ ] Before pairing: the account shows "Free 90-day trial — starts when you pair your watch", and there is no subscription in Stripe.
 - [ ] Enter the 6-digit code. The watch is paired, and:
   - Stripe shows **one** `trialing` subscription on the card's customer, with the saved card as default payment method and metadata `activation_id`;
-  - the account shows "Free trial until <date>, then £7.90 a month…";
+  - the account shows "Free trial until <date>, then £7.99 a month…";
   - the "free trial has started" email arrives.
 - [ ] Pair a second watch, and press Retry or refresh: still exactly one subscription.
 - [ ] Failure path: detach the saved card in Stripe before pairing, then pair. The watch is paired, and the account says "Subscription setup pending" (never "active"). Add a card in "Manage billing", then "Try again": one subscription.

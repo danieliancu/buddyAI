@@ -169,7 +169,7 @@ class BillingSettings(SQLModel, table=True):
     __tablename__ = "billing_settings"
     id: int = Field(default=1, primary_key=True)
     enforce: bool = False  # check subscriptions/allowances even without Stripe keys
-    care_price_pence: int = 790
+    care_price_pence: int = 799  # existing databases keep their value (operator: Usage → Plan settings)
     care_allowance_pence: int = 250
     topup_price_pence: int = 199
     topup_allowance_pence: int = 65

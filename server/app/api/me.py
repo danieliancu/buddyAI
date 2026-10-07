@@ -204,7 +204,7 @@ def reset_password(body: ResetBody, request: Request, db: Session = Depends(get_
 def badge(request: Request, response: Response, db: Session = Depends(get_session)) -> dict:
     """The marketing site's header asks whether the visitor is signed in (first name + green lock instead of
     "Sign in"). The session cookie reaches us because the site is same-site; only our own site origin may
-    read the answer (CORS), and it contains nothing but a first name."""
+    read the answer (CORS), and it contains nothing but the name."""
     from app.config import get_settings
 
     site = get_settings().site_url.rstrip("/")
@@ -218,8 +218,10 @@ def badge(request: Request, response: Response, db: Session = Depends(get_sessio
     acc = db.get(Account, acc_id) if acc_id else None
     if acc is None or acc.status != "active" or request.session.get("account_v") != acc.session_version:
         return {"signed_in": False}
-    first = (acc.name or "").strip().split(" ")[0] or acc.email.split("@")[0]
-    return {"signed_in": True, "name": first[:24]}
+    parts = (acc.name or "").split()
+    first = parts[0] if parts else acc.email.split("@")[0]
+    last = " ".join(parts[1:])
+    return {"signed_in": True, "name": first[:24], "last_name": last[:32]}
 
 
 # --- profile ----------------------------------------------------------------------------------

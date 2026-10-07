@@ -101,7 +101,7 @@ the watch is paired to the customer's account.
 2. **Products** (Product catalogue):
    - **"ola Watch"**: a *one-off* price in GBP (currently the sale price, **£79.99**) and one in EUR. The
      regular £99.99 shown struck through on the site is display only (`site/src/config.ts`).
-   - **"ola Care"**: a *recurring monthly* price in GBP (£7.90) and one in EUR. The server reads its
+   - **"ola Care"**: a *recurring monthly* price in GBP (£7.99) and one in EUR. The server reads its
      amount to write the consent text, and adds the trial (`BUDDYAI_CARE_TRIAL_DAYS`) when the watch is paired.
    - Copy the four `price_…` ids into `deploy/.env` (`BUDDYAI_STRIPE_PRICE_WATCH_GBP/EUR`,
      `BUDDYAI_STRIPE_PRICE_CARE_GBP/EUR`).
