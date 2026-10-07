@@ -138,6 +138,22 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     @app.middleware("http")
+    async def browser_session_cookie(request: Request, call_next):
+        """'Remember me' off at sign-in: the session cookie loses Max-Age/Expires, so the browser forgets it
+        when it closes (the session middleware gives every cookie the same lifetime)."""
+        response = await call_next(request)
+        session = request.scope.get("session") or {}
+        if session.get("remember") is False:
+            raw = []
+            for name, value in response.raw_headers:
+                if name.lower() == b"set-cookie" and value.startswith(b"buddyai_session="):
+                    parts = [p for p in value.split(b";") if not p.strip().lower().startswith((b"max-age=", b"expires="))]
+                    value = b";".join(parts)
+                raw.append((name, value))
+            response.raw_headers[:] = raw
+        return response
+
+    @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")

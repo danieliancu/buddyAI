@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { CheckCircle2, MailCheck, Watch } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { Button, buttonCls, ErrorBox, Field, Input, Spinner } from "../../components/ui";
+import { Button, buttonCls, ErrorBox, Field, Input, Spinner, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import { safeNext } from "./session";
 import { SITE_URL } from "../../site";
@@ -37,6 +37,7 @@ export function LoginPage() {
   const next = safeNext(params.get("next"), "/my");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -59,7 +60,7 @@ export function LoginPage() {
     if (!email.trim() || !password) return setError(new Error("Enter your email and password."));
     setBusy(true);
     try {
-      await api.me.login(email.trim(), password);
+      await api.me.login(email.trim(), password, remember);
       navigate(next, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setError(new Error("Wrong email or password."));
@@ -101,9 +102,18 @@ export function LoginPage() {
           <Input id="li-email" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         </Field>
         <Field label="Password" htmlFor="li-pw">
-          <Input id="li-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput id="li-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <div className="-mt-1 text-right text-sm">
+        <div className="-mt-1 flex items-center justify-between gap-3 text-sm">
+          <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+            <input
+              type="checkbox"
+              className="size-4 cursor-pointer accent-accent"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            Remember me
+          </label>
           <Link to="/forgot-password" className="text-muted hover:text-fg hover:underline">
             Forgot password?
           </Link>
@@ -166,7 +176,7 @@ export function SignupPage() {
           <Input id="su-email" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="Password" htmlFor="su-pw" hint="At least 8 characters">
-          <Input id="su-pw" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput id="su-pw" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         <Field label="Country" htmlFor="su-country">
           <CountrySelect id="su-country" value={country} onChange={setCountry} />
@@ -289,10 +299,10 @@ export function ResetPasswordPage() {
       <form onSubmit={submit} className="space-y-4">
         <input type="text" autoComplete="username" hidden readOnly />
         <Field label="New password" htmlFor="rp-pw" hint="At least 8 characters">
-          <Input id="rp-pw" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <PasswordInput id="rp-pw" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </Field>
         <Field label="Repeat password" htmlFor="rp-pw2">
-          <Input id="rp-pw2" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <PasswordInput id="rp-pw2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </Field>
         <ErrorBox error={error} />
         <Button type="submit" variant="primary" className="h-11 w-full" loading={busy}>

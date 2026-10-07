@@ -2,21 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Brain, Check, History, Pencil, Plus, ShieldAlert, Trash2, X } from "lucide-react";
 import { api, ApiError, type MemoryItem, type MemoryKind, type MemorySettings } from "../../api";
 import { fmtDate } from "../../format";
-import {
-  Badge,
-  Button,
-  Card,
-  ConfirmDialog,
-  Dialog,
-  Empty,
-  ErrorBox,
-  Field,
-  Input,
-  Select,
-  Spinner,
-  Toggle,
-  useAsync,
-} from "../../components/ui";
+import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Toggle, useAsync, PasswordInput } from "../../components/ui";
 
 const KIND_LABEL: Record<MemoryKind, string> = {
   profile: "About you",
@@ -373,7 +359,7 @@ function ClearDialog({ open, onClose, onDone }: { open: boolean; onClose: () => 
         <p>Everything ola remembers about you is deleted. This cannot be undone.</p>
         <input type="text" autoComplete="username" hidden readOnly />
         <Field label="Enter your password to confirm" htmlFor="mem-pw">
-          <Input id="mem-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput id="mem-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         <ErrorBox error={error} />
       </form>

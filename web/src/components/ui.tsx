@@ -9,7 +9,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { useArea } from "../area";
 
 export function cx(...c: (string | false | null | undefined)[]): string {
@@ -156,6 +156,26 @@ const inputCls =
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...rest} className={cx(inputCls, "h-10", className)} />;
+}
+
+/** A password field with a show / hide button (the eye). */
+export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <input {...rest} type={shown ? "text" : "password"} className={cx(inputCls, "h-10 pr-11", className)} />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        className="absolute inset-y-0 right-0 grid w-10 cursor-pointer place-items-center text-muted hover:text-fg"
+        aria-label={shown ? "Hide password" : "Show password"}
+        aria-pressed={shown}
+        title={shown ? "Hide password" : "Show password"}
+      >
+        {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
+  );
 }
 
 export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {

@@ -907,7 +907,9 @@ const meApi = {
   get: (opts?: RequestOpts) => me.get<Account>("/api/me", opts),
   signup: (body: { email: string; password: string; name?: string; country?: string | null }) =>
     me.post<Account>("/api/me/signup", body, { no401: true }),
-  login: (email: string, password: string) => me.post<Account>("/api/me/login", { email, password }, { no401: true }),
+  /** remember = false: signed out when the browser is closed (otherwise 14 days). */
+  login: (email: string, password: string, remember = true) =>
+    me.post<Account>("/api/me/login", { email, password, remember }, { no401: true }),
   logout: () => me.post<{ ok: boolean }>("/api/me/logout", {}, { no401: true }),
   verifyEmail: (token: string) => me.post<{ ok: boolean }>("/api/me/verify-email", { token }, { no401: true }),
   resendVerification: () => me.post<{ ok: boolean }>("/api/me/verify-email/resend"),

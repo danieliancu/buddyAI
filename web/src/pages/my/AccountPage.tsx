@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { AlertTriangle, BadgeCheck, Brain, ChevronRight, Download, KeyRound, LogOut, Trash2, UserRound } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { fmtDate } from "../../format";
-import { Badge, Button, buttonCls, Card, Dialog, ErrorBox, Field, Input } from "../../components/ui";
+import { Badge, Button, buttonCls, Card, Dialog, ErrorBox, Field, Input, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import PlanCard from "./PlanCard";
 import { useCustomer } from "./session";
@@ -138,14 +138,14 @@ function PasswordCard() {
       <form onSubmit={submit} className="space-y-4">
         <input type="text" autoComplete="username" hidden readOnly />
         <Field label="Current password" htmlFor="pw-cur">
-          <Input id="pw-cur" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          <PasswordInput id="pw-cur" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="New password" htmlFor="pw-new" hint="At least 8 characters">
-            <Input id="pw-new" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+            <PasswordInput id="pw-new" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
           </Field>
           <Field label="Repeat new password" htmlFor="pw-new2">
-            <Input id="pw-new2" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            <PasswordInput id="pw-new2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </Field>
         </div>
         <ErrorBox error={error} />
@@ -218,7 +218,7 @@ function DeleteAccountCard() {
           </div>
           <input type="text" autoComplete="username" hidden readOnly />
           <Field label="Enter your password to confirm" htmlFor="del-pw">
-            <Input id="del-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <PasswordInput id="del-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <ErrorBox error={error} />
         </form>

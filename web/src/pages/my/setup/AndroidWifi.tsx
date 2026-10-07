@@ -4,7 +4,7 @@ import { Provisioner, SetupPausedError, type NearbyNetwork } from "../../../ble/
 import { WrongSetupPasswordError } from "../../../ble/sec2";
 import { bleSupport, GattTransport, webBluetooth, type BleSupport } from "../../../ble/transport";
 import { checkWifiCredentials, isSetupPassword, normalizeSetupPassword, WIFI_PROBLEM_TEXT } from "../../../ble/validate";
-import { Button, Field, Input, Select, cx } from "../../../components/ui";
+import { Button, Field, Input, Select, cx, PasswordInput } from "../../../components/ui";
 import { RecoveryHelp } from "./SetupNetworkSteps";
 
 export type ConnectWatch = () => Promise<Provisioner>;
@@ -347,9 +347,8 @@ function Networks({
             {other ? "Choose from the list" : "My network isn't listed"}
           </button>
           <Field label="Wi-Fi password" htmlFor="wifi-pass">
-            <Input
+            <PasswordInput
               id="wifi-pass"
-              type="password"
               autoComplete="off"
               value={password}
               maxLength={64}

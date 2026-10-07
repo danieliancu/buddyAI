@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Watch } from "lucide-react";
 import { api, ApiError } from "../api";
-import { Button, ErrorBox, Field, Input } from "../components/ui";
+import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
 
 export default function AuthPage({ mode, onDone }: { mode: "setup" | "login"; onDone: (user: string) => void }) {
   const setup = mode === "setup";
@@ -52,9 +52,8 @@ export default function AuthPage({ mode, onDone }: { mode: "setup" | "login"; on
             <Input id="u" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
           </Field>
           <Field label="Password" htmlFor="p" hint={setup ? "At least 8 characters" : undefined}>
-            <Input
+            <PasswordInput
               id="p"
-              type="password"
               autoComplete={setup ? "new-password" : "current-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -62,7 +61,7 @@ export default function AuthPage({ mode, onDone }: { mode: "setup" | "login"; on
           </Field>
           {setup && (
             <Field label="Confirm password" htmlFor="p2">
-              <Input id="p2" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <PasswordInput id="p2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             </Field>
           )}
           <ErrorBox error={error} />

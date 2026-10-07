@@ -54,9 +54,11 @@ log = logging.getLogger(__name__)
 # --- session ----------------------------------------------------------------------------------
 
 
-def _login(request: Request, acc: Account) -> None:
+def _login(request: Request, acc: Account, remember: bool = True) -> None:
     request.session["account_id"] = acc.id
     request.session["account_v"] = acc.session_version
+    # "Remember me" off: the session cookie ends with the browser (see main.py, browser_session_cookie).
+    request.session["remember"] = remember
 
 
 def current_account(request: Request, db: Session = Depends(get_session)) -> Account:
@@ -112,6 +114,7 @@ async def signup(body: SignupBody, request: Request, db: Session = Depends(get_s
 class LoginBody(BaseModel):
     email: str
     password: str
+    remember: bool = True  # stay signed in for 14 days; false = until the browser is closed
 
 
 @router.post("/login")
@@ -125,7 +128,7 @@ def login(body: LoginBody, request: Request, db: Session = Depends(get_session))
     except accounts.AccountError as exc:
         raise _err(exc) from exc
     LOGIN_PER_ACCOUNT.reset(key)
-    _login(request, acc)
+    _login(request, acc, body.remember)
     return accounts.public(acc)
 
 
