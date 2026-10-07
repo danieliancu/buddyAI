@@ -89,6 +89,9 @@ const trial = `free ${prices.trialMonths}-month trial`;
     const status = box.querySelector<HTMLElement>("[data-buy-status]")!;
     const panel = box.querySelector<HTMLElement>("[data-notify-panel]")!;
     const termsRow = box.querySelector<HTMLElement>("[data-terms]")!;
+    // Signed-in customers see "Buy again" (set by the header's account check).
+    const buyText = () => (document.documentElement.dataset.customer === "1" ? "Buy again" : "Buy now");
+    label.textContent = buyText();
     const termsBox = box.querySelector<HTMLInputElement>("[data-terms-box]")!;
     const termsText = box.querySelector<HTMLElement>("[data-terms-text]")!;
     let mode: "loading" | "buy" | "notify" = "loading";
@@ -171,7 +174,7 @@ const trial = `free ${prices.trialMonths}-month trial`;
           : "We couldn't reach checkout. Check your connection and try again.";
         showError(msg);
         btn.disabled = false;
-        label.textContent = "Buy now";
+        label.textContent = buyText();
       }
     });
   }

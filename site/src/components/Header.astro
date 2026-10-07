@@ -66,7 +66,7 @@ const isActive = (href: string) => path === href;
         <span class="sr-only">, signed in</span>
       </a>
       <a href="/#buy" class="btn btn-primary hidden !min-h-10 !px-5 !py-2 text-sm sm:inline-flex" data-header-buy>
-        Buy now
+        <span data-buy-text>Buy now</span>
       </a>
       <button
         type="button"
@@ -126,8 +126,10 @@ const isActive = (href: string) => path === href;
       all("[data-account-last]", function (el) { el.textContent = b.lastName || ""; });
       all("[data-account-full]", function (el) { el.textContent = (b.name + " " + (b.lastName || "")).trim(); });
     }
-    var buy = q("[data-header-buy]"), out = q("[data-account-out]"), inn = q("[data-account-in]");
-    if (buy) buy.classList.toggle("sm:inline-flex", !signedIn); // already a customer: no "Buy now"
+    var out = q("[data-account-out]"), inn = q("[data-account-in]");
+    // Already a customer: "Buy again" (header and buy box); data-customer lets the buy box pick it too.
+    document.documentElement.dataset.customer = signedIn ? "1" : "";
+    all("[data-buy-text], [data-buy-label]", function (el) { el.textContent = signedIn ? "Buy again" : "Buy now"; });
     if (out) out.classList.toggle("sm:grid", !signedIn);
     if (inn) inn.classList.toggle("sm:inline-flex", signedIn);
     var om = q("[data-account-out-mobile]"), im = q("[data-account-in-mobile]");
