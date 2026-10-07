@@ -119,7 +119,7 @@ function AddWatchButton({ verified }: { verified: boolean }) {
     );
   }
   return (
-    <Link to="/my/add-watch" className={buttonCls("primary")}>
+    <Link to="/my/setup?another=1" className={buttonCls("primary")}>
       <Plus className="size-4" /> Add watch
     </Link>
   );

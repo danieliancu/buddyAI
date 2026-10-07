@@ -8,7 +8,6 @@ import { ErrorBox, Spinner } from "../../components/ui";
 import DeviceSettingsPage from "../DeviceSettingsPage";
 import { CustomerCtx, type CustomerSession } from "./session";
 import MyWatchesPage from "./MyWatchesPage";
-import AddWatchPage from "./AddWatchPage";
 import WatchHistoryPage from "./WatchHistoryPage";
 import { MyNotesPage, MyRemindersPage } from "./MyItemsPages";
 import MyPersonasPage from "./MyPersonasPage";
@@ -81,7 +80,7 @@ export default function CustomerApp() {
           <CustomerLayout>
             <Routes>
               <Route index element={<MyWatchesPage />} />
-              <Route path="add-watch" element={<AddWatchPage />} />
+              <Route path="add-watch" element={<Navigate to="/my/setup?another=1" replace />} />
               <Route path="setup" element={<SetupPage />} />
               <Route path="watch/:id" element={<DeviceSettingsPage mode="customer" />} />
               <Route path="watch/:id/history" element={<WatchHistoryPage />} />

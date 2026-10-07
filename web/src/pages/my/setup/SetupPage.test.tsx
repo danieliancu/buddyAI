@@ -299,3 +299,16 @@ it("the pairing code can be typed even if the Wi-Fi step wasn't confirmed (watch
   renderSetup();
   expect(await screen.findByLabelText("Code shown on the watch")).toBeTruthy();
 });
+
+it("Add watch (?another=1) runs the setup again even when the account already has a watch", async () => {
+  me.onboarding.mockResolvedValue(onboarding({ watches: 1, care: care("active"), complete: true, platform: "iphone" }));
+  render(
+    <MemoryRouter initialEntries={["/my/setup?another=1"]}>
+      <CustomerCtx.Provider value={{ account, setAccount: () => {}, reload: async () => {}, signOut: async () => {} }}>
+        <SetupPage />
+      </CustomerCtx.Provider>
+    </MemoryRouter>,
+  );
+  expect(await screen.findByTestId("softap-steps")).toBeTruthy(); // not the "already paired" screen
+  expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
+});

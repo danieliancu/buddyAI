@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { ChevronRight, CircleCheck, Circle, MailWarning, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
 import { api, type CareActivation, type MyPlan, type Onboarding, type SetupPlatform } from "../../../api";
 import { careErrorText, fmtDayMonth, pence } from "../../../components/BillingBits";
@@ -42,7 +42,10 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
   const { account } = useCustomer();
   const onboarding = useAsync(api.me.onboarding, []);
   const plan = useAsync(api.me.plan, []);
-  const [wifiDone, setWifiDone] = useState(() => readWifiDone(account.id));
+  // "Add watch" (?another=1): the whole flow again for one more watch, even if the account has watches.
+  const [params] = useSearchParams();
+  const another = params.get("another") === "1";
+  const [wifiDone, setWifiDone] = useState(() => !another && readWifiDone(account.id));
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
@@ -64,7 +67,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
 
   if (!ob.eligible) return <NoOrder />;
   const paymentPending = ob.order?.status === "payment_pending";
-  const paired = ob.watches > 0;
+  const paired = ob.watches > 0 && !another;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -128,7 +131,13 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
                     ? "After joining your Wi-Fi the watch shows a 6-digit code. Type it here — it's valid for 5 minutes."
                     : "Once the watch is on your Wi-Fi it shows a 6-digit code. Type it here — it's valid for 5 minutes."}
                 </p>
-                <PairCodeForm onPaired={() => (setWifiDone(true), onboarding.reload(), plan.reload())} />
+                <PairCodeForm
+                  onPaired={(id) =>
+                    another
+                      ? navigate(`/my/watch/${encodeURIComponent(id)}`, { replace: true })
+                      : (setWifiDone(true), onboarding.reload(), plan.reload())
+                  }
+                />
               </div>
             )}
           </Section>
