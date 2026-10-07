@@ -185,7 +185,8 @@ describe("Android Bluetooth setup", () => {
     expect(await screen.findByTestId("ble-success")).toBeTruthy();
     expect(watch.saved).toEqual({ ssid: "Home", pass: "correct horse" });
     expect(screen.queryByTestId("recovery")).toBeNull();
-    expect(await screen.findByLabelText("Code shown on the watch", {}, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Set up Wi-Fi again" })).toBeTruthy(); // step 1 done
+    expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
     expect(localStorage.getItem("ola.setup.wifiDone.7")).toBe("1");
   });
 
@@ -291,4 +292,10 @@ describe("order, account and ola Care states", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(me.activateCare).toHaveBeenCalledTimes(1));
   });
+});
+
+it("the pairing code can be typed even if the Wi-Fi step wasn't confirmed (watch already online)", async () => {
+  me.onboarding.mockResolvedValue(onboarding({ platform: "iphone" }));
+  renderSetup();
+  expect(await screen.findByLabelText("Code shown on the watch")).toBeTruthy();
 });

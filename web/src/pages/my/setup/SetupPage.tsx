@@ -115,21 +115,21 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
             )}
           </Section>
 
-          <Section icon={<Watch className="size-4" />} title="2. Pair the watch with your account" done={false} muted={!wifiDone}>
+          <Section icon={<Watch className="size-4" />} title="2. Pair the watch with your account" done={false}>
             {!ob.email_verified ? (
               <Notice tone="warn" icon={<MailWarning className="size-4" />}>
                 Confirm your email address first: use the link we sent to <b className="break-all">{account.email}</b>, or “Resend email”
                 above.
               </Notice>
-            ) : wifiDone ? (
+            ) : (
               <div className="space-y-3">
                 <p className="text-sm text-muted">
-                  After joining your Wi-Fi the watch shows a 6-digit code. Type it here — it's valid for 5 minutes.
+                  {wifiDone
+                    ? "After joining your Wi-Fi the watch shows a 6-digit code. Type it here — it's valid for 5 minutes."
+                    : "Once the watch is on your Wi-Fi it shows a 6-digit code. Type it here — it's valid for 5 minutes."}
                 </p>
-                <PairCodeForm onPaired={() => (onboarding.reload(), plan.reload())} />
+                <PairCodeForm onPaired={() => (setWifiDone(true), onboarding.reload(), plan.reload())} />
               </div>
-            ) : (
-              <p className="text-sm text-muted">After the Wi-Fi step, the watch shows a 6-digit code to type here.</p>
             )}
           </Section>
 
