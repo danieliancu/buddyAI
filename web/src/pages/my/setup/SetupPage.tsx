@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { CircleCheck, Circle, MailWarning, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
+import { ChevronRight, CircleCheck, Circle, MailWarning, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
 import { api, type CareActivation, type MyPlan, type Onboarding, type SetupPlatform } from "../../../api";
 import { careErrorText, fmtDayMonth, pence } from "../../../components/BillingBits";
 import { Button, Card, ErrorBox, Spinner, buttonCls, cx, useAsync } from "../../../components/ui";
@@ -154,13 +154,16 @@ function Progress({ ob, wifiDone }: { ob: Onboarding; wifiDone: boolean }) {
     ["ola Care", careDone],
   ];
   return (
-    <ol className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs" aria-label="Setup progress">
-      {steps.map(([label, done]) => (
-        <li key={label} className={cx("inline-flex items-center gap-1", done ? "text-ok" : "text-muted")}>
-          {done ? <CircleCheck className="size-3.5" aria-hidden /> : <Circle className="size-3.5" aria-hidden />}
-          <span>
-            {label}
-            <span className="sr-only">{done ? " (done)" : " (to do)"}</span>
+    <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-xs" aria-label="Setup progress">
+      {steps.map(([label, done], i) => (
+        <li key={label} className="inline-flex items-center gap-1.5">
+          {i > 0 && <ChevronRight className="size-3.5 text-muted/60" aria-hidden />}
+          <span className={cx("inline-flex items-center gap-1", done ? "text-ok" : "text-muted")}>
+            {done ? <CircleCheck className="size-3.5" aria-hidden /> : <Circle className="size-3.5" aria-hidden />}
+            <span>
+              {label}
+              <span className="sr-only">{done ? " (done)" : " (to do)"}</span>
+            </span>
           </span>
         </li>
       ))}
