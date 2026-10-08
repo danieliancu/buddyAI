@@ -128,6 +128,7 @@ class DeviceConnection:
     async def close(self, code: int = 1000, reason: str = "") -> None:
         if not self._closed:
             self._closed = True
+            self._sent_close = code
             with contextlib.suppress(Exception):
                 await self.ws.close(code=code, reason=reason)
 
@@ -159,7 +160,9 @@ class DeviceConnection:
             await self._teardown()
 
     async def _teardown(self) -> None:
-        STORE.drop_session(self.env.session_id or "")  # no voice context survives the connection
+        # No voice context survives the connection - except a deletion waiting for its yes (voice_context.py), and
+        # not even that when the watch was revoked or disconnected by an operator.
+        STORE.drop_session(self.env.session_id or "", carry=getattr(self, "_sent_close", None) not in (4001, 4002))
         if self.authenticated:
             self._record_session_issues()
         if self.active:
@@ -271,7 +274,9 @@ class DeviceConnection:
             self.account_id = account_id
             self.settings = settings
             self.authenticated = True
-            STORE.drop_device(device_id)  # a new session: nothing pending from an earlier one
+            # A new session: nothing from an earlier one, except a deletion still waiting for its yes (an old
+            # connection that has not been torn down yet) - handed over by STORE.get, once.
+            STORE.drop_device(device_id, carry=True)
             self._fw = fw
             self.env.session_id = new_session
             rates = (msg.get("audio") or {}).get("downlink_rates") or [16000]

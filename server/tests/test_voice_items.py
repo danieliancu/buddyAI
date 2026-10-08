@@ -414,6 +414,163 @@ def test_session_drop_on_reconnect_and_owner_change() -> None:
     assert _get(acc, mon) is not None
 
 
+# --- one question, one yes, one deletion (the double-confirmation bug) ----------------------------------------
+
+
+def _pending(acc: int, chat: "Chat", session: str | None = None):
+    return STORE.pending_confirmation(STORE.get(acc, chat.device, session or chat.session))
+
+
+def _no_second_question(llm: "ChatLLM") -> None:
+    """The reply after a yes only reports the server's result: no tools, so no second delete / question."""
+    assert all(r.tools is None for r in llm.requests)
+
+
+@pytest.mark.parametrize("answer", ["Da, sunt sigur.", "Da, sigur că da.", "Da, șterge-l.", "Da, bineînțeles.",
+                                    "Yes, I'm sure.", "Yes, of course.", "Yes, delete the meeting"])
+def test_reminder_deleted_once_after_a_natural_yes(answer: str) -> None:
+    acc = _account()
+    mon, thu = _two_stefans(acc)
+    chat = Chat(acc)
+    turn, _, _ = chat.say("Șterge ședința de luni cu Ștefan", [_delete_call({"text": "sedinta"}), "Șterg ședința de luni?"])
+    assert turn.expect_reply and _get(acc, mon) is not None
+    turn, _, llm = chat.say(answer, ["Am șters."])
+    assert _get(acc, mon) is None and _get(acc, thu) is not None and turn.items_changed
+    _no_second_question(llm)
+    assert _pending(acc, chat) is None and not turn.expect_reply
+
+
+@pytest.mark.parametrize("answer", ["Da, șterge nota.", "Da, șterge lista de cumpărături", "Yes, delete it please",
+                                    "Yes, delete the list"])
+def test_note_deleted_once_after_a_yes(answer: str) -> None:
+    acc = _account()
+    with session_scope() as db:
+        note = ItemRepo(db).create(acc, "note", "Lista de cumpărături\nlapte").uid
+        other = ItemRepo(db).create(acc, "note", "Idei\nvacanță").uid
+    chat = Chat(acc)
+    chat.say("Șterge lista de cumpărături", [_delete_call({"text": "cumparaturi"}), "Șterg lista de cumpărături?"])
+    assert _get(acc, note) is not None
+    turn, _, llm = chat.say(answer, ["Am șters."])
+    assert _get(acc, note) is None and _get(acc, other) is not None
+    _no_second_question(llm)
+    with session_scope() as db:  # exactly one deletion recorded
+        ops = [o for o in VoiceOpRepo(db).unreported(acc, chat.device, datetime.now(timezone.utc) - timedelta(minutes=5))
+               if o.tool == "confirm"] + [o for o in db.exec(__import__("sqlmodel").select(VoiceOperation).where(
+                   VoiceOperation.account_id == acc, VoiceOperation.tool == "confirm")).all()]
+    assert len({o.op_key for o in ops}) == 1
+
+
+def test_unclear_yes_is_asked_again_with_the_reason() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    chat = Chat(acc)
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    turn, _, llm = chat.say("Da, și adaugă pâine pe listă", ["Nu am înțeles clar, șterg ședința?"])
+    assert _get(acc, mon) is not None and turn.expect_reply
+    facts = llm.requests[0].messages[-2]["content"]
+    assert "not a clear yes or no" in facts and "did not catch" in facts and llm.requests[0].tools is None
+    chat.say("Da.", ["Am șters."])  # the same, single question: a clear yes now deletes
+    assert _get(acc, mon) is None
+
+
+def test_a_new_request_after_the_question_is_still_a_new_request() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    chat = Chat(acc)
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    _, _, llm = chat.say("Da, dar mută-l mâine", ["Bine, îl mut."])
+    assert llm.requests[0].tools is not None  # handed to the model as the new request it is
+    assert _get(acc, mon) is not None and _pending(acc, chat) is None
+
+
+def test_reconnect_between_question_and_yes_deletes_once() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    chat = Chat(acc, session="sess-before-drop", device="dev-reconnect")
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    STORE.drop_session("sess-before-drop", carry=True)  # Wi-Fi dropped: the connection ended
+    STORE.drop_device("dev-reconnect", carry=True)  # the watch's next hello
+    after = Chat(acc, session="sess-after-drop", device="dev-reconnect")
+    turn, _, llm = after.say("Da.", ["Am șters."])
+    assert _get(acc, mon) is None and turn.items_changed
+    _no_second_question(llm)
+    after.say("Da.", ["?"])  # handed over once: nothing pending any more
+    assert _pending(acc, after) is None
+
+
+def test_late_call_of_the_old_session_keeps_the_carried_question() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    Chat(acc, session="s-late-1", device="dev-late").say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    STORE.drop_session("s-late-1", carry=True)
+    STORE.get(acc, "dev-late", "s-late-1")  # a tool call of the old connection still finishing
+    turn, _, _ = Chat(acc, session="s-late-2", device="dev-late").say("Da.", ["Am șters."])
+    assert _get(acc, mon) is None and turn.items_changed
+
+
+def test_a_yes_about_another_kind_of_item_never_deletes_the_pending_one() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    chat = Chat(acc)
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Șterg ședința de luni?"])
+    turn, _, llm = chat.say("Da, șterge lista", ["Nu am înțeles clar. Șterg ședința?"])
+    assert _get(acc, mon) is not None  # "the list" is not the meeting: never a yes to it
+    assert turn.expect_reply and "not a clear yes or no" in llm.requests[0].messages[-2]["content"]
+
+
+def test_revoked_or_operator_disconnected_watch_carries_nothing() -> None:
+    from starlette.websockets import WebSocketState
+
+    from app.gateway.device_ws import DeviceConnection
+    from app.gateway.hub import DeviceHub
+
+    class _WS:
+        client_state, client = WebSocketState.CONNECTED, None
+
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            return None
+
+    for code, carried in ((4001, False), (4002, False), (4000, True)):
+        acc = _account()
+        mon, _ = _two_stefans(acc)
+        sess, dev = f"s-close-{code}", f"dev-close-{code}"
+        Chat(acc, session=sess, device=dev).say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+        conn = DeviceConnection(_WS(), DeviceHub(), None)
+        conn.env.session_id, conn.device_id = sess, dev
+        asyncio.run(conn.close(code=code))  # revoked / disconnected by an operator / replaced
+        asyncio.run(conn._teardown())
+        Chat(acc, session=f"{sess}-new", device=dev).say("Da.", ["Am șters." if carried else "?"])
+        assert (_get(acc, mon) is None) is carried, code
+
+
+def test_reconnect_does_not_carry_after_expiry_owner_change_or_revoke(monkeypatch) -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    # expired while offline
+    chat = Chat(acc, session="s-exp-1", device="dev-exp")
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    STORE.drop_session("s-exp-1", carry=True)
+    t0 = voice_context.now()
+    monkeypatch.setattr(voice_context, "now", lambda: t0 + 121)
+    Chat(acc, session="s-exp-2", device="dev-exp").say("Da.", ["?"])
+    assert _get(acc, mon) is not None
+    monkeypatch.setattr(voice_context, "now", lambda: t0)
+    # owner change: nothing pending survives, not even the stash
+    chat = Chat(acc, session="s-own-1", device="dev-own")
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    STORE.drop_session("s-own-1", carry=True)
+    STORE.drop_device("dev-own")  # hub.forget_owner
+    Chat(acc, session="s-own-2", device="dev-own").say("Da.", ["?"])
+    assert _get(acc, mon) is not None
+    # another account on the same watch never gets it
+    other = _account()
+    chat = Chat(acc, session="s-acc-1", device="dev-acc")
+    chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
+    STORE.drop_session("s-acc-1", carry=True)
+    Chat(other, session="s-acc-2", device="dev-acc").say("Da.", ["?"])
+    assert _get(acc, mon) is not None
+
+
 def test_changed_item_asks_again() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)

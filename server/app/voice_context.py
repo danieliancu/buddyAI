@@ -1,8 +1,11 @@
 """Short-lived voice context per watch session: what the user is talking about, and what waits for an answer.
 
-Keyed by (account_id, device_id, session_id): nothing crosses accounts, watches or sessions - a reconnect
-starts a new session and a new, empty context; an owner change drops the device's contexts. It lives in
-memory: after a server restart the user is simply asked again (nothing is executed from lost state).
+Keyed by (account_id, device_id, session_id): nothing crosses accounts or watches, and a reconnect starts a new
+session with a new context. One exception: a deletion waiting for its yes survives a reconnect of the same watch
+and account until its normal expiry (the connection dropped between the question and the answer; asking again
+would be the "second confirmation" users notice). It is handed over once, only after the old connection ended,
+with its targets pinned to the versions asked about. An owner change drops everything, nothing carried. It lives
+in memory: after a server restart the user is simply asked again (nothing is executed from lost state).
 
 - refs: candidates the server showed the model ("c1", "c2", or "open"), each pinned to an item uid and the
   version it had. The model can only act on refs issued here (it cannot invent an id). A ref from an
@@ -95,6 +98,8 @@ class VoiceContextStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._ctx: dict[Key, VoiceContext] = {}
+        # (account_id, device_id) -> (the session it was asked in, the confirmation) after a dropped connection
+        self._carry: dict[tuple[int, str], tuple[str, PendingConfirmation]] = {}
 
     # --- lifecycle --------------------------------------------------------------------------------
 
@@ -104,25 +109,49 @@ class VoiceContextStore:
             t = now()
             for k in [k for k, c in self._ctx.items() if t - c.last_seen > CONTEXT_IDLE_S]:
                 del self._ctx[k]
+            for ck in [ck for ck, (_s, pc) in self._carry.items() if pc.state != "awaiting" or t > pc.expires_at]:
+                del self._carry[ck]  # a handed-over question that nobody came back for
             ctx = self._ctx.get(key)
             if ctx is None:
                 ctx = self._ctx[key] = VoiceContext(key)
+                carried = self._carry.get((account_id, device_id))
+                if carried is not None and carried[0] != session_id:  # never the old session's late call
+                    del self._carry[(account_id, device_id)]
+                    pc = carried[1]
+                    if pc.state == "awaiting" and t <= pc.expires_at:
+                        pc.created_turn = 0  # answerable from the new session's first turn
+                        ctx.confirmation = pc
             ctx.last_seen = t
             return ctx
 
-    def drop_session(self, session_id: str) -> None:
+    def _stash(self, k: Key, ctx: VoiceContext) -> None:
+        pc = ctx.confirmation
+        if pc is not None and pc.state == "awaiting" and now() <= pc.expires_at:
+            self._carry[(k[0], k[1])] = (k[2], pc)
+
+    def drop_session(self, session_id: str, carry: bool = False) -> None:
+        """The connection ended. carry: keep a deletion waiting for its yes for the watch's next session."""
         with self._lock:
             for k in [k for k in self._ctx if k[2] == session_id]:
+                if carry:
+                    self._stash(k, self._ctx[k])
                 del self._ctx[k]
 
-    def drop_device(self, device_id: str) -> None:
+    def drop_device(self, device_id: str, carry: bool = False) -> None:
+        """All of the watch's contexts. carry=False (owner change): nothing pending survives, not even a stash."""
         with self._lock:
             for k in [k for k in self._ctx if k[1] == device_id]:
+                if carry:
+                    self._stash(k, self._ctx[k])
                 del self._ctx[k]
+            if not carry:
+                for ck in [ck for ck in self._carry if ck[1] == device_id]:
+                    del self._carry[ck]
 
     def clear(self) -> None:
         with self._lock:
             self._ctx.clear()
+            self._carry.clear()
 
     # --- refs -------------------------------------------------------------------------------------
 

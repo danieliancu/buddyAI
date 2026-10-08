@@ -222,7 +222,9 @@ class ConversationPipeline:
             STORE.cancel_confirmation(ctx)  # another screen or item: the question is dropped
             return None
         strict = turn.mode != "chat"  # the mic stays open in edit modes: "yes, delete" is needed there
-        answer = classify_answer(turn.user_text, self._answer_languages(turn), strict=strict)
+        # The item's own words may be repeated in the yes ("da, șterge ședința cu Ștefan").
+        answer = classify_answer(turn.user_text, self._answer_languages(turn), strict=strict, target_words=pc.facts,
+                                 kind=(pc.payload or {}).get("kind"))
         lang = turn.language if turn.language != languages.AUTO else (turn.fallback_language or turn.settings.preferred_language or "en")
         if answer == "yes":
             taken = STORE.take_confirmation(ctx, pc.id, turn.turn_id, turn.mode, turn.edit_uid)
@@ -274,7 +276,9 @@ class ConversationPipeline:
             turn.assistant_text = "(confirmation unclear: asked again)"
             turn.expect_reply = True
             if turn.mode == "chat":
-                await self._reply(turn, io, facts=f"Server: still waiting for a clear yes or no to: {pc.facts}. Ask again briefly.")
+                await self._reply(turn, io, facts=(
+                    "Server: the user's answer was not a clear yes or no, so nothing was deleted yet. Tell them in a few "
+                    f"words that you did not catch a clear yes or no, then ask once more whether to {pc.facts}."))
             else:
                 await io.send(turn, "llm_display", text=edit_texts.text(lang, "say_confirm"))
             return "handled"
