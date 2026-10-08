@@ -69,9 +69,10 @@ export default function MyWatchesPage() {
             <MessageCircleQuestion className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-xs text-muted">This period · resets {fmtDayMonth(usage.data.reset_at)}</p>
+            <p className="text-xs text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
             <p className="font-semibold">
-              <span className="tabular">{usage.data.questions}</span> {usage.data.questions === 1 ? "conversation" : "conversations"}
+              <span className="tabular">{usage.data.questions.toLocaleString("en-GB")}</span>
+              {usage.data.limit ? <span className="font-normal text-muted"> of {usage.data.limit.toLocaleString("en-GB")}</span> : null}
             </p>
           </div>
         </div>

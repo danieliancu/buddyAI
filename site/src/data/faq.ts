@@ -123,7 +123,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Is there a usage limit?",
-        a: `Yes. ${brandHtml("care")} includes a monthly fair-use allowance of AI usage, shared by all your watches — it is not unlimited. Different requests use different amounts (questions that search the web, long answers and long recordings use more), so it isn't a fixed number of minutes or conversations. Your account shows how much you've used as a percentage, and the date it resets; we let you know as you approach the limit. If you reach it, ola pauses new questions until the reset, or you can buy one-off extra usage for the rest of the period.`,
+        a: `${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month are included with ${brandHtml("care")}, shared by all your watches. Each question or request you make counts once — even if ola searches the web for it — and a follow-up counts as a new one. Silence and requests that fail on our side don't count. Your account shows how many you've used and when your allowance renews. If you use them all, ola answers again when it renews, or you can add ${prices.topup.interactions} more for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off). Unused interactions don't carry over.`,
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,

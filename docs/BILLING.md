@@ -1,43 +1,68 @@
-# ola Care — billing, allowance and fair use
+# ola Care — billing, AI interactions and cost monitoring
 
-Operator and developer reference. Customer-facing wording lives in the web app (Account → ola Care → "How usage works").
+Operator and developer reference. Customer-facing wording lives in the web app (Account → ola Care → "How
+interactions work"), on the site (pricing, FAQ, subscription terms §3a) and in the consent text (`app/care_terms.py`).
 
-## Money model
+Two separate systems:
+- **A. The customer's interaction allowance — enforced.** ola Care includes **1,000 AI interactions per billing
+  period**, shared by the account's watches. This is the only usage limit customers have.
+- **B. Internal AI cost monitoring — never enforced.** What the AI providers cost us per account and period is
+  recorded and compared with an internal target (£2.50) for operator alerts and profitability views. It never
+  refuses, slows or degrades a customer's request.
+
+## Plan settings
 
 | Setting (operator: Usage → Plan settings) | Default | Meaning |
 |---|---|---|
-| Care selling price | £7.99 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match (set it in Usage → Plan settings; existing databases keep their value). |
-| Included AI allowance | £2.50 / period | Internal provider-cost budget per account (never shown in £ to customers). |
+| Care selling price | £7.99 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match. |
+| AI interactions per month | 1,000 | The customer's allowance per billing period, shared by all the account's watches. Enforced. |
 | Extra usage price | £1.99 one-off | Stripe Checkout `mode=payment`, `price_data` from settings. Never recurring. |
-| Extra usage allowance | £0.65 | Added to the current period only. |
-| Notification thresholds | 80, 95, 100 % | Each shown once per period (web banner/dialog, watch notice, first one also by email). |
+| Extra usage: interactions added | 250 | Added to the current period only. |
+| Notification thresholds | 80, 95, 100 % | Of the interactions; each shown once per period (web banner/dialog, watch notice, first one also by email). |
+| Cost: early warning / target / critical | £2.00 / £2.50 / £5.00 | Internal monitoring per account and period (operator only, never enforced). |
 | USD → GBP rate | 0.75 | Applied when usage is recorded; recorded rows keep their rate. |
-| Reserve per running turn | 3p | Concurrency guard (see below). |
-| Enforce | off | Check subscriptions/allowances without Stripe keys. Always on while Stripe is configured. |
+| Enforce | off | Check subscriptions and interactions without Stripe keys. Always on while Stripe is configured. |
 
-These are **proposals, not commercially approved prices**. All changes are written to the audit log.
+A per-account **interaction override** (Customers → account → Plan & allowance) is an authorised exception.
+The pre-0027 money allowance settings (`care_allowance_pence`, `topup_allowance_pence`, `reserve_pence`,
+`accounts.allowance_override`, a complimentary grant's `allowance_pence`) are kept in the database for history
+and are no longer read. All setting changes are written to the audit log.
 
-## Allowance
+## Interactions (the customer's allowance)
 
-- **Per account**, shared by all its watches.
-- **Period**:
-  - Stripe subscriptions use their billing period.
+- **Per account**, shared by all its watches; **per billing period**:
+  - Stripe subscriptions use their billing period. A Stripe period longer than a month — a free trial longer than
+    a month, whose Stripe period is the whole trial — is split into monthly cycles from its start
+    (`allowance.period_for`), so the 1,000 renew every month during the trial too; a trial of one month or less
+    is one cycle.
   - Complimentary grants use 30-day cycles from the grant start.
   - Otherwise, the calendar month.
-- **Used**: the sum of `usage_records.cost_micro_gbp` in the period, counting only rows that are `billable`, not `mock`, and whose operation has ended (a running turn is counted at admission, never shown to the customer).
-  - Amounts are integer millionths of £1.
-  - The GBP cost is frozen at write time, so a later exchange-rate change does not rewrite past usage.
-- **Unpriced usage** (no pricing rule) cannot be counted. It is flagged in the operator Finance tab and on the account, never treated as £0.
-- **Not charged to customers**: turns that fail on our side (`turn_status=error`, the watch gave up waiting, the lease was lost or the server shut down) and operations recovered after a server failure (`expired`). Their cost stays visible to the operator.
-- **Charged**: aborted and no-speech turns, for the stages that ran.
-- **Limit**: plan allowance (or the per-account override, or the grant's own allowance), plus paid top-ups of the period.
-- **Customers see a percentage** (floored: 100 % means really used up), activity count, reset date, prices and top-ups. They never see £ costs, tokens or providers.
+- **Nothing rolls over**: counts are per period key.
+
+**Counting rule** (`app/interactions.py`, decided once at settlement, stored in `usage_operations.interaction`):
+
+| Counts as one interaction | Never counts |
+|---|---|
+| A chat / note / reminder request that was understood (a transcript exists) and completed | Silence (`no_speech`), nothing understood |
+| The same, cancelled by the user (tap) after it was understood | Failures on our side: provider / server error, `start_failed`, the watch gave up waiting (`timeout`), lease lost, shutdown, expired operations |
+| | In a note / reminder edit screen (mic left open): talk not meant for the item (`ignored`) or about another item (`other`) |
+| One request = one interaction, however many AI calls, web searches or tools it used | A dropped connection (`connection_lost`) or a watch-side `error` abort |
+| A follow-up is a new request | Refused or duplicate requests (a resend never runs twice) |
+| | Background work: memory learning, embeddings; voice samples; operator tests |
+
+Operations from before migration 0027 have `interaction = NULL`: they were never counted and nothing is
+reconstructed. Migration 0027 also fixes the size of top-ups already bought (250 interactions) and deletes the
+usage notices recorded under the money allowance (they described money; the 80/95/100 % notices then follow the
+interaction count from the first period). For the period running at deploy the operator projection is marked
+*incomplete* (it holds costs of requests that were never counted). **Limit** = the plan's interactions (or the account's override) + the interactions of the period's
+paid top-ups. **Customers see** used, limit, remaining, % used (floored), the renewal date and their top-ups —
+never costs, tokens or providers.
 
 ### Usage operations (multi-process safe)
 
 Every AI-consuming operation is one row in `usage_operations` (`app/usage_ops.py`). **PostgreSQL is the
-source of truth**: any number of server processes or hosts share one budget per account. Nothing about
-admission lives in process memory.
+source of truth**: any number of server processes or hosts share one interaction allowance per account. Nothing
+about admission lives in process memory.
 
 **States**: `reserved` → `running` → one of `settled` / `cancelled` (nothing was spent) / `expired` (the lease
 ran out). A terminal operation is never revived. Separately, **cost certainty**: `pending`, `exact`,
@@ -47,27 +72,26 @@ ran out). A terminal operation is never revived. Separately, **cost certainty**:
 1. locks the account row (`SELECT … FOR UPDATE`; SQLite in development: `BEGIN IMMEDIATE`, the database write lock),
 2. looks up the request (`r:<request_id>` from the watch, or `l:<device>:<session>:<turn>` for older firmware):
    a known request never creates a second operation,
-3. applies the rules below and inserts the operation with its reservation, a lease (`usage_lease_s`, 90 s), the
-   owner process (`host:pid:boot`) and an execution token.
+3. applies the rules below and inserts the operation with a lease (`usage_lease_s`, 90 s), the owner process
+   (`host:pid:boot`) and an execution token.
 
 If the database cannot decide (down, timeout), the turn is refused (`service_unavailable`), never allowed.
 
-**Rules** (budget-enforced accounts). Notation:
-- `used_final` = billable, non-mock costs of finished operations (and legacy rows) in the period;
-- `recorded(op)` = costs already written for a running operation;
-- `exposure(op)` = `max(reserved, recorded)`;
-- `limit` = plan allowance, the per-account override or the grant's allowance, plus the period's paid top-ups.
+**Rules** for a customer request (chat / note / reminder) on an enforced account. Notation: `used` = operations
+of the period settled as an interaction; `active` = requests of the period still running; `limit` as above.
 
 | Condition | Result |
 |---|---|
-| `used_final + Σ recorded(active) ≥ limit` | `limit_reached` (a single watch is refused only at 100 %) |
-| other operations are active and `used_final + Σ exposure(active) + own reservation > limit` | `busy_concurrent`: "other conversations are in progress, try again when they finish" |
-| otherwise | admitted with `reserved = reserve per running turn` (3p) |
+| `used ≥ limit` | `limit_reached` (the 1,000th is admitted, the 1,001st refused) |
+| `used + active ≥ limit` | `busy_concurrent`: "other conversations are in progress, try again when they finish" |
+| otherwise | admitted (`reserved_micro = 0`: an admitted request holds one interaction while it runs) |
 
-Internal accounts, unowned watches (operator stock) and unenforced plans get an operation with reservation 0
-(costs are recorded, no budget check).
+So concurrent watches and server processes can never take an account past its limit. Memory learning
+(`kind=memory`) needs an entitled subscription but never uses or checks the interaction limit. Internal accounts,
+unowned watches (operator stock) and unenforced plans are admitted without any check (costs still recorded).
+**AI cost never enters admission.**
 
-**Customers see `used_final` only**: never a reservation and never the costs of a turn still running.
+**Customers see settled interactions only**: never a running request.
 
 **Lease and heartbeat**: the process running the turn extends the lease every `usage_heartbeat_s` (20 s), and
 writes the costs reported so far at the same time. Only the token holder can extend it, and only while it is
@@ -81,16 +105,15 @@ operation's `period_key`. A cost that arrives after the operation ended (or afte
 stays in the operation's period, with the operation's billable flag, and is logged as `late_cost`. Speech-to-text
 audio already sent is recorded even when the turn is cancelled while listening.
 
-**Settlement** (`settle`, idempotent): reconciles the last costs and applies the billable rule to all of the
-operation's rows. A turn is **not billable** when it failed on our side: provider/server error, the watch gave
-up waiting (`timeout`), the lease was lost, or the server shut down. Turns the user stopped, and no-speech turns,
-are billable for the stages that ran. The reservation disappears with the state change; nothing has to be
-released. If the database is briefly down, settlements wait in a per-process retry queue. If the process dies
+**Settlement** (`settle`, idempotent): records whether the operation **counts as an interaction** (the rule
+above; a second settle never counts again), reconciles the last costs and sets the operation's `billable` flag on
+its rows. `billable` is now a **finance** attribute only (costs that belong to the customer's consumption, versus
+failures on our side); it does not limit anything. If the database is briefly down, settlements wait in a per-process retry queue. If the process dies
 first, recovery expires the operation.
 
 **Recovery** (`recover_expired`, every `usage_recovery_interval_s` in **every** process): operations whose lease
-ran out become `expired`, with reason `lease_expired`. Their costs stay visible to the operator and are **not
-billed** (owner decision). Certainty is `exact` when nothing can have been spent (still `reserved`, no costs),
+ran out become `expired`, with reason `lease_expired`. Their costs stay visible to the operator; they are **not
+billable and never count as an interaction** (owner decision). Certainty is `exact` when nothing can have been spent (still `reserved`, no costs),
 otherwise `uncertain`. On PostgreSQL each process takes the account with `SKIP LOCKED` and changes the state
 conditionally, so one operation is recovered exactly once. Nothing is ever executed again.
 
@@ -116,10 +139,38 @@ provider tests (`/api/system/test/*`) are a documented exception (`operator_test
 `tests/test_ai_call_sites.py` fails if a new provider call site appears without admission or a documented
 exception.
 
-**Not an absolute financial cap.** A turn that has started always finishes, so the last answer may go beyond
-its reservation. Late provider reports and unpriced calls are added after the fact, and an expired operation's
-cost is real provider spend even though it is not billed. Admission bounds concurrency; it does not guarantee
-that provider spend never exceeds the allowance.
+**Money is not capped — by design.** A customer may use all their interactions whatever they cost us. Provider
+spend is monitored (below), never limited by admission. A turn that has started always finishes.
+
+## Internal AI cost monitoring (operator only, never enforced)
+
+`app/cost_monitor.py`. Per account and current billing period:
+- **actual AI cost**: every priced, non-mock provider cost of the period (micro-GBP), split into interactive (the
+  customer's requests) and background (memory learning, embeddings, voice samples), and by component (STT, LLM,
+  TTS, web search, embeddings);
+- **average per interaction** = total cost / interactions counted;
+- **projected cost at the allowance** = average × the account's limit (override and top-ups included). An
+  **estimate**, shown only from 20 interactions on; flagged *incomplete* when some usage has no pricing rule
+  (unpriced usage is never treated as free);
+- **status**: within target (< £2.00), approaching target (≥ £2.00), over target (≥ £2.50), critical cost
+  (≥ £5.00).
+
+After every settlement (turns and memory learning) the account is evaluated in the background: each level
+reached is recorded once per period (`cost_alerts`, unique per account, period and level), written to the audit
+log (`cost.alert`) and published to operators as a live `cost_alert` event. Nothing else happens: no refusal, no
+slower or cheaper service. Operator views: Usage → Finance → "AI cost per account" (filter by status, sort by
+cost / projection / per interaction / interactions) and the account page.
+
+## Abuse protection (separate from the allowance)
+
+Deterministic technical safeguards against misuse and runaway expense, independent of both the interaction
+allowance and the cost target. Ordinary heavy use is not abuse.
+- Concurrency: `busy_concurrent` (above) and one live connection per watch (a new one replaces the old).
+- Turn bounds: listening and speaking limits, the 30 s "thinking" timeout on the watch, the server idle timeout,
+  the uplink stall timeout, a maximum incoming message size.
+- Bounded tool and search use per request (search attempts are limited; search results are cached).
+- Rate limits on logins, sign-ups, password resets, voice samples and checkout polling (`app/ratelimit.py`).
+- Leases: work whose process died is expired, never re-run.
 
 ### What is still process-local (do not run several workers yet)
 
@@ -264,9 +315,15 @@ See `deploy/README.md` §6, "Stripe TEST MODE", and the manual checklist in `doc
 - **No Stripe objects** are created and no ids are fabricated. The grant is recorded as `subscriptions.source = "complimentary"`, with the note and the operator who granted it.
 - **Expiry**: after `current_period_end` the account shows "Pilot ended" and the watch receives `subscription_required`, until the grant is extended or the customer subscribes.
 
-## Top-ups
+## Top-ups (extra interactions)
 
-1. `POST /api/me/topups/checkout` creates a `pending` TopUp row and a Checkout Session. The row's metadata holds `topup_id` and `account_id`.
+**Decision (2026-10):** a top-up adds **250 AI interactions** for £1.99 to the current period. At the internal
+target (£2.50 per 1,000, about £0.0025 per interaction) 250 interactions cost about £0.63, against about £1.43
+net of VAT and card fees. Review against real per-interaction costs (Finance → AI cost per account). Top-ups
+bought before migration 0027 (a money allowance, `interactions` NULL) count as the plan's current top-up size for
+their own period, so nothing already bought is lost.
+
+1. `POST /api/me/topups/checkout` creates a `pending` TopUp row (`interactions` = the plan's top-up size) and a Checkout Session ("ola extra usage: 250 AI interactions"). The row's metadata holds `topup_id` and `account_id`.
 2. A webhook grants it only if all of these hold:
    - the event is `checkout.session.completed` or `…async_payment_succeeded`;
    - `payment_status == "paid"`;
@@ -278,7 +335,7 @@ See `deploy/README.md` §6, "Stripe TEST MODE", and the manual checklist in `doc
 3. Failures and cancellations:
    - Expired or failed sessions are marked `expired` and grant nothing.
    - Abandoned checkouts stay `pending` and grant nothing.
-4. **Refund policy**: `charge.refunded` marks the top-up `refunded` and withdraws its extra allowance for the period, even if part of it was used. A negative revenue event is recorded. The customer-facing text says so.
+4. **Refund policy**: `charge.refunded` marks the top-up `refunded` and withdraws its extra interactions for the period, even if some were used. A negative revenue event is recorded. The customer-facing text says so.
 
 ## Webhooks
 
@@ -304,7 +361,7 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
 
 ## Production checklist (not done — needs explicit authorisation)
 
-- [ ] Approve the prices commercially: Care, extra usage, allowances and thresholds.
+- [ ] Approve the prices commercially: Care, extra usage (250 interactions for £1.99), the 1,000-interaction allowance and the internal cost thresholds.
 - [ ] Create the Stripe products and prices in **test** mode, set `BUDDYAI_STRIPE_*` test keys and the webhook secret, and run the checkout, top-up and refund journey with the Stripe CLI (`stripe listen --forward-to …/api/stripe/webhook`).
 - [ ] Webhook events to enable:
   - `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`
@@ -314,6 +371,6 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
 - [ ] Create the **watch price at £79.99** (one-off, tax-inclusive; the regular £99.99 is display-only on the site) and the Care price (£7.99/month), both in test mode first.
 - [ ] Have the ola Care consent wording, the subscription terms and the "was £99.99" claim reviewed (UK price-reduction and subscription-contract rules).
 - [ ] Stripe Tax and VAT registration. The extra-usage price is VAT-inclusive (`tax_behavior=inclusive`).
-- [ ] Have consumer-law and fair-use wording reviewed (UK CMA / subscription rules): no "unlimited" claims, a clear renewal/reset date and refund wording.
+- [ ] Have the interaction-allowance wording reviewed (subscription terms §3a, FAQ, consent text `care-2026-12`; UK CMA / subscription rules): a clear renewal date, what counts, and the top-up refund wording.
 - [x] Usage admission and reservations live in PostgreSQL (multi-process safe). Before running more than one server worker, move the other process-local parts to shared stores (see "What is still process-local").
 - [ ] Live keys (`sk_live_…`) only after all of the above.

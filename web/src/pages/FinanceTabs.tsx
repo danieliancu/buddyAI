@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, Info } from "lucide-react";
-import { api, type BillingSettings, type TurnCostStats } from "../api";
+import { api, type BillingSettings, type CostStatus, type TurnCostStats } from "../api";
 import { useLive } from "../live";
-import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Spinner, Table, Toggle, cx, useAsync } from "../components/ui";
+import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Select, Spinner, Table, Toggle, cx, useAsync } from "../components/ui";
 
 const gbp = (v: number | null | undefined, digits = 2) => (v == null ? "—" : `£${v.toFixed(digits)}`);
 const small = (v: number | null | undefined) => (v == null ? "—" : v < 0.01 ? `${(v * 100).toFixed(2)}p` : `£${v.toFixed(3)}`);
@@ -16,6 +17,9 @@ const GROUP_LABEL: Record<string, string> = {
   llm_cached_input: "LLM cached input",
   llm_output: "LLM output",
   llm_other: "LLM other",
+  llm: "LLM",
+  embedding: "Embeddings",
+  other: "Other",
 };
 
 function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: ReactNode; tone?: "warn" | "ok" | "danger" }) {
@@ -167,6 +171,8 @@ export function FinanceTab({ days }: { days: number }) {
         </Card>
       </div>
 
+      <AccountCostsCard />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Cost per customer" bodyClassName="p-0 px-4">
           <Breakdown rows={f.by_account.map((a) => [a.account, a.cost])} total={f.provider_cost} />
@@ -182,6 +188,123 @@ export function FinanceTab({ days }: { days: number }) {
         fees, support and other costs are not included.
       </p>
     </div>
+  );
+}
+
+const COST_STATUS: Record<CostStatus, { label: string; tone: "ok" | "neutral" | "warn" | "danger" }> = {
+  within: { label: "Within target", tone: "ok" },
+  approaching: { label: "Approaching target", tone: "warn" },
+  over: { label: "Over target", tone: "danger" },
+  critical: { label: "Critical cost", tone: "danger" },
+};
+const COST_SORTS = [
+  ["cost", "AI cost"],
+  ["projected", "Projected"],
+  ["average", "Per interaction"],
+  ["interactions", "Interactions"],
+] as const;
+
+/** Internal: each customer's AI cost in their current billing period against the monthly target, and the
+ * projected cost at their interaction allowance. Monitoring only - it never limits a customer. */
+export function AccountCostsCard() {
+  const [status, setStatus] = useState<CostStatus | "">("");
+  const [sort, setSort] = useState<(typeof COST_SORTS)[number][0]>("cost");
+  const q = useAsync(() => api.accountCosts({ status: status || undefined, sort }), [status, sort]);
+  const d = q.data;
+  return (
+    <Card
+      title="AI cost per account (current billing period)"
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <Select className="w-auto" value={status} onChange={(e) => setStatus(e.target.value as CostStatus | "")} aria-label="Status">
+            <option value="">All statuses</option>
+            {(Object.keys(COST_STATUS) as CostStatus[]).map((s) => (
+              <option key={s} value={s}>
+                {COST_STATUS[s].label} ({d?.status_counts[s] ?? 0})
+              </option>
+            ))}
+          </Select>
+          <Select className="w-auto" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort by">
+            {COST_SORTS.map(([k, label]) => (
+              <option key={k} value={k}>
+                Sort: {label}
+              </option>
+            ))}
+          </Select>
+        </div>
+      }
+      bodyClassName="p-0 px-4"
+    >
+      <ErrorBox error={q.error} onRetry={q.reload} />
+      {!d ? (
+        q.loading && <Spinner />
+      ) : d.accounts.length === 0 ? (
+        <Empty title="No accounts match" />
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th className="text-right">Interactions</th>
+              <th className="text-right">AI cost</th>
+              <th className="text-right">Per interaction</th>
+              <th className="text-right" title="Average × the account's allowance. An estimate.">
+                Projected at limit*
+              </th>
+              <th>Status</th>
+              <th>Breakdown</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.accounts.map((a) => (
+              <tr key={a.account_id}>
+                <td>
+                  <Link to={`/admin/customers/${a.account_id}`} className="text-accent hover:underline">
+                    {a.account ?? `#${a.account_id}`}
+                  </Link>
+                </td>
+                <td className="tabular text-right">
+                  {a.interactions.toLocaleString("en-GB")} / {a.limit.toLocaleString("en-GB")}{" "}
+                  <span className="text-xs text-muted">({a.used_pct}%)</span>
+                </td>
+                <td className="tabular text-right" title={`Interactive ${gbp(a.interactive_cost, 4)} · background ${gbp(a.background_cost, 4)}`}>
+                  {gbp(a.cost, 2)}
+                  {a.unpriced_rows > 0 && <span className="ml-1 text-xs text-warn" title={`${a.unpriced_rows} usage rows without a price: the real cost is higher`}>+?</span>}
+                </td>
+                <td className="tabular text-right">{a.average_cost == null ? "—" : small(a.average_cost)}</td>
+                <td className="tabular text-right">
+                  {a.projected_cost == null ? (
+                    <span className="text-xs text-muted" title={`Fewer than ${d.min_sample} interactions: no reliable estimate yet`}>
+                      not enough data
+                    </span>
+                  ) : (
+                    <span className={a.projected_cost >= a.target ? "text-warn" : ""}>
+                      ~{gbp(a.projected_cost, 2)}
+                      {a.projection === "incomplete" && <span className="ml-1 text-xs text-warn">(incomplete)</span>}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <Badge tone={COST_STATUS[a.status].tone}>{COST_STATUS[a.status].label}</Badge>
+                </td>
+                <td className="text-xs text-muted">
+                  {Object.entries(a.by_group)
+                    .map(([g, v]) => `${GROUP_LABEL[g] ?? g} ${gbp(v, 2)}`)
+                    .join(" · ") || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {d && (
+        <p className="py-3 text-xs text-muted">
+          Internal target {gbp(d.thresholds.target, 2)} per account per month (warning from {gbp(d.thresholds.warn, 2)}, critical from{" "}
+          {gbp(d.thresholds.critical, 2)}). Monitoring only: customers can always use all their interactions. *Projections are
+          estimates (average cost per interaction × the account's allowance), shown from {d.min_sample} interactions on.
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -262,7 +385,10 @@ export function PlanSettingsTab() {
     setSaved(false);
     setDraft({ ...draft, [k]: v });
   };
-  const penceField = (k: "care_price_pence" | "care_allowance_pence" | "topup_price_pence" | "topup_allowance_pence") => (
+  const countField = (k: "interaction_limit" | "topup_interactions") => (
+    <Input inputMode="numeric" value={String(draft[k])} onChange={(e) => set(k, Math.max(1, Math.round(Number(e.target.value)) || 1))} />
+  );
+  const penceField = (k: "care_price_pence" | "topup_price_pence" | "cost_warn_pence" | "cost_target_pence" | "cost_critical_pence") => (
     <Input
       inputMode="decimal"
       value={(draft[k] / 100).toFixed(2)}
@@ -273,9 +399,11 @@ export function PlanSettingsTab() {
     setBusy(true);
     setError(null);
     try {
-      const { enforce, care_price_pence, care_allowance_pence, topup_price_pence, topup_allowance_pence, thresholds, usd_gbp_rate, reserve_pence } = draft;
+      const { enforce, care_price_pence, topup_price_pence, thresholds, usd_gbp_rate, interaction_limit, topup_interactions,
+        cost_warn_pence, cost_target_pence, cost_critical_pence } = draft;
       q.setData(
-        await api.billingSettings.update({ enforce, care_price_pence, care_allowance_pence, topup_price_pence, topup_allowance_pence, thresholds, usd_gbp_rate, reserve_pence }),
+        await api.billingSettings.update({ enforce, care_price_pence, topup_price_pence, thresholds, usd_gbp_rate, interaction_limit,
+          topup_interactions, cost_warn_pence, cost_target_pence, cost_critical_pence }),
       );
       setSaved(true);
     } catch (e) {
@@ -301,23 +429,33 @@ export function PlanSettingsTab() {
           <Field label="Selling price per month (£, what the customer pays)" hint="Shown to customers. The Stripe price id must match.">
             {penceField("care_price_pence")}
           </Field>
-          <Field label="Included AI allowance per period (£, internal provider cost)" hint="Never shown in £ to customers; they see a percentage.">
-            {penceField("care_allowance_pence")}
+          <Field label="AI interactions per month" hint="The customer's allowance, shared by an account's watches. Enforced.">
+            {countField("interaction_limit")}
           </Field>
           <Field label="Extra usage: selling price (£, one-off)">{penceField("topup_price_pence")}</Field>
-          <Field label="Extra usage: added allowance (£, internal)">{penceField("topup_allowance_pence")}</Field>
+          <Field label="Extra usage: interactions added" hint="For the rest of the billing period.">
+            {countField("topup_interactions")}
+          </Field>
           <Field label="Usage notifications (%)" hint="Comma-separated, e.g. 80,95,100. Each shows once per period.">
             <Input value={draft.thresholds} onChange={(e) => set("thresholds", e.target.value)} />
           </Field>
           <Field label="USD → GBP rate for provider costs" hint="Applied to new usage; recorded costs keep the rate of their day.">
             <Input value={draft.usd_gbp_rate} onChange={(e) => set("usd_gbp_rate", e.target.value)} />
           </Field>
-          <Field label="Reserve per running turn (pence)" hint="Stops several watches of one account from starting turns past the limit together.">
-            <Input inputMode="numeric" value={String(draft.reserve_pence)} onChange={(e) => set("reserve_pence", Math.max(0, Number(e.target.value) || 0))} />
-          </Field>
         </div>
         <div className="mt-5 rounded-lg border border-border p-3">
-          <Toggle checked={draft.enforce} onChange={(v) => set("enforce", v)} label="Check subscriptions and allowances" />
+          <p className="text-sm font-medium">Internal AI cost monitoring (per account, per month)</p>
+          <p className="mt-1 text-xs text-muted">
+            Operator alerts only - never shown to customers and never used to refuse a request.
+          </p>
+          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+            <Field label="Early warning (£)">{penceField("cost_warn_pence")}</Field>
+            <Field label="Cost target (£)">{penceField("cost_target_pence")}</Field>
+            <Field label="Critical (£)">{penceField("cost_critical_pence")}</Field>
+          </div>
+        </div>
+        <div className="mt-5 rounded-lg border border-border p-3">
+          <Toggle checked={draft.enforce} onChange={(v) => set("enforce", v)} label="Check subscriptions and interaction allowances" />
           <p className="mt-2 text-xs text-muted">
             {draft.stripe_configured
               ? "Always on while Stripe is configured."

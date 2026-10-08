@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Ban, CheckCircle2, ScrollText, Watch } from "lucide-react";
-import { api, ApiError, type AccountDetail, type Order } from "../api";
-import { fmtAgo, fmtDateTime, fmtMoney } from "../format";
+import { api, ApiError, type AccountCost, type AccountDetail, type Order } from "../api";
+import { fmtAgo, fmtDateTime } from "../format";
 import { fmtDayMonth, Meter, OrderStatusBadge, planStatus } from "../components/BillingBits";
 import { fmtMinor, OrderDialog } from "./OrdersPage";
 import { BatteryInfo, OnlineDot, StateBadge } from "../components/DeviceBits";
@@ -13,7 +13,8 @@ const ACTION_LABEL: Record<string, string> = {
   "account.create": "Account created",
   "account.active": "Reactivated",
   "account.suspended": "Suspended",
-  "account.allowance": "Allowance changed",
+  "account.allowance": "Interaction allowance changed",
+  "cost.alert": "AI cost alert (internal)",
   "subscription.complimentary": "Complimentary plan granted",
   "subscription.complimentary.extend": "Complimentary plan extended",
   "subscription.complimentary.revoke": "Complimentary plan ended",
@@ -333,7 +334,7 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
     const v = value.trim();
     if (v === "") return void save(null);
     const n = Number(v);
-    if (!Number.isFinite(n) || n < 0) return setError(new Error("Enter a positive amount, or leave empty for the plan default."));
+    if (!Number.isInteger(n) || n < 1) return setError(new Error("Enter a whole number of interactions, or leave empty for the plan default."));
     void save(n);
   };
 
@@ -356,22 +357,20 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
       <div className="mt-4 border-t border-border pt-4">
         <Meter
           pct={pct}
-          label={`This period (${fmtDayMonth(al.period_start)} – ${fmtDayMonth(al.period_end)}): ${fmtMoney(al.used, al.currency)} of ${fmtMoney(al.limit, al.currency)}`}
+          label={`AI interactions this period (${fmtDayMonth(al.period_start)} – ${fmtDayMonth(al.period_end)}): ${al.used.toLocaleString("en-GB")} of ${al.limit.toLocaleString("en-GB")}${al.extra ? ` (incl. ${al.extra} extra)` : ""}`}
         />
-        {!!al.unpriced_rows && (
-          <p className="mt-2 text-xs text-warn">{al.unpriced_rows} usage rows have no pricing rule and are not counted.</p>
-        )}
+        {a.cost && <CostLine cost={a.cost} />}
         {!a.internal && <ComplimentaryControls account={a} onChanged={onChanged} />}
         <form onSubmit={submit} className="mt-4 space-y-2">
           <Field
-            label={`Allowance override (${al.currency}/month)`}
+            label="Interactions per month (override)"
             htmlFor="al-override"
-            hint={al.override != null ? "Overrides the plan default for this account." : "Empty = plan default."}
+            hint={al.override != null ? "An authorised exception to the plan's allowance for this account." : "Empty = plan default."}
           >
             <div className="flex gap-2">
               <Input
                 id="al-override"
-                inputMode="decimal"
+                inputMode="numeric"
                 placeholder="Plan default"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
@@ -391,5 +390,29 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
         </form>
       </div>
     </Card>
+  );
+}
+
+const COST_TONE = { within: "ok", approaching: "warn", over: "danger", critical: "danger" } as const;
+const COST_TEXT = { within: "Within target", approaching: "Approaching target", over: "Over target", critical: "Critical cost" } as const;
+
+/** Internal AI cost of this account's current period (operator only; monitoring, never enforced). */
+function CostLine({ cost: c }: { cost: AccountCost }) {
+  const money = (v: number | null) => (v == null ? "—" : `£${v.toFixed(v < 0.1 ? 4 : 2)}`);
+  return (
+    <div className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={COST_TONE[c.status]}>{COST_TEXT[c.status]}</Badge>
+        <span>
+          AI cost {money(c.cost)} (target {money(c.target)}) · {money(c.average_cost)} per interaction ·{" "}
+          {c.projected_cost == null ? "no projection yet" : `~${money(c.projected_cost)} projected at the allowance (estimate)`}
+        </span>
+      </div>
+      <p className="mt-1 text-muted">
+        Interactive {money(c.interactive_cost)} · background {money(c.background_cost)}
+        {c.unpriced_rows > 0 ? ` · ${c.unpriced_rows} unpriced usage rows (the real cost is higher)` : ""}. Internal monitoring only: it never
+        limits the customer.
+      </p>
+    </div>
   );
 }

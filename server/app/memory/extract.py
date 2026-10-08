@@ -149,6 +149,9 @@ async def run_extract(router, job: MemoryJob) -> None:
         await asyncio.to_thread(lambda: usage_ops.settle(
             admission.op_id, admission.exec_token or "", status=status, billable=status == "completed",
             items=list(enumerate(items)), reason="memory"))
+        from app import cost_monitor  # background AI cost: monitored, never an interaction
+
+        cost_monitor.evaluate_soon(None, job.account_id)
     saved = await asyncio.to_thread(_apply, job, mat, parse("".join(parts)))
     log.info("memory extract account=%s proposals_saved=%s", job.account_id, saved)
 

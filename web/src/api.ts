@@ -175,17 +175,52 @@ export interface OrderUpdate {
 }
 
 /** AI allowance of the current period, in GBP (operator view). */
+/** The account's AI interactions this period (operator view). */
 export interface Allowance {
   used: number;
   limit: number;
-  currency: string;
-  /** Operator override of the plan allowance (GBP); null = plan default. */
+  remaining?: number;
+  /** Interactions added by this period's extra-usage purchases. */
+  extra?: number;
+  /** Operator override of the plan's interactions per period; null = plan default. */
   override: number | null;
   used_pct?: number;
   period_start?: string;
   period_end?: string;
   period_kind?: "stripe" | "complimentary" | "calendar";
-  unpriced_rows?: number;
+}
+
+export type CostStatus = "within" | "approaching" | "over" | "critical";
+
+/** Internal AI cost of one account in its current period (operator only, monitoring - never enforced). */
+export interface AccountCost {
+  account_id: number;
+  account: string | null;
+  internal: boolean;
+  period_start: string;
+  period_end: string;
+  limit: number;
+  interactions: number;
+  used_pct: number;
+  cost: number;
+  interactive_cost: number;
+  background_cost: number;
+  by_group: Record<string, number>;
+  /** cost / interactions; null with no interactions. */
+  average_cost: number | null;
+  /** average x limit: an estimate, null below the minimum sample. */
+  projected_cost: number | null;
+  projection: "estimate" | "incomplete" | "insufficient_data";
+  unpriced_rows: number;
+  target: number;
+  status: CostStatus;
+}
+
+export interface AccountCosts {
+  thresholds: { warn: number; target: number; critical: number };
+  min_sample: number;
+  status_counts: Partial<Record<CostStatus, number>>;
+  accounts: AccountCost[];
 }
 
 /** GET /api/accounts/{id} (operator). */
@@ -198,6 +233,8 @@ export interface AccountDetail extends Account {
   /** Internal/operator account: never limited (costs still tracked). */
   internal: boolean;
   allowance: Allowance;
+  /** Internal AI cost monitoring for this account's current period. */
+  cost: AccountCost | null;
   orders: Order[];
 }
 
@@ -365,7 +402,12 @@ export interface MySubscription {
 export interface MyUsage {
   period_start: string;
   reset_at: string;
+  /** AI interactions used this period (same as `used`). */
   questions: number;
+  used?: number;
+  limit?: number;
+  remaining?: number;
+  used_pct?: number;
 }
 
 export type PlanKind = "trial" | "active" | "past_due" | "canceled" | "complimentary" | "expired" | "none" | "internal";
@@ -382,22 +424,27 @@ export interface MyPlan {
     cancel_at_period_end?: boolean;
     note?: string;
   };
+  /** AI interactions this period, shared by all the account's watches. */
   usage: {
+    used: number;
+    limit: number;
+    remaining: number;
     used_pct: number;
+    /** The plan's interactions (or the account's override). */
+    included: number;
+    /** Interactions added by this period's extra-usage purchases. */
+    extra: number;
     period_start: string;
     reset_at: string;
-    activity_count: number;
-    /** Extra usage bought this period, as % of the plan's usage. */
-    extra_pct: number;
   };
   thresholds: number[];
-  prices: { currency: "GBP"; care_price_pence: number; topup_price_pence: number; topup_adds_pct: number };
+  prices: { currency: "GBP"; care_price_pence: number; topup_price_pence: number; topup_interactions: number };
   can_subscribe: boolean;
   topup_available: boolean;
   can_manage_billing: boolean;
   /** ola Care that starts when the watch is paired (watch-only orders); null for older accounts. */
   care_activation: CareActivation | null;
-  topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; period_end: string; current: boolean }[];
+  topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; period_end: string; interactions: number; current: boolean }[];
 }
 
 /** The ola Care trial waiting for the watch to be paired (server: app/care_activation.py). */
@@ -436,12 +483,16 @@ export interface UsageNotice {
 export interface BillingSettings {
   enforce: boolean;
   care_price_pence: number;
-  care_allowance_pence: number;
   topup_price_pence: number;
-  topup_allowance_pence: number;
   thresholds: string;
   usd_gbp_rate: string;
-  reserve_pence: number;
+  /** AI interactions per billing period (the customer's allowance, enforced). */
+  interaction_limit: number;
+  topup_interactions: number;
+  /** Internal AI cost monitoring per account and period (never enforced). */
+  cost_warn_pence: number;
+  cost_target_pence: number;
+  cost_critical_pence: number;
   updated_at: string;
   updated_by: string;
   stripe_configured: boolean;
@@ -821,6 +872,8 @@ const operatorApi = {
   },
   usage: (days: number, deviceId?: string) => get<Usage>(`/api/usage${q({ days, device_id: deviceId })}`),
   finance: (days: number) => get<Finance>(`/api/finance${q({ days })}`),
+  accountCosts: (f: { status?: CostStatus; sort?: string } = {}) =>
+    get<AccountCosts>(`/api/finance/accounts${q({ status: f.status, sort: f.sort })}`),
   billingSettings: {
     get: () => get<BillingSettings>("/api/billing/settings"),
     update: (body: Partial<Omit<BillingSettings, "updated_at" | "updated_by" | "stripe_configured" | "stripe_mode" | "care_price_id_set">>) =>
@@ -888,10 +941,10 @@ const accountsApi = {
   grantComplimentary: (id: number, body: { days: number; allowance_pence?: number | null; note?: string; extend?: boolean }) =>
     post<{ created: boolean; subscription: Subscription }>(`/api/accounts/${id}/complimentary`, body),
   revokeComplimentary: (id: number) => del<{ revoked: boolean }>(`/api/accounts/${id}/complimentary`),
-  /** null = back to the plan default. */
-  setAllowance: (id: number, allowance_override: number | null) =>
-    patch<{ allowance_override: number | null; used: number; limit: number; currency: string }>(`/api/accounts/${id}/allowance`, {
-      allowance_override,
+  /** AI interactions per period for this account; null = back to the plan default. */
+  setAllowance: (id: number, interaction_limit_override: number | null) =>
+    patch<{ interaction_limit_override: number | null; used: number; limit: number }>(`/api/accounts/${id}/allowance`, {
+      interaction_limit_override,
     }),
 };
 
@@ -1141,6 +1194,8 @@ export type LiveEvent =
   | { type: "items_changed"; account_id: number; at?: number }
   /** The account reached a usage threshold (80 / 95 / 100 % of the allowance). */
   | { type: "usage_threshold"; account_id: number; threshold: number; at?: number }
+  /** Operator only: an account's AI cost reached a monitoring level this period (never blocks anything). */
+  | { type: "cost_alert"; account_id: number; level: "approaching" | "over" | "critical"; cost: number; interactions: number; at?: number }
   | { type: "keepalive"; at?: number };
 
 export type TurnRefusedCode = "subscription_required" | "limit_reached" | "account_inactive" | string;

@@ -67,6 +67,7 @@ def test_status_publishes_terms_with_price_trial_and_start_rule(client):
     t = st["care_terms"]["gbp"]
     assert t["amount_minor"] == 790 and t["interval"] == "month"
     assert "£7.90 per month" in t["text"] and "30-day" in t["text"] and "when I pair my watch" in t["text"]
+    assert "1,000 AI interactions per month, shared by my watches" in t["text"] and t["version"] == "care-2026-12"
     assert "Nothing is charged for ola Care today" in t["text"]
 
 

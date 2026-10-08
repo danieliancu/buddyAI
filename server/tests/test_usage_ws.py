@@ -14,7 +14,7 @@ from sqlmodel import select
 from app import usage_ops
 from app.db.models import Device, UsageOperation, UsageRecord
 from app.db.session import session_scope
-from tests.test_billing_v2 import _account, _grant, _spend, enforce  # noqa: F401 - fixture
+from tests.test_billing_v2 import _account, _grant, _use, enforce  # noqa: F401 - fixture
 from tests.test_e2e import SAMPLES, server  # noqa: F401 - fixture
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -94,7 +94,7 @@ async def test_legacy_watch_is_admitted_by_session_turn(server):
 async def _blocked_account() -> int:
     acc = _account()
     _grant(acc)
-    _spend(acc, 2.46)  # room for one reservation, held by another watch below
+    _use(acc, 999)  # room for one more interaction, held by another watch below
     other = usage_ops.admit(usage_ops.AdmitRequest(device_id="other-watch", request_key=f"r:{secrets.token_hex(8)}",
                                                    request_kind="client", kind="chat", account_id=acc, fingerprint="x"))
     assert other.allowed

@@ -1,9 +1,9 @@
-"""Usage threshold notices (default 80 / 95 / 100 % of the allowance).
+"""Usage threshold notices (default 80 / 95 / 100 % of the account's monthly AI interactions).
 
-Each threshold is recorded once per account and allowance period (table usage_notices). The web app
-shows the highest one not dismissed yet (a banner at 80/95 %, a dialog with "Add extra usage" at
-100 %); the watch gets a short `notice` once, never during a conversation. The first threshold
-also sends the existing "most of your allowance used" email.
+Each threshold is recorded once per account and allowance period (table usage_notices): duplicate requests,
+reconnections and refused requests never repeat one. The web app shows the highest one not dismissed yet (a
+banner at 80/95 %, a dialog at 100 %); the watch gets a short `notice` once, never during a conversation. The
+first threshold also sends an email. Internal AI costs never appear here (app/cost_monitor.py).
 """
 
 from __future__ import annotations
@@ -27,12 +27,25 @@ def level(threshold: int) -> str:
     return "limit" if threshold >= 100 else ("warning" if threshold >= 95 else "info")
 
 
-def watch_text(threshold: int) -> str:
+def fmt_day(dt) -> str:
+    """8 November 2026 (British English, no leading zero)."""
+    return f"{dt.day} {dt:%B %Y}"
+
+
+def watch_text(threshold: int, reset_at=None) -> str:
+    """Short text for the watch's notice screen."""
     if threshold >= 100:
-        return "Monthly AI usage reached.\nAdd extra usage in the ola app."
-    if threshold >= 95:
-        return f"{threshold}% of your monthly AI usage used.\nExtra usage is available in the app."
-    return f"{threshold}% of your monthly AI usage used."
+        when = f"\nRenews on {reset_at.day} {reset_at:%b}." if reset_at is not None else ""
+        return "Monthly AI interactions used up." + when
+    return f"You've used {threshold}% of your monthly AI interactions."
+
+
+def web_text(threshold: int, limit: int, reset_at) -> str:
+    """The notice in the customer's words (web app, email)."""
+    if threshold >= 100:
+        return (f"You've reached your {limit:,} monthly AI interactions. "
+                f"Your allowance renews on {fmt_day(reset_at)}.")
+    return f"You've used {threshold}% of your monthly AI interactions. Your allowance renews on {fmt_day(reset_at)}."
 
 
 def _aware(dt):
@@ -87,8 +100,10 @@ async def evaluate(account_id: int | None) -> list[int]:
         plan = get_plan(db)
         first = plan.thresholds[0] if plan.thresholds else None
         to = acc.email if first in new else None
-    if to:
-        await email.send(email.allowance_warning(to))
+        state = current_state(db, acc) if to else None
+    if to and state is not None:
+        _sub, a, _plan = state
+        await email.send(email.allowance_warning(to, web_text(first, a.limit, a.period.end)))
     return new
 
 
@@ -150,4 +165,4 @@ def take_watch_notice(account_id: int) -> dict | None:
             r.shown_watch_at = utcnow()
             db.add(r)
         db.commit()
-        return {"level": level(top), "text": watch_text(top), "threshold": top}
+        return {"level": level(top), "text": watch_text(top, a.period.end), "threshold": top}

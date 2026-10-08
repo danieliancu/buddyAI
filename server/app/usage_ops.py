@@ -1,8 +1,8 @@
-"""AI usage operations: the database decides who may spend AI money, and records what was spent.
+"""AI usage operations: the database decides which requests are admitted, and records what they cost.
 
-Every AI-consuming operation (a watch turn, a customer voice sample, an operator test) is one row in
-usage_operations. The database - not process memory - is the authority, so any number of server processes
-(or hosts) share one budget per account:
+Every AI-consuming operation (a watch turn, a customer voice sample, an operator test, memory learning) is one
+row in usage_operations. The database - not process memory - is the authority, so any number of server
+processes (or hosts) share one interaction allowance per account:
 
   admit()          one short transaction: lock the account row (PostgreSQL SELECT ... FOR UPDATE; SQLite
                    BEGIN IMMEDIATE), apply the commercial rules, insert the operation with its reservation, a
@@ -11,7 +11,8 @@ usage_operations. The database - not process memory - is the authority, so any n
   mark_running()   before the first billable provider call.
   record_costs()   provider usage as it happens: idempotent (dedup key operation:index:kind:provider:model:unit,
                    monotonic), in integer micro-GBP, always in the operation's period - also when late.
-  settle()         the end: the billable rule, the certainty of the cost, the state; idempotent.
+  settle()         the end: whether it counts as an interaction (app/interactions.py), the billable flag of
+                   its costs, the certainty of the cost, the state; idempotent.
   recover_expired() run by every process: an operation whose lease ran out (its process died or lost the
                    database) becomes "expired"; its costs stay visible to the operator but are not billed
                    (owner decision). Nothing is ever executed again.
@@ -19,11 +20,13 @@ usage_operations. The database - not process memory - is the authority, so any n
 Lock order, everywhere (also in billing.py and the admin writers): account row -> subscriptions / top-ups ->
 usage_operations (ascending id) -> usage_records / usage_notices.
 
-Admission (budget-enforced accounts; limit = plan allowance or override + top-ups of the period):
-  used_final + sum(recorded of active ops) >= limit                      -> limit_reached
-  other active ops and used_final + sum(max(reserved, recorded)) + own > limit -> busy_concurrent
-A turn that has started is never cut off, so the last answer may go beyond its reservation: this bounds
-concurrency, it is not an absolute financial cap (docs/BILLING.md).
+Admission of a customer request (chat / note / reminder) on an enforced account, limit = the plan's
+interactions (or the account's override) + the period's top-up interactions:
+  interactions used >= limit                                -> limit_reached
+  interactions used + requests still running >= limit       -> busy_concurrent
+so concurrent watches can never take the account past its limit, and the limit-th request is admitted.
+AI provider cost is recorded for every operation but never decides admission (internal monitoring:
+app/cost_monitor.py). Background memory learning needs an entitled subscription, never uses an interaction.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ from app import account_lock, billing
 from app.config import get_settings
 from app.db.models import Account, BillingSettings, UsageOperation, UsageRecord
 from app.db.session import OWNER, billing_scope, db_now, is_postgres, session_scope
-from app.money import pence_to_micro
+from app.interactions import INTERACTION_KINDS
 from app.plan import get_plan
 from app.pricing.pricing import ProviderPricingConfig
 from app.providers.base import UsageItem
@@ -69,7 +72,7 @@ DUPLICATE = "duplicate"
 NEW_CODES = (BUSY_CONCURRENT, SERVICE_UNAVAILABLE, REQUEST_CONFLICT, DUPLICATE)
 
 MESSAGES = {
-    LIMIT_REACHED: "allowance for this period used up",
+    LIMIT_REACHED: "monthly AI interactions used up for this period",
     BUSY_CONCURRENT: "other conversations of this account are in progress; try again when they finish",
     SUBSCRIPTION_REQUIRED: "ola Care subscription needed",
     ACCOUNT_INACTIVE: "account suspended or closed",
@@ -114,7 +117,7 @@ class AdmitRequest:
     device_id: str
     request_key: str  # r:<request id> | l:<device>:<session>:<turn> | s:<uuid>
     request_kind: str  # client | legacy | server
-    kind: str  # chat | note | reminder | voice_sample | operator_test
+    kind: str  # chat | note | reminder (customer requests) | memory | voice_sample | operator_test
     account_id: int | None
     fingerprint: str
     exec_token: str = field(default_factory=new_token)  # ours: a retried admit after a lost reply finds it
@@ -149,11 +152,12 @@ class OpView:
     billable: bool | None
     result_status: str | None
     reason: str | None
+    interaction: bool | None = None
 
     @classmethod
     def of(cls, op: UsageOperation) -> "OpView":
         return cls(op.id or 0, op.op_uid, op.state, op.cost_certainty, op.reserved_micro, op.recorded_cost_micro,
-                   op.billable, op.result_status, op.reason)
+                   op.billable, op.result_status, op.reason, op.interaction)
 
 
 # --- transaction helpers ------------------------------------------------------------------------------
@@ -236,8 +240,9 @@ def _existing(req: AdmitRequest, op: UsageOperation) -> Admission:
 
 
 def _rules(db: Session, acc: Account | None, now: datetime, budget: bool = True, own: bool = True,
-           ) -> tuple[str | None, allowance_mod.PeriodId, str, int]:
-    """(refusal code or None, period, source, reservation) for a new operation of this account."""
+           kind: str = "chat") -> tuple[str | None, allowance_mod.PeriodId, str, int]:
+    """(refusal code or None, period, source, reservation) for a new operation of this account. The
+    reservation is always 0 now: an admitted request holds one interaction while it runs (active count)."""
     plan = get_plan(db)
     sub = billing.active_subscription(db, acc.id) if acc is not None else None  # type: ignore[arg-type]
     pid = allowance_mod.period_identity(sub, now)
@@ -249,18 +254,20 @@ def _rules(db: Session, acc: Account | None, now: datetime, budget: bool = True,
         return None, pid, "unenforced", 0
     if sub is None or not billing.is_entitled(sub, now):
         return SUBSCRIPTION_REQUIRED, pid, pid.source, 0
-    used, _unpriced = allowance_mod.used_final(db, acc.id, pid)  # type: ignore[arg-type]
-    n_active, recorded, exposure = allowance_mod.active_exposure(db, acc.id, pid.key)  # type: ignore[arg-type]
-    limit = allowance_mod.included_micro(acc, sub, plan) + allowance_mod.topups_micro(db, acc.id, now, pid.key)  # type: ignore[arg-type]
-    reserve = pence_to_micro(plan.reserve_pence) if own else 0
-    if used + recorded >= limit:
-        _log("refused", account=acc.id, code=LIMIT_REACHED, used=used, recorded=recorded, limit=limit)
+    if kind not in INTERACTION_KINDS:  # background work (memory learning): never uses an interaction
+        return None, pid, pid.source, 0
+    used = allowance_mod.interactions_used(db, acc.id, pid.key)  # type: ignore[arg-type]
+    limit = allowance_mod.interaction_limit(acc, plan) + allowance_mod.topup_interactions(
+        db, acc.id, now, pid.key, plan)  # type: ignore[arg-type]
+    if used >= limit:
+        _log("refused", account=acc.id, code=LIMIT_REACHED, used=used, limit=limit)
         return LIMIT_REACHED, pid, pid.source, 0
-    if own and n_active and used + exposure + reserve > limit:
-        _log("refused", account=acc.id, code=BUSY_CONCURRENT, used=used, exposure=exposure, limit=limit,
-             active=n_active)
-        return BUSY_CONCURRENT, pid, pid.source, 0
-    return None, pid, pid.source, reserve
+    if own:
+        active = allowance_mod.interactions_active(db, acc.id, pid.key)  # type: ignore[arg-type]
+        if used + active >= limit:
+            _log("refused", account=acc.id, code=BUSY_CONCURRENT, used=used, active=active, limit=limit)
+            return BUSY_CONCURRENT, pid, pid.source, 0
+    return None, pid, pid.source, 0
 
 
 def preview(account_id: int | None) -> Admission:
@@ -292,7 +299,7 @@ def _admit_tx(db: Session, req: AdmitRequest) -> Admission:
     if acc is not None and acc.status != "active":
         return Admission.refuse(ACCOUNT_INACTIVE)
     now = db_now(db)
-    code, pid, source, reserve = _rules(db, acc, now, budget=req.budget)
+    code, pid, source, reserve = _rules(db, acc, now, budget=req.budget, kind=req.kind)
     if code is not None:
         return Admission.refuse(code)
     lease_s = int(s.usage_lease_s)
@@ -444,10 +451,12 @@ def record_costs(op_id: int, items: Iterable[tuple[int, UsageItem]], turn_db_id:
 
 
 def settle(op_id: int, token: str, *, status: str, billable: bool, items: Iterable[tuple[int, UsageItem]] = (),
-           turn_db_id: int | None = None, reason: str | None = None) -> OpView | None:
-    """End the operation: reconcile the last costs, apply the billable decision to all its records, set the
-    state (settled, or cancelled when nothing was spent) and the cost certainty. Idempotent; if recovery
-    already expired it, the costs are added as late costs and the expired result stands."""
+           turn_db_id: int | None = None, reason: str | None = None, interaction: bool = False) -> OpView | None:
+    """End the operation: record whether it counts as one of the customer's interactions (decided by the
+    caller with app/interactions.py; only customer request kinds can count), reconcile the last costs, apply
+    the billable flag to all its records (finance), set the state (settled, or cancelled when nothing was
+    spent) and the cost certainty. Idempotent: a second settle never counts again; if recovery already
+    expired it, the costs are added as late costs and the expired result (not counted) stands."""
     items = list(items)
 
     def tx(db: Session) -> OpView | None:
@@ -476,6 +485,7 @@ def settle(op_id: int, token: str, *, status: str, billable: bool, items: Iterab
             r.turn_status = status
             db.add(r)
         op.billable = billable
+        op.interaction = bool(interaction) and op.kind in INTERACTION_KINDS
         op.state = "settled" if rows else "cancelled"
         op.cost_certainty = "unpriced" if op.unpriced_count else "exact"
         op.result_status, op.reason = status, reason
@@ -543,7 +553,7 @@ def _expire_tx(db: Session, op_id: int, account_id: int | None) -> bool:
     for r in db.exec(select(UsageRecord).where(UsageRecord.operation_id == op.id)).all():
         r.billable = False
         db.add(r)
-    op.state, op.billable, op.reason = "expired", False, "lease_expired"
+    op.state, op.billable, op.interaction, op.reason = "expired", False, False, "lease_expired"
     op.cost_certainty = "exact" if nothing_spent else "uncertain"
     op.result_status = op.result_status or "expired"
     op.finished_at = op.updated_at = now
@@ -618,7 +628,7 @@ def record_free_operation(kind: str, device_id: str, account_id: int | None, ite
             log.warning("usage: %s not recorded (%s)", kind, a.code)
             return None
         return settle(a.op_id, a.exec_token or "", status=status, billable=False,
-                      items=list(enumerate(items)), reason=kind)
+                      items=list(enumerate(items)), reason=kind, interaction=False)
     except Exception:  # noqa: BLE001
         log.warning("usage: recording %s failed", kind, exc_info=True)
         return None

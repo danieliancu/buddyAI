@@ -100,7 +100,7 @@ reports.
 | `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted the item from its own screen). After a voice request it is sent **before** `turn_end` (after the fresh `items`); a watch in note / reminder edit mode closes the edit mode on it. |
 | `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent before `turn_end` (after the fresh `items`). `changed_line` (note mode): the 1-based line just added or changed, to highlight. `listen: true` + `question` (from the chat): the user's words fit several places inside this item; once the chat reply has been played the watch starts this item's edit mode and shows `question` - the item's screen continues from there (older firmware: the item opens, the user taps its mic). |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
-| `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "80% of your monthly AI usage used." (usage thresholds, once per threshold and allowance period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
+| `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "You've used 80% of your monthly AI interactions." or, at 100 %, "Monthly AI interactions used up. Renews on 8 Nov." (usage thresholds, once per threshold and billing period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 
 ### 3.3 Notes and reminders
 
@@ -212,12 +212,12 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `bad_request` | Malformed message | Log. |
 | `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn (e.g. no provider credit, timeout) | `message` is a generic "try again later" text; the reason is never shown to the user (server log only). Show "can't answer right now, try again later", go idle. The watch shows the same when a turn times out or the connection drops mid-turn. |
 | `busy` | Server overloaded. Older firmware (no `request_id`) also gets it instead of `busy_concurrent`, `service_unavailable` and `duplicate` | Show "Server busy — try again in a moment", go idle. |
-| `busy_concurrent` | Other conversations of the same account are running and hold the rest of the allowance (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Conversations in progress — try again when they finish", go idle. No automatic retry. |
-| `service_unavailable` | The server cannot decide on the allowance right now (billing database unreachable, maintenance drain) | Show "Server busy", go idle. |
+| `busy_concurrent` | Other conversations of the same account are running and hold the account's last AI interactions (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Conversations in progress — try again when they finish", go idle. No automatic retry. |
+| `service_unavailable` | The server cannot decide on the admission right now (billing database unreachable, maintenance drain) | Show "Server busy", go idle. |
 | `duplicate` | A `listen_start` re-used a `request_id` that is still running | Ignore (stale). |
 | `request_conflict` | A `request_id` was re-used for a different request | Log. |
 | `subscription_required` | Owner has no active/trial ola Care subscription (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Subscription needed — open the ola app", go idle. |
-| `limit_reached` | The account's AI allowance for the current period is used up (shared by all its watches) | Show "Monthly usage reached — answers again when it resets; extra usage in the app", go idle. |
+| `limit_reached` | The account's AI interactions for the current billing period are used up (ola Care: 1,000 per month, shared by all its watches; AI cost never causes it) | Show "Monthly usage reached — answers again when it resets; extra usage in the app", go idle. |
 | `account_inactive` | Owner account suspended or closed (reply to `hello`, then close) | Show "Account inactive — contact support"; retry slowly. |
 | `internal` | Unexpected server error | Show error, go idle. |
 

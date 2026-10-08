@@ -4,14 +4,14 @@ import { Gauge, PlusCircle, X } from "lucide-react";
 import { api, type MyPlan, type UsageNotice as Notice } from "../api";
 import { useLive } from "../live";
 import { startTopup } from "../pages/my/PlanCard";
-import { fmtDayMonth, pence } from "./BillingBits";
+import { fmtCount, fmtLongDate, pence } from "./BillingBits";
 import { Button, Dialog, ErrorBox, cx } from "./ui";
 
 /**
- * Usage thresholds (80 / 95 / 100 % of the period's allowance), each shown once per period until
- * dismissed: a slim banner at 80 % (information) and 95 % (warning), a dialog at 100 % offering extra
- * usage. Loaded on start and when the server reports a newly crossed threshold - never after every
- * conversation.
+ * Usage thresholds (80 / 95 / 100 % of the month's AI interactions), each shown once per period until
+ * dismissed: a slim banner at 80 % (information) and 95 % (warning), a dialog at 100 % with the renewal date
+ * (and extra interactions when they can be bought). Loaded on start and when the server reports a newly crossed
+ * threshold - never after every conversation.
  */
 export default function UsageNotice() {
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -47,7 +47,7 @@ export default function UsageNotice() {
       <div className={cx("mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-sm sm:px-6", warn ? "text-warn" : "text-accent")}>
         <Gauge className="size-4 shrink-0" />
         <p className="min-w-0 flex-1 basis-56">
-          You've used {notice.threshold}% of this month's AI usage. It resets on {fmtDayMonth(plan.usage.reset_at)}.
+          You've used {notice.threshold}% of your monthly AI interactions. Your allowance renews on {fmtLongDate(plan.usage.reset_at)}.
         </p>
         <div className="flex gap-2">
           {warn && plan.topup_available ? (
@@ -87,7 +87,7 @@ function TopupButton({ plan, size = "md" }: { plan: MyPlan; size?: "sm" | "md" }
           }
         }}
       >
-        Add extra usage — {pence(plan.prices.topup_price_pence)}
+        Add {fmtCount(plan.prices.topup_interactions)} interactions — {pence(plan.prices.topup_price_pence)}
       </Button>
       {error != null && <ErrorBox error={error} />}
     </>
@@ -99,7 +99,7 @@ function LimitDialog({ plan, onClose }: { plan: MyPlan; onClose: () => void }) {
     <Dialog
       open
       onClose={onClose}
-      title="Monthly AI usage reached"
+      title="Monthly AI interactions used"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -117,12 +117,14 @@ function LimitDialog({ plan, onClose }: { plan: MyPlan; onClose: () => void }) {
     >
       <div className="space-y-3 text-sm">
         <p>
-          You've used all of this month's AI usage. Ola will answer again on <b>{fmtDayMonth(plan.usage.reset_at)}</b>.
+          You've reached your {fmtCount(plan.usage.limit)} monthly AI interactions. Your allowance renews on{" "}
+          <b>{fmtLongDate(plan.usage.reset_at)}</b>.
         </p>
+        <p className="text-muted">Your saved notes, reminders and their alarms keep working in the meantime.</p>
         {plan.topup_available && (
           <p className="text-muted">
-            Want to keep talking before then? Add extra usage for this period: {pence(plan.prices.topup_price_pence)}, one-off, never
-            recurring.
+            Want to keep talking before then? Add {fmtCount(plan.prices.topup_interactions)} interactions for this period:{" "}
+            {pence(plan.prices.topup_price_pence)}, one-off, never recurring.
           </p>
         )}
       </div>

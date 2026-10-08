@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import JSON, BigInteger, Column, Index, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Column, Index, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 from app.db.vector import EmbeddingVector
@@ -42,7 +42,9 @@ class Account(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     last_login_at: Optional[datetime] = None
     stripe_customer_id: Optional[str] = Field(default=None, index=True, max_length=64)
-    allowance_override: Optional[float] = None  # AI cost allowance per period in GBP; None = plan default
+    allowance_override: Optional[float] = None  # legacy (pre-0027 money allowance in GBP): no longer enforced
+    # AI interactions per period for this account (authorised operator override); None = the plan's limit
+    interaction_limit_override: Optional[int] = None
     allowance_warned_month: Optional[str] = Field(default=None, max_length=7)  # legacy (pre-0007 80% email)
     # Internal/operator account (the built-in owner of operator stock): never limited, costs still tracked.
     internal: bool = False
@@ -163,19 +165,25 @@ class CareActivation(SQLModel, table=True):
 class BillingSettings(SQLModel, table=True):
     """Operator-editable plan settings (one row, id=1). Amounts in GBP pence.
 
-    Selling prices (what the customer pays) are separate from allowances (the internal AI provider
-    cost we absorb). The Stripe price ids stay in the environment (test vs live keys)."""
+    The customer's allowance is a number of AI interactions per period (enforced). The cost thresholds are
+    internal monitoring only and never block anything. The Stripe price ids stay in the environment."""
 
     __tablename__ = "billing_settings"
     id: int = Field(default=1, primary_key=True)
     enforce: bool = False  # check subscriptions/allowances even without Stripe keys
     care_price_pence: int = 799  # existing databases keep their value (operator: Usage → Plan settings)
-    care_allowance_pence: int = 250
+    care_allowance_pence: int = 250  # legacy (pre-0027 money allowance): no longer enforced
     topup_price_pence: int = 199
-    topup_allowance_pence: int = 65
+    topup_allowance_pence: int = 65  # legacy (pre-0027): no longer enforced
     thresholds: str = Field(default="80,95,100", max_length=40)  # % of the allowance that notify
     usd_gbp_rate: str = Field(default="0.75", max_length=16)  # USD -> GBP for provider costs (Decimal text)
-    reserve_pence: int = 3  # held per running turn so parallel watches cannot overshoot
+    reserve_pence: int = 3  # legacy (pre-0027 money reservation): no longer used
+    # Since 0027: the customer allowance in AI interactions, and the internal cost monitoring thresholds
+    interaction_limit: int = 1000  # AI interactions per billing period, shared by the account's watches
+    topup_interactions: int = 250  # added by one extra-usage purchase for the rest of the period
+    cost_warn_pence: int = 200  # internal: approaching the AI cost target (monitoring only)
+    cost_target_pence: int = 250  # internal: expected monthly AI cost per account (monitoring only)
+    cost_critical_pence: int = 500  # internal: investigate unusually expensive usage (monitoring only)
     admission_paused: bool = False  # maintenance drain: no new AI operation is admitted
     updated_at: datetime = Field(default_factory=utcnow)
     updated_by: str = Field(default="", max_length=80)
@@ -190,7 +198,10 @@ class TopUp(SQLModel, table=True):
     stripe_session_id: Optional[str] = Field(default=None, index=True, unique=True, max_length=255)
     stripe_payment_intent: Optional[str] = Field(default=None, index=True, max_length=255)
     amount_pence: int  # what the customer pays
-    allowance_pence: int  # extra allowance granted once paid
+    allowance_pence: int  # legacy (pre-0027 money allowance granted once paid)
+    # AI interactions granted once paid (since 0027). NULL on older top-ups: they count as the plan's current
+    # top-up size for their own period, so nothing already bought is lost.
+    interactions: Optional[int] = None
     status: str = Field(default="pending", max_length=16)  # pending | paid | expired | refunded
     period_start: datetime
     period_end: datetime
@@ -212,6 +223,20 @@ class RevenueEvent(SQLModel, table=True):
     tax_pence: int = 0  # VAT included in amount_pence (net = amount - tax)
     currency: str = Field(default="gbp", max_length=3)
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class CostAlert(SQLModel, table=True):
+    """Internal: an account's AI cost crossed a monitoring level in one allowance period (once per level).
+    Never shown to customers and never used to refuse anything (app/cost_monitor.py)."""
+
+    __tablename__ = "cost_alerts"
+    __table_args__ = (UniqueConstraint("account_id", "period_key", "level", name="uq_cost_alert"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    account_id: int = Field(index=True)
+    period_key: str = Field(max_length=80)
+    level: str = Field(max_length=16)  # approaching | over | critical
+    cost_micro: int = Field(default=0, sa_type=BigInteger)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class UsageNotice(SQLModel, table=True):
@@ -503,6 +528,11 @@ class UsageOperation(SQLModel, table=True):
     See app/usage_ops.py and docs/BILLING.md."""
 
     __tablename__ = "usage_operations"
+    # The interaction count per account and period (migration 0027): only counted rows are indexed.
+    __table_args__ = (
+        Index("ix_usage_ops_interactions", "account_id", "period_key",
+              postgresql_where=text("interaction = true"), sqlite_where=text("interaction = true")),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     op_uid: str = Field(max_length=32)
     account_id: Optional[int] = None  # None: a watch without an owner (operator stock) or an operator test
@@ -525,6 +555,9 @@ class UsageOperation(SQLModel, table=True):
     billable_cost_micro: Optional[int] = Field(default=None, sa_type=BigInteger)
     unpriced_count: int = 0
     billable: Optional[bool] = None
+    # Counted as one of the account's AI interactions (set at settle, app/interactions.py). NULL on
+    # operations from before migration 0027: nothing is reconstructed for them.
+    interaction: Optional[bool] = None
     result_status: Optional[str] = Field(default=None, max_length=16)
     reason: Optional[str] = Field(default=None, max_length=32)
     reason_detail: Optional[str] = Field(default=None, max_length=200)

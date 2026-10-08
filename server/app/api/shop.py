@@ -12,7 +12,6 @@ from sqlmodel import Session, col, select
 from datetime import datetime, timezone
 
 from app import accounts, billing, care_activation, care_terms, email, entitlements, plan as plan_mod, usage_notices
-from app import allowance as allowance_mod
 from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
@@ -126,7 +125,7 @@ def my_subscription(acc: Account = Depends(current_account), db: Session = Depen
             "current_period_end": sub.current_period_end,
             "cancel_at_period_end": sub.cancel_at_period_end,
         },
-        # Customers see how much of the fair-use allowance is used, not our internal costs.
+        # Customers see how much of their monthly AI interactions is used, never our internal costs.
         "allowance_used_pct": a.used_pct,
         "orders": [
             {"id": o.id, "status": o.status, "created_at": o.created_at, "tracking_number": o.tracking_number, "carrier": o.carrier}
@@ -152,8 +151,8 @@ def _status(sub, now: datetime) -> dict:
 
 @router.get("/api/me/plan")
 def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    """ola Care for the customer: status, % of the allowance used, reset date, activity, prices,
-    top-ups. Never internal costs, tokens or providers."""
+    """ola Care for the customer: status, monthly AI interactions (used / limit / remaining / %), reset date,
+    prices, top-ups. Never internal costs, tokens or providers."""
     s = get_settings()
     p = plan_mod.get_plan(db)
     now = datetime.now(timezone.utc)
@@ -165,7 +164,6 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
     topups = db.exec(
         select(TopUp).where(TopUp.account_id == acc.id, col(TopUp.status).in_(("paid", "refunded"))).order_by(col(TopUp.id).desc()).limit(20)
     ).all()
-    base = p.care_allowance_pence or 1
     care = care_activation.public_state(db, acc.id)
     # A trial waiting for the watch (or being set up) is not replaced by a paid subscription.
     trial_pending = care is not None and care["status"] in ("awaiting_pairing", "activating", "failed")
@@ -174,19 +172,21 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
         "enforced": p.enforced and not acc.internal,
         "status": status,
         "usage": {
+            "used": a.used,
+            "limit": a.limit,
+            "remaining": a.remaining,
             "used_pct": a.used_pct,
+            "included": a.included,
+            "extra": a.extra,  # interactions added by this period's extra-usage purchases
             "period_start": a.period.start,
             "reset_at": a.period.end,
-            "activity_count": allowance_mod.activity_count(db, acc.id, a.period),
-            "extra_pct": round(a.topup_micro * 100 / (a.included_micro or 1)) if a.topup_micro else 0,
         },
         "thresholds": list(p.thresholds),
         "prices": {
             "currency": "GBP",
             "care_price_pence": p.care_price_pence,
             "topup_price_pence": p.topup_price_pence,
-            # A top-up expressed as a share of the plan's monthly usage (not as internal pounds).
-            "topup_adds_pct": round(p.topup_allowance_pence * 100 / base),
+            "topup_interactions": p.topup_interactions,
         },
         # A complimentary pilot can be turned into a paid plan at any time.
         "can_subscribe": s.billing_enabled and bool(s.stripe_price_care_gbp) and not paying and not acc.internal
@@ -202,7 +202,10 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
                 "amount_pence": t.amount_pence,
                 "paid_at": t.paid_at,
                 "period_end": t.period_end,
-                "current": t.status == "paid" and a.period.start <= (t.period_start if t.period_start.tzinfo else t.period_start.replace(tzinfo=timezone.utc)) < a.period.end,
+                "interactions": t.interactions if t.interactions is not None else p.topup_interactions,
+                "current": t.status == "paid" and (
+                    t.period_key == a.period_key if t.period_key is not None
+                    else a.period.start <= (t.period_start if t.period_start.tzinfo else t.period_start.replace(tzinfo=timezone.utc)) < a.period.end),
             }
             for t in topups
         ],
@@ -339,12 +342,16 @@ def get_billing_settings(db: Session = Depends(get_session)) -> dict:
 class BillingSettingsBody(BaseModel):
     enforce: bool | None = None
     care_price_pence: int | None = Field(None, ge=0, le=100_000)
-    care_allowance_pence: int | None = Field(None, ge=0, le=100_000)
     topup_price_pence: int | None = Field(None, ge=0, le=100_000)
-    topup_allowance_pence: int | None = Field(None, ge=0, le=100_000)
     thresholds: str | None = Field(None, max_length=40)
     usd_gbp_rate: str | None = Field(None, max_length=16)
-    reserve_pence: int | None = Field(None, ge=0, le=1000)
+    # The customer's allowance (enforced) ...
+    interaction_limit: int | None = Field(None, ge=1, le=1_000_000)
+    topup_interactions: int | None = Field(None, ge=1, le=1_000_000)
+    # ... and the internal cost monitoring thresholds (never enforced)
+    cost_warn_pence: int | None = Field(None, ge=1, le=1_000_000)
+    cost_target_pence: int | None = Field(None, ge=1, le=1_000_000)
+    cost_critical_pence: int | None = Field(None, ge=1, le=1_000_000)
 
 
 @router.put("/api/billing/settings", dependencies=[Depends(require_admin)])
@@ -363,6 +370,8 @@ def put_billing_settings(body: BillingSettingsBody, request: Request, db: Sessio
 
 class ComplimentaryBody(BaseModel):
     days: int = Field(30, ge=1, le=366)
+    # Legacy (money allowance of a grant): accepted from older admin pages, no longer used. A grant has the
+    # plan's interactions; a different number is the account's interaction override.
     allowance_pence: int | None = Field(None, ge=0, le=100_000)
     note: str = Field("Complimentary pilot - no payment", max_length=200)
     extend: bool = False
@@ -375,7 +384,7 @@ def grant_complimentary(account_id: int, body: ComplimentaryBody, request: Reque
         raise HTTPException(404, "account not found")
     try:
         sub, created = billing.grant_complimentary(
-            db, acc, body.days, request.session["admin"], body.note, body.allowance_pence, body.extend
+            db, acc, body.days, request.session["admin"], body.note, None, body.extend
         )
     except billing.BillingError as exc:
         raise _http(exc) from exc
@@ -391,7 +400,8 @@ def revoke_complimentary(account_id: int, request: Request, db: Session = Depend
 
 
 class AllowanceBody(BaseModel):
-    allowance_override: float | None = Field(None, ge=0)
+    # AI interactions per period for this account (an authorised exception); None = the plan's limit
+    interaction_limit_override: int | None = Field(None, ge=1, le=1_000_000)
 
 
 @router.patch("/api/accounts/{account_id}/allowance", dependencies=[Depends(require_admin)])
@@ -400,9 +410,11 @@ def set_allowance(account_id: int, body: AllowanceBody, request: Request, db: Se
     if not acc or acc.status == "deleted":
         raise HTTPException(404, "account not found")
     lock_account(db, acc.id)  # the limit changes: admissions of this account wait for it
-    acc.allowance_override = body.allowance_override
+    before = acc.interaction_limit_override
+    acc.interaction_limit_override = body.interaction_limit_override
     db.add(acc)
     db.commit()
-    accounts.audit(db, request.session["admin"], "account.allowance", acc.id, detail=str(body.allowance_override))
+    accounts.audit(db, request.session["admin"], "account.allowance", acc.id,
+                   detail=f"interactions per period: {before or 'plan'} -> {body.interaction_limit_override or 'plan'}")
     a = entitlements.allowance(db, acc)
-    return {"allowance_override": acc.allowance_override, "used": a.used, "limit": a.limit, "currency": a.currency}
+    return {"interaction_limit_override": acc.interaction_limit_override, "used": a.used, "limit": a.limit}

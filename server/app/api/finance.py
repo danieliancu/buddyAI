@@ -163,3 +163,43 @@ def finance(days: int = Query(30, ge=1, le=366), db: Session = Depends(get_sessi
         # Before hardware, hosting, support, payment fees and every other operating expense.
         "gross_contribution": round((net_pence * PENCE_MICRO - total) / 1_000_000, 4),
     }
+
+
+@router.get("/accounts")
+def account_costs(
+    status: str | None = Query(None, pattern="^(within|approaching|over|critical)$"),
+    sort: str = Query("cost", pattern="^(cost|projected|average|interactions|used_pct)$"),
+    include_internal: bool = False,
+    limit: int = Query(200, ge=1, le=1000),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Internal AI cost per customer account in its current billing period: interactions used of the
+    account's allowance, actual AI cost (interactive and background), average per interaction, the projected
+    cost at the allowance (an estimate) and the monitoring status against the internal target. Monitoring
+    only: none of this limits a customer (app/cost_monitor.py)."""
+    from app import cost_monitor
+    from app.plan import get_plan
+
+    plan = get_plan(db)
+    q = select(Account).where(Account.status != "deleted")
+    if not include_internal:
+        q = q.where(Account.internal == False)  # noqa: E712 - SQL expression
+    accounts = list(db.exec(q).all())
+    by_id = {a.id: a for a in accounts}
+    rows = [cost_monitor.view(c, plan, by_id.get(c.account_id)) for c in cost_monitor.account_costs(db, accounts, plan)]
+    counts: dict[str, int] = defaultdict(int)
+    for r in rows:
+        r["account"] = _mask(r["account"]) if r["account"] else None
+        counts[r["status"]] += 1  # every status, before the filter (for the operator's tabs)
+    if status:
+        rows = [r for r in rows if r["status"] == status]
+    key = {"cost": "cost", "projected": "projected_cost", "average": "average_cost", "interactions": "interactions",
+           "used_pct": "used_pct"}[sort]
+    rows.sort(key=lambda r: (r[key] is not None, r[key] or 0), reverse=True)
+    return {
+        "thresholds": {"warn": plan.cost_warn_pence / 100, "target": plan.cost_target_pence / 100,
+                       "critical": plan.cost_critical_pence / 100},
+        "min_sample": cost_monitor.MIN_SAMPLE,
+        "status_counts": dict(counts),
+        "accounts": rows[:limit],
+    }

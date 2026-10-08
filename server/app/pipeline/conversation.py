@@ -710,6 +710,7 @@ class ConversationPipeline:
         lang = self._edit_lang(turn)
         if word == "OTHER":
             turn.assistant_text = "(another item: not applied)"
+            turn.edit_outcome = "other"
             await io.send(turn, "llm_display", text=edit_texts.text(lang, "other_item"))
             return
         turn.assistant_text = reply

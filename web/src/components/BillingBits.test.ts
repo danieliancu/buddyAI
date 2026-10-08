@@ -6,7 +6,7 @@ const base = (status: MyPlan["status"], care: CareActivation | null = null): MyP
   ({
     status,
     care_activation: care,
-    prices: { currency: "GBP", care_price_pence: 790, topup_price_pence: 199, topup_adds_pct: 26 },
+    prices: { currency: "GBP", care_price_pence: 790, topup_price_pence: 199, topup_interactions: 250 },
   }) as MyPlan;
 const care = (status: CareActivation["status"], error: string | null = null): CareActivation => ({
   status,

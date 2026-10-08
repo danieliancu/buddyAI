@@ -96,8 +96,9 @@ abort/stale-frame checks.
 - **Emails** (`app/email.py`): printed to the log by default (`BUDDYAI_EMAIL_BACKEND=console`), SMTP in production.
 - **Shop** (`app/billing.py`, `app/api/shop.py`): one Stripe Checkout sells the watch together with the
   "ola Care" subscription (trial first). Webhooks keep orders and subscriptions in sync.
-  `app/entitlements.py` refuses turns without an active or trial subscription, or once the monthly
-  fair-use allowance is used up.
+  `app/entitlements.py` refuses turns without an active or trial subscription, or once the account's
+  monthly AI interactions (1,000 per billing period) are used up. AI cost is monitored, never enforced
+  (`app/cost_monitor.py`; docs/BILLING.md).
   Billing stays off until `BUDDYAI_STRIPE_SECRET_KEY` is set, so every watch is then allowed.
 - **Languages** (`app/languages.py`, `config/languages.json`): 57 languages; `auto` detects the
   spoken language (lingua).

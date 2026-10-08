@@ -58,7 +58,7 @@ class TurnContext:
     expect_reply: bool = False  # the reply asked something the operation needs: the watch listens again
     edit_uid: str | None = None  # edit modes: the stable id of the item being edited (bound by the gateway)
     pending_uid: str | None = None  # uid of the item in pending_open (the gateway remembers what it showed)
-    edit_outcome: str = ""  # edit modes: "ignored" when the sentence was not meant for the item
+    edit_outcome: str = ""  # edit modes: "ignored" (not meant for the item) | "other" (about another item)
     # The AI operation that pays for this turn (app/usage_ops.py): admitted in the database, executed only
     # while this process holds its lease (exec_token). lease_lost: stop - no further paid work.
     op_id: int | None = None

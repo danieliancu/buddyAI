@@ -48,7 +48,7 @@ describe("buy box: the ola Care terms must be accepted", () => {
     open: true,
     currencies: ["gbp", "eur"],
     trial_days: 30,
-    care_terms: { gbp: { version: "care-2026-11", sha256: "ab".repeat(32), text: "I agree … £7.90 per month …", amount_minor: 790, interval: "month" } },
+    care_terms: { gbp: { version: "care-2026-12", sha256: "ab".repeat(32), text: "I agree … £7.90 per month …", amount_minor: 790, interval: "month" } },
   });
 
   it("a currency without published terms can't be bought", () => {
@@ -61,7 +61,7 @@ describe("buy box: the ola Care terms must be accepted", () => {
     expect(checkoutBody("GBP", status.careTerms!.gbp, true)).toEqual({
       currency: "gbp",
       care_terms_accepted: true,
-      care_terms_version: "care-2026-11",
+      care_terms_version: "care-2026-12",
       care_terms_sha256: "ab".repeat(32),
     });
   });

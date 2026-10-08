@@ -37,11 +37,42 @@ import { config, prices, formatPrice } from "../../config";
     <li>Voice conversations with the AI assistant, in all supported languages.</li>
     <li>Personas, the blue or white theme, and your conversation history in your account (export or delete anytime).</li>
     <li>Firmware updates over the air.</li>
+    <li>{prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month (see section 3a).</li>
+  </ul>
+
+  <h2>3a. Monthly AI interactions</h2>
+  <!-- LEGAL REVIEW: new wording (2026-10) describing the interaction allowance - to be reviewed by a professional. -->
+  <ul>
     <li>
-      A monthly fair-use allowance of AI usage, shared by all your watches. It is not unlimited. Your account shows how
-      much of it you have used as a percentage, and the date it resets. We let you know as you approach it. If you reach
-      it, the assistant pauses new questions until your next billing period starts; you can also buy one-off extra usage
-      for the rest of the period.
+      <Brand name="care" /> includes {prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions in each monthly
+      billing period, shared by all the watches on your account.
+    </li>
+    <li>
+      One interaction is one request you make to the assistant — a question, a follow-up question, a note, a reminder or
+      another voice command. A follow-up is a new request and counts separately. A web search, or any other tool the
+      assistant uses to answer one request, does not use extra interactions.
+    </li>
+    <li>
+      These do not use an interaction: silence or a recording in which nothing was understood; a request that fails
+      because of a fault on our side or our AI partners' side; a request interrupted because the connection dropped;
+      work the service does in the background (for example remembering what you asked it to). If you stop an answer
+      yourself after your request was understood, that request counts.
+    </li>
+    <li>
+      Your allowance renews every month: at the start of each monthly billing period and, during the free trial, every
+      month from the day the trial starts. Unused interactions do not carry forward. Your account shows how many you have used, how many are
+      left and when the allowance renews; we let you know when you reach 80% and 95%, and when it is used up.
+    </li>
+    <li>
+      When the allowance is used up, the assistant does not answer new requests until it renews. Your saved notes and
+      reminders (including their alarms), your account, watch settings and updates keep working; asking the assistant
+      to change a note or reminder by voice is a request and needs an interaction. You can also buy {prices.topup.interactions} extra
+      interactions for the rest of the current period ({formatPrice(prices.topup.GBP, "GBP")}, a one-off payment, never
+      recurring); they end with that period.
+    </li>
+    <li>
+      If you cancel, or your subscription ends, the assistant stops answering new requests at the end of the period you
+      have paid for (or of the free trial), whatever interactions are left.
     </li>
   </ul>
 

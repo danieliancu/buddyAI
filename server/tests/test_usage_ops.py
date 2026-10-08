@@ -1,5 +1,5 @@
-"""AI usage operations (app/usage_ops.py): admission, reservation, lease, idempotent costs, settlement and
-recovery. Runs on SQLite by default and on PostgreSQL with BUDDYAI_DATABASE_URL (tests/pg adds the
+"""AI usage operations (app/usage_ops.py): admission by AI interactions, lease, idempotent costs, settlement
+and recovery. Runs on SQLite by default and on PostgreSQL with BUDDYAI_DATABASE_URL (tests/pg adds the
 multi-process cases)."""
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from app import allowance as allowance_mod
 from app import billing, entitlements, usage_notices, usage_ops
 from app.db.models import Account, PricingRule, TopUp, UsageNotice, UsageOperation, UsageRecord, utcnow
 from app.db.session import session_scope
-from app.money import pence_to_micro, usd_to_micro_gbp
+from app.money import usd_to_micro_gbp
 from app.providers.base import UsageItem
-from tests.test_billing_v2 import _account, _grant, _spend, enforce  # noqa: F401 - fixture
+from tests.test_billing_v2 import _account, _grant, _limit, _spend, _use, enforce  # noqa: F401 - fixture
 
 PROV, MODEL, UNIT = "testprov", "m1", "unit"
 PRICE_USD = 0.04  # one unit = £0.03 at the default 0.75 rate
@@ -116,21 +116,24 @@ def test_request_keys_are_per_account(enforce):
     assert other.allowed
 
 
-def test_last_budget_one_admitted_others_busy_or_limit(enforce):
+def test_last_interaction_one_admitted_others_busy_or_limit(enforce):
     acc = paid_account()
-    _spend(acc, 2.46)  # £2.50 - room for one 3p reservation
+    _limit(acc, 5)
+    _use(acc, 4)  # room for one more
     first = usage_ops.admit(req(acc, device="w1"))
     second = usage_ops.admit(req(acc, device="w2"))
     assert first.allowed and second.code == "busy_concurrent"
     assert "other conversations" in second.message
-    usage_ops.settle(first.op_id, first.exec_token, status="completed", billable=True, items=[(0, item(2))])
+    usage_ops.settle(first.op_id, first.exec_token, status="completed", billable=True, items=[(0, item(2))],
+                     interaction=True)
     third = usage_ops.admit(req(acc, device="w2"))
-    assert not third.allowed and third.code == "limit_reached"  # 2.46 + 0.06 >= 2.50
+    assert not third.allowed and third.code == "limit_reached"  # 5 of 5
 
 
 def test_accounts_are_independent(enforce):
     a1, a2 = paid_account(), paid_account()
-    _spend(a1, 2.50)
+    _limit(a1, 3)
+    _use(a1, 3)
     assert usage_ops.admit(req(a1)).code == "limit_reached"
     assert usage_ops.admit(req(a2)).allowed
 
@@ -190,17 +193,20 @@ def test_admission_paused_drains(enforce):
 # --- costs ---------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("units", [0.5, 1.0, 3.0])  # below / equal to / above the 3p reservation
-def test_cost_against_the_reservation(enforce, units):
+@pytest.mark.parametrize("units", [0.5, 1.0, 300.0])  # cheap / normal / very expensive: always one interaction
+def test_cost_is_recorded_and_one_request_is_one_interaction(enforce, units):
     acc = paid_account()
     a = usage_ops.admit(req(acc))
-    assert op_row(a.op_id).reserved_micro == pence_to_micro(3)
-    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(units))])
-    assert view.state == "settled" and view.cost_certainty == "exact"
-    assert view.recorded_cost_micro == records(a.op_id)[0].cost_micro_gbp
+    assert op_row(a.op_id).reserved_micro == 0  # no money reservation any more
+    with session_scope() as db:
+        assert entitlements.allowance(db, db.get(Account, acc)).active == 1
+    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(units))],
+                            interaction=True)
+    assert view.state == "settled" and view.cost_certainty == "exact" and view.interaction is True
+    assert view.recorded_cost_micro == records(a.op_id)[0].cost_micro_gbp == round(units * UNIT_MICRO)
     with session_scope() as db:
         al = entitlements.allowance(db, db.get(Account, acc))
-    assert al.used_micro == view.recorded_cost_micro and al.reserved_micro == 0  # the reservation is gone
+    assert (al.used, al.active) == (1, 0)
 
 
 def test_intermediate_costs_are_written_once(enforce):
@@ -217,24 +223,23 @@ def test_intermediate_costs_are_written_once(enforce):
     assert op_row(a.op_id).recorded_cost_micro == 3 * UNIT_MICRO
 
 
-def test_running_costs_count_for_admission_not_for_the_customer(enforce):
+def test_cost_never_limits_admission(enforce):
     acc = paid_account()
-    _spend(acc, 2.40)
+    _spend(acc, 40.00)  # far beyond every internal cost threshold
     a = usage_ops.admit(req(acc))
-    usage_ops.record_costs(a.op_id, [(0, item(4))])  # 12p recorded while still running: 2.40 + 0.12 > 2.50
+    usage_ops.record_costs(a.op_id, [(0, item(400))])  # an expensive answer still running
+    assert usage_ops.admit(req(acc)).allowed  # money is monitored, never enforced
     with session_scope() as db:
-        al = entitlements.allowance(db, db.get(Account, acc))
-    assert al.used_micro == 2_400_000  # the customer sees finished costs only
-    assert usage_ops.admit(req(acc)).code == "limit_reached"
+        assert entitlements.allowance(db, db.get(Account, acc)).used == 0
 
 
 def test_error_turn_keeps_cost_not_billable(enforce):
     acc = paid_account()
     a = usage_ops.admit(req(acc))
     view = usage_ops.settle(a.op_id, a.exec_token, status="error", billable=False, items=[(0, item(2))])
-    assert view.billable is False and records(a.op_id)[0].billable is False
+    assert view.billable is False and records(a.op_id)[0].billable is False and view.interaction is False
     with session_scope() as db:
-        assert entitlements.allowance(db, db.get(Account, acc)).used_micro == 0
+        assert entitlements.allowance(db, db.get(Account, acc)).used == 0
 
 
 def test_nothing_spent_is_cancelled(enforce):
@@ -274,10 +279,11 @@ def test_recovery_expires_and_is_not_billed(enforce):
     assert usage_ops.recover_expired() >= 1
     op = op_row(a.op_id)
     assert op.state == "expired" and op.billable is False and op.cost_certainty == "uncertain"
-    assert op.reason == "lease_expired" and records(a.op_id)[0].billable is False
-    # the executing process comes back late: its settle cannot revive or bill it
-    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(2)), (1, item(1))])
-    assert view.state == "expired" and view.billable is False
+    assert op.reason == "lease_expired" and records(a.op_id)[0].billable is False and op.interaction is False
+    # the executing process comes back late: its settle cannot revive, bill or count it
+    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(2)), (1, item(1))],
+                            interaction=True)
+    assert view.state == "expired" and view.billable is False and view.interaction is False
     assert len(records(a.op_id)) == 2 and not any(r.billable for r in records(a.op_id))  # late cost kept
     assert usage_ops.recover_expired() == 0  # never twice
 
@@ -315,7 +321,7 @@ def test_late_cost_stays_in_its_period(enforce):
     with session_scope() as db:
         al = entitlements.allowance(db, db.get(Account, acc))
         new_key = allowance_mod.period_identity(billing.active_subscription(db, acc)).key
-    assert new_key != old_key and al.used_micro == 0
+    assert new_key != old_key and al.used == 0
 
 
 def test_period_keys_are_stable():
@@ -335,19 +341,21 @@ def test_period_keys_are_stable():
 
 def test_topup_and_refund_change_admission(enforce):
     acc = paid_account()
-    _spend(acc, 2.50)
+    _limit(acc, 2)
+    _use(acc, 2)
     assert usage_ops.admit(req(acc)).code == "limit_reached"
     with session_scope() as db:
         sub = billing.active_subscription(db, acc)
         pid = allowance_mod.period_identity(sub)
-        t = TopUp(account_id=acc, amount_pence=199, allowance_pence=100, period_start=pid.period.start,
+        t = TopUp(account_id=acc, amount_pence=199, allowance_pence=0, interactions=1, period_start=pid.period.start,
                   period_end=pid.period.end, period_key=pid.key, status="paid", stripe_payment_intent=f"pi_{secrets.token_hex(3)}")
         db.add(t)
         db.commit()
         intent = t.stripe_payment_intent
     a = usage_ops.admit(req(acc))
     assert a.allowed
-    usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True)
+    usage_ops.settle(a.op_id, a.exec_token, status="aborted", billable=True)  # e.g. cancelled before understood
+    assert usage_ops.admit(req(acc)).allowed  # not counted: the top-up's interaction is still there
     with session_scope() as db:
         billing._refund(db, {"payment_intent": intent, "refunded": True, "id": "ch_1", "amount_refunded": 199})
     assert usage_ops.admit(req(acc)).code == "limit_reached"
@@ -355,24 +363,22 @@ def test_topup_and_refund_change_admission(enforce):
 
 def test_limit_reduced_while_running(enforce):
     acc = paid_account()
-    _spend(acc, 1.00)
+    _use(acc, 3)
     a = usage_ops.admit(req(acc))
-    with session_scope() as db:
-        x = db.get(Account, acc)
-        x.allowance_override = 0.5
-        db.add(x)
-        db.commit()
+    _limit(acc, 3)  # an operator lowers the account's interactions
     assert usage_ops.admit(req(acc)).code == "limit_reached"
-    # the running turn still finishes and is charged (not an absolute cap)
-    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(1))])
-    assert view.state == "settled" and view.billable
+    # the running turn still finishes and counts (a started answer is never cut off)
+    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(1))],
+                            interaction=True)
+    assert view.state == "settled" and view.interaction
 
 
 def test_threshold_notices_once(enforce):
     import asyncio
 
-    acc = paid_account(allowance_pence=100)
-    _spend(acc, 0.85)
+    acc = paid_account()
+    _limit(acc, 10)
+    _use(acc, 8)
     for _ in range(3):
         asyncio.run(usage_notices.evaluate(acc))
     with session_scope() as db:
@@ -385,8 +391,9 @@ def test_threshold_notices_once(enforce):
 
 def test_free_operation_is_recorded_not_billed(enforce):
     acc = paid_account()
-    _spend(acc, 2.50)  # even with no allowance left: a voice sample is free
+    _limit(acc, 2)
+    _use(acc, 2)  # even with no interactions left: a voice sample is free
     view = usage_ops.record_free_operation("voice_sample", "", acc, [item(1, "tts")])
-    assert view is not None and view.billable is False and view.state == "settled"
+    assert view is not None and view.billable is False and view.state == "settled" and view.interaction is False
     with session_scope() as db:
-        assert entitlements.allowance(db, db.get(Account, acc)).used_micro == 2_500_000
+        assert entitlements.allowance(db, db.get(Account, acc)).used == 2

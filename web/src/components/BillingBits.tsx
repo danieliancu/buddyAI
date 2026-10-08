@@ -5,6 +5,17 @@ import { Badge, cx } from "./ui";
 type Tone = "neutral" | "ok" | "warn" | "danger" | "accent";
 
 const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const longDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
+const count = new Intl.NumberFormat("en-GB");
+
+/** "8 November 2026". */
+export function fmtLongDate(s: string | null | undefined): string {
+  const d = parseDate(s);
+  return d ? longDate.format(d) : "—";
+}
+
+/** 1,000 */
+export const fmtCount = (n: number) => count.format(n);
 const dayMonthYear = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 /** "28 Dec" (this year) or "28 Dec 2027". */
@@ -107,23 +118,55 @@ export function careErrorText(error: string | null): string {
   }
 }
 
-/** Large "Monthly AI usage 52 %" with the liquid bar (same colours as the other meters). */
-export function UsageGauge({ pct, label = "Monthly AI usage" }: { pct: number; label?: string }) {
-  const v = Math.max(0, Math.min(100, pct));
-  const tone = v >= 100 ? "danger" : v >= 80 ? "warn" : "";
+/**
+ * The account's monthly AI interactions (My Account → ola Care): % used, a bar, used / allowance, remaining and the
+ * renewal date - shared by all the account's watches. A subtle note at 80 %, a stronger one at 95 %, a friendly
+ * explanation at 100 %. Never costs or tokens.
+ */
+export function MonthlyUsage({ usage }: { usage: MyPlan["usage"] }) {
+  const pct = Math.max(0, Math.min(100, usage.used_pct));
+  const level = pct >= 100 ? "limit" : pct >= 95 ? "high" : pct >= 80 ? "warn" : "ok";
+  const renews = fmtLongDate(usage.reset_at);
   return (
-    <div>
-      <div className="mb-2 flex items-end justify-between gap-3">
-        <span className="text-sm text-muted">{label}</span>
-        <span className={cx("tabular text-3xl font-semibold leading-none tracking-tight", v >= 100 ? "text-danger" : v >= 80 ? "text-warn" : "")}>
-          {Math.round(v)}
-          <span className="ml-0.5 text-lg font-medium text-muted">%</span>
+    <section aria-label="Monthly usage" data-testid="monthly-usage" className="space-y-2.5">
+      <div className="flex items-end justify-between gap-3">
+        <h3 className="text-sm font-medium">Monthly usage</h3>
+        <span className={cx("tabular text-sm font-semibold", level === "limit" ? "text-danger" : level === "ok" ? "text-fg" : "text-warn")}>
+          {Math.floor(pct)}% used
         </span>
       </div>
-      <div className="liquid" role="progressbar" aria-label={label} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
-        <div className={cx("liquid-fill", tone)} style={{ width: `${v}%` }} />
+      <div className="liquid" role="progressbar" aria-label="Monthly AI interactions used" aria-valuenow={Math.floor(pct)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={cx("liquid-fill", level === "limit" ? "danger" : level === "ok" ? "" : "warn")} style={{ width: `${pct}%` }} />
       </div>
-    </div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+        <span>
+          <b className="tabular">{fmtCount(usage.used)}</b> of {fmtCount(usage.limit)} interactions
+        </span>
+        <span className="text-muted">
+          <span className="tabular">{fmtCount(usage.remaining)}</span> {usage.remaining === 1 ? "interaction" : "interactions"} remaining
+        </span>
+      </div>
+      <p className="text-xs text-muted">
+        Renews on {renews}
+        {usage.extra > 0 ? ` · includes ${fmtCount(usage.extra)} extra this period` : ""}
+      </p>
+      {level === "warn" && (
+        <p className="text-xs text-warn" data-testid="usage-hint">
+          You've used {Math.floor(pct)}% of your monthly AI interactions.
+        </p>
+      )}
+      {level === "high" && (
+        <p className="rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn" data-testid="usage-hint">
+          You've used {Math.floor(pct)}% of your monthly AI interactions — {fmtCount(usage.remaining)} left until {renews}.
+        </p>
+      )}
+      {level === "limit" && (
+        <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger" data-testid="usage-hint">
+          You've reached your {fmtCount(usage.limit)} monthly AI interactions. Your allowance renews on {renews}, when Ola answers
+          again. Your saved notes, reminders and their alarms keep working.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -149,8 +192,8 @@ export function turnRefusedText(code: TurnRefusedCode, operator = false): string
       return operator ? "Refused: no active subscription" : "Ola needs an active ola Care subscription to answer.";
     case "limit_reached":
       return operator
-        ? "Refused: allowance used up"
-        : "This month's AI usage is used up. Ola answers again when it resets — or add extra usage on the Account page.";
+        ? "Refused: monthly AI interactions used up"
+        : "You've used all your monthly AI interactions. Ola answers again when your allowance renews — see Account → ola Care.";
     case "account_inactive":
       return operator ? "Refused: account inactive" : "Your account is inactive — please contact support.";
     default:

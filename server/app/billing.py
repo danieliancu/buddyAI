@@ -191,7 +191,7 @@ def create_subscription_checkout(db: Session, account: Account) -> str:
 
 
 def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
-    """One-time purchase of extra allowance for the current period. Nothing is granted here."""
+    """One-time purchase of extra AI interactions for the current period. Nothing is granted here."""
     from app import allowance as allowance_mod  # avoid an import cycle
 
     s = get_settings()
@@ -205,7 +205,8 @@ def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
     topup = TopUp(
         account_id=account.id,
         amount_pence=plan.topup_price_pence,
-        allowance_pence=plan.topup_allowance_pence,
+        allowance_pence=0,  # legacy money allowance: not used since 0027
+        interactions=plan.topup_interactions,
         period_start=pid.period.start,
         period_end=pid.period.end,
         period_key=pid.key,  # the period it tops up, even if it is paid after the period rolled over
@@ -223,8 +224,9 @@ def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
                     "unit_amount": plan.topup_price_pence,
                     "tax_behavior": "inclusive",
                     "product_data": {
-                        "name": "ola extra usage",
-                        "description": "One-off extra AI usage for your current ola Care period. Not recurring.",
+                        "name": f"ola extra usage: {plan.topup_interactions:,} AI interactions",
+                        "description": f"{plan.topup_interactions:,} extra AI interactions for your current ola Care "
+                                       "period. One-off, not recurring.",
                     },
                 },
                 "quantity": 1,
@@ -597,7 +599,7 @@ def _topup_paid(db: Session, cs: dict[str, Any]) -> bool:
         return False
     tax = int((cs.get("total_details") or {}).get("amount_tax") or 0)
     _revenue(db, cs["id"], topup.account_id, "topup", int(cs.get("amount_total") or 0), "gbp", tax)
-    accounts.audit(db, "system", "topup.paid", topup.account_id, detail=f"top-up {topup.id}: +{topup.allowance_pence}p allowance")
+    accounts.audit(db, "system", "topup.paid", topup.account_id, detail=f"top-up {topup.id}: +{topup.interactions or 0} interactions")
     return True
 
 
@@ -763,6 +765,12 @@ def is_entitled(sub: Subscription, now: datetime | None = None) -> bool:
 def active_subscription(db: Session, account_id: int) -> Subscription | None:
     """The subscription that counts: an entitled one (latest period end first), else the newest."""
     subs = db.exec(select(Subscription).where(Subscription.account_id == account_id).order_by(col(Subscription.id).desc())).all()
+    return pick_active(list(subs))
+
+
+def pick_active(subs: list[Subscription]) -> Subscription | None:
+    """active_subscription's choice among one account's subscriptions (newest first)."""
+    subs = sorted(subs, key=lambda s: s.id or 0, reverse=True)
     live = [s for s in subs if is_entitled(s)]
     if live:
         far = datetime.max.replace(tzinfo=timezone.utc)

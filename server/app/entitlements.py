@@ -1,13 +1,13 @@
-"""May this watch start a turn? Subscription status + the account's AI allowance.
+"""May this watch start a turn? Subscription status + the account's AI interactions left this period.
 
-The decision and the reservation live in the database (app/usage_ops.py: one usage_operations row per AI
-operation, admitted under the account row lock), so every server process sees the same budget. This module
-keeps the read-only helpers used by screens and tools.
+The decision lives in the database (app/usage_ops.py: one usage_operations row per AI operation, admitted
+under the account row lock), so every server process sees the same count. This module keeps the read-only
+helpers used by screens and tools.
 
 Always allowed: a watch without an owner (operator stock), an internal account, or when enforcement is
 off (no Stripe keys and the operator has not enabled it). Otherwise the account needs an entitled
-subscription (Stripe trialing/active/past_due, or an unexpired complimentary grant) and allowance left.
-A turn that has started always finishes (the last answer may go slightly over; it is never cut off).
+subscription (Stripe trialing/active/past_due, or an unexpired complimentary grant) and interactions left.
+A turn that has started always finishes. AI cost never limits the customer (internal monitoring only).
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from app import allowance as allowance_mod
 from app import billing, usage_notices, usage_ops
 from app.db.models import Account
-from app.db.session import session_scope
 
 Allowance = allowance_mod.Allowance
 
@@ -31,15 +30,9 @@ class Decision:
 
 
 def allowance(db, acc: Account) -> Allowance:
-    """The account's current allowance (operator views, customer plan); reserved = running operations."""
+    """The account's AI interactions this period (operator views, customer plan)."""
     sub = billing.active_subscription(db, acc.id)
     return allowance_mod.compute(db, acc, sub)
-
-
-def reserved_micro(account_id: int) -> int:
-    with session_scope() as db:
-        acc = db.get(Account, account_id)
-        return allowance(db, acc).reserved_micro if acc is not None else 0
 
 
 async def check(account_id: int | None) -> Decision:

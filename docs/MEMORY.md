@@ -44,8 +44,8 @@ check), IBANs, passwords / PINs / codes, secret keys, identity document numbers.
   dropped.
 - At most 3 per conversation.
 - A learned change to a fact the user stated or confirmed is always pending.
-- Learning is admitted against the account's allowance (operation kind `memory`). If it is refused, it is
-  skipped.
+- Learning is admitted as operation kind `memory`: it needs an entitled subscription (otherwise it is skipped),
+  never uses one of the customer's AI interactions, and its cost is recorded as background AI cost.
 
 **Recall** (`app/memory/retrieve.py`):
 1. **Small set.** 30 facts or fewer, and 2,500 characters or fewer: all of them go in, with no embedding call.

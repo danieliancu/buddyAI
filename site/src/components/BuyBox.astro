@@ -42,8 +42,9 @@ const trial = `free ${prices.trialMonths}-month trial`;
   </p>
   {!compact && (
     <p class="mt-2 text-sm text-muted">
-      <Brand name="care" /> is the subscription that powers the AI assistant: it is needed for the watch to answer you. It
-      includes a monthly fair-use allowance. See the <a class="link" href="/legal/subscription-terms/">subscription terms</a>.
+      <Brand name="care" /> is the subscription that powers the AI assistant: it is needed for the watch to answer you.
+      {prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month included with <Brand name="care" />.
+      See the <a class="link" href="/legal/subscription-terms/">subscription terms</a>.
     </p>
   )}
 

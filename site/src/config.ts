@@ -33,6 +33,10 @@ export const prices = {
       : null,
   care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
   trialMonths: 1,
+  /** AI interactions included per month (server: Plan settings, interaction_limit). */
+  interactionsPerMonth: 1000,
+  /** One-off extra usage (server: topup_interactions, topup_price_pence). */
+  topup: { interactions: 250, GBP: 1.99 },
   currencyDefault: "GBP" as Currency,
 } as const;
 

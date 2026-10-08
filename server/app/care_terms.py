@@ -21,7 +21,7 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
-CARE_TERMS_VERSION = "care-2026-11"
+CARE_TERMS_VERSION = "care-2026-12"  # 2026-12: the monthly AI interactions are stated
 
 _SYMBOL = {"gbp": "£", "eur": "€"}
 _cache: dict[str, tuple[float, "CarePrice"]] = {}
@@ -77,15 +77,28 @@ def clear_cache() -> None:
     _cache.clear()
 
 
-def render(price: CarePrice, trial_days: int) -> str:
+def render(price: CarePrice, trial_days: int, interactions: int = 1000) -> str:
     each = money(price.amount_minor, price.currency)
     return (
         f"I agree that Ola Technologies London Ltd may save my card and use it for ola Care: a free "
         f"{trial_days}-day trial that starts when I pair my watch to my ola account (not today), then "
         f"{each} per {price.interval}, charged automatically every {price.interval} until I cancel. "
+        f"ola Care includes {interactions:,} AI interactions per month, shared by my watches. "
         "I can cancel anytime in my ola account; if I cancel before the trial ends I pay nothing for ola Care. "
         "Nothing is charged for ola Care today."
     )
+
+
+def _interactions() -> int:
+    from app.db.session import session_scope
+    from app.plan import get_plan
+
+    try:
+        with session_scope() as db:
+            return get_plan(db).interaction_limit
+    except Exception:  # noqa: BLE001 - the terms must still render (the default allowance)
+        log.warning("care terms: plan unavailable, using the default allowance", exc_info=True)
+        return 1000
 
 
 def sha256(text: str) -> str:
@@ -95,5 +108,5 @@ def sha256(text: str) -> str:
 def current(currency: str, fetch=None) -> CareTerms:
     s = get_settings()
     price = care_price(currency, fetch)
-    text = render(price, s.care_trial_days)
+    text = render(price, s.care_trial_days, _interactions())
     return CareTerms(CARE_TERMS_VERSION, text, sha256(text), price, s.care_trial_days)

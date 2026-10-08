@@ -1,21 +1,22 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { CalendarSync, ChevronDown, CircleCheck, ExternalLink, MessagesSquare, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { ChevronDown, CircleCheck, ExternalLink, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { api, ApiError, type MyPlan } from "../../api";
 import { fmtDate } from "../../format";
-import { careErrorText, carePlanStatus, fmtDayMonth, OrderStatusBadge, pence, UsageGauge } from "../../components/BillingBits";
+import { careErrorText, carePlanStatus, fmtCount, fmtDayMonth, fmtLongDate, MonthlyUsage, OrderStatusBadge, pence } from "../../components/BillingBits";
 import { Button, Card, ErrorBox, cx, useAsync } from "../../components/ui";
 import { useLive } from "../../live";
 
-/** Start a one-off extra-usage purchase (Stripe Checkout). Nothing is added until the payment succeeds. */
+/** Start a one-off purchase of extra interactions (Stripe Checkout). Nothing is added until the payment succeeds. */
 export async function startTopup(): Promise<void> {
   const { url } = await api.me.topupCheckout();
   window.location.assign(url);
 }
 
 /**
- * "ola Care": plan status, how much of this period's AI usage is used (a share, never internal
- * costs), activity, reset date, fair use, prices, extra usage and orders.
+ * "ola Care" (My Account): plan status, the month's AI interactions (used, remaining, renewal date - shared by
+ * all the account's watches, never internal costs), how interactions are counted, prices, extra interactions
+ * and orders.
  */
 export default function PlanCard() {
   const plan = useAsync(api.me.plan, []);
@@ -67,23 +68,9 @@ export default function PlanCard() {
         {returned && <ReturnNotice kind={returned} waiting={waiting} onClose={() => setParams({}, { replace: true })} />}
         <StatusLine plan={p} />
         <CareDetails plan={p} onChange={plan.reload} />
-        {p.enforced && (
-          <>
-            <UsageGauge pct={p.usage.used_pct} />
-            <div className="grid grid-cols-2 gap-3">
-              <Stat icon={<MessagesSquare className="size-4" />} label="Conversations this period" value={String(p.usage.activity_count)} />
-              <Stat icon={<CalendarSync className="size-4" />} label="Usage resets on" value={fmtDayMonth(p.usage.reset_at)} />
-            </div>
-            {p.usage.extra_pct > 0 && (
-              <p className="flex items-center gap-2 text-sm text-ok">
-                <CircleCheck className="size-4" /> Extra usage added this period: +{p.usage.extra_pct}% of a month
-              </p>
-            )}
-            <ThresholdHint plan={p} />
-          </>
-        )}
+        {p.enforced && USAGE_KINDS.includes(p.status.kind) && <MonthlyUsage usage={p.usage} />}
         <Actions plan={p} />
-        <FairUse plan={p} />
+        <HowInteractionsWork plan={p} />
         {p.topups.length > 0 && <Topups plan={p} />}
         {billing.data && billing.data.orders.length > 0 && <Orders orders={billing.data.orders} />}
       </div>
@@ -256,35 +243,8 @@ function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
   );
 }
 
-function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-surface-2 px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-xs text-muted">
-        {icon}
-        {label}
-      </p>
-      <p className="tabular mt-0.5 text-lg font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function ThresholdHint({ plan }: { plan: MyPlan }) {
-  const pct = plan.usage.used_pct;
-  if (pct >= 100)
-    return (
-      <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
-        This month's AI usage is used up. Ola answers again on {fmtDayMonth(plan.usage.reset_at)}
-        {plan.topup_available ? ", or add extra usage now." : "."}
-      </p>
-    );
-  if (pct >= 80)
-    return (
-      <p className="rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn">
-        {pct}% used. It resets on {fmtDayMonth(plan.usage.reset_at)}.
-      </p>
-    );
-  return null;
-}
+/** Plan states that have a monthly allowance running (an ended or missing plan shows no meter). */
+const USAGE_KINDS: MyPlan["status"]["kind"][] = ["trial", "active", "past_due", "complimentary"];
 
 function Actions({ plan }: { plan: MyPlan }) {
   const [busy, setBusy] = useState<"" | "topup" | "subscribe" | "portal">("");
@@ -323,7 +283,7 @@ function Actions({ plan }: { plan: MyPlan }) {
             icon={<PlusCircle className="size-4" />}
             onClick={() => run("topup")}
           >
-            Add extra usage — {pence(plan.prices.topup_price_pence)}
+            Add {fmtCount(plan.prices.topup_interactions)} interactions — {pence(plan.prices.topup_price_pence)}
           </Button>
         )}
         {plan.can_manage_billing && (
@@ -334,8 +294,8 @@ function Actions({ plan }: { plan: MyPlan }) {
       </div>
       {plan.topup_available && (
         <p className="text-xs text-muted">
-          One-off payment, never recurring. Adds about {plan.prices.topup_adds_pct}% of a month's usage until{" "}
-          {fmtDayMonth(plan.usage.reset_at)}.
+          One-off payment, never recurring. Adds {fmtCount(plan.prices.topup_interactions)} AI interactions until{" "}
+          {fmtLongDate(plan.usage.reset_at)}.
         </p>
       )}
       <ErrorBox error={error} />
@@ -343,34 +303,33 @@ function Actions({ plan }: { plan: MyPlan }) {
   );
 }
 
-function FairUse({ plan }: { plan: MyPlan }) {
+function HowInteractionsWork({ plan }: { plan: MyPlan }) {
+  const included = fmtCount(plan.usage.included || plan.usage.limit);
   return (
     <details className="group rounded-xl border border-border px-4 py-3 text-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
-        How usage works
+        How interactions work
         <ChevronDown className="size-4 text-muted transition group-open:rotate-180" />
       </summary>
       <div className="mt-3 space-y-2 text-muted">
         <p>
-          ola Care includes a monthly amount of AI usage, shared by all your watches. The bar shows how much of it you have used
-          this period.
+          ola Care includes {included} AI interactions per month, shared by all your watches. Unused interactions don't carry over.
         </p>
         <p>
-          <b className="text-fg">Requests use different amounts.</b> A quick question uses a little. Questions that need the internet
-          (weather, opening hours, travel), long answers and long recordings use more. So the number of conversations you can have
-          varies — it is not a fixed count.
+          <b className="text-fg">One request is one interaction</b> — a question, a note, a reminder or another voice command. If Ola
+          searches the web or uses other tools to answer it, that's still one. A follow-up question is a new interaction.
         </p>
         <p>
-          Usage resets on {fmtDayMonth(plan.usage.reset_at)}. If it runs out before then, Ola pauses its answers until the reset
+          Silence, and requests that fail because of a fault on our side or a dropped connection, don't count. If you stop an answer
+          yourself after Ola understood your request, it counts.
+        </p>
+        <p>
+          Your allowance renews on {fmtLongDate(plan.usage.reset_at)}. If you use it all before then, Ola answers again when it renews
           {plan.topup_available || plan.billing_enabled
-            ? `, or you can add extra usage for the rest of the period (${pence(plan.prices.topup_price_pence)}, one-off, never recurring). Extra usage ends with the period.`
-            : "."}
-        </p>
-        <p>
-          Fair use: ola Care is for personal use with your own watches. It is not unlimited. We tell you at{" "}
-          {plan.thresholds.filter((t) => t < 100).join("% and ")}% and when it is used up — we never charge you for more without asking.
-          A refunded extra-usage purchase is removed from your allowance. A question that fails because of a fault on our side does
-          not count.
+            ? ` — or you can add ${fmtCount(plan.prices.topup_interactions)} interactions for the rest of the period (${pence(plan.prices.topup_price_pence)}, one-off, never recurring).`
+            : "."}{" "}
+          We let you know at {plan.thresholds.filter((t) => t < 100).join("% and ")}% and when they're used up — we never charge you
+          for more without asking.
         </p>
       </div>
     </details>
@@ -381,12 +340,13 @@ function Topups({ plan }: { plan: MyPlan }) {
   return (
     <div className="border-t border-border pt-4">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium">
-        <PlusCircle className="size-4 text-muted" /> Extra usage purchases
+        <PlusCircle className="size-4 text-muted" /> Extra interactions
       </p>
       <ul className="space-y-2">
         {plan.topups.map((t) => (
           <li key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm">
-            <span className="font-medium">{pence(t.amount_pence)}</span>
+            <span className="font-medium">+{fmtCount(t.interactions)} interactions</span>
+            <span className="text-muted">{pence(t.amount_pence)}</span>
             <span className="text-muted">{t.paid_at ? fmtDate(t.paid_at) : ""}</span>
             <span className={cx("ml-auto text-xs", t.status === "refunded" ? "text-warn" : t.current ? "text-ok" : "text-muted")}>
               {t.status === "refunded" ? "Refunded" : t.current ? `Active until ${fmtDayMonth(t.period_end)}` : `Ended ${fmtDayMonth(t.period_end)}`}
@@ -430,8 +390,8 @@ function ReturnNotice({ kind, waiting, onClose }: { kind: string; waiting: boole
   const text =
     kind === "success"
       ? waiting
-        ? "Payment received — adding your extra usage…"
-        : "Thank you — your extra usage is ready."
+        ? "Payment received — adding your extra interactions…"
+        : "Thank you — your extra interactions are ready."
       : kind === "cancel"
         ? "Purchase cancelled. Nothing was charged."
         : "Thank you — your subscription is being set up.";

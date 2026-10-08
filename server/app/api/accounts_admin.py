@@ -78,21 +78,32 @@ def account_detail(account_id: int, request: Request, db: Session = Depends(get_
         "subscription": sub.model_dump() if sub else None,
         "entitled": bool(sub and billing.is_entitled(sub)),
         "internal": acc.internal,
+        # AI interactions this period (the customer's allowance) and the internal cost monitoring view
         "allowance": {
             "used": a.used,
             "limit": a.limit,
-            "currency": a.currency,
-            "override": acc.allowance_override,
+            "remaining": a.remaining,
+            "extra": a.extra,
+            "override": acc.interaction_limit_override,
             "used_pct": a.used_pct,
             "period_start": a.period.start,
             "period_end": a.period.end,
             "period_kind": a.period.kind,
-            "unpriced_rows": a.unpriced_rows,
         },
+        "cost": _cost_view(db, acc),
         "orders": [o.model_dump() for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()],
         # ola Care started at pairing: status, attempts, last error code (retry: POST .../care/activate).
         "care_activation": _care_activation(db, acc.id),
     }
+
+
+def _cost_view(db: Session, acc: Account) -> dict | None:
+    from app import cost_monitor
+    from app.plan import get_plan
+
+    plan = get_plan(db)
+    rows = cost_monitor.account_costs(db, [acc], plan)
+    return cost_monitor.view(rows[0], plan, acc) if rows else None
 
 
 def _care_activation(db: Session, account_id: int) -> dict | None:

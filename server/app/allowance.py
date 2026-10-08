@@ -1,10 +1,17 @@
-"""The account's AI allowance for the current period, in micro-pounds (integers).
+"""The account's allowance for the current period: a number of AI interactions (ola Care: 1,000).
 
-Period: the subscription's billing period (Stripe current_period_start..end), the complimentary
-grant's 30-day cycle, or the calendar month when there is neither. All watches of the account share
-it. Used = sum of billable, non-mock usage recorded in the period (costs frozen in GBP when recorded);
-usage without a pricing rule cannot be counted and is flagged to the operator instead.
-Limit = the plan allowance (or the grant's / the per-account override) + paid top-ups of the period.
+Period: the subscription's billing period (Stripe current_period_start..end); a Stripe period longer than a
+month - a long free trial, whose Stripe period is the whole trial - is split into monthly cycles from its start,
+so the interactions renew every month during the trial too. A complimentary grant uses 30-day cycles; the
+calendar month when there is neither. All watches of the account
+share it; nothing rolls over (counts are per period key).
+Used = operations of the period settled as an interaction (usage_operations.interaction, decided once by
+app/interactions.py). Limit = the plan's interaction_limit (or the account's authorised override) + the
+interactions of the period's paid top-ups.
+
+What the AI providers cost is recorded separately (usage_records, micro-GBP) and monitored by
+app/cost_monitor.py: costs never limit the customer. The money functions below (used_final, active_exposure,
+topups_micro, included_micro) describe the pre-0027 money allowance and are kept for history and reports.
 
 Every period has a stable identity (period_identity: "stripe:<subscription id>:<start>", "comp:<grant id>:
 <cycle start>", "cal:<YYYY-MM>"). An AI operation keeps the period it was accepted in, and so do its costs,
@@ -21,7 +28,8 @@ from sqlalchemy import case, func, or_
 from sqlmodel import Session, select
 
 from app.db.models import Account, Subscription, TopUp, UsageOperation, UsageRecord
-from app.money import micro_to_float, pence_to_micro, pounds_to_micro
+from app.interactions import INTERACTION_KINDS
+from app.money import pence_to_micro, pounds_to_micro
 from app.plan import Plan, get_plan
 
 COMP_CYCLE = timedelta(days=30)
@@ -36,41 +44,29 @@ class Period:
 
 @dataclass
 class Allowance:
+    """AI interactions of one account in one period (what the customer sees, and what admission enforces)."""
+
     period: Period
-    used_micro: int
-    included_micro: int
-    topup_micro: int
-    reserved_micro: int = 0
-    unpriced_rows: int = 0
-    currency: str = "GBP"
+    used: int  # interactions counted in the period
+    included: int  # the plan's limit, or the account's override
+    extra: int = 0  # interactions added by the period's paid top-ups
+    active: int = 0  # admitted requests still running (not counted yet)
+    period_key: str = ""
 
     @property
-    def limit_micro(self) -> int:
-        return self.included_micro + self.topup_micro
+    def limit(self) -> int:
+        return self.included + self.extra
 
     @property
-    def fraction(self) -> float:
-        return 1.0 if self.limit_micro <= 0 else self.used_micro / self.limit_micro
-
-    @property
-    def fraction_with_reserved(self) -> float:
-        return 1.0 if self.limit_micro <= 0 else (self.used_micro + self.reserved_micro) / self.limit_micro
+    def remaining(self) -> int:
+        return max(0, self.limit - self.used)
 
     @property
     def used_pct(self) -> int:
         """What the customer sees: whole percent, 0..100 (floor, so 100 means really used up)."""
-        if self.limit_micro <= 0:
+        if self.limit <= 0:
             return 100
-        return min(100, self.used_micro * 100 // self.limit_micro)
-
-    # Operator-facing (GBP, display only)
-    @property
-    def used(self) -> float:
-        return micro_to_float(self.used_micro)
-
-    @property
-    def limit(self) -> float:
-        return micro_to_float(self.limit_micro)
+        return min(100, self.used * 100 // self.limit)
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -136,6 +132,23 @@ def period_identity(sub: Subscription | None, now: datetime | None = None) -> Pe
     return PeriodId(f"{prefix}:{sub.id}:{int(period.start.timestamp())}", period, period.kind, sub.id)
 
 
+def add_months(dt: datetime, n: int) -> datetime:
+    """dt + n calendar months, keeping dt's day where the month has it (31 Jan + 1 -> 28/29 Feb)."""
+    year, month = divmod(dt.month - 1 + n, 12)
+    for day in (dt.day, 30, 29, 28):
+        try:
+            return dt.replace(year=dt.year + year, month=month + 1, day=day)
+        except ValueError:
+            continue
+    raise ValueError(dt)
+
+
+# A Stripe period longer than a month by more than this is split into monthly allowance cycles (a long free
+# trial: Stripe's current period is the whole trial). Normal monthly periods and trials of up to 31 days (even
+# when they start in February) stay one cycle; a remainder this short is added to the last monthly cycle.
+MONTH_SLACK = timedelta(days=3)
+
+
 def period_for(sub: Subscription | None, now: datetime | None = None) -> Period:
     now = now or datetime.now(timezone.utc)
     if sub is None:
@@ -149,11 +162,58 @@ def period_for(sub: Subscription | None, now: datetime | None = None) -> Period:
     if end:
         start = start or _month_before(end)
         if start <= now < end:
-            return Period(start, end, "stripe")
+            if end - add_months(start, 1) <= MONTH_SLACK:
+                return Period(start, end, "stripe")
+            # Longer than a month (a long free trial): the interactions renew every month from its start. Cycle
+            # starts are computed from the period start (no drift); a last remainder of a few days is part of the
+            # last monthly cycle, which then ends with the period.
+            n = 0
+            while add_months(start, n + 1) <= now and end - add_months(start, n + 1) > MONTH_SLACK:
+                n += 1
+            c_end = add_months(start, n + 1)
+            if end - c_end <= MONTH_SLACK:
+                c_end = end
+            return Period(add_months(start, n), c_end, "stripe")
     return calendar_month(now)
 
 
+def interaction_limit(acc: Account, plan: Plan) -> int:
+    """The account's interactions per period: its authorised override, else the plan's."""
+    return acc.interaction_limit_override if acc.interaction_limit_override is not None else plan.interaction_limit
+
+
+def topup_interactions(db: Session, account_id: int, now: datetime, period_key: str | None, plan: Plan) -> int:
+    """Interactions added by paid top-ups of the period. A top-up bought before 0027 (interactions NULL)
+    counts as the plan's current top-up size, so nothing already bought is lost."""
+    rows = db.exec(select(TopUp).where(TopUp.account_id == account_id, TopUp.status == "paid")).all()
+    return sum(
+        (t.interactions if t.interactions is not None else plan.topup_interactions)
+        for t in rows
+        if (t.period_key is not None and t.period_key == period_key)
+        or (t.period_key is None and _aware(t.period_start) <= now < _aware(t.period_end))  # type: ignore[operator]
+    )
+
+
+def interactions_used(db: Session, account_id: int, period_key: str) -> int:
+    """Operations of the period settled as an interaction (index ix_usage_ops_interactions)."""
+    q = select(func.count()).select_from(UsageOperation).where(
+        UsageOperation.account_id == account_id, UsageOperation.period_key == period_key,
+        UsageOperation.interaction == True,  # noqa: E712 - SQL expression
+    )
+    return int(db.exec(q).one() or 0)
+
+
+def interactions_active(db: Session, account_id: int, period_key: str) -> int:
+    """Admitted requests of the period still running: each may still become an interaction."""
+    q = select(func.count()).select_from(UsageOperation).where(
+        UsageOperation.account_id == account_id, UsageOperation.period_key == period_key,
+        UsageOperation.state.in_(_ACTIVE), UsageOperation.kind.in_(INTERACTION_KINDS),  # type: ignore[attr-defined]
+    )
+    return int(db.exec(q).one() or 0)
+
+
 def included_micro(acc: Account, sub: Subscription | None, plan: Plan) -> int:
+    """Legacy (pre-0027 money allowance): kept for reports only."""
     if sub is not None and sub.source == "complimentary" and sub.allowance_pence is not None:
         return pence_to_micro(sub.allowance_pence)
     if acc.allowance_override is not None:
@@ -234,7 +294,7 @@ def active_exposure(db: Session, account_id: int, period_key: str, exclude_id: i
 
 
 def activity_count(db: Session, account_id: int, period: Period) -> int:
-    """Completed conversations in the period (usage rows keep turn_uid/status after history deletion)."""
+    """Legacy: completed conversations in a time window, from usage rows (kept for reports)."""
     return int(
         db.exec(
             select(func.count(func.distinct(UsageRecord.turn_uid))).where(
@@ -253,21 +313,19 @@ def compute(
     acc: Account,
     sub: Subscription | None,
     plan: Plan | None = None,
-    reserved_micro: int = 0,
     now: datetime | None = None,
 ) -> Allowance:
-    """The allowance shown to the customer and the operator: used = costs of finished operations (never a
-    reservation); reserved_micro = what running operations hold (from the database)."""
+    """The interactions shown to the customer and the operator: used = settled interactions of the period
+    (never a running request); active = requests still running."""
     now = now or datetime.now(timezone.utc)
     plan = plan or get_plan(db)
     pid = period_identity(sub, now)
-    used, unpriced = used_final(db, acc.id, pid)
-    _n, _rec, exposure = active_exposure(db, acc.id, pid.key)
+    assert acc.id is not None
     return Allowance(
         period=pid.period,
-        used_micro=used,
-        included_micro=included_micro(acc, sub, plan),
-        topup_micro=topups_micro(db, acc.id, now, pid.key),
-        reserved_micro=exposure if reserved_micro == 0 else reserved_micro,
-        unpriced_rows=unpriced,
+        used=interactions_used(db, acc.id, pid.key),
+        included=interaction_limit(acc, plan),
+        extra=topup_interactions(db, acc.id, now, pid.key, plan),
+        active=interactions_active(db, acc.id, pid.key),
+        period_key=pid.key,
     )

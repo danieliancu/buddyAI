@@ -16,7 +16,7 @@ const included = [
   "Personas — choose or write your own",
   "Conversation history in your account (export or delete anytime)",
   "Firmware updates over the air",
-  "A monthly fair-use allowance of AI usage, shared by all your watches",
+  `${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month, shared by all your watches`,
 ];
 const pricingFaq = [
   ...faqGroups.find((g) => g.title === "Price & subscription")!.items,

@@ -48,21 +48,27 @@ def reset_schema() -> str:
     return "ok"
 
 
-def make_account(spend_pounds: float = 0.0) -> int:
+def make_account(used: int = 0, limit: int | None = None) -> int:
+    """An account with a complimentary plan, `used` interactions already counted this period and (optionally)
+    an interaction override of `limit`."""
+    from app import allowance as allowance_mod
     from app import billing
-    from app.db.models import Account, UsageRecord
+    from app.db.models import Account, UsageOperation
     from app.db.session import session_scope
 
     with session_scope() as db:
-        acc = Account(email=f"mp-{secrets.token_hex(5)}@example.com")
+        acc = Account(email=f"mp-{secrets.token_hex(5)}@example.com", interaction_limit_override=limit)
         db.add(acc)
         db.commit()
         db.refresh(acc)
-        billing.grant_complimentary(db, acc, 30, "mp-test")
-        if spend_pounds:
-            db.add(UsageRecord(device_id="d", account_id=acc.id, kind="llm", provider="openai", model="m", unit="u",
-                               quantity=1, cost_usd=spend_pounds / 0.75, cost_micro_gbp=round(spend_pounds * 1_000_000)))
-            db.commit()
+        sub, _ = billing.grant_complimentary(db, acc, 30, "mp-test")
+        pid = allowance_mod.period_identity(sub)
+        db.add_all([UsageOperation(
+            op_uid=secrets.token_hex(16), account_id=acc.id, device_id="d", request_key=f"s:{secrets.token_hex(8)}",
+            request_kind="server", request_fingerprint="fp", kind="chat", period_key=pid.key, period_kind=pid.period.kind,
+            period_start=pid.period.start, period_end=pid.period.end, source=pid.source, state="settled",
+            billable=True, interaction=True, result_status="completed") for _ in range(used)])
+        db.commit()
         return acc.id
 
 
@@ -186,7 +192,7 @@ def add_paid_topup(account_id: int) -> int:
     with session_scope() as db:
         sub = billing.active_subscription(db, account_id)
         pid = allowance_mod.period_identity(sub)
-        t = TopUp(account_id=account_id, amount_pence=199, allowance_pence=100, period_start=pid.period.start,
+        t = TopUp(account_id=account_id, amount_pence=199, allowance_pence=0, interactions=1, period_start=pid.period.start,
                   period_end=pid.period.end, period_key=pid.key, status="paid", stripe_payment_intent=f"pi_mp_{account_id}")
         db.add(t)
         db.commit()

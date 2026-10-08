@@ -20,6 +20,8 @@ from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
 from app.incidents import events as diag_events, service as diagnostics
+from app import cost_monitor
+from app.interactions import counts_as_interaction
 from app.items import KINDS, device_full
 from app.voice_context import STORE
 from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message
@@ -393,14 +395,14 @@ class DeviceConnection:
             await usage_notices.evaluate(self.account_id)
 
     @staticmethod
-    def _settle_quietly(op_id, token, status, billable, items, turn_db_id, reason):
+    def _settle_quietly(op_id, token, status, billable, items, turn_db_id, reason, interaction=False):
         try:
             return usage_ops.settle(op_id, token, status=status, billable=billable, items=items,
-                                    turn_db_id=turn_db_id, reason=reason)
+                                    turn_db_id=turn_db_id, reason=reason, interaction=interaction)
         except Exception:  # noqa: BLE001 - database down: retried later; recovery expires it otherwise
             log.warning("usage settle of op %s failed; queued", op_id, exc_info=True)
             usage_ops.queue_settle(op_id, token, status=status, billable=billable, items=items,
-                                   turn_db_id=turn_db_id, reason=reason)
+                                   turn_db_id=turn_db_id, reason=reason, interaction=interaction)
             return None
 
     async def _start_turn(self, msg, turn_id, edit_kind, note_number, edit_uid, adm, request_key) -> None:
@@ -628,14 +630,18 @@ class DeviceConnection:
         if lease_task is not None:
             lease_task.cancel()
         if turn.op_id is not None:
-            # The end of the operation: costs, billable decision, state. A turn that failed on our side
-            # (provider/server error, the watch gave up waiting for us, the lease was lost, shutdown) is not
-            # charged to the customer's allowance; its cost stays visible to the operator. Turns the user
-            # stopped, and no-speech turns, count.
+            # The end of the operation. interaction: whether it uses one of the customer's AI interactions
+            # (app/interactions.py: an understood request that completed, or that the user cancelled; never
+            # silence, a failure on our side or a dropped connection). billable: whether its costs belong to
+            # the customer's consumption in the finance reports (internal; costs never limit the customer).
             reason = "lease_lost" if turn.lease_lost else turn.abort_reason
             billable = result.status != "error" and reason not in ("timeout", "lease_lost", "shutdown")
+            counted = counts_as_interaction(turn.mode, result.status, reason, turn.user_text, turn.edit_outcome)
             await usage_ops.in_pool(usage_ops.ADMIT_POOL, self._settle_quietly, turn.op_id, turn.exec_token,
-                                    result.status, billable, list(enumerate(turn.usage)), turn.db_id, reason)
+                                    result.status, billable, list(enumerate(turn.usage)), turn.db_id, reason,
+                                    counted)
+            if turn.account_id is not None:
+                cost_monitor.evaluate_soon(self.hub, turn.account_id)  # internal monitoring, never blocks
         if turn.account_id is not None:
             new = await usage_notices.evaluate(turn.account_id)
             if new:  # a usage threshold was crossed: web banner / dialog, and a short note on the watch

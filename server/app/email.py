@@ -244,12 +244,13 @@ def payment_failed(to: str) -> Email:
     )
 
 
-def allowance_warning(to: str) -> Email:
+def allowance_warning(to: str, line: str) -> Email:
+    """`line`: e.g. "You've used 80% of your monthly AI interactions. Your allowance renews on 8 November 2026."
+    (app/usage_notices.web_text)."""
     return Email(
         to,
-        "You've used most of this month's ola allowance",
-        "Hi,\n\nYou've used about 80% of this month's fair-use allowance for your assistant.\n"
-        "It resets on the 1st of next month." + _footer(),
+        "You've used most of this month's ola AI interactions",
+        f"Hi,\n\n{line}\nYou can see your usage any time in your ola account (Account > ola Care)." + _footer(),
     )
 
 

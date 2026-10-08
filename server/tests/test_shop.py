@@ -112,7 +112,7 @@ async def test_allowance_warns_then_blocks(billing_on, monkeypatch):
     with session_scope() as db:
         await billing.handle_event(db, _session_event(addr, cus, sub_id), fetch_subscription=lambda sid: _sub(sid, cus))
         acc = db.exec(select(Account).where(Account.email == addr)).one()
-        acc.allowance_override = 1.0  # £1 for this account
+        acc.interaction_limit_override = 20  # 20 interactions for this account (an authorised exception)
         db.add(acc)
         db.commit()
         acc_id = acc.id
@@ -123,13 +123,16 @@ async def test_allowance_warns_then_blocks(billing_on, monkeypatch):
                                quantity=1, cost_usd=pounds / 0.75, cost_micro_gbp=round(pounds * 1_000_000)))
             db.commit()
 
-    spend(0.85)  # 85% of £1
+    from tests.test_billing_v2 import _use
+
+    spend(30.0)  # far above every internal cost threshold: changes nothing for the customer
+    _use(acc_id, 17)  # 85% of 20
     assert (await entitlements.check(acc_id)).allowed
-    warnings = [m for m in ConsoleEmailSender.sent if m.to == addr and "allowance" in m.subject]
+    warnings = [m for m in ConsoleEmailSender.sent if m.to == addr and "AI interactions" in m.subject]
     assert len(warnings) == 1
     assert (await entitlements.check(acc_id)).allowed
-    assert len([m for m in ConsoleEmailSender.sent if m.to == addr and "allowance" in m.subject]) == 1  # once a month
-    spend(0.2)
+    assert len([m for m in ConsoleEmailSender.sent if m.to == addr and "AI interactions" in m.subject]) == 1  # once
+    _use(acc_id, 3)
     d = await entitlements.check(acc_id)
     assert not d.allowed and d.code == "limit_reached"
 
