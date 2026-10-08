@@ -358,7 +358,7 @@ function Notice({ tone, icon, children }: { tone: "warn" | "ok" | "neutral"; ico
 /** What ola Care costs and when it starts, in every state (displayed status comes from the server). */
 export function CareSummary({ care, plan }: { care: CareActivation | null; plan: MyPlan | null }) {
   const price = plan ? pence(plan.prices.care_price_pence) : "";
-  const days = care?.trial_days ?? 90;
+  const days = care?.trial_days ?? 30;
   if (plan?.status.kind === "trial" && plan.status.trial_end && plan.status.cancel_at_period_end) {
     return (
       <p className="text-sm" data-testid="care-trial-cancelled">

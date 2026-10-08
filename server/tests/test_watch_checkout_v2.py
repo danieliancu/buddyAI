@@ -63,10 +63,10 @@ async def _deliver(evt, pm="pm_card_visa"):
 
 def test_status_publishes_terms_with_price_trial_and_start_rule(client):
     st = client.get("/api/shop/status").json()
-    assert st["open"] is True and st["trial_days"] == 90 and st["trial_starts"] == "on_pairing"
+    assert st["open"] is True and st["trial_days"] == 30 and st["trial_starts"] == "on_pairing"
     t = st["care_terms"]["gbp"]
     assert t["amount_minor"] == 790 and t["interval"] == "month"
-    assert "£7.90 per month" in t["text"] and "90-day" in t["text"] and "when I pair my watch" in t["text"]
+    assert "£7.90 per month" in t["text"] and "30-day" in t["text"] and "when I pair my watch" in t["text"]
     assert "Nothing is charged for ola Care today" in t["text"]
 
 
@@ -89,7 +89,7 @@ def test_checkout_is_one_time_payment_with_card_saved_and_no_subscription(client
     assert p["success_url"].startswith("https://www.example.com/thank-you?session_id=")
     with session_scope() as db:
         row = db.exec(select(BillingConsent).where(BillingConsent.stripe_checkout_session_id == cs_id)).one()
-        assert row.status == "pending" and row.amount_minor == 790 and row.currency == "gbp" and row.trial_days == 90
+        assert row.status == "pending" and row.amount_minor == 790 and row.currency == "gbp" and row.trial_days == 30
         assert row.terms_text == p["custom_text"]["terms_of_service_acceptance"]["message"]
         assert row.terms_sha256 == p["metadata"]["care_terms_sha256"] and row.trial_start_rule == "on_pairing"
         assert row.site_ip and row.site_accepted_at is not None

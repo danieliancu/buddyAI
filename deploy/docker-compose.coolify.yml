@@ -55,7 +55,7 @@ services:
       BUDDYAI_STRIPE_PRICE_CARE_EUR: ${BUDDYAI_STRIPE_PRICE_CARE_EUR:-}
       BUDDYAI_STRIPE_SHIPPING_RATES_GBP: ${BUDDYAI_STRIPE_SHIPPING_RATES_GBP:-}
       BUDDYAI_STRIPE_SHIPPING_RATES_EUR: ${BUDDYAI_STRIPE_SHIPPING_RATES_EUR:-}
-      BUDDYAI_CARE_TRIAL_DAYS: ${BUDDYAI_CARE_TRIAL_DAYS:-90}
+      BUDDYAI_CARE_TRIAL_DAYS: ${BUDDYAI_CARE_TRIAL_DAYS:-30}
       # Long-term memory: remembering on request and learning are on; vectors stay off until switched on
       # (deploy/README.md, "Memory"). Customers can switch each part off on their Memory page.
       BUDDYAI_MEMORY_ENABLED: ${BUDDYAI_MEMORY_ENABLED:-true}

@@ -32,7 +32,7 @@ export const prices = {
       ? { GBP: PRICE_GBP.watchWas, EUR: toEur(PRICE_GBP.watchWas) }
       : null,
   care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
-  trialMonths: 3,
+  trialMonths: 1,
   currencyDefault: "GBP" as Currency,
 } as const;
 

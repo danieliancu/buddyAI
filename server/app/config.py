@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     stripe_price_care_eur: str = ""
     stripe_shipping_rates_gbp: str = ""  # comma-separated shipping rate ids
     stripe_shipping_rates_eur: str = ""
-    care_trial_days: int = 90
+    care_trial_days: int = 30
     # Local tests only (ignored with a live key, see the properties below): checkout without Stripe Tax, and
     # without Stripe's Terms of Service checkbox (needs a ToS URL in the dashboard). With the checkbox off,
     # consent rests on the site's ola Care checkbox alone and the terms are shown above Stripe's Pay button.

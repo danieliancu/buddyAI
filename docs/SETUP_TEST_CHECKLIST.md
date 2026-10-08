@@ -61,7 +61,7 @@ firmware.
 
 ## E. Pairing → ola Care trial
 
-- [ ] Before pairing: the account shows "Free 90-day trial — starts when you pair your watch", and there is no subscription in Stripe.
+- [ ] Before pairing: the account shows "Free 30-day trial — starts when you pair your watch", and there is no subscription in Stripe.
 - [ ] Enter the 6-digit code. The watch is paired, and:
   - Stripe shows **one** `trialing` subscription on the card's customer, with the saved card as default payment method and metadata `activation_id`;
   - the account shows "Free trial until <date>, then £7.99 a month…";

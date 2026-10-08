@@ -32,7 +32,7 @@ def enable_billing(monkeypatch) -> None:
         "stripe_shipping_rates_gbp": "shr_uk",
         "site_url": "https://www.example.com",
         "app_url": "https://app.example.com",
-        "care_trial_days": 90,
+        "care_trial_days": 30,
     }.items():
         monkeypatch.setattr(s, name, value)
     care_terms.clear_cache()

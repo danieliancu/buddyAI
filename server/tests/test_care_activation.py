@@ -108,7 +108,7 @@ async def test_trial_starts_only_when_the_watch_is_paired(fake, gw):
     assert r.status_code == 200 and r.json()["care"]["status"] == "active"
     assert len(gw.created) == 1
     params, key = gw.created[0]
-    assert params["customer"] == cus and params["trial_period_days"] == 90
+    assert params["customer"] == cus and params["trial_period_days"] == 30
     assert params["default_payment_method"] == "pm_card_visa" and params["off_session"] is True
     assert params["items"] == [{"price": "price_care_gbp", "quantity": 1}]
     assert params["metadata"]["activation_id"] == str(_activation(addr).id) and params["metadata"]["consent_id"]
@@ -233,7 +233,7 @@ async def test_crash_after_stripe_created_it_is_adopted_not_duplicated(fake, gw)
     row = _activation(addr)
     # Stripe created the subscription just before the crash (our DB never saw the answer).
     gw.subs.setdefault(row.stripe_customer_id, []).append(
-        gw._new_sub({"customer": row.stripe_customer_id, "trial_period_days": 90,
+        gw._new_sub({"customer": row.stripe_customer_id, "trial_period_days": 30,
                      "metadata": {"activation_id": str(row.id), "account_id": str(acc_id)}})
     )
     assert care_activation.recover_sync() == 1
@@ -260,7 +260,7 @@ async def test_webhook_completes_an_activating_row(fake, gw):
     c = _client()
     addr, acc_id = await _stuck_activating(c, fake, gw)
     row = _activation(addr)
-    sub = gw._new_sub({"customer": row.stripe_customer_id, "trial_period_days": 90,
+    sub = gw._new_sub({"customer": row.stripe_customer_id, "trial_period_days": 30,
                        "metadata": {"activation_id": str(row.id), "account_id": str(acc_id)}})
     with session_scope() as db:
         await billing.handle_event(db, event("customer.subscription.created", sub))

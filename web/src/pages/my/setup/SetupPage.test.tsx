@@ -31,7 +31,7 @@ const account: Account = {
 } as Account;
 
 function care(status: CareActivation["status"], extra: Partial<CareActivation> = {}): CareActivation {
-  return { status, reason: null, error: null, can_retry: status === "failed", trial_days: 90, currency: "gbp", activated_at: null, ...extra };
+  return { status, reason: null, error: null, can_retry: status === "failed", trial_days: 30, currency: "gbp", activated_at: null, ...extra };
 }
 
 function onboarding(extra: Partial<Onboarding> = {}): Onboarding {

@@ -21,7 +21,7 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
-CARE_TERMS_VERSION = "care-2026-10"
+CARE_TERMS_VERSION = "care-2026-11"
 
 _SYMBOL = {"gbp": "£", "eur": "€"}
 _cache: dict[str, tuple[float, "CarePrice"]] = {}

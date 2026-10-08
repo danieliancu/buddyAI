@@ -13,14 +13,14 @@ const care = (status: CareActivation["status"], error: string | null = null): Ca
   error,
   reason: null,
   can_retry: status === "failed",
-  trial_days: 90,
+  trial_days: 30,
   currency: "gbp",
   activated_at: null,
 });
 
 describe("ola Care status shown to the customer", () => {
   it("before pairing, while starting, and after a failure (never 'active')", () => {
-    expect(carePlanStatus(base({ kind: "none" }, care("awaiting_pairing"))).text).toBe("Free 90-day trial — starts when you pair your watch");
+    expect(carePlanStatus(base({ kind: "none" }, care("awaiting_pairing"))).text).toBe("Free 30-day trial — starts when you pair your watch");
     expect(carePlanStatus(base({ kind: "none" }, care("activating"))).text).toMatch(/Starting/);
     const failed = carePlanStatus(base({ kind: "none" }, care("failed", "card_error")));
     expect(failed.text).toBe("Subscription setup pending");
