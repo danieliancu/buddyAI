@@ -127,7 +127,11 @@ async def test_hello_boot_and_link_reports_become_issues(server):
     await w.close()
     async with httpx.AsyncClient(base_url=f"http://{server}") as http:
         await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
-        rows = (await http.get("/api/issues", params={"device_id": "e2e-issues"})).json()
+        for _ in range(100):  # diagnostics are stored in the background
+            rows = (await http.get("/api/issues", params={"device_id": "e2e-issues"})).json()
+            if len(rows) >= 2:
+                break
+            await asyncio.sleep(0.1)
         by_kind = {r["kind"]: r for r in rows}
         assert by_kind["reboot"]["severity"] == "error"
         assert "brownout" in by_kind["reboot"]["summary"] and "1 min 35 s" in by_kind["reboot"]["summary"]

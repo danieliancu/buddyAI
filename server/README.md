@@ -104,6 +104,10 @@ abort/stale-frame checks.
 
 Deployment (Docker, PostgreSQL, HTTPS, backups): see [deploy/README.md](../deploy/README.md).
 
+- **ola Diagnostics** (`app/incidents/`, Admin → ola Diagnostics): watch, connection and server incidents with
+  grouped events and a deterministic cause classification. Schema, rules, compatibility, rollback and the
+  hardware checklist: [docs/diagnostics.md](docs/diagnostics.md). Retention: `BUDDYAI_INCIDENT_RETENTION_DAYS` (90).
+
 ## Layout
 
 ```
@@ -112,7 +116,8 @@ app/pipeline/    conversation.py (ConversationPipeline), chunker.py, vad.py, tur
 app/providers/   stt/ llm/ tts/ (base + qwen/azure), mock.py, router.py
 app/pricing/     ProviderPricingConfig
 app/db/          models.py, repositories.py, session.py      migrations/ (Alembic)
-app/api/         auth, devices, usage (+diagnostics, pricing), system (keys, provider tests), firmware (OTA), live (web events)
+app/api/         auth, devices, usage (+latency, pricing), incidents (ola Diagnostics), system (keys, provider tests), firmware (OTA), live (web events)
+app/incidents/   ola Diagnostics: events.py, classify.py, service.py, texts.py
 tools/           fake_watch.py, make_samples.ps1
 ```
 

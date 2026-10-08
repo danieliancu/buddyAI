@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import JSON, BigInteger, Column, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Column, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from app.db.vector import EmbeddingVector
@@ -296,22 +296,70 @@ class Device(SQLModel, table=True):
     battery_pct: Optional[int] = None
     charging: Optional[bool] = None
     rssi: Optional[int] = None
+    # The server's session id of the latest authenticated hello: the session a report from older firmware
+    # (no "prev_session") refers to on the next hello (ola Diagnostics, app/incidents).
+    last_session_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class DeviceIssue(SQLModel, table=True):
-    """Something that went wrong on a watch: a reboot (with the chip's reset reason), a lost
-    connection (reported by the watch on its next hello) or a server-side session problem."""
+    """One diagnostic event (ola Diagnostics): a reboot or lost connection reported by the watch in its
+    hello, or something the server saw itself. Events are grouped into a DiagIncident."""
 
     __tablename__ = "device_issues"
+    __table_args__ = (Index("uq_device_issues_dedup", "device_id", "dedup_key", unique=True),)
     id: Optional[int] = Field(default=None, primary_key=True)
     device_id: str = Field(max_length=64, index=True)
     account_id: Optional[int] = Field(default=None, index=True)
-    kind: str = Field(max_length=32)  # reboot | disconnect | turn_interrupted | server_timeout
+    # reboot | disconnect | turn_interrupted | server_timeout | ws_close | server_exception | provider_failure
+    # | lease_lost | server_shutdown
+    kind: str = Field(max_length=32)
     severity: str = Field(default="warn", max_length=8)  # error | warn | info
     reason: str = Field(default="", max_length=64)
     detail: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     fw_version: str = Field(default="", max_length=32)
-    created_at: datetime = Field(default_factory=utcnow, index=True)
+    created_at: datetime = Field(default_factory=utcnow, index=True)  # when the server stored it
+    # Since migration 0026 (NULL on older rows: never back-filled with invented details)
+    incident_id: Optional[int] = Field(default=None, index=True)
+    detected_by: Optional[str] = Field(default=None, max_length=8)  # watch | server
+    category: Optional[str] = Field(default=None, max_length=16)  # watch | connection | server | undetermined
+    confidence: Optional[str] = Field(default=None, max_length=12)  # confirmed | probable | unknown
+    suspected_component: Optional[str] = Field(default=None, max_length=32)
+    reason_code: Optional[str] = Field(default=None, max_length=48)
+    session_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    turn_id: Optional[int] = None
+    occurred_at: Optional[datetime] = None  # when it happened (a watch report arrives later)
+    dedup_key: Optional[str] = Field(default=None, max_length=96)
+
+
+class DiagIncident(SQLModel, table=True):
+    """ola Diagnostics: one incident = the events that share a correlation key (one session, one turn or
+    one restart report). The classification is recomputed from all its events (app/incidents/classify.py)."""
+
+    __tablename__ = "diag_incidents"
+    __table_args__ = (
+        Index("ix_diag_incidents_time", "occurred_at", "id"),
+        Index("ix_diag_incidents_device_time", "device_id", "occurred_at"),
+        Index("ix_diag_incidents_category_time", "category", "occurred_at"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_id: str = Field(max_length=64)
+    account_id: Optional[int] = Field(default=None)
+    correlation_key: str = Field(max_length=160, unique=True)
+    category: str = Field(default="undetermined", max_length=16)
+    severity: str = Field(default="warn", max_length=8)
+    confidence: str = Field(default="unknown", max_length=12)
+    reason_code: str = Field(default="", max_length=48)
+    suspected_component: Optional[str] = Field(default=None, max_length=32)
+    detected_by: str = Field(default="server", max_length=8)  # who saw the primary event
+    primary_event_id: Optional[int] = None
+    session_id: Optional[str] = Field(default=None, max_length=64, index=True)
+    turn_id: Optional[int] = None
+    fw_version: str = Field(default="", max_length=32)
+    event_count: int = 0
+    legacy: bool = False  # made by migration 0026 from a pre-diagnostics issue
+    occurred_at: datetime = Field(default_factory=utcnow)
+    recovered_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class DeviceSettingsRow(SQLModel, table=True):

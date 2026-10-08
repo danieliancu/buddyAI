@@ -11,14 +11,15 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import issues, languages, usage_notices, usage_ops
+from app import languages, usage_notices, usage_ops
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
-from app.db.models import Account, DeviceIssue, utcnow
+from app.db.models import Account, utcnow
 from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo, TurnRepo, VoiceOpRepo
 from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
+from app.incidents import events as diag_events, service as diagnostics
 from app.items import KINDS, device_full
 from app.voice_context import STORE
 from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message
@@ -73,6 +74,8 @@ class DeviceConnection:
         # (kind, number) -> uid of the item the server last showed / fired under that number on this watch
         self._shown: dict[tuple[str, int], str] = {}
         self._timed_out = False  # the session ended because the watch went silent
+        self._close_code: int | None = None  # the watch's websocket close code (1006 = no close frame)
+        self._crash: BaseException | None = None  # an unexpected exception ended the session
 
     # --- sending (TurnIO + generic) --------------------------------------------------------
 
@@ -135,6 +138,7 @@ class DeviceConnection:
             while True:
                 msg = await asyncio.wait_for(self.ws.receive(), timeout)
                 if msg["type"] == "websocket.disconnect":
+                    self._close_code = msg.get("code")
                     break
                 if msg.get("bytes") is not None:
                     self._on_binary(msg["bytes"])
@@ -142,10 +146,13 @@ class DeviceConnection:
                     await self._on_text(msg["text"])
         except asyncio.TimeoutError:
             self._timed_out = True
-        except WebSocketDisconnect:
-            pass
+        except WebSocketDisconnect as exc:
+            self._close_code = exc.code
         except _Close:
             pass
+        except Exception as exc:  # noqa: BLE001 - an unexpected server error ends this session only
+            log.exception("session %s/%s crashed", self.device_id, self.env.session_id)
+            self._crash = exc
         finally:
             await self._teardown()
 
@@ -160,23 +167,33 @@ class DeviceConnection:
         await self.close()
 
     def _record_session_issues(self) -> None:
+        """What the server saw of this session's end (ola Diagnostics). The server noticing a drop does not
+        make it the cause: these events stay "undetermined" until the watch's report or a confirmed server
+        fault explains them (app/incidents/classify.py)."""
+        now, sid = utcnow(), self.env.session_id
         found = []
-        if self.active is not None and not self.active.cancelled:
-            found.append(DeviceIssue(kind="turn_interrupted", detail={"turn_id": self.active.turn_id}))
-        if self._timed_out:
-            found.append(DeviceIssue(kind="server_timeout", detail={"timeout_s": get_settings().session_idle_timeout_s}))
-        self._publish_issues(found)
+        mid_turn = self.active is not None and not self.active.cancelled
+        if mid_turn:
+            found.append(diag_events.server_event("turn_interrupted", self.device_id, sid, now,
+                                                  turn_id=self.active.turn_id))
+        if self._crash is not None:
+            found.append(diag_events.server_event("server_exception", self.device_id, sid, now,
+                                                  reason=type(self._crash).__name__, detail=_exc_detail(self._crash)))
+        elif self._timed_out:
+            found.append(diag_events.server_event("server_timeout", self.device_id, sid, now,
+                                                  detail={"timeout_s": get_settings().session_idle_timeout_s,
+                                                          "mid_turn": mid_turn}))
+        elif not self._closed and self._close_code not in (1000, 1001):
+            # The watch's side ended without a clean close (1006: no close frame - the link just went away).
+            found.append(diag_events.server_event("ws_close", self.device_id, sid, now,
+                                                  reason=str(self._close_code or ""),
+                                                  detail={"code": self._close_code, "mid_turn": mid_turn}))
+        self._diag(found)
 
-    def _publish_issues(self, found: list[DeviceIssue]) -> None:
-        if not found:
-            return
-        try:
-            saved = issues.record(self.device_id, self.account_id, self._fw, found)
-        except Exception:  # noqa: BLE001 - diagnostics must never break the session
-            log.exception("could not store issues for %s", self.device_id)
-            return
-        for issue in saved:
-            self.hub.publish({"type": "device_issue", "device_id": self.device_id, "issue": issue}, operator_only=True)
+    def _diag(self, found: list[diag_events.Event], **kw: Any) -> None:
+        """Store diagnostic events in the background: never blocks or breaks the session."""
+        if found or kw:
+            diagnostics.record_soon(self.hub, self.device_id, self.account_id, self._fw, found, **kw)
 
     async def _on_text(self, text: str) -> None:
         try:
@@ -227,12 +244,17 @@ class DeviceConnection:
         if token:
             owner_status: str | None = None
             account_id: int | None = None
+            new_session = uuid.uuid4().hex
+            last_session: str | None = None
             with session_scope() as db:
                 dev = DeviceRepo(db).by_token_hash(hash_device_token(token))
                 if dev is None or dev.id != device_id:
                     dev = None
                 else:
-                    DeviceRepo(db).touch(dev.id, fw_version=fw, hw_model=hw, last_ip=self._client_ip())
+                    # The previous session's id: what a report from firmware 0.1.0 refers to (ola Diagnostics)
+                    last_session = dev.last_session_id
+                    DeviceRepo(db).touch(dev.id, fw_version=fw, hw_model=hw, last_ip=self._client_ip(),
+                                         last_session_id=new_session)
                     settings, version = SettingsRepo(db).ensure(dev.id)
                     account_id = dev.account_id
                     chat_title = PersonaRepo(db).chat_title(settings.persona_id, account_id)
@@ -249,12 +271,13 @@ class DeviceConnection:
             self.authenticated = True
             STORE.drop_device(device_id)  # a new session: nothing pending from an earlier one
             self._fw = fw
-            self.env.session_id = uuid.uuid4().hex
+            self.env.session_id = new_session
             rates = (msg.get("audio") or {}).get("downlink_rates") or [16000]
             preferred = load_providers_config()["audio"]["downlink_rate_preferred"]
             self.downlink_rate = preferred if preferred in rates else 16000
             await self.hub.register(self)
-            self._publish_issues(issues.from_hello(msg))  # restart / lost connection before this hello
+            # restart / lost connection before this hello; earlier incidents of this watch have recovered
+            self._diag(diag_events.from_hello(msg, device_id, last_session, utcnow()), started_session=new_session)
             await self.send_json(
                 "hello_ack",
                 server_time=int(utcnow().timestamp() * 1000),
@@ -357,8 +380,11 @@ class DeviceConnection:
             return
         try:
             await self._start_turn(msg, turn_id, edit_kind, note_number, edit_uid, adm, request_key)
-        except Exception:
+        except Exception as exc:
             log.exception("turn %s/%s could not start", self.device_id, turn_id)
+            self._diag([diag_events.server_event("server_exception", self.device_id, self.env.session_id, utcnow(),
+                                                 turn_id=turn_id, reason=type(exc).__name__,
+                                                 detail={**_exc_detail(exc), "where": "turn_start"}, per_turn=True)])
             await usage_ops.in_pool(usage_ops.ADMIT_POOL, self._settle_quietly, adm.op_id, adm.exec_token,
                                     "error", False, [], None, "start_failed")
             await self.send_json("turn_end", turn_id, status="error")
@@ -478,6 +504,8 @@ class DeviceConnection:
             elif ok is False:
                 log.warning("turn %s/%s lost its usage lease: stopping", self.device_id, turn.turn_id)
                 turn.lease_lost = True
+                self._diag([diag_events.server_event("lease_lost", self.device_id, turn.session_id, utcnow(),
+                                                     turn_id=turn.turn_id, per_turn=True)])
                 if self.active is turn:
                     turn.abort_reason = turn.abort_reason or "lease_lost"
                     await self._cancel_active()
@@ -517,11 +545,27 @@ class DeviceConnection:
         except ProviderError as exc:
             log.warning("turn %s/%s %s", self.device_id, turn.turn_id, exc)
             result = TurnResult("error", f"{exc.stage}_failed", exc.message)
+            self._diag_provider(turn, exc)
         except Exception as exc:  # noqa: BLE001
             log.exception("turn %s/%s crashed", self.device_id, turn.turn_id)
             result = TurnResult("error", "internal", str(exc))
+            self._diag([diag_events.server_event("server_exception", self.device_id, turn.session_id, utcnow(),
+                                                 turn_id=turn.turn_id, reason=type(exc).__name__,
+                                                 detail={**_exc_detail(exc), "where": "turn"}, per_turn=True)])
         finally:
             await self._finish_turn(turn, result)
+
+    def _diag_provider(self, turn: TurnContext, exc: ProviderError) -> None:
+        if exc.stage == "usage":  # the usage lease expired before the first paid call
+            ev = diag_events.server_event("lease_lost", self.device_id, turn.session_id, utcnow(), turn_id=turn.turn_id,
+                                          per_turn=True)
+        else:
+            detail = {"stage": exc.stage, "timeout": _is_timeout(exc), "exception": _cause_name(exc),
+                      "message": _safe_message(exc.message, turn)}
+            ev = diag_events.server_event("provider_failure", self.device_id, turn.session_id, utcnow(),
+                                          turn_id=turn.turn_id, reason=f"{exc.stage}_failed", detail=detail,
+                                          per_turn=True)
+        self._diag([ev])
 
     async def _finish_turn(self, turn: TurnContext, result: TurnResult) -> None:
         live = self._is_live(turn)
@@ -557,6 +601,8 @@ class DeviceConnection:
         extra = {"expect_reply": True} if turn.expect_reply and turn.mode == "chat" and status == "completed" and live else {}
         await self.send_json("turn_end", turn.turn_id, status=status, **extra)
         turn.final_status = status
+        if result.status == "completed":
+            self._diag([], turn_ok=True)  # earlier failed-turn incidents of this watch have recovered
         if status == "completed" and turn.account_id is not None:
             with session_scope() as db:  # the user heard about the changes made in this turn
                 VoiceOpRepo(db).mark_reported(turn.session_id, turn.turn_id)
@@ -749,6 +795,44 @@ class DeviceConnection:
 
 class _Close(Exception):
     """Internal: end the session after an unrecoverable protocol error."""
+
+
+def _exc_detail(exc: BaseException) -> dict[str, Any]:
+    """An exception for diagnostics: class names only (messages can hold user data)."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    db = isinstance(exc, SQLAlchemyError) or isinstance(exc.__cause__, SQLAlchemyError)
+    return {"exception": type(exc).__name__, "cause": _cause_name(exc), "db": db,
+            "component": "database" if db else "gateway"}
+
+
+def _cause_name(exc: BaseException) -> str | None:
+    cause = exc.__cause__ or exc.__context__
+    return type(cause).__name__ if cause is not None else None
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    seen: BaseException | None = exc
+    for _ in range(4):
+        if seen is None:
+            break
+        if isinstance(seen, TimeoutError) or "Timeout" in type(seen).__name__:
+            return True
+        seen = seen.__cause__ or seen.__context__
+    text = str(getattr(exc, "message", exc)).lower()
+    return "timeout" in text or "timed out" in text
+
+
+def _safe_message(message: str, turn: TurnContext) -> str:
+    """A provider's error text, short, and never with the conversation in it (any 12 characters of what was
+    said or answered, anywhere in the message)."""
+    msg = (message or "")[:120]
+    low = msg.lower()
+    for said in (turn.user_text, turn.assistant_text):
+        text = (said or "").lower()
+        if len(text) >= 8 and (text in low or any(low[i:i + 12] in text for i in range(max(0, len(low) - 11)))):
+            return "[redacted: contained conversation text]"
+    return msg
 
 
 @router.websocket("/ws/device")

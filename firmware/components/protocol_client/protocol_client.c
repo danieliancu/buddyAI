@@ -22,6 +22,7 @@
 #include "esp_crt_bundle.h"
 #include "sdkconfig.h"
 #include "audio.h"
+#include "diag_codes.h"
 #include "net.h"
 #include "ota.h"
 #include "settings.h"
@@ -135,19 +136,38 @@ static char             s_handoff_question[100];
 static char             s_pairing_code[8];
 static bool             s_paired_token;     /* hello was sent with a token */
 
-/* Issue reports (PROTOCOL.md section 3.1): sent with the next token hello, cleared by hello_ack.
- * The uptime lives in RTC memory, which survives crashes, watchdogs and software restarts. */
-#define RTC_MAGIC               0x6F6C6131u
-static RTC_NOINIT_ATTR uint32_t s_rtc_magic;
-static RTC_NOINIT_ATTR uint32_t s_rtc_uptime_s;
+/* Issue reports / ola Diagnostics (PROTOCOL.md section 3.1): sent with the next token hello until hello_ack.
+ * Each report carries a random report_id, so the server stores a resent report once. The uptime, minimum
+ * heap, live session id and running turn live in RTC memory (diag_rtc_t, checksummed): they survive
+ * crashes, watchdogs and software restarts, never power loss, and cost no flash writes. */
+static RTC_NOINIT_ATTR diag_rtc_t s_rtc;
 static bool             s_boot_pending = true;  /* restart not reported yet */
+static uint32_t         s_boot_report_id;
 static uint32_t         s_prev_uptime_s;        /* uptime before this restart, 0 = unknown */
+static uint32_t         s_prev_min_heap;        /* lowest free heap before this restart, 0 = unknown */
+static char             s_prev_session[DIAG_SESSION_LEN];  /* session cut by this restart, "" = none */
 static const char      *s_drop_reason;          /* why the last session ended, NULL = nothing to report */
+static uint32_t         s_drop_report_id;
 static int64_t          s_drop_ms;
 static bool             s_drop_mid_turn;
 static int              s_drop_wifi_reason;
 static int              s_drop_rssi;
+static char             s_drop_session[64];     /* the server's id of the session that ended */
+static uint32_t         s_drop_turn;
+static uint32_t         s_drop_uptime_s;
+static uint32_t         s_drop_heap;
+static uint32_t         s_drop_min_heap;
+static diag_ws_t        s_drop_ws;              /* websocket error details of the dropped connection */
 static int64_t          s_session_start_ms;
+/* Connection attempts that failed since the last session (DNS, TLS, refused, no hello_ack...). */
+static uint32_t         s_fail_count;
+static uint32_t         s_fail_report_id;
+static int64_t          s_fail_first_ms;
+static bool             s_fail_hello_timeout;   /* the last failure: no answer to the hello */
+static diag_ws_t        s_fail_ws;              /* details of the last failure that had any */
+/* Details of the live connection, filled in the websocket task (s_ws_diag_mux), reset per connection. */
+static diag_ws_t        s_ws_live;
+static portMUX_TYPE     s_ws_diag_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* Turn state. s_turn_lock guards the fields the ws task reads for binary frames. */
 static SemaphoreHandle_t s_turn_lock;
@@ -354,6 +374,37 @@ static const char *reset_reason_str(esp_reset_reason_t r)
     }
 }
 
+static void add_report_id(cJSON *o, uint32_t id)
+{
+    char hex[9];
+    snprintf(hex, sizeof(hex), "%08lx", (unsigned long)id);
+    cJSON_AddStringToObject(o, "report_id", hex);
+}
+
+/* "ws": the websocket client's error details, only the fields it reported. */
+static void add_ws_details(cJSON *o, const char *name, const diag_ws_t *w)
+{
+    if (diag_ws_empty(w)) {
+        return;
+    }
+    cJSON *ws = cJSON_AddObjectToObject(o, name);
+    const struct { const char *k; int32_t v; } f[] = {
+        { "type", w->err_type }, { "tls", w->tls_err }, { "tls_stack", w->tls_stack },
+        { "errno", w->sock_errno }, { "hs", w->hs_status }, { "close", w->close_code },
+    };
+    for (size_t i = 0; i < sizeof(f) / sizeof(f[0]); i++) {
+        if (f[i].v) {
+            cJSON_AddNumberToObject(ws, f[i].k, f[i].v);
+        }
+    }
+}
+
+static void add_heap(cJSON *o, uint32_t heap, uint32_t min_heap)
+{
+    cJSON_AddNumberToObject(o, "heap", heap);
+    cJSON_AddNumberToObject(o, "min_heap", min_heap);
+}
+
 /* "boot" / "link" members of a token hello: the restart and the lost session not reported yet. */
 static void add_issue_reports(cJSON *m)
 {
@@ -363,6 +414,14 @@ static void add_issue_reports(cJSON *m)
         if (s_prev_uptime_s) {
             cJSON_AddNumberToObject(boot, "prev_uptime_s", s_prev_uptime_s);
         }
+        if (s_prev_min_heap) {
+            cJSON_AddNumberToObject(boot, "prev_min_heap", s_prev_min_heap);
+        }
+        if (s_prev_session[0]) {
+            cJSON_AddStringToObject(boot, "prev_session", s_prev_session);
+        }
+        cJSON_AddNumberToObject(boot, "uptime_s", (double)(now_ms() / 1000));
+        add_report_id(boot, s_boot_report_id);
     }
     if (s_drop_reason) {
         cJSON *link = cJSON_AddObjectToObject(m, "link");
@@ -375,9 +434,34 @@ static void add_issue_reports(cJSON *m)
         if (s_drop_rssi) {
             cJSON_AddNumberToObject(link, "rssi", s_drop_rssi);
         }
-        if (s_session_start_ms) {
+        if (s_session_start_ms && s_drop_ms >= s_session_start_ms) {
             cJSON_AddNumberToObject(link, "session_s", (double)((s_drop_ms - s_session_start_ms) / 1000));
         }
+        if (s_drop_session[0]) {
+            cJSON_AddStringToObject(link, "prev_session", s_drop_session);
+        }
+        if (s_drop_turn) {
+            cJSON_AddNumberToObject(link, "turn_id", s_drop_turn);
+        }
+        cJSON_AddNumberToObject(link, "uptime_s", s_drop_uptime_s);
+        add_heap(link, s_drop_heap, s_drop_min_heap);
+        add_ws_details(link, "ws", &s_drop_ws);
+        if (s_fail_count) {
+            cJSON_AddNumberToObject(link, "fails", s_fail_count);
+            add_ws_details(link, "retry_ws", &s_fail_ws);
+        }
+        add_report_id(link, s_drop_report_id);
+    } else if (s_fail_count) {
+        /* No session ended, but connecting failed before this hello got through (e.g. since boot). */
+        cJSON *link = cJSON_AddObjectToObject(m, "link");
+        cJSON_AddStringToObject(link, "drop", s_fail_hello_timeout ? "hello_timeout" : "connect_failed");
+        cJSON_AddNumberToObject(link, "offline_ms", (double)(now_ms() - s_fail_first_ms));
+        cJSON_AddBoolToObject(link, "mid_turn", false);
+        cJSON_AddNumberToObject(link, "fails", s_fail_count);
+        cJSON_AddNumberToObject(link, "uptime_s", (double)(now_ms() / 1000));
+        add_heap(link, esp_get_free_heap_size(), esp_get_minimum_free_heap_size());
+        add_ws_details(link, "ws", &s_fail_ws);
+        add_report_id(link, s_fail_report_id);
     }
 }
 
@@ -672,7 +756,17 @@ static void on_hello_ack(const cJSON *j)
     if (s_paired_token) {
         s_boot_pending = false;     /* the server has the issue reports now */
         s_drop_reason = NULL;
+        s_drop_report_id = 0;
+        s_drop_session[0] = '\0';
+        s_drop_turn = 0;
+        memset(&s_drop_ws, 0, sizeof(s_drop_ws));
+        s_fail_count = 0;
+        s_fail_report_id = 0;
+        s_fail_hello_timeout = false;
+        memset(&s_fail_ws, 0, sizeof(s_fail_ws));
     }
+    diag_rtc_set_session(&s_rtc, s_session_id);   /* a restart from here on names this session */
+    diag_rtc_seal(&s_rtc);
     s_session_start_ms = now_ms();
     settings_set_last_server(s_url);
     ota_mark_app_valid();
@@ -1069,6 +1163,23 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
     case WEBSOCKET_EVENT_DISCONNECTED:
     case WEBSOCKET_EVENT_CLOSED:
     case WEBSOCKET_EVENT_ERROR:
+        if (ev && conn == s_conn_id) {
+            /* The event data lives only during this callback: copy the details now. The TLS / socket
+             * fields are filled by the client only for transport errors (garbage otherwise). */
+            diag_ws_t w = {
+                .err_type = ev->error_handle.error_type,
+                .hs_status = ev->error_handle.esp_ws_handshake_status_code,
+                .close_code = ev->close_status_code,
+            };
+            if (ev->error_handle.error_type == WEBSOCKET_ERROR_TYPE_TCP_TRANSPORT) {
+                w.tls_err = ev->error_handle.esp_tls_last_esp_err;
+                w.tls_stack = ev->error_handle.esp_tls_stack_err;
+                w.sock_errno = ev->error_handle.esp_transport_sock_errno;
+            }
+            taskENTER_CRITICAL(&s_ws_diag_mux);
+            diag_ws_merge(&s_ws_live, &w);
+            taskEXIT_CRITICAL(&s_ws_diag_mux);
+        }
         m.type = MSG_WS_CLOSED;
         m.b = id;
         post(&m);
@@ -1139,10 +1250,21 @@ static void ws_destroy(void)
     }
 }
 
+static diag_ws_t ws_diag_snapshot(void)
+{
+    taskENTER_CRITICAL(&s_ws_diag_mux);
+    diag_ws_t w = s_ws_live;
+    taskEXIT_CRITICAL(&s_ws_diag_mux);
+    return w;
+}
+
 static bool ws_open(const char *url)
 {
     ws_destroy();
     s_conn_id++;
+    taskENTER_CRITICAL(&s_ws_diag_mux);
+    memset(&s_ws_live, 0, sizeof(s_ws_live));
+    taskEXIT_CRITICAL(&s_ws_diag_mux);
     strlcpy(s_url, url, sizeof(s_url));
 
     esp_websocket_client_config_t cfg = {
@@ -1278,16 +1400,30 @@ static void start_cycle(void)
     try_next_candidate();
 }
 
-static void session_lost(const char *why)
+/* Returns true when this call recorded the drop to report (the first one since the last hello_ack). */
+static bool session_lost(const char *why)
 {
     bool had_session = (s_conn == CONN_SESSION);
     bool mid_turn = (s_conv != PROTO_CONV_IDLE);
+    bool recorded = false;
     if (had_session && !s_drop_reason) {
         s_drop_reason = why;
+        s_drop_report_id = esp_random() | 1u;
         s_drop_ms = now_ms();
         s_drop_mid_turn = mid_turn;
         s_drop_rssi = net_wifi_rssi();
         s_drop_wifi_reason = strcmp(why, "wifi_lost") == 0 ? net_wifi_last_disconnect_reason() : 0;
+        strlcpy(s_drop_session, s_session_id, sizeof(s_drop_session));
+        s_drop_turn = mid_turn ? s_active_turn : 0;
+        s_drop_uptime_s = (uint32_t)(s_drop_ms / 1000);
+        s_drop_heap = esp_get_free_heap_size();
+        s_drop_min_heap = esp_get_minimum_free_heap_size();
+        s_drop_ws = ws_diag_snapshot();
+        recorded = true;
+    }
+    if (had_session) {
+        diag_rtc_set_session(&s_rtc, NULL);
+        diag_rtc_seal(&s_rtc);
     }
     local_stop_turn();
     set_conv(PROTO_CONV_IDLE);
@@ -1299,6 +1435,23 @@ static void session_lost(const char *why)
     if (had_session) {
         emit(PROTO_EVT_DISCONNECTED, 0, NULL);
         s_backoff_ms = BACKOFF_MIN_MS;
+    }
+    return recorded;
+}
+
+/* A connection attempt failed before a session (DNS, TLS, refused, timeout, no hello_ack). */
+static void note_connect_failure(const diag_ws_t *w, bool hello_timeout)
+{
+    if (!s_fail_count) {
+        s_fail_report_id = esp_random() | 1u;
+        s_fail_first_ms = now_ms();
+    }
+    if (s_fail_count < UINT32_MAX) {
+        s_fail_count++;
+    }
+    s_fail_hello_timeout = hello_timeout;
+    if (w && !diag_ws_empty(w)) {
+        s_fail_ws = *w;
     }
 }
 
@@ -1319,12 +1472,23 @@ static void on_ws_closed(int32_t ev)
 {
     ESP_LOGW(TAG, "websocket closed (%s, event %ld)", s_url, (long)ev);
     conn_state_t prev = s_conn;
-    session_lost(ev == WEBSOCKET_EVENT_ERROR ? "ws_error"
-                 : ev == WEBSOCKET_EVENT_CLOSED ? "ws_closed" : "ws_disconnected");
+    bool recorded = session_lost(ev == WEBSOCKET_EVENT_ERROR ? "ws_error"
+                                 : ev == WEBSOCKET_EVENT_CLOSED ? "ws_closed" : "ws_disconnected");
     if (prev == CONN_CONNECTING) {
+        /* ERROR comes before DISCONNECTED (which carries the TLS / errno details), and the websocket task can
+         * block in between: stop it first, so every event of this attempt is in s_ws_live. */
+        ws_destroy();
+        diag_ws_t w = ws_diag_snapshot();
+        note_connect_failure(&w, false);
         try_next_candidate();
     } else if (prev == CONN_HELLO || prev == CONN_SESSION) {
-        ws_destroy();
+        ws_destroy();   /* the client task has stopped: every event of this connection is in s_ws_live */
+        diag_ws_t w = ws_diag_snapshot();
+        if (recorded) {
+            diag_ws_merge(&s_drop_ws, &w);
+        } else if (prev == CONN_HELLO) {
+            note_connect_failure(&w, false);
+        }
         enter_backoff();
     }
 }
@@ -1477,6 +1641,9 @@ static void handle_timers(void)
     case CONN_CONNECTING:
         if (now >= s_deadline_ms) {
             ESP_LOGW(TAG, "connect timeout (%s)", s_url);
+            ws_destroy();
+            diag_ws_t w = ws_diag_snapshot();
+            note_connect_failure(&w, false);
             try_next_candidate();
         }
         break;
@@ -1484,6 +1651,8 @@ static void handle_timers(void)
         if (now >= s_deadline_ms) {
             ESP_LOGW(TAG, "no hello_ack/pairing progress - reconnecting");
             ws_destroy();
+            diag_ws_t w = ws_diag_snapshot();
+            note_connect_failure(&w, true);
             enter_backoff();
         } else if (now - s_last_ping_ms >= PING_INTERVAL_MS) {
             s_last_ping_ms = now;
@@ -1529,7 +1698,10 @@ static void proto_task(void *arg)
             handle_msg(&m);
         }
         handle_timers();
-        s_rtc_uptime_s = (uint32_t)(now_ms() / 1000);
+        s_rtc.uptime_s = (uint32_t)(now_ms() / 1000);
+        s_rtc.min_heap = esp_get_minimum_free_heap_size();
+        s_rtc.turn_id = s_conv != PROTO_CONV_IDLE ? s_active_turn : 0;
+        diag_rtc_seal(&s_rtc);
     }
 }
 
@@ -1540,11 +1712,25 @@ static void proto_task(void *arg)
 esp_err_t proto_init(const proto_config_t *cfg)
 {
     s_cfg = *cfg;
-    if (s_rtc_magic == RTC_MAGIC) {
-        s_prev_uptime_s = s_rtc_uptime_s;   /* survived the restart: crash, watchdog, software */
+    if (diag_rtc_valid(&s_rtc)) {           /* survived the restart: crash, watchdog, software */
+        s_prev_uptime_s = s_rtc.uptime_s;
+        s_prev_min_heap = s_rtc.min_heap;
+        strlcpy(s_prev_session, s_rtc.session, sizeof(s_prev_session));
+        if (s_prev_session[0]) {
+            /* The restart cut a live session: report it like any other drop, naming the session. */
+            s_drop_reason = "reboot";
+            s_drop_report_id = esp_random() | 1u;
+            s_drop_ms = 0;
+            s_drop_mid_turn = s_rtc.turn_id != 0;
+            s_drop_turn = s_rtc.turn_id;
+            s_drop_uptime_s = s_prev_uptime_s;
+            s_drop_min_heap = s_prev_min_heap;
+            strlcpy(s_drop_session, s_prev_session, sizeof(s_drop_session));
+        }
     }
-    s_rtc_magic = RTC_MAGIC;
-    s_rtc_uptime_s = 0;
+    s_boot_report_id = esp_random() | 1u;
+    memset(&s_rtc, 0, sizeof(s_rtc));
+    diag_rtc_seal(&s_rtc);
     ESP_LOGI(TAG, "reset reason: %s", reset_reason_str(esp_reset_reason()));
     s_q = xQueueCreate(32, sizeof(msg_t));
     s_send_lock = xSemaphoreCreateMutex();

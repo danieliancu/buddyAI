@@ -840,10 +840,11 @@ const operatorApi = {
     setKeys: (keys: Partial<Record<KeyName, string>>) => put<SystemInfo>("/api/system/keys", keys),
     test: (target: TestTarget) => post<TestResult>(`/api/system/test/${target}`),
   },
-  issues: {
-    list: (f: { deviceId?: string; kind?: IssueKind; problemsOnly?: boolean } = {}) =>
-      get<DeviceIssue[]>(`/api/issues${q({ device_id: f.deviceId, kind: f.kind, problems_only: f.problemsOnly ? "true" : undefined })}`),
-    clear: (deviceId?: string) => del<{ deleted: number }>(`/api/issues${q({ device_id: deviceId })}`),
+  incidents: {
+    list: (f: IncidentFilters = {}, cursor?: string) =>
+      get<IncidentPage>(`/api/incidents${q({ ...incidentQuery(f), cursor })}`),
+    get: (id: number) => get<IncidentDetail>(`/api/incidents/${id}`),
+    clear: (deviceId?: string) => del<{ deleted: number }>(`/api/incidents${q({ device_id: deviceId })}`),
   },
   firmware: {
     list: () => get<FirmwareRelease[]>("/api/firmware"),
@@ -988,24 +989,93 @@ const meApi = {
 /** Operator endpoints at the top level, customer accounts under `api.accounts`, the customer API under `api.me`. */
 export const api = { ...operatorApi, accounts: accountsApi, orders: ordersApi, me: meApi };
 
-// ---------- watch issues (/api/issues) ----------
+// ---------- ola Diagnostics (/api/incidents) ----------
 
-export type IssueKind = "reboot" | "disconnect" | "turn_interrupted" | "server_timeout";
-export type IssueSeverity = "error" | "warn" | "info";
+export type IncidentCategory = "watch" | "connection" | "server" | "undetermined";
+export type IncidentSeverity = "error" | "warn" | "info";
+export type Confidence = "confirmed" | "probable" | "unknown";
 
-export interface DeviceIssue {
+/** One incident: the related diagnostic events of one connection, turn or restart, classified together. */
+export interface Incident {
   id: number;
   device_id: string;
   device_name: string | null;
-  account_id: number | null;
-  kind: IssueKind;
-  severity: IssueSeverity;
-  reason: string;
-  /** One readable sentence built by the server. */
-  summary: string;
-  detail: Record<string, unknown>;
+  category: IncidentCategory;
+  severity: IncidentSeverity;
+  confidence: Confidence;
+  reason_code: string;
+  /** Short description of what happened. */
+  title: string;
+  /** The (suspected) cause, in plain English. */
+  cause: string;
+  suspected_component: string | null;
+  detected_by: "watch" | "server";
+  session_id: string | null;
+  turn_id: number | null;
   fw_version: string;
-  created_at: string;
+  event_count: number;
+  related_count: number;
+  /** Converted from a pre-diagnostics issue (migration 0026): only what was stored then. */
+  legacy: boolean;
+  occurred_at: string;
+  recovered_at: string | null;
+  updated_at: string;
+}
+
+export interface IncidentEvent {
+  id: number;
+  kind: string;
+  reason: string;
+  detected_by: "watch" | "server" | null;
+  category: IncidentCategory | null;
+  confidence: Confidence | null;
+  reason_code: string | null;
+  title: string;
+  suspected_component: string | null;
+  severity: IncidentSeverity;
+  session_id: string | null;
+  turn_id: number | null;
+  fw_version: string;
+  detail: Record<string, unknown>;
+  occurred_at: string;
+  received_at: string;
+  /** The event the incident's cause was taken from. */
+  primary: boolean;
+}
+
+export interface IncidentDetail extends Incident {
+  explanation: { what: string; where: string; cause: string; affected: string; recovered: string; next_step: string };
+  events: IncidentEvent[];
+}
+
+export interface IncidentFilters {
+  category?: IncidentCategory;
+  severity?: IncidentSeverity;
+  confidence?: Confidence;
+  recovered?: boolean;
+  deviceId?: string;
+  /** ISO date-times */
+  since?: string;
+  until?: string;
+}
+
+export interface IncidentPage {
+  items: Incident[];
+  next_cursor: string | null;
+  /** Incidents per category with every other filter applied (for the tabs). */
+  counts: Partial<Record<IncidentCategory, number>>;
+}
+
+export function incidentQuery(f: IncidentFilters): Record<string, string | number | undefined> {
+  return {
+    category: f.category,
+    severity: f.severity,
+    confidence: f.confidence,
+    recovered: f.recovered === undefined ? undefined : String(f.recovered),
+    device_id: f.deviceId,
+    since: f.since,
+    until: f.until,
+  };
 }
 
 // ---------- live events (/api/live, /api/me/live) ----------
@@ -1033,8 +1103,8 @@ export type LiveEvent =
       ttfa_device_ms: number | null;
     } & LiveBase)
   | ({ type: "playback_done"; turn_id: number | string } & LiveBase)
-  /** Operator only: a watch reported a restart / lost connection, or the server saw a session problem. */
-  | ({ type: "device_issue"; issue: DeviceIssue } & LiveBase)
+  /** Operator only: an ola Diagnostics incident was created or changed (new evidence, regrouped). */
+  | ({ type: "incident"; incident: Incident } & LiveBase)
   | ({ type: "pairing_pending" } & LiveBase)
   | ({ type: "device_paired" } & LiveBase)
   | ({ type: "settings_changed" } & LiveBase)

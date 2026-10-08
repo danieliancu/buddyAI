@@ -15,6 +15,7 @@ from app.db.models import (
     Device,
     DeviceIssue,
     DeviceSettingsRow,
+    DiagIncident,
     FirmwareRelease,
     Item,
     Persona,
@@ -457,14 +458,139 @@ class IssueRepo:
         return self.s.exec(q.order_by(col(DeviceIssue.id).desc()).limit(limit)).all()
 
     def clear(self, device_id: str | None = None) -> int:
-        q = select(DeviceIssue)
+        q = sa_delete(DeviceIssue)
         if device_id:
             q = q.where(DeviceIssue.device_id == device_id)
-        rows = self.s.exec(q).all()
-        for r in rows:
-            self.s.delete(r)
+        n = self.s.exec(q).rowcount  # type: ignore[call-overload]
         self.s.commit()
-        return len(rows)
+        return n
+
+
+class IncidentRepo:
+    """ola Diagnostics: incidents and their events (app/incidents). The caller commits."""
+
+    def __init__(self, s: Session) -> None:
+        self.s = s
+
+    def by_key(self, key: str, lock: bool = False) -> DiagIncident | None:
+        q = select(DiagIncident).where(DiagIncident.correlation_key == key)
+        if lock:
+            q = q.with_for_update()  # PostgreSQL: concurrent writers to one incident take turns
+        return self.s.exec(q).first()
+
+    def ensure(self, key: str, **fields: Any) -> DiagIncident:
+        """The incident with this key, created (and committed) if missing, then locked. Safe when two writers
+        race: the unique key decides, the loser reads the winner's row."""
+        inc = self.by_key(key, lock=True)
+        if inc is not None:
+            return inc
+        try:
+            self.s.add(DiagIncident(correlation_key=key, **fields))
+            self.s.commit()
+        except IntegrityError:
+            self.s.rollback()  # created by the other writer meanwhile
+        inc = self.by_key(key, lock=True)
+        assert inc is not None
+        return inc
+
+    def is_duplicate(self, device_id: str, dedup_key: str | None, window_s: int, occurred_at: datetime) -> bool:
+        if not dedup_key:
+            return False
+        if not window_s:
+            q = select(DeviceIssue.id).where(DeviceIssue.device_id == device_id, DeviceIssue.dedup_key == dedup_key)
+            return self.s.exec(q).first() is not None
+        q = select(DeviceIssue.id).where(
+            DeviceIssue.device_id == device_id,
+            col(DeviceIssue.dedup_key).startswith(dedup_key + ":"),
+            col(DeviceIssue.occurred_at) >= occurred_at - timedelta(seconds=window_s),
+            col(DeviceIssue.occurred_at) <= occurred_at + timedelta(seconds=window_s),
+        )
+        return self.s.exec(q).first() is not None
+
+    def add_event(self, ev: DeviceIssue) -> bool:
+        """Adds and flushes the event. False when an event with the same dedup key exists already: the
+        transaction is then rolled back (call it first in a transaction, right after locking the incident)."""
+        try:
+            self.s.add(ev)
+            self.s.flush()
+        except IntegrityError:
+            self.s.rollback()
+            return False
+        return True
+
+    def events(self, incident_id: int) -> Sequence[DeviceIssue]:
+        q = select(DeviceIssue).where(DeviceIssue.incident_id == incident_id)
+        return self.s.exec(q.order_by(col(DeviceIssue.occurred_at), col(DeviceIssue.id))).all()
+
+    def mark_recovered(self, device_id: str, now: datetime, *, turns_only: bool = False,
+                       exclude_session: str | None = None) -> int:
+        q = sa_update(DiagIncident).where(DiagIncident.device_id == device_id, col(DiagIncident.recovered_at).is_(None),
+                                          col(DiagIncident.legacy).is_(False))
+        if turns_only:
+            q = q.where(col(DiagIncident.correlation_key).startswith("turn:"))
+        if exclude_session:
+            q = q.where(col(DiagIncident.correlation_key) != f"sess:{device_id}:{exclude_session}")
+        return self.s.exec(q.values(recovered_at=now, updated_at=now)).rowcount  # type: ignore[call-overload]
+
+    def page(self, *, category: str | None = None, severity: str | None = None, confidence: str | None = None,
+             recovered: bool | None = None, device_id: str | None = None, since: datetime | None = None,
+             until: datetime | None = None, before: tuple[datetime, int] | None = None,
+             limit: int = 50) -> Sequence[DiagIncident]:
+        q = self._filtered(select(DiagIncident), category=category, severity=severity, confidence=confidence,
+                           recovered=recovered, device_id=device_id, since=since, until=until)
+        if before is not None:
+            t, i = before
+            q = q.where((col(DiagIncident.occurred_at) < t) | ((col(DiagIncident.occurred_at) == t) & (col(DiagIncident.id) < i)))
+        q = q.order_by(col(DiagIncident.occurred_at).desc(), col(DiagIncident.id).desc()).limit(limit)
+        return self.s.exec(q).all()
+
+    def counts(self, **filters: Any) -> dict[str, int]:
+        q = self._filtered(select(DiagIncident.category, func.count()), **filters).group_by(DiagIncident.category)
+        return {c: n for c, n in self.s.exec(q).all()}  # type: ignore[call-overload]
+
+    @staticmethod
+    def _filtered(q, *, category=None, severity=None, confidence=None, recovered=None, device_id=None, since=None,
+                  until=None):
+        q = q.where(DiagIncident.event_count > 0)  # an incident whose first event is still being written
+        if category:
+            q = q.where(DiagIncident.category == category)
+        if severity:
+            q = q.where(DiagIncident.severity == severity)
+        if confidence:
+            q = q.where(DiagIncident.confidence == confidence)
+        if recovered is True:
+            q = q.where(col(DiagIncident.recovered_at).is_not(None))
+        elif recovered is False:  # still open (legacy incidents were never tracked: neither)
+            q = q.where(col(DiagIncident.recovered_at).is_(None), col(DiagIncident.legacy).is_(False))
+        if device_id:
+            q = q.where(DiagIncident.device_id == device_id)
+        if since:
+            q = q.where(col(DiagIncident.occurred_at) >= since)
+        if until:
+            q = q.where(col(DiagIncident.occurred_at) < until)
+        return q
+
+    def clear(self, device_id: str | None = None) -> tuple[int, int]:
+        """Deletes incidents and their events: (incidents, events) deleted."""
+        q = sa_delete(DiagIncident)
+        e = sa_delete(DeviceIssue)
+        if device_id:
+            q = q.where(DiagIncident.device_id == device_id)
+            e = e.where(DeviceIssue.device_id == device_id)
+        n_events = self.s.exec(e).rowcount  # type: ignore[call-overload]
+        n = self.s.exec(q).rowcount  # type: ignore[call-overload]
+        self.s.commit()
+        return n, n_events
+
+    def prune(self, cutoff: datetime) -> int:
+        """Retention: incidents not updated since `cutoff`, their events, and stray events older than it."""
+        old = select(DiagIncident.id).where(col(DiagIncident.updated_at) < cutoff)
+        self.s.exec(sa_delete(DeviceIssue).where(col(DeviceIssue.incident_id).in_(old)))  # type: ignore[call-overload]
+        self.s.exec(sa_delete(DeviceIssue).where(col(DeviceIssue.incident_id).is_(None),  # type: ignore[call-overload]
+                                                 col(DeviceIssue.created_at) < cutoff))
+        n = self.s.exec(sa_delete(DiagIncident).where(col(DiagIncident.updated_at) < cutoff)).rowcount  # type: ignore[call-overload]
+        self.s.commit()
+        return n
 
 
 class ItemLimitError(Exception):

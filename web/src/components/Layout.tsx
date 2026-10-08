@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
 import {
   Activity,
-  AlertTriangle,
   ChevronRight,
   Cpu,
   LogOut,
@@ -11,6 +10,7 @@ import {
   Package,
   Server,
   Sparkles,
+  Stethoscope,
   Users,
   Watch,
   X,
@@ -35,8 +35,8 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "Activity",
     items: [
       { to: "/admin/conversations", label: "Conversations", icon: MessagesSquare },
-      { to: "/admin/usage", label: "Usage & diagnostics", icon: Activity },
-      { to: "/admin/issues", label: "Issues", icon: AlertTriangle },
+      { to: "/admin/usage", label: "Usage & performance", icon: Activity },
+      { to: "/admin/diagnostics", label: "ola Diagnostics", icon: Stethoscope },
     ],
   },
   {

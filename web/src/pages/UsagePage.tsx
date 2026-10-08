@@ -20,7 +20,7 @@ const PERIODS = [
 const TABS = [
   { id: "cost", label: "Cost" },
   { id: "finance", label: "Finance" },
-  { id: "diag", label: "Diagnostics" },
+  { id: "diag", label: "Performance" },
   { id: "pricing", label: "Pricing" },
   { id: "plan", label: "Plan settings" },
 ] as const;
@@ -42,7 +42,7 @@ export default function UsagePage() {
 
   return (
     <>
-      <PageHeader title="Usage & diagnostics" subtitle="Estimated provider usage and cost, and response latency (TTFA)." />
+      <PageHeader title="Usage & performance" subtitle="Estimated provider usage and cost, and response latency (TTFA)." />
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <div className="flex rounded-lg border border-border bg-surface p-0.5" role="tablist">
           {TABS.map((t) => (

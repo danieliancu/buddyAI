@@ -109,6 +109,8 @@ class Settings(BaseSettings):
 
     # Session / protocol
     session_idle_timeout_s: int = 45
+    # ola Diagnostics: incidents not updated for this many days are deleted (0 = keep forever)
+    incident_retention_days: int = 90
     # AI usage operations (app/usage_ops.py): the lease a process holds on a running operation, how often it
     # renews it, how often expired leases are recovered, and the database lock wait for admission.
     usage_lease_s: int = 90

@@ -40,7 +40,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 
 | type | Fields | Meaning |
 |---|---|---|
-| `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Issue reports (token hello only, repeated until a `hello_ack`; shown in the admin Issues tab): `boot: {reset_reason, prev_uptime_s?}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?}` when the previous session of this boot ended (`drop`: `wifi_lost`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`). |
+| `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Diagnostic reports (token hello only, repeated until a `hello_ack`; admin **ola Diagnostics**, see §3.1.1): `boot: {reset_reason, prev_uptime_s?, …}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?, …}` when the previous session ended or connecting failed (`drop`: `wifi_lost`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`\|`reboot`\|`connect_failed`\|`hello_timeout`). |
 | `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
 | `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
@@ -53,6 +53,28 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
 | `item_pin` | `number`, `pinned` | Pin / unpin a note (pinned notes are listed first); server replies with a fresh `items` to every watch of the account. |
 | `item_done` | `kind` (`reminder`), `number`, `done` | User completed (`true`) or reopened (`false`) a reminder; server replies with a fresh `items` to every watch of the account. |
+
+#### 3.1.1 Diagnostic reports (firmware 0.1.1+)
+
+All fields are optional and additive: firmware 0.1.0 sends only the fields above, and servers that predate
+them ignore the rest. Malformed values are dropped field by field; a hello is never refused because of its
+reports.
+
+| Report | Field | Meaning |
+|---|---|---|
+| `boot` | `report_id` | 8 hex characters, random per report: the server stores a repeated report once. |
+| | `prev_session` | The server `session_id` that was live when the chip restarted (RTC memory). The restart joins that session's incident. |
+| | `prev_min_heap` | Lowest free heap (bytes) before the restart. |
+| | `uptime_s` | Seconds since this boot (dates the restart). |
+| `link` | `report_id` | As above. |
+| | `prev_session` | The `session_id` of the session that ended. Without it (0.1.0) the server uses the device's previous session, marked `link_basis: "inferred"`. |
+| | `turn_id` | The turn that was running (`mid_turn`). |
+| | `uptime_s`, `heap`, `min_heap` | At the drop. |
+| | `ws` | The websocket client's error details, non-zero fields only: `type` (1 TCP transport, 2 pong timeout, 3 handshake, 4 server close), `tls` (`esp_tls_last_esp_err`, e.g. `0x8001` DNS failure), `tls_stack` (mbedTLS code), `errno` (socket errno), `hs` (HTTP status of the upgrade), `close` (close code received from the server). |
+| | `fails`, `retry_ws` | Failed connection attempts after the drop, and the details of the last one that had any. |
+
+`drop: "reboot"` = the session ended because the watch restarted (sent with the `boot` report). `drop:
+"connect_failed"` / `"hello_timeout"` = no session ended, but connecting failed `fails` times before this hello.
 
 ### 3.2 Server → Device
 

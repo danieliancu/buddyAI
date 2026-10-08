@@ -16,9 +16,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages, usage_ops
-from app.api import accounts_admin, auth, devices, finance, firmware, issues, live, me, shop, system, usage
+from app.api import accounts_admin, auth, devices, finance, firmware, incidents, issues, live, me, shop, system, usage
 from app.api import memory as memory_api
 from app.config import get_settings, load_providers_config
+from app.db.models import utcnow
 from app.db.repositories import PersonaRepo, PricingRepo
 from app.db.session import run_migrations, session_scope
 from app.gateway import device_ws
@@ -63,6 +64,10 @@ async def lifespan(app: FastAPI):
     from app import care_activation
 
     care_recovery = asyncio.create_task(care_activation.recover_loop(), name="care-activation")
+    # ola Diagnostics: events that could not be stored yet, and the retention period.
+    from app.incidents import service as diagnostics
+
+    diag_maint = asyncio.create_task(diagnostics.maintenance_loop(app.state.hub), name="diagnostics")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -84,6 +89,17 @@ async def lifespan(app: FastAPI):
     usage_maint.cancel()
     memory_jobs.cancel()
     care_recovery.cancel()
+    diag_maint.cancel()
+    # ola Diagnostics: every live session is about to be closed by this shutdown - recorded as the cause, so
+    # the watches' reports of the drop are grouped under a confirmed server-side event.
+    from app.incidents.events import server_event
+
+    for conn in list(app.state.hub.connections.values()):
+        if conn.authenticated:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(diagnostics.record_now(
+                    None, conn.device_id, conn.account_id, conn._fw,
+                    [server_event("server_shutdown", conn.device_id, conn.env.session_id, utcnow())]), 5)
     # Graceful shutdown: running turns stop now (not charged, reason "shutdown") and are settled here;
     # what cannot be settled is expired by another process (or this one after a restart) when its lease ends.
     for conn in list(app.state.hub.connections.values()):
@@ -93,6 +109,8 @@ async def lifespan(app: FastAPI):
                 await conn._cancel_active()
     with contextlib.suppress(Exception):
         await asyncio.to_thread(usage_ops.flush_pending)
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(diagnostics.drain(), 5)
     if mdns:
         mdns_follow.cancel()
         await mdns.stop()
@@ -121,6 +139,7 @@ def create_app() -> FastAPI:
         system.router,
         firmware.router,
         issues.router,
+        incidents.router,
         live.router,
         device_ws.router,
     ):

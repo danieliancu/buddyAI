@@ -1,4 +1,4 @@
-"""Operator API: watch issues (reboots, lost connections, interrupted turns)."""
+"""Operator API: the flat list of diagnostic events (older clients). ola Diagnostics uses /api/incidents."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from app.db.models import Device
-from app.db.repositories import IssueRepo
+from app.db.repositories import IncidentRepo, IssueRepo
 from app.db.session import get_session
 from app.issues import issue_out
 from app.security import require_admin
@@ -33,4 +33,4 @@ def list_issues(
 
 @router.delete("/issues")
 def clear_issues(device_id: str | None = None, db: Session = Depends(get_session)) -> dict:
-    return {"deleted": IssueRepo(db).clear(device_id)}
+    return {"deleted": IncidentRepo(db).clear(device_id)[1]}  # the events and the incidents they belong to

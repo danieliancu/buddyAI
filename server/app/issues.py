@@ -1,13 +1,11 @@
-"""Watch issues (admin Issues tab): reboots and lost connections reported by the watch in its hello
-(PROTOCOL.md §3.1 "boot" / "link"), plus session problems the server sees itself."""
+"""Readable one-line summaries of diagnostic events for the older /api/issues list. The diagnostics
+themselves (events, incidents, classification) live in app/incidents."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from app.db.models import DeviceIssue
-from app.db.repositories import IssueRepo
-from app.db.session import session_scope
 
 # esp_reset_reason() as sent by the firmware -> (severity, plain-English meaning)
 RESET_REASONS: dict[str, tuple[str, str]] = {
@@ -29,11 +27,13 @@ RESET_REASONS: dict[str, tuple[str, str]] = {
 # Why the watch's last session ended ("link.drop")
 DROP_REASONS: dict[str, str] = {
     "wifi_lost": "Wi-Fi connection lost",
-    "ws_error": "Connection error (network or server unreachable)",
-    "ws_disconnected": "Connection dropped (no answer to pings)",
-    "ws_closed": "The server closed the connection",
-    "hello_timeout": "The server did not answer the hello",
+    "ws_error": "Connection error (cause not reported)",
+    "ws_disconnected": "Connection dropped (cause not reported)",
+    "ws_closed": "Connection closed (cause not reported)",
+    "hello_timeout": "No answer to the hello in time",
     "reconnect": "Reconnect requested on the watch",
+    "reboot": "The watch restarted during the session",
+    "connect_failed": "The watch could not connect",
 }
 
 # wifi_err_reason_t codes worth naming (ESP-IDF esp_wifi_types.h)
@@ -78,6 +78,10 @@ def describe(issue: DeviceIssue) -> str:
         return "The connection closed while a conversation turn was running"
     if issue.kind == "server_timeout":
         return f"No data from the watch for {d.get('timeout_s', '?')} s; the server closed the session"
+    if issue.reason_code:
+        from app.incidents.texts import title
+
+        return title(issue.reason_code)
     return issue.kind
 
 
@@ -103,37 +107,3 @@ def issue_out(issue: DeviceIssue, device_name: str | None = None) -> dict[str, A
         "fw_version": issue.fw_version,
         "created_at": issue.created_at,
     }
-
-
-def from_hello(msg: dict[str, Any]) -> list[DeviceIssue]:
-    """Issues carried by a token hello: "boot" (first hello after a restart) and "link" (the
-    previous session of this boot ended)."""
-    out: list[DeviceIssue] = []
-    boot = msg.get("boot")
-    if isinstance(boot, dict):
-        reason = str(boot.get("reset_reason") or "unknown")[:64]
-        up = _int(boot.get("prev_uptime_s"))
-        detail = {"prev_uptime_s": up} if up is not None else {}
-        out.append(
-            DeviceIssue(kind="reboot", reason=reason, severity=RESET_REASONS.get(reason, ("warn", ""))[0], detail=detail)
-        )
-    link = msg.get("link")
-    if isinstance(link, dict):
-        reason = str(link.get("drop") or "unknown")[:64]
-        detail: dict[str, Any] = {"mid_turn": bool(link.get("mid_turn"))}
-        for k in ("offline_ms", "wifi_reason", "rssi", "session_s"):
-            if _int(link.get(k)) is not None:
-                detail[k] = _int(link.get(k))
-        out.append(DeviceIssue(kind="disconnect", reason=reason, severity="warn", detail=detail))
-    return out
-
-
-def record(device_id: str, account_id: int | None, fw: str, issues: list[DeviceIssue]) -> list[dict[str, Any]]:
-    """Store the issues; returns them as issue_out() dicts (for the live event)."""
-    saved = []
-    with session_scope() as db:
-        repo = IssueRepo(db)
-        for i in issues:
-            i.device_id, i.account_id, i.fw_version = device_id, account_id, fw
-            saved.append(issue_out(repo.add(i)))
-    return saved
