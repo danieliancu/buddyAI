@@ -26,7 +26,7 @@ from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
-from app.search import SEARCH_INSTRUCTIONS, SEARCH_RULE, SEARCH_TOOL, WebSearch
+from app.search import SEARCH_RULE, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app import edit_texts
 from app.confirm_words import classify_answer
@@ -469,7 +469,7 @@ class ConversationPipeline:
             async def run_search(query: str, location: str, language: str):
                 return await llm.web_search(  # type: ignore[attr-defined]
                     query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
-                    instructions=SEARCH_INSTRUCTIONS, timezone_name=s.timezone,
+                    instructions=search_instructions(s.timezone), timezone_name=s.timezone,
                 )
 
             searcher = WebSearch(run_search, web_search.get("cache_ttl_s"), provider=llm.name, model=model)

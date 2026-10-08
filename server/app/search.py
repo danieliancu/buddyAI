@@ -6,7 +6,8 @@ It gets a small `web_search` function instead and decides itself when current in
 A call runs one compact search request (the provider's hosted web search, short factual answer) and the
 answer is cached:
 
-- key: scope | category | location | language | normalised query (sha256)
+- key: scope | category | location | language | the asker's local date | normalised query (sha256) - an answer
+  about "the next match" is never reused on another day
 - lifetime per category (config llm.web_search.cache_ttl_s): weather ~15 min, transport ~2 min,
   sport ~10 min, news ~30 min, businesses ~24 h, anything else ~1 h
 - scope: weather / transport / sport / business / news answers are public facts and shared between customers;
@@ -84,6 +85,8 @@ SEARCH_RULE = (
     "not already in this conversation; otherwise answer directly. Say only the answer, never sources or links. "
     f"If a search result's age_minutes is above {STALE_AFTER_MIN}, say the time it is from (e.g. 'as of 14:05'). "
     "If the result gives a basis (e.g. 'after three matches', 'as of 2 October'), keep it in a few words. "
+    "Check every date in a result against Now: never present a day that has already passed as the next or an "
+    "upcoming one - search once more for the next one, or say you could not find it. "
     "If a search finds nothing reliable you may search once more with a broader or different wording; if that "
     "finds nothing either, say briefly that you couldn't find it - never guess."
 )
@@ -94,9 +97,10 @@ SEARCH_INSTRUCTIONS = (
     "table, other items of a list, background) - details you were not asked for are where mistakes creep in. "
     "Prefer official and reliable sources (public bodies, governing bodies, operators, the business's own site). "
     "When the fact is partial, worked out from several results or dated, add its basis in a few words (e.g. "
-    "'after three matches', 'as of 2 October', 'according to the operator'). For the latest / last / next "
-    "something (match, result, event, departure), give the most recent or next one you find, whatever its "
-    "date, and say the date. If the query fits more than one thing (e.g. men's and women's team), answer for "
+    "'after three matches', 'as of 2 October', 'according to the operator'). For the next / upcoming "
+    "something (match, event, departure), answer only with one on or after today's date (given below) - never "
+    "one that has already taken place; if you find only past ones, reply only NOT_FOUND. For the latest / last "
+    "something, give the most recent one up to today. Always say its date. If the query fits more than one thing (e.g. men's and women's team), answer for "
     "the main one (the senior team) and say which. Reply only "
     f"{NOT_FOUND} if the results do not contain that fact or are about something else (another place, "
     "event or thing, or another period than one the query names). Never ask a question back and never say you "
@@ -137,9 +141,21 @@ class SearchOutcome:
     cache_hit: bool
 
 
-def cache_key(scope: str, category: str, location: str, language: str, query: str) -> str:
-    raw = "|".join((scope, category, normalise(location), language.lower(), normalise(query)))
+def cache_key(scope: str, category: str, location: str, language: str, query: str, day: str = "") -> str:
+    raw = "|".join((scope, category, normalise(location), language.lower(), day, normalise(query)))
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def search_instructions(tz: str, now: datetime | None = None) -> str:
+    """SEARCH_INSTRUCTIONS plus today's date in the user's time zone: the search model does not know the date
+    (its own idea of "now" is its training time), so "the next match" could be one already played."""
+    try:
+        zone = ZoneInfo(tz)
+    except Exception:  # noqa: BLE001 - an unknown zone: UTC
+        zone, tz = ZoneInfo("UTC"), "UTC"
+    local = (now or datetime.now(timezone.utc)).astimezone(zone)
+    return (f"{SEARCH_INSTRUCTIONS}\nToday is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} ({tz}). "
+            "Anything before today has already happened.")
 
 
 def _aware(dt: datetime) -> datetime:
@@ -173,8 +189,12 @@ class WebSearch:
         category = a.get("category") if a.get("category") in CATEGORIES else "other"
         location = str(a.get("location") or default_location or "").strip()[:80]
         scope = "shared" if category in SHARED else (f"account:{account_id}" if account_id is not None else f"device:{device_id}")
-        key = cache_key(scope, category, location, language, query)
         now = datetime.now(timezone.utc)
+        try:
+            day = now.astimezone(ZoneInfo(tz)).date().isoformat()
+        except Exception:  # noqa: BLE001
+            day = now.date().isoformat()
+        key = cache_key(scope, category, location, language, query, day)
 
         with session_scope() as db:
             row = db.exec(select(SearchCache).where(SearchCache.key == key)).first()

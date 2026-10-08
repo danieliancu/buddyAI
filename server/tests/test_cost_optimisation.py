@@ -143,7 +143,10 @@ async def test_expired_answers_are_searched_again_and_old_ones_say_their_time() 
     ws = WebSearch(fake, {"business": 60}, provider="openai", model="m")
     args = json.dumps({"query": "Tesco Chelmsford opening hours", "category": "business"})
     await ws.run(args, account_id=1, device_id="d", tz="Europe/London", language="en", default_location="Chelmsford")
-    key = cache_key("shared", "business", "Chelmsford", "en", "Tesco Chelmsford opening hours")
+    from zoneinfo import ZoneInfo
+
+    day = datetime.now(ZoneInfo("Europe/London")).date().isoformat()
+    key = cache_key("shared", "business", "Chelmsford", "en", "Tesco Chelmsford opening hours", day)
     with session_scope() as db:
         row = db.exec(select(SearchCache).where(SearchCache.key == key)).one()
         row.fetched_at = datetime.now(timezone.utc) - timedelta(minutes=30)
@@ -161,6 +164,63 @@ async def test_expired_answers_are_searched_again_and_old_ones_say_their_time() 
     await WebSearch(fake, {"business": 60}).run(args, account_id=3, device_id="d", tz="Europe/London",
                                                  language="en", default_location="Chelmsford")
     assert len(calls) == 2  # expired: searched again
+
+
+def test_the_search_knows_today_and_never_calls_a_past_match_the_next_one() -> None:
+    """Bug: "When is Romania's next football match?" on 8 October was answered "25 September against Sweden":
+    the search model did not know the date and was told to give the next one "whatever its date"."""
+    from app.search import SEARCH_INSTRUCTIONS, search_instructions
+
+    _clear_cache()
+    llm = SearchingLLM(category="sport")
+    turn = _turn(_account(), "When is Romania's next football match?")
+    seen: dict = {}
+    original = llm.web_search
+
+    async def capture(query, location, language, **kw):
+        seen.update(kw)
+        return await original(query, location, language, **kw)
+
+    llm.web_search = capture
+    asyncio.run(_pipeline(llm)._reply(turn, FakeIO()))
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Europe/London"))
+    assert f"Today is {today:%A} {today.day} {today:%B %Y}" in seen["instructions"]  # the user's local date
+    assert "Anything before today has already happened" in seen["instructions"]
+    # the rules: "next" is on or after today, a past one is NOT_FOUND; the conversation model checks dates too
+    assert "never one that has already taken place" in SEARCH_INSTRUCTIONS and "whatever its date" not in SEARCH_INSTRUCTIONS
+    assert "never present a day that has already passed as the next" in llm.requests[0].messages[0]["content"]
+    fixed = search_instructions("Europe/Bucharest", datetime(2026, 10, 8, 9, 30, tzinfo=timezone.utc))
+    assert "Today is Thursday 8 October 2026, 12:30 (Europe/Bucharest)" in fixed
+    assert "Today is" in search_instructions("Not/AZone")  # an unknown zone falls back to UTC
+
+
+async def test_a_cached_answer_is_not_reused_on_another_day(monkeypatch) -> None:
+    import app.search as search_mod
+
+    _clear_cache()
+    calls = []
+
+    async def fake(query, location, language):
+        calls.append(query)
+        return "Romania play Austria on 12 October.", 100, 10, 1
+
+    args = json.dumps({"query": "Romania national football team next match", "category": "sport"})
+    run = lambda: WebSearch(fake, {"sport": 86400}).run(  # noqa: E731
+        args, account_id=1, device_id="d", tz="Europe/Bucharest", language="en", default_location="")
+    await run()
+    await run()
+    assert len(calls) == 1  # same day: from the cache
+
+    class Tomorrow(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(days=1)
+
+    monkeypatch.setattr(search_mod, "datetime", Tomorrow)
+    await run()
+    assert len(calls) == 2  # another day: searched again, never yesterday's "next match"
 
 
 def test_no_search_tool_without_web_search() -> None:
