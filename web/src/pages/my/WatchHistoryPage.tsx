@@ -4,6 +4,7 @@ import { MessagesSquare, Trash2 } from "lucide-react";
 import { api, ApiError, type Device } from "../../api";
 import { useLive } from "../../live";
 import ConversationList from "../../components/ConversationList";
+import WatchPreview from "../../components/WatchPreview";
 import { Button, Card, ConfirmDialog, Empty, ErrorBox, Spinner, useAsync } from "../../components/ui";
 import WatchHeader from "./WatchHeader";
 
@@ -12,6 +13,8 @@ export default function WatchHistoryPage() {
   const [device, setDevice] = useState<Device | null>(null);
   const [confirm, setConfirm] = useState(false);
   const convs = useAsync(() => api.me.devices.conversations(id), [id]);
+  // The watch on the right, as on the Settings tab (same layout: the page keeps its width and position)
+  const settings = useAsync(() => api.me.devices.settings(id), [id]);
 
   useEffect(() => {
     api.me.devices
@@ -35,9 +38,12 @@ export default function WatchHistoryPage() {
   const count = list.reduce((n, c) => n + c.turns.length, 0);
   const notFound = convs.error instanceof ApiError && convs.error.status === 404;
 
+  const s = settings.data?.settings;
   return (
-    <div className="mx-auto max-w-2xl">
+    <>
       <WatchHeader id={id} device={device} active="history" onRenamed={(name) => setDevice((d) => d && { ...d, name })} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0">
       {notFound ? (
         <ErrorBox error={new Error("Watch not found.")} />
       ) : (
@@ -64,6 +70,17 @@ export default function WatchHistoryPage() {
           )}
         </>
       )}
+      </div>
+        <aside className="hidden lg:block" data-testid="history-watch">
+          {s && (
+            <div className="sticky top-8 space-y-3">
+              <p className="text-center text-xs text-muted">Live preview · 410×502</p>
+              <WatchPreview theme={s.theme} language={s.language} preferredLanguage={s.preferred_language}
+                timezone={s.timezone} brightness={s.brightness} />
+            </div>
+          )}
+        </aside>
+      </div>
 
       <ConfirmDialog
         open={confirm}
@@ -82,6 +99,6 @@ export default function WatchHistoryPage() {
         }}
         onClose={() => setConfirm(false)}
       />
-    </div>
+    </>
   );
 }

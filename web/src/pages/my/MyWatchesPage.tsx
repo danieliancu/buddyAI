@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { useState } from "react";
 import { AlertTriangle, ChevronRight, MessageCircleQuestion, MessagesSquare, Plus, Watch } from "lucide-react";
-import { api, type Device, type LiveEvent } from "../../api";
+import { api, type Device, type LiveEvent, type MyUsage } from "../../api";
 import { useLive } from "../../live";
 import { fmtAgo } from "../../format";
 import { BatteryInfo, OnlineDot, StateBadge } from "../../components/DeviceBits";
@@ -68,12 +68,9 @@ export default function MyWatchesPage() {
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-bg text-accent">
             <MessageCircleQuestion className="size-4" />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
-            <p className="font-semibold">
-              <span className="tabular">{usage.data.questions.toLocaleString("en-GB")}</span>
-              {usage.data.limit ? <span className="font-normal text-muted"> of {usage.data.limit.toLocaleString("en-GB")}</span> : null}
-            </p>
+            <UsageBar pct={usagePct(usage.data)} />
           </div>
         </div>
       )}
@@ -168,6 +165,34 @@ function WatchCard({ device: d, refused }: { device: Device; refused?: string })
           <MessagesSquare className="size-4" /> History
         </Link>
       </div>
+    </div>
+  );
+}
+
+/** % of the month's AI interactions used (0-100, floored). */
+export function usagePct(u: MyUsage): number {
+  if (u.used_pct != null) return Math.max(0, Math.min(100, u.used_pct));
+  return u.limit ? Math.max(0, Math.min(100, Math.floor((u.questions * 100) / u.limit))) : 0;
+}
+
+/** 0% [bar] 100%: how much of the month's AI interactions is used. */
+function UsageBar({ pct }: { pct: number }) {
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-xs text-muted" data-testid="usage-bar">
+      <span className="tabular">0%</span>
+      <div
+        className="liquid flex-1"
+        style={{ height: 10 }}
+        role="progressbar"
+        aria-label="Monthly AI interactions used"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        title={`${pct}% used`}
+      >
+        <div className={cx("liquid-fill", pct >= 100 ? "danger" : pct >= 80 ? "warn" : "")} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="tabular">100%</span>
     </div>
   );
 }
