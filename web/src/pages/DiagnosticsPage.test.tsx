@@ -1,13 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Incident, IncidentDetail, LiveEvent } from "../api";
+import type { Incident, IncidentDetail, IncidentStats, LiveEvent } from "../api";
 import DiagnosticsPage from "./DiagnosticsPage";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),
   clear: vi.fn(),
+  stats: vi.fn(),
   devices: vi.fn(),
   live: { handler: null as null | ((e: LiveEvent) => void) },
 }));
@@ -18,7 +19,7 @@ vi.mock("../api", async (orig) => {
     api: {
       ...real.api,
       devices: { ...real.api.devices, list: mocks.devices },
-      incidents: { list: mocks.list, get: mocks.get, clear: mocks.clear },
+      incidents: { list: mocks.list, get: mocks.get, clear: mocks.clear, stats: mocks.stats },
     },
   };
 });
@@ -28,6 +29,17 @@ vi.mock("../live", () => ({
     return { connected: true };
   },
 }));
+// jsdom has no layout (ResizeObserver): the charts are replaced by a marker with their data size.
+vi.mock("recharts", () => {
+  const Pass = ({ children }: { children?: unknown }) => <>{children}</>;
+  return {
+    ResponsiveContainer: Pass,
+    AreaChart: ({ data }: { data: unknown[] }) => <div data-testid="chart" data-points={data.length} />,
+    Area: () => null,
+    Tooltip: () => null,
+    YAxis: () => null,
+  };
+});
 
 const wifi: Incident = {
   id: 7,
@@ -78,6 +90,16 @@ const detail: IncidentDetail = {
   ],
 };
 
+const stats: IncidentStats = {
+  hours: 24,
+  buckets: Array.from({ length: 25 }, (_, i) => ({ t: `2026-10-08T${String(i % 24).padStart(2, "0")}:00:00Z`, watch: 0, connection: i === 9 ? 1 : 0, server: 0, undetermined: 0 })),
+  totals: { watch: 0, connection: 1, server: 3, undetermined: 0 },
+  attention: [
+    { category: "server", device_id: "w1", device_name: "Kitchen watch", count: 3, severity: "error", title: "The AI model timed out", latest_id: 9, latest_at: "2026-10-08T10:00:00Z" },
+  ],
+  open_total: 3,
+};
+
 const renderPage = (url = "/admin/diagnostics") =>
   render(
     <MemoryRouter initialEntries={[url]}>
@@ -90,41 +112,49 @@ beforeEach(() => {
   mocks.devices.mockResolvedValue([{ id: "w1", name: "Kitchen watch", online: true }]);
   mocks.list.mockResolvedValue({ items: [wifi], next_cursor: null, counts: { connection: 1, server: 2 } });
   mocks.get.mockResolvedValue(detail);
+  mocks.stats.mockResolvedValue(stats);
 });
 
-describe("ola Diagnostics page", () => {
-  it("shows the incident row with its category, cause, recovery and related events", async () => {
+describe("ola Diagnostics dashboard", () => {
+  it("shows needs-attention tiles, the three trend cards and the grouped list", async () => {
     renderPage();
     expect(screen.getByRole("heading", { name: /ola Diagnostics/ })).toBeTruthy();
-    const row = await screen.findByRole("button", { name: /lost its Wi-Fi connection/ });
+    expect(await screen.findByText("The AI model timed out on Kitchen watch")).toBeTruthy();
+    expect(screen.getByLabelText("3 open")).toBeTruthy();
+    const charts = await screen.findAllByTestId("chart");
+    expect(charts).toHaveLength(3);
+    expect(charts[0].getAttribute("data-points")).toBe("25");
+    expect(screen.getByRole("button", { name: /Server incidents/ }).textContent).toMatch(/3/);
+    const row = await screen.findByRole("button", { name: /lost its Wi-Fi connection.*Kitchen watch/ });
     expect(row.textContent).toMatch(/\+2 related/);
-    expect(row.textContent).toMatch(/Connection/);
-    expect(row.textContent).toMatch(/Recovered/);
-    expect(row.textContent).toMatch(/Kitchen watch/);
-    const tabs = screen.getByRole("tablist", { name: "Category" });
-    expect(within(tabs).getByRole("tab", { name: /All 3/ })).toBeTruthy();
-    expect(within(tabs).getByRole("tab", { name: /Server 2/ })).toBeTruthy();
+    expect(screen.getByText("1 incident")).toBeTruthy(); // the Connection section's count
+    expect(screen.getByText("1 of 3 shown")).toBeTruthy();
   });
 
-  it("expands to the simple explanation, then the technical evidence", async () => {
+  it("shows the newest incident in the details panel: simple, then technical, with the timeline", async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /lost its Wi-Fi connection/ }));
     expect(await screen.findByText("What caused it?")).toBeTruthy();
-    expect(screen.getByText(/A conversation was cut off before the answer finished/)).toBeTruthy();
     expect(mocks.get).toHaveBeenCalledWith(7);
+    expect(screen.getByText(/A conversation was cut off before the answer finished/)).toBeTruthy();
+    expect(screen.getByText("Reported by the watch", { exact: false })).toBeTruthy(); // timeline
     fireEvent.click(screen.getByRole("tab", { name: "Technical" }));
     expect(screen.getByText("0x8001 ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME")).toBeTruthy();
     expect(screen.getByText("-74 dBm")).toBeTruthy();
     expect(screen.getByText("wifi_lost", { selector: "dd" })).toBeTruthy();
-    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(1);
   });
 
-  it("passes the category tab and filters to the API", async () => {
+  it("filters: a trend card selects its category, an attention tile its watch, search goes to the API", async () => {
     renderPage("/admin/diagnostics?severity=error");
     await screen.findByRole("button", { name: /lost its Wi-Fi connection/ });
     expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ severity: "error", category: undefined }));
-    fireEvent.click(screen.getByRole("tab", { name: /Server/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Server incidents/ }));
     await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ category: "server", severity: "error" })));
+    fireEvent.click(screen.getByText("The AI model timed out on Kitchen watch"));
+    await waitFor(() =>
+      expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ category: "server", deviceId: "w1", recovered: false, severity: undefined })),
+    );
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "dns" } });
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ q: "dns" })));
   });
 
   it("applies live updates by incident id", async () => {
@@ -137,19 +167,21 @@ describe("ola Diagnostics page", () => {
         incident: { ...wifi, id: 8, title: "The server hit an unexpected error", category: "server", occurred_at: "2026-10-08T10:00:00Z" },
       });
     });
-    const rows = screen.getAllByRole("button", { expanded: false });
-    expect(rows[0].textContent).toMatch(/unexpected error/);
+    expect(screen.getByRole("button", { name: /unexpected error/ })).toBeTruthy();
     act(() => {
       mocks.live.handler?.({ type: "incident", device_id: "w1", incident: { ...wifi, related_count: 3, event_count: 4 } });
     });
-    expect(screen.getAllByText(/lost its Wi-Fi connection/)).toHaveLength(1);
-    expect(screen.getByText("+3 related")).toBeTruthy();
+    const list = screen.getByRole("heading", { name: "Incidents" }).closest("section")!;
+    expect(within(list).getAllByText(/lost its Wi-Fi connection/)).toHaveLength(1);
+    expect(within(list).getByText(/\+3 related/)).toBeTruthy();
   });
 
   it("has honest empty states", async () => {
     mocks.list.mockResolvedValue({ items: [], next_cursor: null, counts: {} });
+    mocks.stats.mockResolvedValue({ ...stats, attention: [], open_total: 0 });
     renderPage();
     expect(await screen.findByText(/No incidents - all quiet/)).toBeTruthy();
+    expect(await screen.findByText(/Nothing needs attention/)).toBeTruthy();
     renderPage("/admin/diagnostics?category=watch");
     expect(await screen.findByText(/No matching incidents/)).toBeTruthy();
   });
@@ -159,7 +191,8 @@ describe("ola Diagnostics page", () => {
     mocks.list.mockResolvedValueOnce({ items: [{ ...wifi, id: 6, occurred_at: "2026-10-07T09:00:00Z" }], next_cursor: null, counts: {} });
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /Load 50 more/ }));
-    await waitFor(() => expect(screen.getAllByText(/lost its Wi-Fi connection/)).toHaveLength(2));
+    const list = screen.getByRole("heading", { name: "Incidents" }).closest("section")!;
+    await waitFor(() => expect(within(list).getAllByText(/lost its Wi-Fi connection/)).toHaveLength(2));
     expect(mocks.list).toHaveBeenLastCalledWith(expect.anything(), "CUR");
     expect(screen.queryByRole("button", { name: /Load 50 more/ })).toBeNull();
   });

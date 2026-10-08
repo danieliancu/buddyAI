@@ -278,3 +278,31 @@ def test_provider_error_text_never_carries_the_conversation():
     assert _safe_message("Error 400: input 'call my sister Ana' rejected", turn).startswith("[redacted")
     assert _safe_message("Error code: 429 - insufficient_quota", turn) == "Error code: 429 - insufficient_quota"
     assert len(_safe_message("x" * 500, SimpleNamespace(user_text="", assistant_text=None))) == 120
+
+
+def test_search_matches_watch_name_and_cause_code(admin_client):
+    c = admin_client
+    dev = _device()
+    service.record(dev, None, "t", [server_event("provider_failure", dev, "s1", utcnow(), turn_id=1, per_turn=True,
+                                                 detail={"stage": "llm", "timeout": True})])
+    by_name = c.get("/api/incidents", params={"q": "kitchen", "device_id": dev}).json()["items"]
+    by_code = c.get("/api/incidents", params={"q": "LLM_time", "device_id": dev}).json()["items"]
+    nothing = c.get("/api/incidents", params={"q": "100%_x", "device_id": dev}).json()["items"]
+    assert len(by_name) == 1 and len(by_code) == 1 and nothing == []
+
+
+def test_stats_counts_per_hour_and_groups_open_problems(admin_client):
+    c = admin_client
+    dev = _device()
+    now = utcnow()
+    for i in range(3):
+        service.record(dev, None, "t", [server_event("provider_failure", dev, f"s{i}", now, turn_id=1, per_turn=True,
+                                                     detail={"stage": "tts"})])
+    service.record(dev, None, "t", [server_event("server_timeout", dev, "old", now - timedelta(hours=30))])
+    st = c.get("/api/incidents/stats", params={"device_id": dev, "hours": 24}).json()
+    assert st["totals"]["server"] == 3 and st["totals"]["undetermined"] == 0  # the 30 h old one is outside
+    assert len(st["buckets"]) == 25 and sum(b["server"] for b in st["buckets"]) == 3
+    top = st["attention"][0]
+    assert (top["category"], top["count"], top["severity"], top["device_name"]) == ("server", 3, "error", "Kitchen watch")
+    assert st["open_total"] == 4  # the old timeout is still open (last 7 days)
+    assert c.get("/api/incidents/stats", params={"hours": 999}).status_code == 422

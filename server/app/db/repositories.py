@@ -534,10 +534,10 @@ class IncidentRepo:
 
     def page(self, *, category: str | None = None, severity: str | None = None, confidence: str | None = None,
              recovered: bool | None = None, device_id: str | None = None, since: datetime | None = None,
-             until: datetime | None = None, before: tuple[datetime, int] | None = None,
+             until: datetime | None = None, search: str | None = None, before: tuple[datetime, int] | None = None,
              limit: int = 50) -> Sequence[DiagIncident]:
         q = self._filtered(select(DiagIncident), category=category, severity=severity, confidence=confidence,
-                           recovered=recovered, device_id=device_id, since=since, until=until)
+                           recovered=recovered, device_id=device_id, since=since, until=until, search=search)
         if before is not None:
             t, i = before
             q = q.where((col(DiagIncident.occurred_at) < t) | ((col(DiagIncident.occurred_at) == t) & (col(DiagIncident.id) < i)))
@@ -548,10 +548,30 @@ class IncidentRepo:
         q = self._filtered(select(DiagIncident.category, func.count()), **filters).group_by(DiagIncident.category)
         return {c: n for c, n in self.s.exec(q).all()}  # type: ignore[call-overload]
 
+    def timeline(self, since: datetime, device_id: str | None = None, cap: int = 20000) -> list[tuple[datetime, str]]:
+        """(occurred_at, category) of the incidents since `since` (for the hourly charts), at most `cap`."""
+        q = self._filtered(select(DiagIncident.occurred_at, DiagIncident.category), device_id=device_id, since=since)
+        return [(_aware(t), c) for t, c in self.s.exec(q.limit(cap)).all()]  # type: ignore[misc, call-overload]
+
+    def open_problems(self, since: datetime, device_id: str | None = None, cap: int = 500) -> Sequence[DiagIncident]:
+        """Not recovered, warning or worse, newest first."""
+        q = self._filtered(select(DiagIncident), device_id=device_id, since=since, recovered=False)
+        q = q.where(col(DiagIncident.severity).in_(("error", "warn")))
+        return self.s.exec(q.order_by(col(DiagIncident.occurred_at).desc()).limit(cap)).all()
+
     @staticmethod
     def _filtered(q, *, category=None, severity=None, confidence=None, recovered=None, device_id=None, since=None,
-                  until=None):
+                  until=None, search=None):
         q = q.where(DiagIncident.event_count > 0)  # an incident whose first event is still being written
+        if search:
+            # the watch's name or id, or the cause code ("wifi", "dns", "llm_timeout"...)
+            escaped = search.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            term = f"%{escaped}%"
+            names = select(Device.id).where(func.lower(Device.name).like(term, escape="\\")
+                                            | func.lower(Device.id).like(term, escape="\\"))
+            q = q.where(col(DiagIncident.device_id).in_(names)
+                        | func.lower(DiagIncident.reason_code).like(term, escape="\\")
+                        | func.lower(func.coalesce(DiagIncident.suspected_component, "")).like(term, escape="\\"))
         if category:
             q = q.where(DiagIncident.category == category)
         if severity:

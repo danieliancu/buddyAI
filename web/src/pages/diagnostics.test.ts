@@ -29,7 +29,7 @@ const inc = (id: number, at: string, extra: Partial<Incident> = {}): Incident =>
 describe("URL filters", () => {
   it("round-trips and ignores invalid values", () => {
     const f = filtersFromParams(new URLSearchParams("category=server&severity=error&recovered=no&from=2026-10-01&to=bad&confidence=maybe"));
-    expect(f).toEqual({ category: "server", device: "", severity: "error", confidence: "", recovered: "no", from: "2026-10-01", to: "" });
+    expect(f).toEqual({ category: "server", device: "", severity: "error", confidence: "", recovered: "no", from: "2026-10-01", to: "", q: "" });
     expect(filtersFromParams(paramsFromFilters(f))).toEqual(f);
     expect(hasFilters(f)).toBe(true);
     expect(hasFilters({ ...filtersFromParams(new URLSearchParams()), category: "watch" })).toBe(false);

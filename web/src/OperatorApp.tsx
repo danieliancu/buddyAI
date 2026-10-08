@@ -12,7 +12,6 @@ import PersonasPage from "./pages/PersonasPage";
 import ConversationsPage from "./pages/ConversationsPage";
 import SystemPage from "./pages/SystemPage";
 import FirmwarePage from "./pages/FirmwarePage";
-import DiagnosticsPage from "./pages/DiagnosticsPage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import OrdersPage from "./pages/OrdersPage";
@@ -20,6 +19,7 @@ import { safeNext } from "./pages/my/session";
 
 // recharts is heavy: load the usage/diagnostics page on demand.
 const UsagePage = lazy(() => import("./pages/UsagePage"));
+const DiagnosticsPage = lazy(() => import("./pages/DiagnosticsPage"));
 
 type State = { status: "loading" } | { status: "in"; user: string } | { status: "out" } | { status: "error"; error: unknown };
 
@@ -87,7 +87,14 @@ export default function OperatorApp() {
                 </Suspense>
               }
             />
-            <Route path="diagnostics" element={<DiagnosticsPage />} />
+            <Route
+              path="diagnostics"
+              element={
+                <Suspense fallback={<Spinner />}>
+                  <DiagnosticsPage />
+                </Suspense>
+              }
+            />
             <Route path="issues" element={<Navigate to="/admin/diagnostics" replace />} />
             <Route path="firmware" element={<FirmwarePage />} />
             <Route path="system" element={<SystemPage />} />

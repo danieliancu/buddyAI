@@ -274,8 +274,10 @@ async def test_diagnostics_storage_down_never_affects_the_watch(server, monkeypa
     await w.send("ping")
     await w.expect("pong")
     await w.close()
+    # The failed write is queued on another thread just after the call; a maintenance retry may also hold it
+    # for a moment while it tries again (and fails again).
     for _ in range(50):
-        if calls:
+        if calls and service.pending() >= 1:
             break
         await asyncio.sleep(0.1)
     assert calls and service.pending() >= 1

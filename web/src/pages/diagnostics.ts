@@ -1,11 +1,18 @@
 /** ola Diagnostics page helpers: URL filters, live merging, readable technical values (pure, unit-tested). */
 import type { Confidence, Incident, IncidentCategory, IncidentFilters, IncidentSeverity } from "../api";
 
-export const CATEGORIES: { id: IncidentCategory; label: string; tone: "accent" | "warn" | "danger" | "neutral"; hint: string }[] = [
-  { id: "watch", label: "Watch", tone: "accent", hint: "Firmware, restarts, memory, power" },
-  { id: "connection", label: "Connection", tone: "warn", hint: "Wi-Fi, DNS, TLS, network" },
-  { id: "server", label: "Server", tone: "danger", hint: "ola server, database, AI providers" },
-  { id: "undetermined", label: "Undetermined", tone: "neutral", hint: "Not enough evidence for a cause" },
+export const CATEGORIES: {
+  id: IncidentCategory;
+  label: string;
+  tone: "accent" | "warn" | "danger" | "neutral";
+  hint: string;
+  /** Chart colour (the admin area is always light). */
+  color: string;
+}[] = [
+  { id: "watch", label: "Watch", tone: "accent", hint: "Firmware, restarts, memory, power", color: "#0f8f7e" },
+  { id: "connection", label: "Connection", tone: "warn", hint: "Wi-Fi, DNS, TLS, network", color: "#d4a017" },
+  { id: "server", label: "Server", tone: "danger", hint: "ola server, database, AI providers", color: "#e07b39" },
+  { id: "undetermined", label: "Undetermined", tone: "neutral", hint: "Not enough evidence for a cause", color: "#8b8b94" },
 ];
 export const CATEGORY = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<IncidentCategory, (typeof CATEGORIES)[number]>;
 
@@ -30,9 +37,10 @@ export interface PageFilters {
   recovered: "" | "yes" | "no";
   from: string;
   to: string;
+  q: string;
 }
 
-const KEYS: (keyof PageFilters)[] = ["category", "device", "severity", "confidence", "recovered", "from", "to"];
+const KEYS: (keyof PageFilters)[] = ["category", "device", "severity", "confidence", "recovered", "from", "to", "q"];
 
 export function filtersFromParams(p: URLSearchParams): PageFilters {
   const pick = <T extends string>(v: string | null, allowed: readonly T[]): T | "" => (v && (allowed as readonly string[]).includes(v) ? (v as T) : "");
@@ -45,6 +53,7 @@ export function filtersFromParams(p: URLSearchParams): PageFilters {
     recovered: pick(p.get("recovered"), ["yes", "no"] as const),
     from: date(p.get("from")),
     to: date(p.get("to")),
+    q: (p.get("q") ?? "").slice(0, 64),
   };
 }
 
@@ -72,6 +81,7 @@ export function apiFilters(f: PageFilters, withCategory = true): IncidentFilters
     recovered: f.recovered === "" ? undefined : f.recovered === "yes",
     since: f.from ? dayStart(f.from) : undefined,
     until: f.to ? dayStart(f.to, 1) : undefined,
+    q: f.q.trim() || undefined,
   };
 }
 
@@ -85,6 +95,11 @@ export function matches(i: Incident, f: PageFilters): boolean {
   if (f.recovered === "no" && i.recovered_at) return false;
   if (f.from && t < Date.parse(dayStart(f.from))) return false;
   if (f.to && t >= Date.parse(dayStart(f.to, 1))) return false;
+  const term = f.q.trim().toLowerCase();
+  if (term) {
+    const hay = [i.device_name ?? "", i.device_id, i.reason_code, i.suspected_component ?? ""].map((x) => x.toLowerCase());
+    if (!hay.some((x) => x.includes(term))) return false;
+  }
   return true;
 }
 

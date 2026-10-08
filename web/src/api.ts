@@ -844,6 +844,7 @@ const operatorApi = {
     list: (f: IncidentFilters = {}, cursor?: string) =>
       get<IncidentPage>(`/api/incidents${q({ ...incidentQuery(f), cursor })}`),
     get: (id: number) => get<IncidentDetail>(`/api/incidents/${id}`),
+    stats: (hours = 24, deviceId?: string) => get<IncidentStats>(`/api/incidents/stats${q({ hours, device_id: deviceId })}`),
     clear: (deviceId?: string) => del<{ deleted: number }>(`/api/incidents${q({ device_id: deviceId })}`),
   },
   firmware: {
@@ -1057,6 +1058,31 @@ export interface IncidentFilters {
   /** ISO date-times */
   since?: string;
   until?: string;
+  /** Search: the watch's name or id, or the cause code. */
+  q?: string;
+}
+
+export interface AttentionItem {
+  category: IncidentCategory;
+  device_id: string;
+  device_name: string | null;
+  /** Open incidents of this category on this watch. */
+  count: number;
+  severity: "error" | "warn";
+  /** Title of the latest one. */
+  title: string;
+  latest_id: number;
+  latest_at: string;
+}
+
+export interface IncidentStats {
+  hours: number;
+  /** One per hour, oldest first. */
+  buckets: ({ t: string } & Record<IncidentCategory, number>)[];
+  totals: Record<IncidentCategory, number>;
+  /** Open problems of the last 7 days, grouped by watch and category, worst first (at most 6). */
+  attention: AttentionItem[];
+  open_total: number;
 }
 
 export interface IncidentPage {
@@ -1075,6 +1101,7 @@ export function incidentQuery(f: IncidentFilters): Record<string, string | numbe
     device_id: f.deviceId,
     since: f.since,
     until: f.until,
+    q: f.q,
   };
 }
 
