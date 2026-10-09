@@ -17,6 +17,7 @@
 #include "esp_heap_caps.h"
 #include "board.h"
 #include "ui_priv.h"
+#include "src/core/lv_obj_event_private.h"     /* lv_hit_test_info_t (mic touch area) */
 
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
@@ -29,6 +30,8 @@
 #define BUBBLE_MAX_W        290
 #define MIC_SIZE            76
 #define MIC_BOTTOM          24
+#define MIC_TOUCH_PAD       40          /* invisible touch margin: a tap near the small mic still hits it */
+#define MIC_TOUCH_TOP       20          /* ... less above it: stays in the 26 px gap under the list */
 #define TITLE_W             260         /* left of the close X */
 #define CHAT_GREETING       "Olá!"      /* title for the default persona */
 #define RING_BASE           (MIC_SIZE + 14)
@@ -277,6 +280,17 @@ static void mic_cb(lv_event_t *e)
 /* Screen                                                                     */
 /* ------------------------------------------------------------------------- */
 
+/* The touch margin is MIC_TOUCH_PAD left, right and below, but only MIC_TOUCH_TOP above. */
+static void mic_hit_test_cb(lv_event_t *e)
+{
+    lv_hit_test_info_t *info = lv_event_get_hit_test_info(e);
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target_obj(e), &a);
+    if (info->point->y < a.y1 - MIC_TOUCH_TOP) {
+        info->res = false;
+    }
+}
+
 static void leave(void)
 {
     if (g_ui_cb.on_chat_closed) {
@@ -356,6 +370,11 @@ void ui_chat_init(void)
     lv_obj_set_style_transform_pivot_x(s_mic, MIC_SIZE / 2, 0);
     lv_obj_set_style_transform_pivot_y(s_mic, MIC_SIZE / 2, 0);
     lv_obj_align(s_mic, LV_ALIGN_BOTTOM_MID, 0, -MIC_BOTTOM);
+    /* A bigger touch area than the icon (~156 px wide, down to the screen edge): it fills the gap above the mic without
+     * reaching the list. */
+    lv_obj_set_ext_click_area(s_mic, MIC_TOUCH_PAD);
+    lv_obj_add_flag(s_mic, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_add_event_cb(s_mic, mic_hit_test_cb, LV_EVENT_HIT_TEST, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_CLICKED, NULL);
     s_mic_lbl = lv_label_create(s_mic);
