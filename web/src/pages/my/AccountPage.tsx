@@ -1,12 +1,13 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { AlertTriangle, BadgeCheck, Brain, ChevronRight, Download, KeyRound, LogOut, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Brain, ChevronRight, Download, KeyRound, LogOut, Monitor, Moon, Palette, Sun, Trash2, UserRound } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { fmtDate } from "../../format";
 import { Badge, Button, buttonCls, Card, Dialog, ErrorBox, Field, Input, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import PlanCard from "./PlanCard";
 import { useCustomer } from "./session";
+import { useThemePref, type ThemePref } from "../../theme";
 
 export default function AccountPage() {
   const { account, signOut } = useCustomer();
@@ -26,6 +27,7 @@ export default function AccountPage() {
       )}
       <ProfileCard />
       <PasswordCard />
+      <AppearanceCard />
       <Card title="Your data">
         <p className="mb-3 text-sm text-muted">
           Download everything we store about you: your profile, watch settings, conversation history, personas, notes and reminders, and memories (JSON file).
@@ -99,6 +101,40 @@ function ProfileCard() {
           {saved && !dirty && <span className="text-sm text-ok">Saved</span>}
         </div>
       </form>
+    </Card>
+  );
+}
+
+const THEMES: { value: ThemePref; label: string; icon: ReactNode }[] = [
+  { value: "light", label: "Light", icon: <Sun className="size-4" /> },
+  { value: "dark", label: "Dark", icon: <Moon className="size-4" /> },
+  { value: "system", label: "System", icon: <Monitor className="size-4" /> },
+];
+
+function AppearanceCard() {
+  const [pref, setPref] = useThemePref();
+  return (
+    <Card title={<Title icon={<Palette className="size-4" />}>Appearance</Title>}>
+      <p className="mb-3 text-sm text-muted">System follows your phone or computer. Saved in this browser.</p>
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface-2 p-1">
+        {THEMES.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            role="radio"
+            aria-checked={pref === t.value}
+            onClick={() => setPref(t.value)}
+            className={
+              pref === t.value
+                ? "flex items-center justify-center gap-2 rounded-md bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm"
+                : "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm text-muted transition hover:text-fg"
+            }
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
     </Card>
   );
 }

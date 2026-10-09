@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import App from "./App";
 import "./index.css";
+import { startThemeSync } from "./theme";
+
+startThemeSync();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
