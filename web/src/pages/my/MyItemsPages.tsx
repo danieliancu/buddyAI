@@ -83,7 +83,7 @@ export function MyNotesPage() {
                 </button>
               }
             >
-              <p className="line-clamp-4 text-sm whitespace-pre-line">{n.text}</p>
+              <NoteBody text={n.text} />
             </ItemCard>
           ))}
         </ul>
@@ -91,6 +91,36 @@ export function MyNotesPage() {
       <NoteDialog editing={editing} onClose={() => setEditing(null)} onSaved={q.reload} />
       <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={q.reload} />
     </ItemsLayout>
+  );
+}
+
+/** Drop a list marker someone typed ("- ", "• ", "3. ") so the numbering is ours (as ui_items.c skip_marker). */
+function stripMarker(line: string) {
+  return line.replace(/^\s*(?:[-*•–—]|\d{1,3}[.)])\s+/, "");
+}
+
+/** A note laid out like on the watch: the first line is the title, then a divider, then numbered lines. */
+function NoteBody({ text }: { text: string }) {
+  const lines = text
+    .split("\n")
+    .map((l) => stripMarker(l).trimEnd())
+    .filter((l) => l.trim());
+  if (lines.length === 0) return <p className="text-sm text-muted italic">Empty note</p>;
+  const [title, ...rest] = lines;
+  return (
+    <div className="text-sm">
+      <p className="font-semibold break-words">{title}</p>
+      {rest.length > 0 && (
+        <ol className="mt-2 divide-y divide-border border-t border-border">
+          {rest.map((l, i) => (
+            <li key={i} className="flex gap-2 py-1.5">
+              <span className="w-6 shrink-0 text-right font-mono text-accent">{i + 1}.</span>
+              <span className="min-w-0 flex-1 break-words">{l}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 
