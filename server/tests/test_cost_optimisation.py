@@ -381,3 +381,12 @@ def test_chat_title_is_the_persona_name_except_for_the_default() -> None:
         assert repo.chat_title(coach.id) == "Coach title test"
         db.delete(coach)
         db.commit()
+
+
+def test_system_prompt_asks_for_digits(monkeypatch) -> None:
+    """Numbers are written in digits (the screen shows 14:30); the TTS is told the language to read them in."""
+    from app.pipeline import conversation as conv
+
+    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: []))
+    system = build_messages_from_db(_turn(None, "what time?"), "what time?")[0]["content"]
+    assert "with digits" in system and "the way they should be spoken" not in system

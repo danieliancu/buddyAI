@@ -116,7 +116,9 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 language_rule,
                 "Your reply is spoken aloud through a small smartwatch speaker: be brief and conversational, "
                 f"at most about {s.max_reply_chars} characters. Plain sentences only: no markdown, no lists, "
-                "no emojis, no URLs. Write numbers, dates and units the way they should be spoken.",
+                "no emojis, no URLs. Write numbers, times, dates, amounts and units with digits and symbols (14:30, 3 km, "
+                "£3.50, 21°C, 10%) - the voice reads them in the reply's language - but keep words like 'one of them' "
+                "as words.",
                 DISPLAY_RULE,
                 s.custom_instructions.strip(),
             ],

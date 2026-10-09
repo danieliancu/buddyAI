@@ -302,7 +302,7 @@ TOOL_DEFS: list[dict[str, Any]] = [
             "properties": {
                 "kind": {"type": "string", "enum": list(KINDS)},
                 "text": {"type": "string", "description": "Note: the full text (first line = title). Reminder: what to "
-                         "do, at most 80 characters."},
+                         "do, at most 80 characters. Numbers, times and amounts in digits (2 kg, 14:30, £5)."},
                 "due_local": _DUE, "end_local": _END, "notify_before_minutes": _NOTIFY,
                 "location": _LOCATION, "participants": _PARTICIPANTS,
             },

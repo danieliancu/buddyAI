@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from app import languages
 from app.providers.base import ProviderError
 from app.providers.tts.base import TTSRequest
 from app.providers.tts.http_stream import HTTPStreamingTTS
+
+
+def language_instruction(code: str) -> str:
+    """The API has no language parameter and guesses it from each (short) fragment, so a number or a name
+    could come out in another language: name the turn's language explicitly."""
+    lang = languages.get(code)
+    if not lang:  # "auto" or unknown: let the model follow the text
+        return ""
+    return (
+        f"The text is in {lang.name}. Speak it in {lang.name} with a native {lang.name} accent, and read every "
+        f"number, time, date, amount and unit in {lang.name}."
+    )
 
 
 class OpenAITTS(HTTPStreamingTTS):
@@ -29,8 +42,9 @@ class OpenAITTS(HTTPStreamingTTS):
             "response_format": "pcm",
             "speed": request.speech_rate,
         }
-        if request.instructions:
-            body["instructions"] = request.instructions
+        instructions = " ".join(filter(None, [language_instruction(request.language), request.instructions]))
+        if instructions:
+            body["instructions"] = instructions
         return {
             "url": f"{self.base_url}/audio/speech",
             "headers": {"Authorization": f"Bearer {self.api_key}"},
