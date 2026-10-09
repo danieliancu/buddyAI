@@ -13,6 +13,7 @@ import {
   type SettingsPatch,
   type SettingsResponse,
   type Theme,
+  type VadSensitivity,
 } from "../api";
 import { useLive } from "../live";
 import { OnlineDot, StateBadge } from "../components/DeviceBits";
@@ -90,6 +91,8 @@ const TZ_GROUPS: [string, string[]][] = (() => {
 const THEME_BLUE = "midnight";
 const THEME_WHITE = "mono";
 const VAD_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
+/* The same setting for the customer: how long a pause ends the question (server vad.py END_SILENCE_MS). */
+const PAUSE_CHOICES: [VadSensitivity, string][] = [["high", "Short"], ["medium", "Normal"], ["low", "Long"]];
 
 /** Voice that will be used for `lang` (mirrors the server: override > default voice, within the language's voice set). */
 function effectiveVoice(s: DeviceSettings, o: Options, lang: string): string {
@@ -151,7 +154,8 @@ const SOURCES: Record<"admin" | "customer", Source> = {
 
 /**
  * Watch settings. The operator ("admin") sees every field; the customer view hides the technical
- * ones (model, VAD, listening time, context turns, reply length) and uses the /api/me endpoints.
+ * ones (model, listening time, context turns, reply length; VAD shows as "Pause before ola answers")
+ * and uses the /api/me endpoints.
  */
 export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" | "customer" }) {
   const customer = mode === "customer";
@@ -407,17 +411,21 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                   ))}
                 </Select>
               </Field>
-              <Field label="VAD sensitivity" error={err("vad_sensitivity")} hint="How eagerly the end of speech is detected">
+              </>
+              )}
+              <Field
+                label={customer ? "Pause before ola answers" : "VAD sensitivity"}
+                error={err("vad_sensitivity")}
+                hint={customer ? "How long ola waits when you pause mid-sentence" : "How eagerly the end of speech is detected"}
+              >
                 <div className="flex gap-2">
-                  {options.vad_sensitivity.map((v) => (
+                  {(customer ? PAUSE_CHOICES : options.vad_sensitivity.map((v): [VadSensitivity, string] => [v, VAD_LABEL[v] ?? v])).map(([v, label]) => (
                     <Chip key={v} active={draft.vad_sensitivity === v} onClick={() => set("vad_sensitivity", v)}>
-                      {VAD_LABEL[v] ?? v}
+                      {label}
                     </Chip>
                   ))}
                 </div>
               </Field>
-              </>
-              )}
               <Field label="Voice" error={err("tts_voice")} hint={`Sample in ${sampleLangName}`}>
                 <div className="flex gap-2">
                   <Select className="min-w-0 flex-1" value={draft.tts_voice ?? ""} onChange={(e) => set("tts_voice", e.target.value || null)}>

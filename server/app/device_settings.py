@@ -57,7 +57,7 @@ class DeviceSettings(BaseModel):
     screen_timeout_s: int = Field(15, ge=5, le=300)
     timezone: str = "Europe/London"
     theme: Theme = Field(default_factory=Theme)
-    max_listen_s: int = Field(15, ge=3, le=60)  # longest question, counted from the first word
+    max_listen_s: int = Field(30, ge=3, le=60)  # longest question, counted from the first word
     wait_for_speech_s: int = Field(20, ge=5, le=60)  # mic open, waiting for the first word (free: no STT)
     # --- AI (server-only) --------------------------------------------------------
     persona_id: int | None = None

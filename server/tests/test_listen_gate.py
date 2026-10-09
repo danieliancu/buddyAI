@@ -84,3 +84,45 @@ def test_no_speech_sends_nothing_to_the_stt() -> None:
 def test_speech_after_a_long_wait_is_still_heard() -> None:
     stt, text, _ = _listen(silence(18000) + tone(800) + silence(1500), wait_s=20)
     assert text == "hello" and ms(stt.sent) < 4000
+
+
+def _listen_with_partial(partial: str, audio: bytes) -> tuple[float, FakeIO]:
+    """Like _listen, with an STT whose live transcript is `partial` from the first audio on."""
+    sent = [0]
+
+    class PartialSTT(RecordingSTT):
+        async def start(self, language, sample_rate, on_partial) -> STTSession:
+            class Session(STTSession):
+                async def send(self, pcm: bytes) -> None:
+                    sent[0] += len(pcm)
+                    await on_partial(partial)
+
+                async def finish(self) -> str:
+                    return partial
+
+                async def close(self) -> None:
+                    pass
+
+            return Session()
+
+    pipeline = ConversationPipeline(Router(PartialSTT()), ChunkerConfig(), vad_factory=EnergyProbability)
+    turn = TurnContext(1, "s", "dev", "en", DeviceSettings(), 16000)
+    step = UPLINK_RATE * 2 * CHUNK_MS // 1000
+    for off in range(0, len(audio), step):
+        turn.audio_in.put_nowait((audio[off : off + step], 0.0))
+    turn.audio_in.put_nowait(None)
+    io = FakeIO()
+    asyncio.run(pipeline._listen(turn, io))
+    return ms(sent[0]), io
+
+
+def test_a_thinking_pause_after_an_unfinished_sentence_does_not_end_it() -> None:
+    # "remind me to ... (1.5 s) ... call mum": one question, the second part is heard too.
+    heard_ms, io = _listen_with_partial("remind me to", tone(800) + silence(1500) + tone(800) + silence(3000))
+    assert ("listen_stop", {"reason": "vad"}) in io.sent
+    assert heard_ms >= 800 + 1500 + 800
+
+
+def test_a_finished_sentence_still_ends_at_the_normal_pause() -> None:
+    heard_ms, _ = _listen_with_partial("what time is it", tone(800) + silence(1500) + tone(800) + silence(3000))
+    assert heard_ms < 800 + 1500  # ended in the first pause: the second part never reached the STT

@@ -47,6 +47,7 @@ from app.voice_tools import (
 from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
+from app.pipeline.turn_end import looks_unfinished
 from app.pipeline.vad import EndpointDetector, SpeechProbability, make_probability
 from app.providers.base import ProviderError, UsageItem
 from app.providers.llm.base import LLMRequest, ToolCall
@@ -350,8 +351,15 @@ class ConversationPipeline:
         s = turn.settings
         stt = self.router.stt(turn.language)
 
+        heard = ""  # the live transcript so far (providers send the whole text, not deltas)
+
         async def on_partial(text: str) -> None:
+            nonlocal heard
+            heard = text
             await io.send(turn, "stt_result", text=text, final=False)
+
+        # A thinking pause after "set a reminder for..." waits longer than one after a finished sentence.
+        langs = [turn.language] if turn.language != languages.AUTO else [turn.fallback_language, s.preferred_language]
 
         note = turn.mode in ("note", "reminder")  # edit modes: one short sentence per turn
         detector = EndpointDetector(
@@ -361,6 +369,7 @@ class ConversationPipeline:
             # this (free) turn; one sentence is at most NOTE_SENTENCE_S long.
             no_speech_timeout_ms=(NOTE_WAIT_S if note else s.wait_for_speech_s) * 1000,
             max_duration_ms=(NOTE_SENTENCE_S if note else s.max_listen_s) * 1000,
+            unfinished=lambda: looks_unfinished(heard, langs),
         )
         await io.send(turn, "state", state="listening")
         # Silence before the first word never reaches the (billed) STT: audio is sent only once the

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from app.audio.codec import rms_dbfs
 
@@ -23,8 +23,11 @@ CHUNK_MS = CHUNK_SAMPLES * 1000 / SAMPLE_RATE
 MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "silero_vad.onnx"
 _session_cache: dict[str, Any] = {}  # InferenceSession is thread-safe and reusable across turns
 
-# End-of-speech silence per sensitivity: higher sensitivity = ends sooner.
-END_SILENCE_MS = {"low": 900, "medium": 700, "high": 500}
+# End-of-speech silence per sensitivity: higher sensitivity = ends sooner (the customer's "Pause before ola
+# answers": high = Short, medium = Normal, low = Long).
+END_SILENCE_MS = {"low": 1200, "medium": 900, "high": 700}
+# ... and while what was said so far looks unfinished ("set a reminder for...", turn_end.py): a thinking pause.
+UNFINISHED_SILENCE_MS = {"low": 2800, "medium": 2000, "high": 1500}
 
 
 class SpeechProbability(Protocol):
@@ -109,11 +112,14 @@ class EndpointDetector:
         min_speech_ms: float = 160,
         no_speech_timeout_ms: float = 6000,
         max_duration_ms: float = 15000,
+        unfinished: Callable[[], bool] | None = None,
     ) -> None:
         self.prob = prob
         self.prob.reset()
         self.threshold = threshold
         self.end_silence_ms = END_SILENCE_MS.get(sensitivity, END_SILENCE_MS["medium"])
+        self.unfinished_silence_ms = UNFINISHED_SILENCE_MS.get(sensitivity, UNFINISHED_SILENCE_MS["medium"])
+        self.unfinished = unfinished  # asked once the normal pause is reached: wait longer if True
         self.min_speech_ms = min_speech_ms
         self.no_speech_timeout_ms = no_speech_timeout_ms
         self.max_duration_ms = max_duration_ms
@@ -167,7 +173,9 @@ class EndpointDetector:
                 self._speech_ms = 0.0  # require contiguous speech to start
             self._silence_ms += CHUNK_MS
             self.in_speech = False
-            if self.speech_started and self._silence_ms >= self.end_silence_ms:
+            if self.speech_started and self._silence_ms >= self.end_silence_ms and (
+                self._silence_ms >= self.unfinished_silence_ms or not (self.unfinished and self.unfinished())
+            ):
                 return VadEvent("speech_end", self.last_speech_end_ms or self._pos_ms)
         if not self.speech_started and self._pos_ms >= self.no_speech_timeout_ms:
             return VadEvent("no_speech", self._pos_ms)
