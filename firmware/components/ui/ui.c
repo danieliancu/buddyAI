@@ -48,6 +48,8 @@ ui_callbacks_t   g_ui_cb;
 #define CAPTION_H           78
 #define CAPTION_LINE_SPACE  (-3)    /* Noto Sans 20 px: 28 px line -> 25 px pitch, 3 lines fit */
 #define DATE_MAX_W          380     /* longer dates drop the weekday */
+#define TIME_Y              58      /* home screen: time and date from the top (centred in standby) */
+#define DATE_Y              120
 #define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
 #define STATUS_HINT_W       170
 #define SHORTCUT_W          80      /* notes / reminders / settings icons */
@@ -263,7 +265,7 @@ static void apply_shift(void)
     lv_obj_set_pos(s_content, s_shift[s_shift_idx][0] * mul, s_shift[s_shift_idx][1] * mul);
 }
 
-/* Standby ("always on"): only the time and the date stay lit, in light grey, plus a red battery when it is low.
+/* Standby ("always on"): only the time and the date, centred, in light grey, plus a red battery when it is low.
  * A black cover hides the rest (black AMOLED pixels are off); waking removes it, so whatever state the hidden
  * widgets are in shows again unchanged. */
 static void ambient_batt_update(void)
@@ -291,11 +293,17 @@ static void set_ambient(bool on)
         }
     }
     lv_obj_set_flag(s_ambient_cover, LV_OBJ_FLAG_HIDDEN, !on);
-    if (on) {   /* the lit parts above the cover (other widgets may have been raised since) */
+    if (on) {
+        lv_obj_align(s_time_box, LV_ALIGN_CENTER, 0, -28);
+        lv_obj_align(s_lbl_date, LV_ALIGN_CENTER, 0, 32);
+        /* the lit parts above the cover (other widgets may have been raised since) */
         lv_obj_move_foreground(s_ambient_cover);
         lv_obj_move_foreground(s_time_box);
         lv_obj_move_foreground(s_lbl_date);
         lv_obj_move_foreground(s_ambient_batt);
+    } else {
+        lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, TIME_Y);
+        lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, DATE_Y);
     }
     ambient_batt_update();
     apply_shift();
@@ -1006,7 +1014,7 @@ static void build_watchface(void)
     lv_obj_remove_flag(s_time_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(s_time_box, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_flex_flow(s_time_box, LV_FLEX_FLOW_ROW);
-    lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, 58);
+    lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, TIME_Y);
     /* hours ":" minutes, each as wide as its own digits: the whole time is centred horizontally on
      * what is actually shown ("11:11" is narrower than "08:48"). The box is aligned TOP_MID with
      * content size, so LVGL re-centres it whenever the digits change; the height never moves. */
@@ -1027,7 +1035,7 @@ static void build_watchface(void)
     s_lbl_date = lv_label_create(s_content);
     lv_obj_set_style_text_font(s_lbl_date, &buddy_font_20, 0);
     lv_label_set_text(s_lbl_date, "");
-    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, DATE_Y);
 
     /* Notes / reminders / settings shortcuts: a centred row at the bottom */
     s_shortcut_buf = heap_caps_malloc(SHORTCUT_W * SHORTCUT_H * 4, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -1169,7 +1177,7 @@ static void build_watchface(void)
     lv_obj_set_style_text_font(s_ambient_batt, &buddy_font_28, 0);
     lv_obj_set_style_text_color(s_ambient_batt, lv_palette_main(LV_PALETTE_RED), 0);
     lv_label_set_text(s_ambient_batt, ICON_BATTERY_1);
-    lv_obj_align(s_ambient_batt, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_align(s_ambient_batt, LV_ALIGN_CENTER, 0, 80);
     lv_obj_add_flag(s_ambient_batt, LV_OBJ_FLAG_HIDDEN);
 }
 
