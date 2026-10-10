@@ -17,7 +17,7 @@ export const features: Feature[] = [
     icon: "mic",
     title: "Natural voice conversation",
     short: "Talk to an AI assistant, and hear it answer out loud.",
-    long: "Ask questions, think out loud, or just chat. ola listens and answers in a natural voice through the watch speaker — a conversation, not a list of commands.",
+    long: "Ask questions, think out loud, or just chat. olá listens and answers in a natural voice through the watch speaker — a conversation, not a list of commands.",
   },
   {
     icon: "tap",
@@ -35,19 +35,19 @@ export const features: Feature[] = [
     icon: "note",
     title: "Notes",
     short: "Create and edit notes just by talking.",
-    long: "Dictate a note, then add, change, move or delete lines by voice. Find, copy or delete notes and reminders just by asking; if several match, ola asks which one. Your notes and reminders are also in your ola account, where you can view and edit them.",
+    long: "Dictate a note, then add, change, move or delete lines by voice. Find, copy or delete notes and reminders just by asking; if several match, olá asks which one. Your notes and reminders are also in your olá account, where you can view and edit them.",
   },
   {
     icon: "search",
     title: "Live answers",
     short: "Weather, news, opening hours and more.",
-    long: "For things that change, ola looks them up: today's weather, the news, opening hours, addresses, travel updates and current prices.",
+    long: "For things that change, olá looks them up: today's weather, the news, opening hours, addresses, travel updates and current prices.",
   },
   {
     icon: "globe",
     title: `${languageCountLabel} languages`,
     short: "Or choose Auto: it answers in the language you speak.",
-    long: `Pick one of ${languageCountLabel} languages, or choose Auto and ola replies in whichever language you speak to it.`,
+    long: `Pick one of ${languageCountLabel} languages, or choose Auto and olá replies in whichever language you speak to it.`,
   },
   {
     icon: "persona",
@@ -59,13 +59,13 @@ export const features: Feature[] = [
     icon: "palette",
     title: "Blue or white",
     short: "Two themes for the screen: blue or white.",
-    long: "Switch the watch between its blue and white themes, on the watch, in your ola account or just by asking.",
+    long: "Switch the watch between its blue and white themes, on the watch, in your olá account or just by asking.",
   },
   {
     icon: "history",
     title: "History you control",
     short: "Your conversations in your account. Export or delete anytime.",
-    long: "Your conversation history lives in your ola account. You can export it or delete it at any time.",
+    long: "Your conversation history lives in your olá account. You can export it or delete it at any time.",
   },
 ];
 

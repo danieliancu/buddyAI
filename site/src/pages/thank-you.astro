@@ -5,13 +5,13 @@ import { config, prices } from "../config";
 
 // Shown only once the server confirms the payment (Stripe webhook): the full path to a working watch.
 const next = [
-  { icon: "mail" as const, title: "Set your password", text: "Open the email from ola and choose a password for your account (or sign in if you already have one)." },
+  { icon: "mail" as const, title: "Set your password", text: "Open the email from olá and choose a password for your account (or sign in if you already have one)." },
   { icon: "truck" as const, title: "Wait for the watch", text: "We'll email you the tracking details when it ships." },
-  { icon: "wifi" as const, title: "Choose your phone, connect Wi-Fi", text: "In your ola account, choose Android or iPhone and follow the steps to connect the watch to your 2.4 GHz Wi-Fi." },
-  { icon: "check" as const, title: "Pair it — the trial starts", text: `Type the code shown on the watch. Your free ${prices.trialMonths}-month olacare trial starts then, not before.` },
+  { icon: "wifi" as const, title: "Choose your phone, connect Wi-Fi", text: "In your olá account, choose Android or iPhone and follow the steps to connect the watch to your 2.4 GHz Wi-Fi." },
+  { icon: "check" as const, title: "Pair it — the trial starts", text: `Type the code shown on the watch. Your free ${prices.trialMonths}-month olácare trial starts then, not before.` },
 ];
 ---
-<Base title="Thank you for your order" description="Your ola order status." noindex>
+<Base title="Thank you for your order" description="Your olá order status." noindex>
   <section class="container-x pt-16 sm:pt-24" aria-labelledby="ty-title" data-thankyou>
     <span class="icon-tile !h-14 !w-14" data-ty-icon><Icon name="mail" size={28} /></span>
     <h1 id="ty-title" class="mt-6 text-4xl font-extrabold tracking-tight text-fg sm:text-5xl" data-ty-title>
@@ -40,7 +40,7 @@ const next = [
     </div>
 
     <div class="mt-10 flex flex-col gap-3 sm:flex-row">
-      <a class="btn btn-primary hidden" href={`${config.appUrl}/my/setup`} data-ty-app>Go to your ola account <Icon name="arrow" size={18} /></a>
+      <a class="btn btn-primary hidden" href={`${config.appUrl}/my/setup`} data-ty-app>Go to your olá account <Icon name="arrow" size={18} /></a>
       <a class="btn btn-primary hidden" href="/#buy" data-ty-retry>Try again <Icon name="arrow" size={18} /></a>
       <a class="btn btn-ghost" href="/">Back to home</a>
     </div>

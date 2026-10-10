@@ -18,7 +18,7 @@ const care = (status: CareActivation["status"], error: string | null = null): Ca
   activated_at: null,
 });
 
-describe("ola Care status shown to the customer", () => {
+describe("olá Care status shown to the customer", () => {
   it("before pairing, while starting, and after a failure (never 'active')", () => {
     expect(carePlanStatus(base({ kind: "none" }, care("awaiting_pairing"))).text).toBe("Free 30-day trial — starts when you pair your watch");
     expect(carePlanStatus(base({ kind: "none" }, care("activating"))).text).toMatch(/Starting/);

@@ -60,7 +60,7 @@ export default function PlanCard() {
     <Card
       title={
         <span className="inline-flex items-center gap-2">
-          <Sparkles className="size-4 text-accent" /> ola Care
+          <Sparkles className="size-4 text-accent" /> olá Care
         </span>
       }
     >
@@ -157,7 +157,7 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
   };
   return (
     <div className="space-y-2 rounded-lg bg-warn-bg px-3 py-2.5 text-sm text-warn" data-testid="care-failed">
-      <p>Your watch is paired, but your ola Care subscription isn't set up yet. {careErrorText(care.error)}</p>
+      <p>Your watch is paired, but your olá Care subscription isn't set up yet. {careErrorText(care.error)}</p>
       <Button variant="secondary" size="sm" loading={busy} onClick={retry}>
         Try again
       </Button>
@@ -183,7 +183,7 @@ function CareEnded({ plan }: { plan: MyPlan }) {
   };
   return (
     <div className="space-y-3 rounded-xl border border-border bg-surface-2 px-4 py-3 text-sm" data-testid="care-ended">
-      <p className="font-semibold">{ended ? `ola Care ended on ${ended}` : "ola Care has ended"}</p>
+      <p className="font-semibold">{ended ? `olá Care ended on ${ended}` : "olá Care has ended"}</p>
       <ul className="space-y-1.5">
         <li>• Your watch's assistant doesn't answer until you subscribe again.</li>
         <li>• Your notes and reminders are kept in your account.</li>
@@ -220,7 +220,7 @@ function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
   };
   return (
     <div className="space-y-3 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm" data-testid="care-cancelled">
-      <p className="font-semibold text-warn">ola Care is cancelled</p>
+      <p className="font-semibold text-warn">olá Care is cancelled</p>
       <ul className="space-y-1.5 text-fg">
         <li>
           • Your {trial ? "free trial" : "plan"} still works until <b>{endsOn}</b>.
@@ -232,7 +232,7 @@ function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
       </ul>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" className="h-11 px-5 text-base" loading={busy} icon={<ShieldCheck className="size-5" />} onClick={keep}>
-          Keep ola Care
+          Keep olá Care
         </Button>
         <span className="text-xs text-muted">
           Then {pence(plan.prices.care_price_pence)} a month{trial ? ` from ${endsOn}` : ""}. You can change your mind any time before {endsOn}.
@@ -313,18 +313,18 @@ function HowInteractionsWork({ plan }: { plan: MyPlan }) {
       </summary>
       <div className="mt-3 space-y-2 text-muted">
         <p>
-          ola Care includes {included} AI interactions per month, shared by all your watches. Unused interactions don't carry over.
+          olá Care includes {included} AI interactions per month, shared by all your watches. Unused interactions don't carry over.
         </p>
         <p>
-          <b className="text-fg">One request is one interaction</b> — a question, a note, a reminder or another voice command. If Ola
+          <b className="text-fg">One request is one interaction</b> — a question, a note, a reminder or another voice command. If Olá
           searches the web or uses other tools to answer it, that's still one. A follow-up question is a new interaction.
         </p>
         <p>
           Silence, and requests that fail because of a fault on our side or a dropped connection, don't count. If you stop an answer
-          yourself after Ola understood your request, it counts.
+          yourself after Olá understood your request, it counts.
         </p>
         <p>
-          Your allowance renews on {fmtLongDate(plan.usage.reset_at)}. If you use it all before then, Ola answers again when it renews
+          Your allowance renews on {fmtLongDate(plan.usage.reset_at)}. If you use it all before then, Olá answers again when it renews
           {plan.topup_available || plan.billing_enabled
             ? ` — or you can add ${fmtCount(plan.prices.topup_interactions)} interactions for the rest of the period (${pence(plan.prices.topup_price_pence)}, one-off, never recurring).`
             : "."}{" "}

@@ -105,7 +105,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
     </Section>
   );
   const careSection = (n: number) => (
-    <Section icon={<Sparkles className="size-4" />} title={`${n}. ola Care free trial`} done={false} muted>
+    <Section icon={<Sparkles className="size-4" />} title={`${n}. olá Care free trial`} done={false} muted>
       <CareSummary care={ob.care} plan={plan.data} />
     </Section>
   );
@@ -113,7 +113,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <header>
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Set up your ola watch</h1>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Set up your olá watch</h1>
         <p className="mt-1 text-sm text-muted">About five minutes. Keep the watch charged and next to your phone.</p>
       </header>
 
@@ -260,7 +260,7 @@ function Progress({ ob, wifiDone }: { ob: Onboarding; wifiDone: boolean }) {
     ["Phone", !!ob.platform || ob.watches > 0],
     ["Wi-Fi", wifiDone],
     ["Paired", ob.watches > 0],
-    ["ola Care", careDone],
+    ["olá Care", careDone],
   ];
   return (
     <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-xs" aria-label="Setup progress">
@@ -362,8 +362,8 @@ export function CareSummary({ care, plan }: { care: CareActivation | null; plan:
   if (plan?.status.kind === "trial" && plan.status.trial_end && plan.status.cancel_at_period_end) {
     return (
       <p className="text-sm" data-testid="care-trial-cancelled">
-        ola Care is cancelled: your free trial still works until <b>{fmtDayMonth(plan.status.trial_end)}</b> and nothing will be
-        charged. To keep it, open Account → ola Care → “Keep ola Care”.
+        olá Care is cancelled: your free trial still works until <b>{fmtDayMonth(plan.status.trial_end)}</b> and nothing will be
+        charged. To keep it, open Account → olá Care → “Keep olá Care”.
       </p>
     );
   }
@@ -375,9 +375,9 @@ export function CareSummary({ care, plan }: { care: CareActivation | null; plan:
       </p>
     );
   }
-  if (plan?.status.kind === "active") return <p className="text-sm text-ok">ola Care is active.</p>;
-  if (plan?.status.kind === "complimentary") return <p className="text-sm">Your account has complimentary ola Care — nothing to pay.</p>;
-  if (!care) return <p className="text-sm text-muted">Your ola Care plan is shown in Account.</p>;
+  if (plan?.status.kind === "active") return <p className="text-sm text-ok">olá Care is active.</p>;
+  if (plan?.status.kind === "complimentary") return <p className="text-sm">Your account has complimentary olá Care — nothing to pay.</p>;
+  if (!care) return <p className="text-sm text-muted">Your olá Care plan is shown in Account.</p>;
   switch (care.status) {
     case "awaiting_pairing":
       return (
@@ -427,7 +427,7 @@ function Done({ ob, plan, onPlanChange, onFinish }: { ob: Onboarding; plan: MyPl
       <Notice tone="ok" icon={<CircleCheck className="size-4" />}>
         <b>Your watch is paired.</b> Tap the watch and start talking.
       </Notice>
-      <Card title="ola Care">
+      <Card title="olá Care">
         <div className="space-y-3">
           <CareSummary care={ob.care} plan={plan} />
           {ob.care?.status === "failed" && (
@@ -458,7 +458,7 @@ function NoOrder() {
             Watch setup opens once your order is paid. If you bought a watch with another email address, sign in with that one.
           </p>
           <a href={`${SITE_URL}/#buy`} className={buttonCls("primary")}>
-            Get an ola watch
+            Get an olá watch
           </a>
           <p className="text-xs">
             <Link to="/my" className="text-muted hover:underline">

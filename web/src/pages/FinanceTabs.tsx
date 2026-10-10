@@ -424,7 +424,7 @@ export function PlanSettingsTab() {
           </span>
         </div>
       </Card>
-      <Card title="ola Care">
+      <Card title="olá Care">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Selling price per month (£, what the customer pays)" hint="Shown to customers. The Stripe price id must match.">
             {penceField("care_price_pence")}

@@ -141,7 +141,7 @@ export default function DiagnosticsPage() {
   return (
     <>
       <PageHeader
-        title="ola Diagnostics"
+        title="olá Diagnostics"
         subtitle="Problems on the watches, their connections and the server. Related events are grouped into one incident, and the cause is shown only as far as the evidence goes."
         actions={
           <span className="flex items-center gap-1.5 text-xs text-muted" title={connected ? "Live updates on" : "Reconnecting…"}>
@@ -634,7 +634,7 @@ function TechnicalDetails({ d }: { d: IncidentDetail }) {
             ))}
         </dl>
       </div>
-      {d.legacy && <p className="text-sm text-muted">Recorded before ola Diagnostics: only the original issue's fields are available.</p>}
+      {d.legacy && <p className="text-sm text-muted">Recorded before olá Diagnostics: only the original issue's fields are available.</p>}
       <div>
         <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Evidence</h3>
         <div className="space-y-2">

@@ -7,7 +7,7 @@ export const GET: APIRoute = ({ site }) => {
   const u = (p: string) => new URL(p, site).href;
   const body = `# ${config.siteName}
 
-> olacompanion is an AI smartwatch with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
+> olácompanion is an AI smartwatch with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
 
 ## What it does
 - Natural voice conversation with an AI assistant; tap to talk, tap again to interrupt.
@@ -21,14 +21,14 @@ export const GET: APIRoute = ({ site }) => {
 
 ## Setup and connectivity
 - No phone app: the customer web app (${config.appUrl}) runs in any browser.
-- Wi-Fi setup from the ola account: on Android, Chrome sends the Wi-Fi network and password to the watch over Bluetooth (encrypted, unlocked with a setup password shown on the watch); on iPhone, the watch opens a network called ola-XXXX (protected by the password shown on the watch, with a QR code) and a setup page asks for the Wi-Fi network and password. The watch uses 2.4 GHz Wi-Fi.
-- Pairing: the watch shows a 6-digit code, entered in the web app. Pairing starts the free olacare trial.
-- Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the ola servers). Offline, the clock and already loaded notes and reminders stay visible.
+- Wi-Fi setup from the olá account: on Android, Chrome sends the Wi-Fi network and password to the watch over Bluetooth (encrypted, unlocked with a setup password shown on the watch); on iPhone, the watch opens a network called ola-XXXX (protected by the password shown on the watch, with a QR code) and a setup page asks for the Wi-Fi network and password. The watch uses 2.4 GHz Wi-Fi.
+- Pairing: the watch shows a 6-digit code, entered in the web app. Pairing starts the free olácare trial.
+- Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the olá servers). Offline, the clock and already loaded notes and reminders stay visible.
 
 ## Price
-- olacompanion: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off, VAT included.
-- olacare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after a free ${prices.trialMonths}-month trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olacare before the trial ends). Cancel anytime from the account ("Manage billing").
-- ${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month included with olacare, shared by the account's watches (one request = one interaction; web searches and other tools used for it do not count extra; unused interactions do not carry over). When they are used up the assistant answers again at renewal, or ${prices.topup.interactions} more can be bought for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off).
+- olácompanion: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off, VAT included.
+- olácare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after a free ${prices.trialMonths}-month trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olácare before the trial ends). Cancel anytime from the account ("Manage billing").
+- ${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month included with olácare, shared by the account's watches (one request = one interaction; web searches and other tools used for it do not count extra; unused interactions do not carry over). When they are used up the assistant answers again at renewal, or ${prices.topup.interactions} more can be bought for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off).
 - 14-day right to cancel; UK statutory rights and the EU 2-year legal guarantee.
 
 ## Delivery
@@ -38,7 +38,7 @@ export const GET: APIRoute = ({ site }) => {
 ## Pages
 - [Features](${u("/features/")}): everything the watch does
 - [How it works](${u("/how-it-works/")}): from ordering to the first conversation
-- [Pricing](${u("/pricing/")}): price, olacare, delivery
+- [Pricing](${u("/pricing/")}): price, olácare, delivery
 - [Languages](${u("/languages/")}): the full language list
 - [FAQ](${u("/faq/")}): common questions
 - [About](${u("/about/")}) and [Contact](${u("/contact/")}): ${config.supportEmail}

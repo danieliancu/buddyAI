@@ -115,10 +115,10 @@ beforeEach(() => {
   mocks.stats.mockResolvedValue(stats);
 });
 
-describe("ola Diagnostics dashboard", () => {
+describe("olá Diagnostics dashboard", () => {
   it("shows needs-attention tiles, the three trend cards and the grouped list", async () => {
     renderPage();
-    expect(screen.getByRole("heading", { name: /ola Diagnostics/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /olá Diagnostics/ })).toBeTruthy();
     expect(await screen.findByText("The AI model timed out on Kitchen watch")).toBeTruthy();
     expect(screen.getByLabelText("3 open")).toBeTruthy();
     const charts = await screen.findAllByTestId("chart");

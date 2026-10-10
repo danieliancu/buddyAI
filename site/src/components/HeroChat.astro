@@ -28,7 +28,7 @@ const dialog: [string, string][] = [
       style="-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%); mask-image: linear-gradient(to bottom, transparent 0, #000 22%);"
     >
       <!-- the whole dialog, shown as is without JS or with reduced motion -->
-      <ul class="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-4 pb-6" data-chat-list aria-label="Example conversation with the ola assistant">
+      <ul class="absolute inset-x-0 bottom-0 flex flex-col gap-2 px-4 pb-6" data-chat-list aria-label="Example conversation with the olá assistant">
         {dialog.flatMap(([q, a]) => [
           <li class="flex justify-end"><span class="max-w-[85%] rounded-[18px] bg-[#4F8CFF] px-3.5 py-2 text-sm leading-snug text-white shadow-[0_6px_16px_rgba(15,21,51,.18)]">{q}</span></li>,
           <li class="flex justify-start"><span class="max-w-[85%] rounded-[18px] bg-[#1f2530] px-3.5 py-2 text-sm leading-snug text-[#e6e9ef] shadow-[0_6px_16px_rgba(15,21,51,.18)]">{a}</span></li>,

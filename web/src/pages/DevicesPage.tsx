@@ -289,7 +289,7 @@ function AddWatchDialog({
   onRefresh: () => void;
 }) {
   const [code, setCode] = useState("");
-  const [name, setName] = useState("ola Watch");
+  const [name, setName] = useState("olá Watch");
   const [accountId, setAccountId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -312,7 +312,7 @@ function AddWatchDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.devices.pair(code, name.trim() || "ola Watch", accountId);
+      await api.devices.pair(code, name.trim() || "olá Watch", accountId);
       setDone(true);
       onPaired();
       window.setTimeout(onClose, 900);

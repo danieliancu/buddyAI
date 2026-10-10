@@ -18,7 +18,7 @@ describe("thank-you page: only what Stripe confirmed", () => {
     expect(v.title).toMatch(/Payment confirmed/);
     expect(v.showNext).toBe(true);
     expect(v.poll).toBe(false);
-    expect(v.body).toMatch(/set your ola account password/);
+    expect(v.body).toMatch(/set your olá account password/);
     expect(viewFor({ state: "paid", needs_password: false }).body).toMatch(/Sign in/);
   });
 
@@ -43,7 +43,7 @@ describe("thank-you page: only what Stripe confirmed", () => {
   });
 });
 
-describe("buy box: the ola Care terms must be accepted", () => {
+describe("buy box: the olá Care terms must be accepted", () => {
   const status = parseShopStatus({
     open: true,
     currencies: ["gbp", "eur"],

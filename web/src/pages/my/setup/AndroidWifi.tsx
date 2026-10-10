@@ -23,7 +23,7 @@ type Problem = "cancelled" | "denied" | "timeout" | "disconnected" | "unavailabl
 const PROBLEM_TEXT: Record<Problem, { title: string; body: string }> = {
   cancelled: {
     title: "No watch selected",
-    body: "Make sure the watch shows the Wi-Fi setup screen and is close to your phone, then tap Connect to watch and choose the ola watch in the list.",
+    body: "Make sure the watch shows the Wi-Fi setup screen and is close to your phone, then tap Connect to watch and choose the olá watch in the list.",
   },
   denied: {
     title: "Bluetooth permission needed",
@@ -112,7 +112,7 @@ export default function AndroidWifi({
       ) : (
         <div className="rounded-xl border border-border bg-surface p-4">
           {phase.kind === "intro" && <Intro onStart={start} />}
-          {phase.kind === "choosing" && <Busy text="Choose your ola watch in the list that opens…" />}
+          {phase.kind === "choosing" && <Busy text="Choose your olá watch in the list that opens…" />}
           {phase.kind === "password" && (
             <SetupPassword
               prov={phase.prov}
@@ -356,7 +356,7 @@ function Networks({
             />
           </Field>
           <p className="flex items-start gap-2 text-xs text-muted">
-            <Lock className="mt-0.5 size-3.5 shrink-0" /> Sent encrypted, straight to your watch. ola never stores your Wi-Fi password.
+            <Lock className="mt-0.5 size-3.5 shrink-0" /> Sent encrypted, straight to your watch. olá never stores your Wi-Fi password.
             Only 2.4 GHz networks are shown.
           </p>
           {error && (
@@ -395,10 +395,10 @@ function ProblemBox({ problem, onRetry }: { problem: Problem; onRetry: () => voi
 function Unsupported({ support }: { support: BleSupport }) {
   const text =
     support === "insecure"
-      ? "Bluetooth setup needs the secure ola account page (https). Open app.olacompanion.com in Chrome."
+      ? "Bluetooth setup needs the secure olá account page (https). Open app.olacompanion.com in Chrome."
       : support === "ios"
         ? "This looks like an iPhone or iPad: choose iPhone above for the right steps."
-        : "This browser can't talk to the watch over Bluetooth. Open your ola account in Google Chrome on Android, or use the watch's setup network below.";
+        : "This browser can't talk to the watch over Bluetooth. Open your olá account in Google Chrome on Android, or use the watch's setup network below.";
   return (
     <div className="rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn" role="alert" data-testid="ble-unsupported">
       {text}

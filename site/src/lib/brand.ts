@@ -10,12 +10,12 @@ const LEAF =
 
 export function brandHtml(name: BrandName, opts: { bold?: boolean } = {}): string {
   if (name === "care") {
-    return '<strong class="whitespace-nowrap font-bold">olacare</strong>';
+    return '<strong class="whitespace-nowrap font-bold">olácare</strong>';
   }
-  if (!opts.bold) return '<strong class="whitespace-nowrap font-bold">olacompanion</strong>';
+  if (!opts.bold) return '<strong class="whitespace-nowrap font-bold">olácompanion</strong>';
   return `<span class="whitespace-nowrap font-bold">ol<span class="relative">a${LEAF}</span><span class="text-accent">companion</span></span>`;
 }
 
 export function brandText(name: BrandName): string {
-  return name === "watch" ? "olacompanion" : "olacare";
+  return name === "watch" ? "olácompanion" : "olácare";
 }

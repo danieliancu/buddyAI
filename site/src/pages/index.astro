@@ -16,7 +16,7 @@ import heroBg from "../assets/home/hero-bg.png";
 import heroWatch from "../assets/home/hero-watch.png";
 import watchBox from "../assets/home/watch-box.png";
 
-const description = `olacompanion is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
+const description = `olácompanion is an AI smartwatch with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
 const site = Astro.site!;
 const heroImg = await getImage({ src: heroWatch, width: 1200, format: "png" });
 const boxImg = await getImage({ src: watchBox, width: 1200, format: "png" });
@@ -39,7 +39,7 @@ const jsonLd = [
     "@context": "https://schema.org",
     "@type": "Product",
     "@id": new URL("/#product", site).href,
-    name: "olacompanion",
+    name: "olácompanion",
     description,
     image: [new URL(heroImg.src, site).href, new URL(boxImg.src, site).href],
     brand: { "@type": "Brand", name: config.siteName },
@@ -49,7 +49,7 @@ const jsonLd = [
       { "@type": "PropertyValue", name: "Display", value: "AMOLED touch screen, 410 × 502 pixels" },
       { "@type": "PropertyValue", name: "Connectivity", value: "Wi-Fi (2.4 GHz)" },
       { "@type": "PropertyValue", name: "Languages", value: `${languageCount} + Auto` },
-      { "@type": "PropertyValue", name: "Subscription", value: `olacare, ${formatPrice(prices.care.GBP, "GBP")}/month after a free ${prices.trialMonths}-month subscription` },
+      { "@type": "PropertyValue", name: "Subscription", value: `olácare, ${formatPrice(prices.care.GBP, "GBP")}/month after a free ${prices.trialMonths}-month subscription` },
     ],
     offers: [
       { ...offerBase, priceCurrency: "GBP", price: prices.watch.GBP.toFixed(2) },
@@ -88,7 +88,7 @@ const jsonLd = [
       <div class="relative mx-auto w-fit max-sm:mx-0 max-sm:min-h-64 max-sm:w-full max-sm:flex-1 lg:-my-6 xl:-ml-16">
         <Image
           src={heroWatch}
-          alt="The olacompanion (illustration)"
+          alt="The olácompanion (illustration)"
           widths={[360, 560, 760]}
           sizes="(min-width: 1024px) 440px, 80vw"
           loading="eager"
@@ -160,7 +160,7 @@ const jsonLd = [
         </ul>
         <Image
           src={watchBox}
-          alt="The olacompanion next to its box (illustration)"
+          alt="The olácompanion next to its box (illustration)"
           widths={[320, 520, 700]}
           sizes="(min-width: 1024px) 520px, 80vw"
           class="mx-auto mt-6 w-72 lg:mx-0 lg:h-[340px] lg:!w-auto lg:max-w-full lg:object-contain"

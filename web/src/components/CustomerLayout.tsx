@@ -28,11 +28,11 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen pb-[calc(var(--bottom-nav)+env(safe-area-inset-bottom))] [--bottom-nav:4rem] sm:[--bottom-nav:0px]">
       <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
-          <a href={SITE_URL} className="flex items-center gap-2" title="olacompanion website" aria-label="ola — go to the website">
+          <a href={SITE_URL} className="flex items-center gap-2" title="olácompanion website" aria-label="olá — go to the website">
             <span className="grid size-8 place-items-center rounded-lg bg-accent-bg text-accent">
               <Watch className="size-4" />
             </span>
-            <span className="font-semibold tracking-tight">ola</span>
+            <span className="font-semibold tracking-tight">olá</span>
           </a>
           <nav className="ml-6 hidden items-center gap-1 sm:flex">
             {(account.memory ? [...NAV.slice(0, 4), MEMORY, NAV[4]] : NAV).map(({ to, label, end }) => (

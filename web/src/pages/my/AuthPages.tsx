@@ -12,11 +12,11 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pt-10 pb-6 sm:justify-center sm:pt-6">
       <div className="w-full max-w-sm">
-        <a href={SITE_URL} className="mb-6 flex items-center justify-center gap-2.5" title="olacompanion website">
+        <a href={SITE_URL} className="mb-6 flex items-center justify-center gap-2.5" title="olácompanion website">
           <span className="grid size-10 place-items-center rounded-xl bg-accent-bg text-accent">
             <Watch className="size-5" />
           </span>
-          <span className="text-lg font-semibold tracking-tight">ola</span>
+          <span className="text-lg font-semibold tracking-tight">olá</span>
         </a>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xl sm:p-6">
           <h1 className="text-lg font-semibold">{title}</h1>
@@ -80,7 +80,7 @@ export function LoginPage() {
   return (
     <AuthShell
       title="Sign in"
-      subtitle={params.get("deleted") ? "Your account was deleted. Thank you for using ola." : "Welcome back to ola."}
+      subtitle={params.get("deleted") ? "Your account was deleted. Thank you for using olá." : "Welcome back to olá."}
       footer={
         <div className="space-y-4">
           <p>
@@ -287,8 +287,8 @@ export function ResetPasswordPage() {
       title={welcome ? "Set your password" : "Choose a password"}
       subtitle={
         welcome
-          ? "Welcome to ola! Choose a password for your account; next you'll set up your watch."
-          : "Set a new password for your ola account. You'll be signed in right after."
+          ? "Welcome to olá! Choose a password for your account; next you'll set up your watch."
+          : "Set a new password for your olá account. You'll be signed in right after."
       }
       footer={
         <Link to="/forgot-password" className="hover:text-fg hover:underline">

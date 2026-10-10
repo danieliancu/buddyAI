@@ -11,7 +11,7 @@ export const CATEGORIES: {
 }[] = [
   { id: "watch", label: "Watch", tone: "accent", hint: "Firmware, restarts, memory, power", color: "#0f8f7e" },
   { id: "connection", label: "Connection", tone: "warn", hint: "Wi-Fi, DNS, TLS, network", color: "#d4a017" },
-  { id: "server", label: "Server", tone: "danger", hint: "ola server, database, AI providers", color: "#e07b39" },
+  { id: "server", label: "Server", tone: "danger", hint: "olá server, database, AI providers", color: "#e07b39" },
   { id: "undetermined", label: "Undetermined", tone: "neutral", hint: "Not enough evidence for a cause", color: "#8b8b94" },
 ];
 export const CATEGORY = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<IncidentCategory, (typeof CATEGORIES)[number]>;

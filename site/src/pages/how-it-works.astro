@@ -10,16 +10,16 @@ import { config, prices } from "../config";
 import { privacyLine } from "../data/features";
 
 const journey = [
-  { icon: "card" as const, title: "Order", text: `Pay for the watch with secure Stripe checkout and save your card for olacare. Nothing is charged for olacare yet: your free ${prices.trialMonths}-month trial starts when you pair the watch.` },
-  { icon: "mail" as const, title: "Set your password", text: "We create your ola account with your checkout email and send you a link to set its password." },
+  { icon: "card" as const, title: "Order", text: `Pay for the watch with secure Stripe checkout and save your card for olácare. Nothing is charged for olácare yet: your free ${prices.trialMonths}-month trial starts when you pair the watch.` },
+  { icon: "mail" as const, title: "Set your password", text: "We create your olá account with your checkout email and send you a link to set its password." },
   { icon: "truck" as const, title: "Delivery", text: "We email you tracking details when your watch ships." },
-  { icon: "wifi" as const, title: "Connect to Wi-Fi", text: "Turn the watch on and sign in to your ola account. Android: tap “Connect to watch” and send your 2.4 GHz Wi-Fi to the watch over Bluetooth, from Chrome. iPhone: join the watch's network ola-XXXX with the password shown on the watch (or scan its QR code); a page opens where you pick your Wi-Fi and enter its password." },
-  { icon: "display" as const, title: "Pair the watch", text: "The watch shows a 6-digit code. Type it in your ola account within 5 minutes. No app to install. Your free olacare trial starts now." },
+  { icon: "wifi" as const, title: "Connect to Wi-Fi", text: "Turn the watch on and sign in to your olá account. Android: tap “Connect to watch” and send your 2.4 GHz Wi-Fi to the watch over Bluetooth, from Chrome. iPhone: join the watch's network ola-XXXX with the password shown on the watch (or scan its QR code); a page opens where you pick your Wi-Fi and enter its password." },
+  { icon: "display" as const, title: "Pair the watch", text: "The watch shows a 6-digit code. Type it in your olá account within 5 minutes. No app to install. Your free olácare trial starts now." },
   { icon: "persona" as const, title: "Make it yours", text: "In the watch's settings choose the language (or Auto), persona, voice and speaking speed, theme, brightness, volume, screen timeout and time zone." },
   { icon: "mic" as const, title: "Start talking", text: "Tap the mic button and ask a question, set a reminder or dictate a note. Notes, reminders, usage and billing are in your account." },
 ];
 ---
-<Base title="How the olacompanion AI smartwatch works" crumb="How it works" description="Tap the mic, talk, and hear the AI answer out loud. How the olacompanion voice assistant works, from ordering and Wi-Fi setup to your first conversation.">
+<Base title="How the olácompanion AI smartwatch works" crumb="How it works" description="Tap the mic, talk, and hear the AI answer out loud. How the olácompanion voice assistant works, from ordering and Wi-Fi setup to your first conversation.">
   <PageHero eyebrow="How it works" title="Tap. Talk." gradient="Listen." oneLineOnPhone fitEm={8.6} lead="No app to install, no wake words, no menus to learn. Set it up once, and one button on your wrist starts a conversation with your AI assistant." />
 
   <section class="container-x mt-6" aria-labelledby="steps-title">
@@ -38,7 +38,7 @@ const journey = [
       </ol>
       <p class="mt-6 text-sm text-muted">{privacyLine}</p>
     </div>
-    <Image src={watch} alt="The olacompanion (illustration)" widths={[260, 420, 560, 960]} sizes="(min-width: 1024px) 480px, (min-width: 640px) 280px, 70vw" class="mx-auto w-60 sm:w-72 lg:h-[500px] lg:w-auto lg:max-w-none" />
+    <Image src={watch} alt="The olácompanion (illustration)" widths={[260, 420, 560, 960]} sizes="(min-width: 1024px) 480px, (min-width: 640px) 280px, 70vw" class="mx-auto w-60 sm:w-72 lg:h-[500px] lg:w-auto lg:max-w-none" />
   </section>
 
   <section class="container-x mt-20" aria-labelledby="journey-title">
@@ -52,6 +52,6 @@ const journey = [
         </li>
       ))}
     </ol>
-    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to your ola account</a>.</p>
+    <p class="mt-6 text-sm text-muted">Already have a watch? <a class="link" href={config.appUrl}>Sign in to your olá account</a>.</p>
   </section>
 </Base>

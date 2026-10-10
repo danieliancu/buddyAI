@@ -24,7 +24,7 @@ export function viewFor(status: CheckoutStatus | null, opts: { timedOut?: boolea
     return {
       tone: "warn",
       title: "We couldn't find your checkout",
-      body: "If you completed a payment, your confirmation email is on its way. You can also sign in to your ola account to see your order.",
+      body: "If you completed a payment, your confirmation email is on its way. You can also sign in to your olá account to see your order.",
       showNext: false,
       poll: false,
     };
@@ -38,8 +38,8 @@ export function viewFor(status: CheckoutStatus | null, opts: { timedOut?: boolea
         tone: "ok",
         title: "Payment confirmed — thank you!",
         body: status.needs_password
-          ? "Your order is placed. We've emailed you a link to set your ola account password."
-          : "Your order is placed. Sign in to your ola account to follow it and set up your watch.",
+          ? "Your order is placed. We've emailed you a link to set your olá account password."
+          : "Your order is placed. Sign in to your olá account to follow it and set up your watch.",
         showNext: true,
         poll: false,
       };

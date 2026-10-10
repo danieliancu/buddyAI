@@ -36,7 +36,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/admin/conversations", label: "Conversations", icon: MessagesSquare },
       { to: "/admin/usage", label: "Usage & performance", icon: Activity },
-      { to: "/admin/diagnostics", label: "ola Diagnostics", icon: Stethoscope },
+      { to: "/admin/diagnostics", label: "olá Diagnostics", icon: Stethoscope },
     ],
   },
   {
@@ -65,7 +65,7 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
         <div className="grid size-8 place-items-center rounded-lg bg-fg text-surface">
           <Watch className="size-4" />
         </div>
-        <span className="text-[15px] font-semibold tracking-tight">ola</span>
+        <span className="text-[15px] font-semibold tracking-tight">olá</span>
         <span className="ml-auto rounded-md border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium tracking-wider text-muted uppercase">
           Admin
         </span>
@@ -119,7 +119,7 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
         <button onClick={() => setOpen(true)} className="rounded p-1 hover:bg-surface-2" aria-label="Menu">
           <Menu className="size-5" />
         </button>
-        <span className="font-semibold">ola</span>
+        <span className="font-semibold">olá</span>
         <span className={cx("ml-auto size-2 rounded-full", connected ? "bg-ok" : "bg-warn")} />
       </div>
       {open && (

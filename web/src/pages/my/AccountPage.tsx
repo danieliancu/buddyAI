@@ -21,7 +21,7 @@ export default function AccountPage() {
       {account.memory && (
         <Link to="/my/memory" className="block">
           <Card title={<Title icon={<Brain className="size-4" />}>Memory</Title>} actions={<ChevronRight className="size-4 text-muted" />}>
-            <p className="text-sm text-muted">What ola remembers about you: see, correct or forget it.</p>
+            <p className="text-sm text-muted">What olá remembers about you: see, correct or forget it.</p>
           </Card>
         </Link>
       )}

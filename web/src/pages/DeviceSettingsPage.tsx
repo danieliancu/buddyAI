@@ -366,7 +366,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                   <option value="">Default ({defaultPersona?.name ?? "—"})</option>
                   {ownPersonas.length > 0 ? (
                     <>
-                      <optgroup label="ola personas">
+                      <optgroup label="olá personas">
                         {systemPersonas.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
@@ -414,9 +414,9 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
               </>
               )}
               <Field
-                label={customer ? "Pause before ola answers" : "VAD sensitivity"}
+                label={customer ? "Pause before olá answers" : "VAD sensitivity"}
                 error={err("vad_sensitivity")}
-                hint={customer ? "How long ola waits when you pause mid-sentence" : "How eagerly the end of speech is detected"}
+                hint={customer ? "How long olá waits when you pause mid-sentence" : "How eagerly the end of speech is detected"}
               >
                 <div className="flex gap-2">
                   {(customer ? PAUSE_CHOICES : options.vad_sensitivity.map((v): [VadSensitivity, string] => [v, VAD_LABEL[v] ?? v])).map(([v, label]) => (

@@ -162,7 +162,7 @@ export function MonthlyUsage({ usage }: { usage: MyPlan["usage"] }) {
       )}
       {level === "limit" && (
         <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger" data-testid="usage-hint">
-          You've reached your {fmtCount(usage.limit)} monthly AI interactions. Your allowance renews on {renews}, when Ola answers
+          You've reached your {fmtCount(usage.limit)} monthly AI interactions. Your allowance renews on {renews}, when Olá answers
           again. Your saved notes, reminders and their alarms keep working.
         </p>
       )}
@@ -189,15 +189,15 @@ export function OrderStatusBadge({ status, operator }: { status: OrderStatus; op
 export function turnRefusedText(code: TurnRefusedCode, operator = false): string {
   switch (code) {
     case "subscription_required":
-      return operator ? "Refused: no active subscription" : "Ola needs an active ola Care subscription to answer.";
+      return operator ? "Refused: no active subscription" : "Olá needs an active olá Care subscription to answer.";
     case "limit_reached":
       return operator
         ? "Refused: monthly AI interactions used up"
-        : "You've used all your monthly AI interactions. Ola answers again when your allowance renews — see Account → ola Care.";
+        : "You've used all your monthly AI interactions. Olá answers again when your allowance renews — see Account → olá Care.";
     case "account_inactive":
       return operator ? "Refused: account inactive" : "Your account is inactive — please contact support.";
     default:
-      return operator ? `Refused: ${code}` : "Ola couldn't answer the last question.";
+      return operator ? `Refused: ${code}` : "Olá couldn't answer the last question.";
   }
 }
 

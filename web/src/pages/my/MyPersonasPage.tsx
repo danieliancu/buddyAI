@@ -18,7 +18,7 @@ export default function MyPersonasPage() {
       <div className="mb-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Personas</h1>
-          <p className="mt-1 text-sm text-muted">A persona sets how Ola talks. Pick one for each watch in its settings.</p>
+          <p className="mt-1 text-sm text-muted">A persona sets how Olá talks. Pick one for each watch in its settings.</p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing("new")}>
           New
@@ -67,7 +67,7 @@ export default function MyPersonasPage() {
           </section>
 
           <section>
-            <h2 className="mb-2 text-sm font-semibold">From ola</h2>
+            <h2 className="mb-2 text-sm font-semibold">From olá</h2>
             <ul className="space-y-3">
               {system.map((p) => (
                 <li key={p.id} className="rounded-xl border border-border bg-surface/60 p-4">

@@ -290,7 +290,7 @@ function ComplimentaryControls({ account: a, onChanged }: { account: AccountDeta
           </>
         ) : (
           <Button size="sm" variant="primary" loading={busy} onClick={() => run(async () => ((await api.accounts.grantComplimentary(a.id, { days: n })).created ? `Granted for ${n} days.` : "Already granted — unchanged."))}>
-            Grant ola Care
+            Grant olá Care
           </Button>
         )}
       </div>

@@ -10,7 +10,7 @@ export default function PairCodeForm({
   onPaired: (deviceId: string, care: CareActivation | null) => void;
 }) {
   const [code, setCode] = useState("");
-  const [name, setName] = useState("My ola");
+  const [name, setName] = useState("My olá");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -20,7 +20,7 @@ export default function PairCodeForm({
     setBusy(true);
     setError(null);
     try {
-      const r = await api.me.devices.pair(code, name.trim() || "My ola");
+      const r = await api.me.devices.pair(code, name.trim() || "My olá");
       onPaired(r.device_id, r.care);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403)

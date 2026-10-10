@@ -67,7 +67,7 @@ beforeEach(() => {
   me.personas.list.mockResolvedValue([]);
 });
 
-describe("customer watch settings: pause before ola answers", () => {
+describe("customer watch settings: pause before olá answers", () => {
   it("offers Short / Normal / Long (the VAD sensitivity) with Normal by default", async () => {
     render(
       <MemoryRouter initialEntries={["/my/watches/w1"]}>
@@ -76,7 +76,7 @@ describe("customer watch settings: pause before ola answers", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Pause before ola answers")).toBeTruthy();
+    expect(await screen.findByText("Pause before olá answers")).toBeTruthy();
     const chips = ["Short", "Normal", "Long"].map((name) => screen.getByRole("button", { name }));
     expect(chips[1].className).toMatch(/font-medium/); // Normal = medium is the active one
     expect(screen.queryByText("VAD sensitivity")).toBeNull();

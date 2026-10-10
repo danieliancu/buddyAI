@@ -14,7 +14,7 @@ const usage = (used: number, limit = 1000, extra = 0): MyPlan["usage"] => ({
   reset_at: "2026-11-08T00:00:00Z",
 });
 
-describe("Monthly usage (My Account → ola Care)", () => {
+describe("Monthly usage (My Account → olá Care)", () => {
   it("shows %, used of allowance, remaining and the renewal date", () => {
     render(<MonthlyUsage usage={usage(240)} />);
     const box = screen.getByTestId("monthly-usage");

@@ -41,7 +41,7 @@ export const prices = {
 } as const;
 
 export const config = {
-  siteName: "olacompanion",
+  siteName: "olácompanion",
   tagline: "Your AI companion, now on your wrist.",
 
   // Company details shown in the footer, contact page and legal pages.

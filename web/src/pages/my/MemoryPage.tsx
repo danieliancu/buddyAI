@@ -59,7 +59,7 @@ export default function MemoryPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Memory</h1>
           <p className="mt-1 text-sm text-muted">
-            Say “remember that…” to your watch and ola keeps it for later conversations. You can correct or forget anything here.
+            Say “remember that…” to your watch and olá keeps it for later conversations. You can correct or forget anything here.
           </p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
@@ -78,7 +78,7 @@ export default function MemoryPage() {
               label={<span className="font-medium">Remember what I ask</span>}
             />
             <p className="mt-1 pl-14 text-xs text-muted">
-              When you say “remember that…”, ola keeps it. Off: nothing new is saved (what is already saved stays until you forget it).
+              When you say “remember that…”, olá keeps it. Off: nothing new is saved (what is already saved stays until you forget it).
             </p>
           </div>
           <div>
@@ -88,7 +88,7 @@ export default function MemoryPage() {
               label={<span className="font-medium">Use my memories in conversations</span>}
             />
             <p className="mt-1 pl-14 text-xs text-muted">
-              ola uses what it remembers to give you more personal answers. Off: your memories stay here but are not used.
+              olá uses what it remembers to give you more personal answers. Off: your memories stay here but are not used.
             </p>
           </div>
           {d.learning_available && (
@@ -99,7 +99,7 @@ export default function MemoryPage() {
                 label={<span className="font-medium">Learn from conversations</span>}
               />
               <p className="mt-1 pl-14 text-xs text-muted">
-                After a conversation, ola may note a few lasting facts you mentioned (names, likes, routines). Never health, money, passwords or
+                After a conversation, olá may note a few lasting facts you mentioned (names, likes, routines). Never health, money, passwords or
                 similar. Facts it is unsure about wait here for your confirmation.
               </p>
             </div>
@@ -202,7 +202,7 @@ export default function MemoryPage() {
 
       {d.memories.length > 0 && (
         <Card className="border-danger/40" title="Forget everything">
-          <p className="mb-3 text-sm text-muted">Delete everything ola remembers about you. Your conversation history is not affected.</p>
+          <p className="mb-3 text-sm text-muted">Delete everything olá remembers about you. Your conversation history is not affected.</p>
           <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={() => setClearing(true)}>
             Forget everything…
           </Button>
@@ -295,7 +295,7 @@ function FactDialog({
       }
     >
       <form id="memory-form" onSubmit={submit} className="space-y-4">
-        <Field label="What should ola remember?" htmlFor="mem-fact" hint="One short fact, e.g. “My granddaughter is called Maria.”">
+        <Field label="What should olá remember?" htmlFor="mem-fact" hint="One short fact, e.g. “My granddaughter is called Maria.”">
           <Input id="mem-fact" maxLength={300} value={fact} onChange={(e) => setFact(e.target.value)} />
         </Field>
         {!editing && (
@@ -356,7 +356,7 @@ function ClearDialog({ open, onClose, onDone }: { open: boolean; onClose: () => 
       }
     >
       <form id="mem-clear" onSubmit={run} className="space-y-4 text-sm">
-        <p>Everything ola remembers about you is deleted. This cannot be undone.</p>
+        <p>Everything olá remembers about you is deleted. This cannot be undone.</p>
         <input type="text" autoComplete="username" hidden readOnly />
         <Field label="Enter your password to confirm" htmlFor="mem-pw">
           <PasswordInput id="mem-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />

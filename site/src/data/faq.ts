@@ -18,8 +18,8 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     title: "The watch",
     items: [
       {
-        q: "What can ola do?",
-        a: `ola is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
+        q: "What can olá do?",
+        a: `olá is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
       },
       {
         q: "What's the battery life?",
@@ -31,15 +31,15 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. ola connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your ola account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password.",
+        a: "Yes. olá connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your olá account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password.",
       },
       {
         q: "What works without an internet connection?",
-        a: "The clock keeps time, and notes and reminders the watch has already loaded stay on screen. Everything that needs the ola servers waits for a connection: talking to the assistant, opening a note's full text, marking a reminder done, and reminder alerts — reminders are sent to the watch by our servers when they are due, so the watch has to be online to alert you. If it was offline, reminders from the last 24 hours arrive when it reconnects.",
+        a: "The clock keeps time, and notes and reminders the watch has already loaded stay on screen. Everything that needs the olá servers waits for a connection: talking to the assistant, opening a note's full text, marking a reminder done, and reminder alerts — reminders are sent to the watch by our servers when they are due, so the watch has to be online to alert you. If it was offline, reminders from the last 24 hours arrive when it reconnects.",
       },
       {
-        q: "What doesn't olacompanion do?",
-        a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. It doesn't sync with Google, Outlook or other calendars: reminders live in your ola account.",
+        q: "What doesn't olácompanion do?",
+        a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. It doesn't sync with Google, Outlook or other calendars: reminders live in your olá account.",
       },
       {
         q: "What does the screen look like?",
@@ -51,7 +51,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can the AI get things wrong?",
-        a: "Yes. Like all AI assistants, ola can make mistakes. Please double-check anything important, and don't rely on it for medical, legal, financial or emergency advice.",
+        a: "Yes. Like all AI assistants, olá can make mistakes. Please double-check anything important, and don't rely on it for medical, legal, financial or emergency advice.",
       },
     ],
   },
@@ -60,19 +60,19 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What can I do with notes and reminders by voice?",
-        a: "Create them, find them by what they say (or by a person, a place or a day), change them, copy them and delete them. Reminders can have a time, an end time, an early alert, a place and people. Notes can be edited line by line: add, change, move or remove lines. Everything you create is also in your ola account, where you can view and edit it in a browser.",
+        a: "Create them, find them by what they say (or by a person, a place or a day), change them, copy them and delete them. Reminders can have a time, an end time, an early alert, a place and people. Notes can be edited line by line: add, change, move or remove lines. Everything you create is also in your olá account, where you can view and edit it in a browser.",
       },
       {
         q: "What if more than one note or reminder matches?",
-        a: "ola asks which one you mean, and continues once you answer.",
+        a: "olá asks which one you mean, and continues once you answer.",
       },
       {
         q: "Does it ask before deleting?",
-        a: "Yes, in a normal conversation: ola asks you to confirm, and deletes only after a clear yes. If you are already on a note's or reminder's own screen and ask to change it, the change — including removing a line — is applied straight away, and you can undo the last change. Deleting from the watch's Delete button needs two taps.",
+        a: "Yes, in a normal conversation: olá asks you to confirm, and deletes only after a clear yes. If you are already on a note's or reminder's own screen and ask to change it, the change — including removing a line — is applied straight away, and you can undo the last change. Deleting from the watch's Delete button needs two taps.",
       },
       {
         q: "Can you give some examples?",
-        a: "Example commands (not recordings): “Remind me tomorrow at 9:30 to call the dentist.” · “Add oat milk to my shopping list.” · “Move my meeting with Anna to Friday at 3.” · “What reminders do I have on Monday?” · “Copy my packing list.” · “Delete the gym reminder.” — ola then asks you to confirm.",
+        a: "Example commands (not recordings): “Remind me tomorrow at 9:30 to call the dentist.” · “Add oat milk to my shopping list.” · “Move my meeting with Anna to Friday at 3.” · “What reminders do I have on Monday?” · “Copy my packing list.” · “Delete the gym reminder.” — olá then asks you to confirm.",
       },
       {
         q: "How many notes and reminders can I keep?",
@@ -84,7 +84,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     title: "Languages",
     items: [
       {
-        q: "Which languages does ola speak?",
+        q: "Which languages does olá speak?",
         a: `${languageCount} languages today, plus Auto, which answers in the language you speak. <a href="/languages/">See the full list</a>. Speech recognition quality varies between languages.`,
       },
     ],
@@ -98,7 +98,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can I see or delete my conversation history?",
-        a: "Yes. Your history is in your ola account. You can export it or delete it anytime.",
+        a: "Yes. Your history is in your olá account. You can export it or delete it anytime.",
       },
       {
         q: "Do you use cookies or tracking?",
@@ -119,11 +119,11 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "When does the free period start, and what happens after it?",
-        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} trial starts when you pair your watch with your ola account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
+        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} trial starts when you pair your watch with your olá account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
       },
       {
         q: "Is there a usage limit?",
-        a: `${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month are included with ${brandHtml("care")}, shared by all your watches. Each question or request you make counts once — even if ola searches the web for it — and a follow-up counts as a new one. Silence and requests that fail on our side don't count. Your account shows how many you've used and when your allowance renews. If you use them all, ola answers again when it renews, or you can add ${prices.topup.interactions} more for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off). Unused interactions don't carry over.`,
+        a: `${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month are included with ${brandHtml("care")}, shared by all your watches. Each question or request you make counts once — even if olá searches the web for it — and a follow-up counts as a new one. Silence and requests that fail on our side don't count. Your account shows how many you've used and when your allowance renews. If you use them all, olá answers again when it renews, or you can add ${prices.topup.interactions} more for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off). Unused interactions don't carry over.`,
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,
@@ -148,7 +148,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What happens after I order?",
-        a: `We create your ola account with the email you used at checkout and send you a link to set your password, plus an order confirmation. When your watch ships, we email you tracking details. When it arrives, connect it to Wi-Fi, sign in to <a href="${config.appUrl}">your ola account</a> in any web browser, choose “Add watch” and type the 6-digit code shown on the watch. See <a href="/how-it-works/">how it works</a>.`,
+        a: `We create your olá account with the email you used at checkout and send you a link to set your password, plus an order confirmation. When your watch ships, we email you tracking details. When it arrives, connect it to Wi-Fi, sign in to <a href="${config.appUrl}">your olá account</a> in any web browser, choose “Add watch” and type the 6-digit code shown on the watch. See <a href="/how-it-works/">how it works</a>.`,
       },
     ],
   },

@@ -109,9 +109,9 @@ describe("what the watch shows, then the phone", () => {
   });
 
   it("a watch this account just removed is announced and goes straight to the code", async () => {
-    me.onboarding.mockResolvedValue(onboarding({ waiting_watch: { name: "Gran's ola", expires_in_s: 250 } }));
+    me.onboarding.mockResolvedValue(onboarding({ waiting_watch: { name: "Gran's olá", expires_in_s: 250 } }));
     renderSetup();
-    expect((await screen.findByTestId("waiting-watch")).textContent).toMatch(/Gran's ola” is online/);
+    expect((await screen.findByTestId("waiting-watch")).textContent).toMatch(/Gran's olá” is online/);
     expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "What does your watch show?" })).toBeNull();
   });
@@ -280,7 +280,7 @@ describe("Android Bluetooth setup", () => {
   });
 });
 
-describe("order, account and ola Care states", () => {
+describe("order, account and olá Care states", () => {
   it("no paid watch order: no setup", async () => {
     me.onboarding.mockResolvedValue(onboarding({ eligible: false, order: null }));
     renderSetup();

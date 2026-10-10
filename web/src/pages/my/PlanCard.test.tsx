@@ -17,7 +17,7 @@ const plan = (status: MyPlan["status"]): MyPlan =>
     prices: { currency: "GBP", care_price_pence: 799, topup_price_pence: 199, topup_interactions: 250 },
   }) as MyPlan;
 
-describe("ola Care cancelled", () => {
+describe("olá Care cancelled", () => {
   it("says clearly what still works, that nothing is charged, and offers to keep it", async () => {
     me.billingPortal.mockResolvedValue({ url: "about:blank" });
     const assign = vi.fn();
@@ -28,11 +28,11 @@ describe("ola Care cancelled", () => {
       </MemoryRouter>,
     );
     const box = screen.getByTestId("care-cancelled");
-    expect(box.textContent).toMatch(/ola Care is cancelled/);
+    expect(box.textContent).toMatch(/olá Care is cancelled/);
     expect(box.textContent).toMatch(/still works until 5 Jan 2027/);
     expect(box.textContent).toMatch(/Nothing more will be charged/);
     expect(box.textContent).not.toMatch(/charged automatically/);
-    fireEvent.click(screen.getByRole("button", { name: "Keep ola Care" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep olá Care" }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("about:blank"));
   });
 
@@ -69,7 +69,7 @@ describe("after the free trial", () => {
       </MemoryRouter>,
     );
     const box = screen.getByTestId("care-ended");
-    expect(box.textContent).toMatch(/ola Care ended on 5 Jan 2027/);
+    expect(box.textContent).toMatch(/olá Care ended on 5 Jan 2027/);
     expect(box.textContent).toMatch(/doesn't answer until you subscribe again/);
     expect(box.textContent).toMatch(/notes and reminders are kept/);
     expect(box.textContent).toMatch(/Charged today.*No new free trial/);
