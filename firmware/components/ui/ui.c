@@ -35,7 +35,10 @@ ui_callbacks_t   g_ui_cb;
 #define GREET_W             184
 #define SLIDE_MS            350     /* screen slide, slowing down towards the end */
 #define NUM_BARS            5
-#define STANDBY_BRIGHTNESS  5       /* % while dimmed (the lowest slider value); the user's own setting is kept */
+#define STANDBY_BRIGHTNESS  30      /* % in standby (or the user's level if lower); the user's setting is kept */
+#define STANDBY_CLOCK       0xA8A8A8 /* standby time and date: light grey, not full white (AMOLED wear) */
+#define STANDBY_SHIFT_MUL   4       /* standby pixel shift: the s_shift offsets x4, up to 12 px */
+#define STANDBY_LOW_BATT    15      /* % : below it the standby screen shows a red battery */
 #define STANDBY_FADE_MS     400     /* dimming fades, waking is immediate */
 #define SPINNER_MS          1000
 #define SPINNER_ARC         60
@@ -63,6 +66,10 @@ static lv_obj_t *s_lbl_batt;
 static lv_obj_t *s_time_box;            /* clock: hours | colon | minutes, colon pinned in place */
 static lv_obj_t *s_time_hours;
 static lv_obj_t *s_time_minutes;
+static lv_obj_t *s_time_colon;
+static lv_obj_t *s_ambient_cover;       /* standby: black over everything but the time and date */
+static lv_obj_t *s_ambient_batt;        /* standby: battery icon, only when low */
+static bool      s_ambient;
 static lv_obj_t *s_lbl_date;
 static lv_obj_t *s_lbl_hint;
 static lv_obj_t *s_shortcuts;
@@ -199,10 +206,13 @@ static void fade_cb(void *var, int32_t v)
     board_display_set_brightness((int)v);
 }
 
+static void set_ambient(bool on);
+
 /* Writes the panel only: the standby level never reaches g_ui_settings or NVS. */
 static void apply_brightness(void)
 {
     lv_anim_delete(&s_fade_var, fade_cb);   /* a wake during the fade wins */
+    set_ambient(s_power != POWER_ON);
     board_pm_set_awake(s_power == POWER_ON);    /* full CPU speed while awake (a conversation keeps it awake) */
     switch (s_power) {
     case POWER_ON:
@@ -246,6 +256,51 @@ static void set_time_text(const char *t)
     lv_label_set_text(s_time_minutes, colon ? colon + 1 : "");
 }
 
+/* Burn-in shift of the whole watchface; wider in standby, where only the time and date stay lit. */
+static void apply_shift(void)
+{
+    int mul = s_ambient ? STANDBY_SHIFT_MUL : 1;
+    lv_obj_set_pos(s_content, s_shift[s_shift_idx][0] * mul, s_shift[s_shift_idx][1] * mul);
+}
+
+/* Standby ("always on"): only the time and the date stay lit, in light grey, plus a red battery when it is low.
+ * A black cover hides the rest (black AMOLED pixels are off); waking removes it, so whatever state the hidden
+ * widgets are in shows again unchanged. */
+static void ambient_batt_update(void)
+{
+    if (!s_ambient_batt) {
+        return;
+    }
+    bool show = s_ambient && s_batt >= 0 && s_batt < STANDBY_LOW_BATT && !s_charging;
+    lv_label_set_text(s_ambient_batt, s_batt < 8 ? ICON_BATTERY_EMPTY : ICON_BATTERY_1);
+    lv_obj_set_flag(s_ambient_batt, LV_OBJ_FLAG_HIDDEN, !show);
+}
+
+static void set_ambient(bool on)
+{
+    if (!s_ambient_cover || on == s_ambient) {
+        return;
+    }
+    s_ambient = on;
+    lv_obj_t *lit[] = { s_time_hours, s_time_colon, s_time_minutes, s_lbl_date };
+    for (size_t i = 0; i < sizeof(lit) / sizeof(lit[0]); i++) {
+        if (on) {
+            lv_obj_set_style_text_color(lit[i], hex(STANDBY_CLOCK), 0);
+        } else {
+            lv_obj_remove_local_style_prop(lit[i], LV_STYLE_TEXT_COLOR, 0);
+        }
+    }
+    lv_obj_set_flag(s_ambient_cover, LV_OBJ_FLAG_HIDDEN, !on);
+    if (on) {   /* the lit parts above the cover (other widgets may have been raised since) */
+        lv_obj_move_foreground(s_ambient_cover);
+        lv_obj_move_foreground(s_time_box);
+        lv_obj_move_foreground(s_lbl_date);
+        lv_obj_move_foreground(s_ambient_batt);
+    }
+    ambient_batt_update();
+    apply_shift();
+}
+
 static void update_clock(bool force)
 {
     time_t now = time(NULL);
@@ -278,7 +333,7 @@ static void update_clock(bool force)
 
     /* Pixel shift once per minute. */
     s_shift_idx = (s_shift_idx + 1) % (int)(sizeof(s_shift) / sizeof(s_shift[0]));
-    lv_obj_set_pos(s_content, s_shift[s_shift_idx][0], s_shift[s_shift_idx][1]);
+    apply_shift();
 }
 
 static void update_status(void)
@@ -548,10 +603,10 @@ static void power_timer_cb(lv_timer_t *t)
             s_caption[0] = '\0';        /* the last reply clears when the screen dims */
             show_caption();
         }
-        /* The dimmed screen stays on: only the watchface has burn-in pixel shift, so lists and
-         * settings give way to it. The chat and message screens (pairing code...) stay until the
-         * user leaves them. */
-        if (want != POWER_ON && !ui_is_watchface() && !ui_msg_is_active() && !ui_chat_is_active()) {
+        /* The dimmed screen stays on: only the watchface has burn-in pixel shift, so lists, settings
+         * and the conversation (idle by now: a turn keeps the screen awake) give way to it. The message
+         * screens (pairing code, Wi-Fi setup...) stay until the user leaves them. */
+        if (want != POWER_ON && !ui_is_watchface() && !ui_msg_is_active()) {
             ui_go_watchface();
         }
         s_power = want;
@@ -963,6 +1018,7 @@ static void build_watchface(void)
         parts[i] = l;
     }
     lv_label_set_text(parts[1], ":");
+    s_time_colon = parts[1];
     s_time_hours = parts[0];
     s_time_minutes = parts[2];
     set_time_text("--:--");
@@ -1098,6 +1154,23 @@ static void build_watchface(void)
 
     lv_obj_move_foreground(s_shortcuts);     /* above the art, which reaches down to them */
     lv_obj_move_foreground(s_btn_mic);
+
+    /* Standby cover (set_ambient): black, not clickable, so the first tap still reaches the widgets below
+     * (and is swallowed as the wake tap). */
+    s_ambient_cover = lv_obj_create(s_content);
+    lv_obj_remove_style_all(s_ambient_cover);
+    lv_obj_set_size(s_ambient_cover, BOARD_LCD_H_RES, BOARD_LCD_V_RES);
+    lv_obj_set_style_bg_color(s_ambient_cover, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_ambient_cover, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_ambient_cover, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ambient_cover, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+    s_ambient_batt = lv_label_create(s_content);
+    lv_obj_set_style_text_font(s_ambient_batt, &buddy_font_28, 0);
+    lv_obj_set_style_text_color(s_ambient_batt, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_label_set_text(s_ambient_batt, ICON_BATTERY_1);
+    lv_obj_align(s_ambient_batt, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_add_flag(s_ambient_batt, LV_OBJ_FLAG_HIDDEN);
 }
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
@@ -1348,6 +1421,7 @@ void ui_set_status(int battery_pct, bool charging, ui_link_t link)
     s_charging = charging;
     s_link = link;
     update_status();
+    ambient_batt_update();
     UNLOCK();
 }
 

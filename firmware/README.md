@@ -297,7 +297,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 
 - **Microphone channel**: the uplink takes I2S RX left slot = ES7210 MIC1 (`board_audio.c`). Check that
   speech is captured (not silence / the AEC loopback MIC3), and tune the mic gain (`TODO(M0)`).
-- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, the 5 % standby level and
+- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, the 30 % standby level and
   screen-off/on (`board_display.c`).
 - **Touch orientation**: FT3168 coordinates vs. the 410×502 panel (`swap_xy` / `mirror_x` / `mirror_y`
   are all 0) and the column gap `0x16`.
@@ -323,7 +323,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 |---|---|---|
 | Wi-Fi modem sleep | The radio sleeps between access-point beacons while no conversation runs; every frame sent or received wakes it | `components/net` (`WIFI_PS_MIN_MODEM`, off during a turn) |
 | CPU power management | Full speed (240 MHz) while the screen is awake, which covers every conversation; `CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ` (80) in standby. Automatic light sleep: `CONFIG_BUDDYAI_PM_LIGHT_SLEEP`, off | `components/board/src/board_pm.c` |
-| UI standby | After the screen timeout the screen fades to 5 % (`STANDBY_BRIGHTNESS`) and stays on; a tap, the PWR key, a shake, a reminder or a conversation restores the user's brightness at once. The user's saved brightness is never changed | `components/ui/ui.c` (`apply_brightness`) |
+| UI standby | After the screen timeout the watch goes to its home screen, which shows only the time and date in light grey (plus a red battery below 15 %) at 30 % (`STANDBY_BRIGHTNESS`), shifting up to 12 px a minute against burn-in; a tap, the PWR key, a shake, a reminder or a conversation restores the user's brightness at once. The user's saved brightness is never changed | `components/ui/ui.c` (`apply_brightness`) |
 
 **Idle link traffic (connected, no conversation)**:
 - a JSON `ping` every 30 s, with a 12 s reply deadline (`pong_timeout`);
@@ -364,7 +364,7 @@ With `CONFIG_PM_PROFILING=y` (menuconfig), the same line also prints the power-m
 | A | before the power work (commit `d1b8979`) | screen timeout 300 s, touch it every few minutes (awake, normal brightness) |
 | B | before the power work | default timeout, standby at its old 30 % |
 | C | current, with `CONFIG_BUDDYAI_STANDBY_DISPLAY_OFF=y` | the panel switches off in standby |
-| D | current | standby at 5 %, new keep-alive, frequency scaling |
+| D | current | standby time and date at 30 %, new keep-alive, frequency scaling |
 
 **Regression checks** with the current firmware:
 1. Bluetooth / Wi-Fi setup.
