@@ -34,6 +34,7 @@ DROP_REASONS: dict[str, str] = {
     "reconnect": "Reconnect requested on the watch",
     "reboot": "The watch restarted during the session",
     "connect_failed": "The watch could not connect",
+    "pong_timeout": "No reply to the watch's keep-alive ping",
 }
 
 # wifi_err_reason_t codes worth naming (ESP-IDF esp_wifi_types.h)

@@ -12,6 +12,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
 #include "board.h"
 
 static const char *TAG = "board";
@@ -82,7 +84,8 @@ i2c_master_bus_handle_t board_i2c_bus(void)
 #define AXP_GAUGE_CTRL          0x18    /* b3 fuel gauge enable */
 #define AXP_ADC_CTRL            0x30    /* b0 VBAT, b2 VBUS, b3 VSYS, b4 die temp */
 #define AXP_ADC_VBAT_H          0x34
-#define AXP_INTEN2              0x41    /* b3 PWRON short press */
+#define AXP_IRQ_OFF_ON_LEVEL    0x27    /* b5:4 long-press IRQ time, b3:2 hardware power-off, b1:0 power-on */
+#define AXP_INTEN2              0x41    /* b3 PWRON short press, b2 long press */
 #define AXP_INTSTS1             0x48
 #define AXP_INTSTS2             0x49
 #define AXP_INTSTS3             0x4A
@@ -94,6 +97,8 @@ i2c_master_bus_handle_t board_i2c_bus(void)
 #define AXP_BAT_PERCENT         0xA4
 
 #define AXP_PKEY_SHORT_BIT      (1 << 3)
+#define AXP_PKEY_LONG_BIT       (1 << 2)
+#define AXP_IRQ_LEVEL_2S        (2 << 4)    /* long press after 2 s (0: 1 s, 1: 1.5 s, 3: 2.5 s) */
 
 static esp_err_t pmu_init(void)
 {
@@ -114,8 +119,11 @@ static esp_err_t pmu_init(void)
     /* Battery detection: without it STATUS1 never reports a battery and the gauge stays idle. */
     reg_update8(s_pmu, AXP_BAT_DET_CTRL, 0x01, 0x01);
 
-    /* PWRON short-press IRQ (polled, no IRQ GPIO needed). Clear stale status. */
-    reg_update8(s_pmu, AXP_INTEN2, AXP_PKEY_SHORT_BIT, AXP_PKEY_SHORT_BIT);
+    /* PWRON short- and long-press IRQs (polled, no IRQ GPIO needed): short wakes the screen, long (2 s)
+     * switches the watch off. Power-on and the hardware power-off (longer hold) keep the PMU defaults.
+     * Clear stale status. */
+    reg_update8(s_pmu, AXP_IRQ_OFF_ON_LEVEL, 0x30, AXP_IRQ_LEVEL_2S);
+    reg_update8(s_pmu, AXP_INTEN2, AXP_PKEY_SHORT_BIT | AXP_PKEY_LONG_BIT, AXP_PKEY_SHORT_BIT | AXP_PKEY_LONG_BIT);
     reg_write8(s_pmu, AXP_INTSTS1, 0xFF);
     reg_write8(s_pmu, AXP_INTSTS2, 0xFF);
     reg_write8(s_pmu, AXP_INTSTS3, 0xFF);
@@ -160,20 +168,21 @@ esp_err_t board_power_get_status(board_power_status_t *out)
     return ESP_OK;
 }
 
-bool board_power_key_pressed(void)
+board_power_key_t board_power_key_poll(void)
 {
     if (!s_pmu) {
-        return false;
+        return BOARD_POWER_KEY_NONE;
     }
     uint8_t sts = 0;
     if (reg_read(s_pmu, AXP_INTSTS2, &sts, 1) != ESP_OK) {
-        return false;
+        return BOARD_POWER_KEY_NONE;
     }
-    if (sts & AXP_PKEY_SHORT_BIT) {
-        reg_write8(s_pmu, AXP_INTSTS2, AXP_PKEY_SHORT_BIT); /* write-1-to-clear */
-        return true;
+    uint8_t keys = sts & (AXP_PKEY_SHORT_BIT | AXP_PKEY_LONG_BIT);
+    if (keys) {
+        reg_write8(s_pmu, AXP_INTSTS2, keys);   /* write-1-to-clear */
     }
-    return false;
+    return (keys & AXP_PKEY_LONG_BIT) ? BOARD_POWER_KEY_LONG
+         : (keys & AXP_PKEY_SHORT_BIT) ? BOARD_POWER_KEY_SHORT : BOARD_POWER_KEY_NONE;
 }
 
 void board_power_off(void)
@@ -374,4 +383,36 @@ esp_err_t board_init(void)
 bool board_boot_button_down(void)
 {
     return gpio_get_level(BOARD_BTN_BOOT) == 0;
+}
+
+/* A press shorter than BOOT_TAP_MAX_US is a tap; longer holds belong to the factory-reset prompt (8 s). Timed
+ * from the edges, so a quick tap is never missed between two polls; contact bounce (< 30 ms) is ignored. */
+#define BOOT_TAP_MIN_US     (30 * 1000)
+#define BOOT_TAP_MAX_US     (1500 * 1000)
+static board_button_cb_t s_boot_tap_cb;
+static volatile int64_t  s_boot_down_us;
+
+static void boot_isr(void *arg)
+{
+    int64_t now = esp_timer_get_time();
+    if (gpio_get_level(BOARD_BTN_BOOT) == 0) {
+        s_boot_down_us = now;
+    } else if (s_boot_down_us) {
+        int64_t held = now - s_boot_down_us;
+        s_boot_down_us = 0;
+        if (held >= BOOT_TAP_MIN_US && held < BOOT_TAP_MAX_US && s_boot_tap_cb) {
+            s_boot_tap_cb();
+        }
+    }
+}
+
+esp_err_t board_boot_button_on_tap(board_button_cb_t cb)
+{
+    s_boot_tap_cb = cb;
+    esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {     /* INVALID_STATE: already installed (touch) */
+        return err;
+    }
+    ESP_RETURN_ON_ERROR(gpio_set_intr_type(BOARD_BTN_BOOT, GPIO_INTR_ANYEDGE), TAG, "boot intr");
+    return gpio_isr_handler_add(BOARD_BTN_BOOT, boot_isr, NULL);
 }

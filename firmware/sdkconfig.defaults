@@ -20,6 +20,10 @@ CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# Power management: full speed while the screen is awake, CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ in
+# standby (components/board/src/board_pm.c); tickless idle lets the idle task skip ticks
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 
 # ---- PSRAM (octal, 80 MHz) ------------------------------------------------
 CONFIG_SPIRAM=y

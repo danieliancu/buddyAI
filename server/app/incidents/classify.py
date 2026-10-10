@@ -150,6 +150,8 @@ def classify_event(kind: str, reason: str, detail: dict[str, Any] | None, detect
             weak = (_int(d.get("rssi")) or 0) < 0 and (_int(d.get("rssi")) or 0) <= WEAK_RSSI_DBM
             return EventClass(CONNECTION, PROBABLE if inferred else CONFIRMED,
                               "wifi_weak_signal" if weak else "wifi_lost", "wifi", "warn")
+        if reason == "pong_timeout":  # the watch's own keep-alive check: no reply from the server in time
+            return EventClass(CONNECTION, PROBABLE, "connection_timeout", "network", "warn")
         ws = d.get("ws") if isinstance(d.get("ws"), dict) else {}
         found = _ws_evidence(ws, inferred)
         if found is not None:

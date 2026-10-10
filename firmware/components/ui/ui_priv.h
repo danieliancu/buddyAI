@@ -127,6 +127,7 @@ typedef enum {
     STR_RESET_B,
     STR_RESET_BTN,
     STR_RESETTING,
+    STR_POWER_OFF,      /* "Turning off…" (PWR key held) */
     STR_OTA_T,
     STR_OTA_FAIL,
     STR_LISTENING,
@@ -239,6 +240,9 @@ lv_color_t  ui_on_color(lv_color_t bg);
  * screen is built (lv_obj_move_foreground), so nothing covers its touch area. */
 lv_obj_t   *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb);
 lv_style_t *ui_style_accent_border(void);  /* border + arc in the accent color */
+/* Shows / hides a spinner; a hidden one stops its (infinite) animation, which would otherwise keep LVGL's
+ * animation timer waking the CPU every frame. */
+void ui_spinner_show(lv_obj_t *spinner, bool show, uint32_t ms, uint32_t arc);
 void      ui_load_screen(lv_obj_t *scr, bool to_left);
 void      ui_note_activity(void);
 bool      ui_consume_wake_tap(void);

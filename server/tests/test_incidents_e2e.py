@@ -223,7 +223,7 @@ async def test_missing_heartbeat_times_out_undetermined_then_recovers(server, mo
     assert items[0]["reason_code"] == "watch_silent" and items[0]["category"] == "undetermined"
     assert items[0]["recovered_at"] is None
     await w.close()
-    monkeypatch.setattr(get_settings(), "session_idle_timeout_s", 45)
+    monkeypatch.setattr(get_settings(), "session_idle_timeout_s", 75)
     w = await _online(server, dev, token)
     items = await _incidents(server, dev, lambda i: i and i[0]["recovered_at"] is not None)
     await w.close()

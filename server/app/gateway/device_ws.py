@@ -165,11 +165,20 @@ class DeviceConnection:
         STORE.drop_session(self.env.session_id or "", carry=getattr(self, "_sent_close", None) not in (4001, 4002))
         if self.authenticated:
             self._record_session_issues()
+            self._touch_last_seen()
         if self.active:
             self.active.abort_reason = self.active.abort_reason or "connection_lost"
             await self._cancel_active()
         self.hub.unregister(self)
         await self.close()
+
+    def _touch_last_seen(self) -> None:
+        """`status` comes only every few minutes: the end of the session is the last time the watch was seen."""
+        try:
+            with session_scope() as db:
+                DeviceRepo(db).touch(self.device_id)
+        except Exception:  # noqa: BLE001 - never breaks the teardown
+            log.warning("last_seen update failed for %s", self.device_id, exc_info=True)
 
     def _record_session_issues(self) -> None:
         """What the server saw of this session's end (ola Diagnostics). The server noticing a drop does not

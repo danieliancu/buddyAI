@@ -103,6 +103,7 @@ void ui_show_ota(int pct);                  /* -1 = failed */
  * "Resetting..." screen shown while NVS is erased. */
 void ui_show_reset_confirm(void);
 void ui_show_resetting(void);
+void ui_show_power_off(void);               /* "Turning off…" (PWR key held) */
 
 /* Notes & reminders (PROTOCOL.md 3.3). Each takes the whole server message
  * as JSON: `items` snapshot, `item_show`, `reminder_fire` (wakes the screen

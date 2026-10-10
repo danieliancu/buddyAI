@@ -60,9 +60,33 @@ static esp_err_t i2s_init(void)
     return ESP_OK;
 }
 
+static volatile bool s_pa_on;
+static volatile bool s_suspended;
+
 void board_audio_pa_enable(bool on)
 {
+    s_pa_on = on;
     gpio_set_level(BOARD_AUDIO_PA_EN, on ? 1 : 0);
+}
+
+void board_audio_suspend(void)
+{
+    if (!s_tx || s_suspended || s_pa_on) {
+        return;
+    }
+    s_suspended = true;
+    i2s_channel_disable(s_tx);
+    i2s_channel_disable(s_rx);
+}
+
+void board_audio_resume(void)
+{
+    if (!s_suspended) {
+        return;
+    }
+    i2s_channel_enable(s_tx);
+    i2s_channel_enable(s_rx);
+    s_suspended = false;
 }
 
 esp_err_t board_audio_init(void)

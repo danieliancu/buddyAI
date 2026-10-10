@@ -41,6 +41,7 @@ static const char *TAG = "audio";
 #define WRITE_CHUNK_SAMPLES     (PLAY_RATE / 50)            /* 20 ms */
 #define DEC_OUT_MAX_SAMPLES     (PLAY_RATE * 120 / 1000)    /* up to 120 ms packets */
 #define PA_IDLE_OFF_MS          400
+#define WRITER_IDLE_WAIT_MS     200     /* nothing to play: sleep until data arrives instead of polling */
 /* Jitter buffer: a reply starts playing once PREBUFFER_MS is queued, its end
  * has arrived, or PREBUFFER_MAX_WAIT_MS passed. The server streams TTS
  * fragment by fragment and the TTS sometimes delivers slower than real time;
@@ -269,6 +270,7 @@ static void capture_task(void *arg)
 
 esp_err_t audio_capture_start(uint32_t turn_id, audio_capture_cb_t cb, void *ctx)
 {
+    board_audio_resume();       /* I2S may be stopped in standby (light sleep builds) */
     /* Half duplex (MVP): nothing plays while the user talks. */
     audio_playback_flush();
     s_cap_cb = cb;
@@ -565,6 +567,11 @@ static void writer_task(void *arg)
             xSemaphoreGive(s_play_lock);
             pa_on = false;
         }
+        /* Idle (amplifier off, nothing queued): wait for the next write to the ring (a reply, a beep) or
+         * audio_typing_start(), which both give data_sem, instead of polling every 10-20 ms. */
+        if (!pa_on && !s_typing && ring_count(&s_ring) == 0 && uxQueueMessagesWaiting(s_pkt_q) == 0) {
+            xSemaphoreTake(s_ring.data_sem, pdMS_TO_TICKS(WRITER_IDLE_WAIT_MS));
+        }
     }
 }
 
@@ -607,6 +614,7 @@ void audio_playback_flush(void)
 
 void audio_playback_begin(uint32_t turn_id)
 {
+    board_audio_resume();
     xSemaphoreTake(s_play_lock, portMAX_DELAY);
     if (!s_play_turn_valid || s_play_turn != turn_id) {
         flush_locked();
@@ -663,6 +671,7 @@ void audio_beep(void)
     if (!s_ring.buf || audio_playback_active() || audio_capture_active()) {
         return;
     }
+    board_audio_resume();
     /* 880 Hz then 1320 Hz, 150 ms each with a 60 ms gap; 5 ms fades avoid clicks. */
     const int tone = PLAY_RATE * 150 / 1000, gap = PLAY_RATE * 60 / 1000, fade = PLAY_RATE * 5 / 1000;
     const int total = tone * 2 + gap;
@@ -705,10 +714,12 @@ void audio_typing_start(void)
     if (!s_ring.buf || audio_capture_active() || audio_playback_active()) {
         return;
     }
+    board_audio_resume();
     xSemaphoreTake(s_play_lock, portMAX_DELAY);
     s_typing_gen++;
     s_typing = true;
     xSemaphoreGive(s_play_lock);
+    xSemaphoreGive(s_ring.data_sem);    /* wake the idle writer */
 }
 
 void audio_typing_stop(void)

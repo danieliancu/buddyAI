@@ -22,7 +22,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DROP_REASONS = {"wifi_lost", "ws_error", "ws_closed", "ws_disconnected", "hello_timeout", "reconnect", "reboot",
-                "connect_failed"}
+                "connect_failed", "pong_timeout"}
 _TOKEN = re.compile(r"[a-z0-9_]{1,32}")
 _HEX = re.compile(r"[0-9a-fA-F]{1,64}")
 _WS_FIELDS = {"type": (0, 16), "tls": (0, 0xFFFF), "tls_stack": (-0x7FFFFFFF, 0x7FFFFFFF), "errno": (0, 1000),

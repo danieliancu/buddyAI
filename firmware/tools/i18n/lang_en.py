@@ -52,6 +52,7 @@ LANGS = {
             "RESET_B": "Tap Reset to confirm.\nErases Wi-Fi, server and pairing.\nCancels in 10 s.",
             "RESET_BTN": "Reset",
             "RESETTING": "Resetting…",
+            "POWER_OFF": "Turning off…",
             "OTA_T": "Updating firmware",
             "OTA_FAIL": "Update failed",
             "LISTENING": "Listening…",

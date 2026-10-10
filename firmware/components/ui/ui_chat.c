@@ -48,6 +48,8 @@
  * (TTS pace) and speeds up to ~30 chars/s when text piles up. */
 #define PEND_MAX            4096
 #define REVEAL_TICK_MS      60
+#define CHAT_SPINNER_MS     1000    /* LVGL's default spinner */
+#define CHAT_SPINNER_ARC    200
 #define REVEAL_DELAY_MS     300
 
 static lv_obj_t  *s_scr;
@@ -71,6 +73,7 @@ static size_t     s_pend_len;
 static bool       s_reveal_on;      /* speaking: the timer reveals s_pend */
 static uint32_t   s_reveal_since;
 static uint32_t   s_reveal_ticks;
+static lv_timer_t *s_reveal_timer;
 
 /* ------------------------------------------------------------------------- */
 /* Bubbles                                                                    */
@@ -261,7 +264,7 @@ static void hide_typing(void)
 static void apply_state_visuals(void)
 {
     lv_obj_set_flag(s_ring, LV_OBJ_FLAG_HIDDEN, s_state != UI_CONV_LISTENING);
-    lv_obj_set_flag(s_spinner, LV_OBJ_FLAG_HIDDEN, s_state != UI_CONV_THINKING);
+    ui_spinner_show(s_spinner, s_state == UI_CONV_THINKING, CHAT_SPINNER_MS, CHAT_SPINNER_ARC);
     lv_label_set_text(s_mic_lbl, s_state == UI_CONV_SPEAKING ? ICON_VOLUME : ICON_MIC);
     lv_obj_set_style_bg_opa(s_mic, s_state == UI_CONV_THINKING ? LV_OPA_60 : LV_OPA_COVER, 0);
 }
@@ -360,6 +363,7 @@ void ui_chat_init(void)
     lv_obj_add_style(s_spinner, ui_style_accent_border(), LV_PART_INDICATOR);
     lv_obj_remove_flag(s_spinner, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(s_spinner, LV_ALIGN_BOTTOM_MID, 0, -(MIC_BOTTOM - (SPINNER_SIZE - MIC_SIZE) / 2));
+    ui_spinner_show(s_spinner, false, CHAT_SPINNER_MS, CHAT_SPINNER_ARC);
 
     s_mic = lv_button_create(s_scr);
     lv_obj_remove_style_all(s_mic);
@@ -385,7 +389,8 @@ void ui_chat_init(void)
     apply_state_visuals();
 
     s_pend = heap_caps_malloc(PEND_MAX + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    lv_timer_create(reveal_cb, REVEAL_TICK_MS, NULL);
+    s_reveal_timer = lv_timer_create(reveal_cb, REVEAL_TICK_MS, NULL);
+    lv_timer_pause(s_reveal_timer);     /* runs only while speaking: no 60 ms wakeups when idle */
 }
 
 /* Caller holds the lock. */
@@ -397,8 +402,14 @@ void ui_chat_set_state(ui_conv_t st)
     if (st == UI_CONV_SPEAKING) {
         s_reveal_on = true;
         s_reveal_since = lv_tick_get();
+        if (s_reveal_timer) {
+            lv_timer_resume(s_reveal_timer);
+        }
     } else {
         reveal_flush();     /* the old bubble keeps its whole text */
+        if (s_reveal_timer) {
+            lv_timer_pause(s_reveal_timer);
+        }
     }
     if (st == UI_CONV_LISTENING) {
         hide_typing();

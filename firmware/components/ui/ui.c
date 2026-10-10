@@ -35,7 +35,10 @@ ui_callbacks_t   g_ui_cb;
 #define GREET_W             184
 #define SLIDE_MS            350     /* screen slide, slowing down towards the end */
 #define NUM_BARS            5
-#define DIM_BRIGHTNESS      30      /* % while dimmed */
+#define STANDBY_BRIGHTNESS  5       /* % while dimmed (the lowest slider value); the user's own setting is kept */
+#define STANDBY_FADE_MS     400     /* dimming fades, waking is immediate */
+#define SPINNER_MS          1000
+#define SPINNER_ARC         60
 #define CAPTION_MAX         600
 #define CAPTION_SHOW        110     /* code points, ~3 lines at 20 px on 350 px */
 #define CAPTION_W           350
@@ -70,6 +73,7 @@ static lv_obj_t *s_btn_mic;
 static lv_obj_t *s_lbl_mic;
 static lv_obj_t *s_ring;
 static lv_obj_t *s_spinner;
+static lv_timer_t *s_anim_timer;
 static lv_obj_t *s_bars_box;
 static lv_obj_t *s_bars[NUM_BARS];
 
@@ -169,6 +173,18 @@ void ui_hold_awake(bool hold)
     }
 }
 
+void ui_spinner_show(lv_obj_t *spinner, bool show, uint32_t ms, uint32_t arc)
+{
+    bool hidden = lv_obj_has_flag(spinner, LV_OBJ_FLAG_HIDDEN);
+    if (show && hidden) {
+        lv_obj_remove_flag(spinner, LV_OBJ_FLAG_HIDDEN);
+        lv_spinner_set_anim_params(spinner, ms, arc);   /* restarts the animation */
+    } else if (!show && !hidden) {
+        lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
+        lv_anim_delete(spinner, NULL);
+    }
+}
+
 bool ui_consume_wake_tap(void)
 {
     bool s = s_swallow_click;
@@ -176,17 +192,36 @@ bool ui_consume_wake_tap(void)
     return s;
 }
 
+static int s_fade_var;     /* lv_anim target of the dimming fade (the value lives in the panel) */
+
+static void fade_cb(void *var, int32_t v)
+{
+    board_display_set_brightness((int)v);
+}
+
+/* Writes the panel only: the standby level never reaches g_ui_settings or NVS. */
 static void apply_brightness(void)
 {
+    lv_anim_delete(&s_fade_var, fade_cb);   /* a wake during the fade wins */
+    board_pm_set_awake(s_power == POWER_ON);    /* full CPU speed while awake (a conversation keeps it awake) */
     switch (s_power) {
     case POWER_ON:
         board_display_power(true);
         board_display_set_brightness(g_ui_settings.brightness);
         break;
-    case POWER_DIM:
-        board_display_set_brightness(g_ui_settings.brightness < DIM_BRIGHTNESS ? g_ui_settings.brightness
-                                                                             : DIM_BRIGHTNESS);
+    case POWER_DIM: {
+        int from = g_ui_settings.brightness;
+        int to = from < STANDBY_BRIGHTNESS ? from : STANDBY_BRIGHTNESS;
+        lv_anim_t a;
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, &s_fade_var);
+        lv_anim_set_exec_cb(&a, fade_cb);
+        lv_anim_set_values(&a, from, to);
+        lv_anim_set_duration(&a, STANDBY_FADE_MS);
+        lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+        lv_anim_start(&a);
         break;
+    }
     case POWER_OFF:
         board_display_set_brightness(0);
         board_display_power(false);
@@ -441,10 +476,11 @@ static void apply_conv_visuals(void)
     } else {
         lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
     }
-    if (thinking) {
-        lv_obj_remove_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    ui_spinner_show(s_spinner, thinking, SPINNER_MS, SPINNER_ARC);
+    if (listening || speaking) {
+        lv_timer_resume(s_anim_timer);
     } else {
-        lv_obj_add_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+        lv_timer_pause(s_anim_timer);   /* the ring and bars move only while listening / speaking */
     }
     if (speaking) {
         lv_obj_remove_flag(s_bars_box, LV_OBJ_FLAG_HIDDEN);
@@ -500,18 +536,22 @@ static void power_timer_cb(lv_timer_t *t)
     if (busy || inactive < timeout) {
         want = POWER_ON;
     } else {
-        want = POWER_DIM;           /* stays dimmed: the panel never switches off on its own */
+#if CONFIG_BUDDYAI_STANDBY_DISPLAY_OFF
+        want = POWER_OFF;           /* power measurement only (scenario C, firmware/README.md) */
+#else
+        want = POWER_DIM;           /* stays on at the standby level: the panel never switches off on its own */
+#endif
     }
     if (want != s_power) {
         ESP_LOGD(TAG, "screen power %d -> %d", s_power, want);
-        if (want == POWER_DIM && s_conv == UI_CONV_IDLE && s_caption[0]) {
+        if (want != POWER_ON && s_conv == UI_CONV_IDLE && s_caption[0]) {
             s_caption[0] = '\0';        /* the last reply clears when the screen dims */
             show_caption();
         }
         /* The dimmed screen stays on: only the watchface has burn-in pixel shift, so lists and
          * settings give way to it. The chat and message screens (pairing code...) stay until the
          * user leaves them. */
-        if (want == POWER_DIM && !ui_is_watchface() && !ui_msg_is_active() && !ui_chat_is_active()) {
+        if (want != POWER_ON && !ui_is_watchface() && !ui_msg_is_active() && !ui_chat_is_active()) {
             ui_go_watchface();
         }
         s_power = want;
@@ -1046,7 +1086,7 @@ static void build_watchface(void)
 
     /* Thinking spinner around the button */
     s_spinner = lv_spinner_create(s_content);
-    lv_spinner_set_anim_params(s_spinner, 1000, 60);
+    lv_spinner_set_anim_params(s_spinner, SPINNER_MS, SPINNER_ARC);
     lv_obj_set_size(s_spinner, SPINNER_SIZE, SPINNER_SIZE);
     lv_obj_set_style_arc_width(s_spinner, 6, LV_PART_MAIN);
     lv_obj_set_style_arc_opa(s_spinner, LV_OPA_20, LV_PART_MAIN);
@@ -1054,7 +1094,7 @@ static void build_watchface(void)
     lv_obj_add_style(s_spinner, &s_st_accent_border, LV_PART_INDICATOR);
     lv_obj_remove_flag(s_spinner, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align_to(s_spinner, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
+    ui_spinner_show(s_spinner, false, SPINNER_MS, SPINNER_ARC);
 
     lv_obj_move_foreground(s_shortcuts);     /* above the art, which reaches down to them */
     lv_obj_move_foreground(s_btn_mic);
@@ -1085,7 +1125,8 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     update_status();
     lv_screen_load(s_scr);
     lv_timer_create(clock_timer_cb, 1000, NULL);
-    lv_timer_create(anim_timer_cb, 40, NULL);
+    s_anim_timer = lv_timer_create(anim_timer_cb, 40, NULL);
+    lv_timer_pause(s_anim_timer);       /* resumed by apply_conv_visuals() while listening / speaking */
     lv_timer_create(power_timer_cb, 200, NULL);
     UNLOCK();
 

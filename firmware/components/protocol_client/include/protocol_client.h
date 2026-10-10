@@ -121,6 +121,15 @@ void proto_item_pin(int number, bool pinned);
 void proto_reconnect(void);
 
 bool proto_session_ready(void);
+
+/* Idle link traffic since boot, for the development power log (firmware/README.md "Measuring power"). */
+typedef struct {
+    uint32_t pings;         /* JSON pings sent */
+    uint32_t statuses;      /* status messages sent */
+    uint32_t sessions;      /* sessions established (1 + reconnects) */
+    uint32_t pong_timeouts; /* sessions dropped because a ping got no reply */
+} proto_stats_t;
+void proto_get_stats(proto_stats_t *out);
 proto_conv_state_t proto_conv_state(void);
 
 #ifdef __cplusplus

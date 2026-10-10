@@ -17,6 +17,8 @@
 #include "esp_lcd_co5300.h"
 #include "esp_lcd_touch_ft5x06.h"
 #include "esp_lvgl_port.h"
+#include "esp_timer.h"
+#include "sdkconfig.h"
 #include "board.h"
 
 static const char *TAG = "board_disp";
@@ -123,6 +125,13 @@ static esp_err_t touch_init(void)
     return esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &s_touch);
 }
 
+#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
+static uint32_t lvgl_tick_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+#endif
+
 lv_display_t *board_display_init(void)
 {
     if (s_disp) {
@@ -132,6 +141,7 @@ lv_display_t *board_display_init(void)
         ESP_LOGE(TAG, "panel init failed");
         return NULL;
     }
+    esp_log_level_set("co5300_spi", ESP_LOG_WARN);  /* it logs every brightness write at INFO */
 
     /* LVGL task on core 0 (audio owns core 1). */
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
@@ -144,6 +154,16 @@ lv_display_t *board_display_init(void)
         ESP_LOGE(TAG, "lvgl port init failed");
         return NULL;
     }
+#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
+    /* The port's 5 ms tick timer would wake the chip 200 times a second: LVGL reads the clock instead.
+     * lvgl_port_stop() stops that timer and disables LVGL's timers, which are then enabled again. */
+    if (lvgl_port_lock(0)) {
+        lv_tick_set_cb(lvgl_tick_ms);
+        lvgl_port_stop();
+        lv_timer_enable(true);
+        lvgl_port_unlock();
+    }
+#endif
 
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = s_io,
@@ -199,7 +219,13 @@ esp_err_t board_display_set_brightness(int percent)
     } else if (percent > 100) {
         percent = 100;
     }
-    return esp_lcd_panel_co5300_set_brightness(s_panel, (uint8_t)percent);
+    static int s_last = -1;     /* the value in the panel: the dimming fade and repeats skip the bus */
+    if (percent == s_last) {
+        return ESP_OK;
+    }
+    esp_err_t err = esp_lcd_panel_co5300_set_brightness(s_panel, (uint8_t)percent);
+    s_last = err == ESP_OK ? percent : -1;
+    return err;
 }
 
 esp_err_t board_display_power(bool on)

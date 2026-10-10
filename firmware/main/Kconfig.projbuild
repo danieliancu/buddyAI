@@ -37,4 +37,35 @@ menu "BuddyAI"
         range 1 30
         default 5
 
+    config BUDDYAI_PM_MIN_FREQ_MHZ
+        int "CPU frequency in standby (MHz)"
+        depends on PM_ENABLE
+        range 40 240
+        default 80
+        help
+            While the screen is in standby the CPU runs at this frequency;
+            awake (and during every conversation) it runs at full speed.
+            80 MHz keeps the Wi-Fi/TLS link comfortable.
+
+    config BUDDYAI_PM_LIGHT_SLEEP
+        bool "Automatic light sleep in standby (experimental)"
+        depends on PM_ENABLE && FREERTOS_USE_TICKLESS_IDLE
+        default n
+        help
+            Lets the CPU sleep between Wi-Fi beacons in standby: the I2S
+            audio port stops while the screen is in standby and the LVGL
+            tick reads the clock instead of a 5 ms timer. Not yet tested on
+            the watch: check touch wake-up, the first sound of a reply and
+            Wi-Fi stability before enabling it (firmware/README.md
+            "Measuring power").
+
+    config BUDDYAI_STANDBY_DISPLAY_OFF
+        bool "Switch the display off in standby (power measurement only)"
+        depends on !BUDDYAI_RELEASE_BUILD
+        default n
+        help
+            Scenario C of the power measurement: the panel switches off
+            instead of dimming to the standby brightness. Customers' watches
+            keep the standby screen on.
+
 endmenu

@@ -108,7 +108,9 @@ class Settings(BaseSettings):
     allow_web_setup: bool = True
 
     # Session / protocol
-    session_idle_timeout_s: int = 45
+    # Closes a session that sent nothing for this long. The watch pings every 30 s (firmware before the
+    # power work: 15 s); WebSocket control frames don't count, only messages.
+    session_idle_timeout_s: int = 75
     # ola Diagnostics: incidents not updated for this many days are deleted (0 = keep forever)
     incident_retention_days: int = 90
     # AI usage operations (app/usage_ops.py): the lease a process holds on a running operation, how often it

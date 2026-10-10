@@ -101,7 +101,20 @@ An unpaired watch then shows a **6-digit pairing code**. In the ola account (set
 enter the code. The watch stores its device token and shows the watchface. Pairing is what starts a
 pending ola Care free trial on the server.
 
-## 5. Factory reset (unpair locally)
+## 5. Buttons
+
+| Button | Press | Action |
+|---|---|---|
+| **BOOT** | short (under 1.5 s) | Opens the conversation with the mic on, like the mic button; during a turn it stops listening or interrupts the reply |
+| **BOOT** | held 8 s | Factory reset prompt (§5.1) |
+| **PWR** | short | Wakes the screen |
+| **PWR** | held 2 s | "Turning off…", then the AXP2101 switches the watch off |
+| **PWR** | about 1 s, while off | Switches the watch on (PMU hardware) |
+
+Holding PWR much longer (PMU default, 6 s or more) is the AXP2101's own hardware power-off, which works even
+when the firmware hangs.
+
+### 5.1 Factory reset (unpair locally)
 
 1. Hold the **BOOT** button for **8 seconds** (the watch must be running; holding BOOT *while resetting*
    enters the ROM download mode instead).
@@ -113,8 +126,7 @@ pending ola Care free trial on the server.
 This only unpairs the watch **locally**. The owner removes the watch from their account in the
 ola app (that revokes the token on the server).
 
-The PWR key is not used for this: it is wired to the AXP2101 PWRON pin, whose long press is a
-hardware power-off.
+The PWR key is not used for this: it is wired to the AXP2101 PWRON pin (power on / off, §5).
 
 ## 6. Server error screens (PROTOCOL.md §7)
 
@@ -285,7 +297,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 
 - **Microphone channel**: the uplink takes I2S RX left slot = ES7210 MIC1 (`board_audio.c`). Check that
   speech is captured (not silence / the AEC loopback MIC3), and tune the mic gain (`TODO(M0)`).
-- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, dimming and
+- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, the 5 % standby level and
   screen-off/on (`board_display.c`).
 - **Touch orientation**: FT3168 coordinates vs. the 410×502 panel (`swap_xy` / `mirror_x` / `mirror_y`
   are all 0) and the column gap `0x16`.
@@ -303,7 +315,67 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 - **Release/production**: signed OTA accepted and a foreign-key image rejected; NVS encryption and
   flash encryption on a production unit (§8) — on a *sacrificial* unit first.
 
-## 10. Tests
+## 10. Power and standby
+
+**Three different things** save power, and they are independent:
+
+| | What | Where |
+|---|---|---|
+| Wi-Fi modem sleep | The radio sleeps between access-point beacons while no conversation runs; every frame sent or received wakes it | `components/net` (`WIFI_PS_MIN_MODEM`, off during a turn) |
+| CPU power management | Full speed (240 MHz) while the screen is awake, which covers every conversation; `CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ` (80) in standby. Automatic light sleep: `CONFIG_BUDDYAI_PM_LIGHT_SLEEP`, off | `components/board/src/board_pm.c` |
+| UI standby | After the screen timeout the screen fades to 5 % (`STANDBY_BRIGHTNESS`) and stays on; a tap, the PWR key, a shake, a reminder or a conversation restores the user's brightness at once. The user's saved brightness is never changed | `components/ui/ui.c` (`apply_brightness`) |
+
+**Idle link traffic (connected, no conversation)**:
+- a JSON `ping` every 30 s, with a 12 s reply deadline (`pong_timeout`);
+- a WebSocket ping every 60 s, as a backup;
+- `status` every 5 min, or sooner when the battery or charging state changes;
+- TCP keepalive only after 120 s of silence.
+
+The server closes a session after 75 s without a message (`server/app/config.py`). See `protocol/PROTOCOL.md` §1.
+
+**Light sleep: before enabling `CONFIG_BUDDYAI_PM_LIGHT_SLEEP`**, check each of these on a watch:
+- **Touch wake.** The touch interrupt (GPIO38) is an edge interrupt and cannot wake the chip from light sleep. Touches may only be seen at the next timer wake (≤ 200 ms), or be missed.
+- **The first sound of a reply or beep.** The I2S port restarts on demand.
+- **Wi-Fi stability over a night.**
+- **The USB console.** It disconnects while the chip sleeps.
+
+### 10.1 Measuring power
+
+The AXP2101 has no current sensor: **the firmware cannot measure mA or mW**. It reports the battery voltage and the gauge percentage only. Battery-life figures need one of the methods below.
+
+**Development builds** log one line every 10 min:
+```
+power: up 3600 s, battery 3987 mV 84%, awake 12 s, standby 588 s, rssi -58, pings 120, status 12, sessions 1, pong timeouts 0
+```
+With `CONFIG_PM_PROFILING=y` (menuconfig), the same line also prints the power-management locks and the time spent per CPU mode.
+
+**Methods**:
+1. **Current (recommended).** Use a Nordic PPK2, or a µCurrent / multimeter in series with the battery lead.
+   - Disconnect USB: it charges the battery and powers the board.
+   - Let the watch settle for 2 min, then record 10 min per scenario: the average current and the peaks when frames are sent.
+2. **No equipment.** Charge fully, unplug, and leave the watch idle for 8 h on the same Wi-Fi network.
+   - Compare the `battery` mV / % in the first and last log lines.
+   - This is indicative only. The gauge is coarse, so repeat each scenario once.
+
+**Scenarios** (same access point and distance each time):
+
+| | Firmware | Setup |
+|---|---|---|
+| A | before the power work (commit `d1b8979`) | screen timeout 300 s, touch it every few minutes (awake, normal brightness) |
+| B | before the power work | default timeout, standby at its old 30 % |
+| C | current, with `CONFIG_BUDDYAI_STANDBY_DISPLAY_OFF=y` | the panel switches off in standby |
+| D | current | standby at 5 %, new keep-alive, frequency scaling |
+
+**Regression checks** with the current firmware:
+1. Bluetooth / Wi-Fi setup.
+2. Reconnect after the router restarts.
+3. Phone hotspot idle for 1 h.
+4. A reminder that fires after 30+ min idle.
+5. A conversation and a note dictation. Check the time to the first sound.
+6. Standby → tap: the user's brightness comes back at once, and the Account page still shows the user's value.
+7. Pull the router's power: the log shows `no reply to ping` within about 45 s, and the watch reconnects when the router is back.
+
+## 11. Tests
 
 - `components/prov_util/test/test_prov_util.c`: Unity tests for the setup password (length, alphabet,
   no modulo bias, rotation) and the Wi-Fi credential and QR payload checks. On a PC (no watch needed):

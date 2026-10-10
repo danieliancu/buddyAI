@@ -622,9 +622,12 @@ static void build_msg(void)
     lv_obj_add_event_cb(s_msg_btn, msg_btn_cb, LV_EVENT_CLICKED, NULL);
 }
 
+static lv_obj_t *s_wifi_scr;   /* Wi-Fi setup screen, built below */
+
 bool ui_msg_is_active(void)
 {
-    return s_msg_scr && lv_screen_active() == s_msg_scr;
+    lv_obj_t *scr = lv_screen_active();
+    return scr && ((s_msg_scr && scr == s_msg_scr) || (s_wifi_scr && scr == s_wifi_scr));
 }
 
 void ui_msg_refresh_theme(void)
@@ -867,6 +870,13 @@ void ui_show_resetting(void)
     LOCK();
     ui_msg_show(ICON_REFRESH, lv_palette_main(LV_PALETTE_RED), ui_str(STR_RESETTING), "", NULL,
                 NULL, NULL, false, 0);
+    UNLOCK();
+}
+
+void ui_show_power_off(void)
+{
+    LOCK();
+    ui_msg_show(NULL, g_ui_theme.accent, ui_str(STR_POWER_OFF), "", NULL, NULL, NULL, false, 0);
     UNLOCK();
 }
 

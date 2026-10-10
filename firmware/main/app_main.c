@@ -42,6 +42,7 @@ static const char *TAG = "app";
 
 #define WIFI_CONNECT_GRACE_MS   20000
 #define BATTERY_POLL_MS         10000
+#define POWER_LOG_MS            (10 * 60 * 1000)    /* development builds: firmware/README.md "Measuring power" */
 #define PWR_KEY_POLL_MS         200
 #define FACTORY_RESET_HOLD_MS   8000    /* BOOT button hold time for the reset prompt */
 
@@ -50,6 +51,7 @@ typedef enum {
     APP_EV_START_PORTAL,
     APP_EV_FACTORY_RESET,   /* user confirmed the reset screen */
     APP_EV_PROV_DONE,       /* Bluetooth setup: joined the new Wi-Fi and saved it */
+    APP_EV_BOOT_TAP,        /* BOOT button pressed briefly: start talking */
 } app_ev_type_t;
 
 typedef struct {
@@ -59,6 +61,7 @@ typedef struct {
 
 static QueueHandle_t s_app_q;
 static bool s_audio_ready;   /* false in Wi-Fi setup mode (audio not started) */
+static bool s_setup_mode;     /* defined with the setup code below */
 static bool          s_wifi_configured;
 static bool          s_server_error_shown;
 static bool          s_low_batt_warned;
@@ -66,6 +69,7 @@ static bool          s_reply_started;
 static esp_timer_handle_t s_typing_timer;   /* starts the typing clicks shortly into THINKING */
 static volatile bool s_typing_wanted;
 static int           s_batt_pct = -1;
+static int           s_batt_mv;
 static bool          s_charging;
 
 /* ------------------------------------------------------------------------- */
@@ -76,6 +80,42 @@ static void post_app(app_ev_type_t type, int arg)
 {
     app_ev_t ev = { .type = type, .arg = arg };
     xQueueSend(s_app_q, &ev, 0);
+}
+
+/* GPIO interrupt (board_boot_button_on_tap). */
+static void boot_tap_isr(void)
+{
+    app_ev_t ev = { .type = APP_EV_BOOT_TAP };
+    BaseType_t woken = pdFALSE;
+    xQueueSendFromISR(s_app_q, &ev, &woken);
+    if (woken) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+/* BOOT tap: the conversation screen with the mic on, from any screen, like the mic button (during a turn it
+ * stops listening / interrupts the reply, as a second tap on the mic does). */
+static void boot_tap(void)
+{
+    if (s_setup_mode || !s_audio_ready) {
+        return;
+    }
+    ESP_LOGI(TAG, "BOOT tap - talk");
+    ui_wake();
+    proto_mic_tap();
+}
+
+/* PWR held 2 s: "Turning off…", then the PMU cuts the power. A press of about 1 s switches the watch on again. */
+static void power_off(void)
+{
+    ESP_LOGW(TAG, "PWR held - powering off");
+    ui_wake();
+    ui_show_power_off();
+    proto_network_down();       /* ends the session on purpose: nothing to report at the next start */
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    board_display_power(false);
+    board_power_off();
+    vTaskDelay(portMAX_DELAY);  /* the power goes within milliseconds */
 }
 
 static ui_link_t current_link(void)
@@ -91,6 +131,7 @@ static void refresh_status(void)
     board_power_status_t ps;
     if (board_power_get_status(&ps) == ESP_OK) {
         s_batt_pct = ps.battery_pct;
+        s_batt_mv = ps.battery_mv;
         s_charging = ps.charging;
     }
     ui_set_status(s_batt_pct, s_charging, current_link());
@@ -549,6 +590,38 @@ static void handle_net_event(net_event_t ev)
     }
 }
 
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+/* One line every POWER_LOG_MS: the battery voltage over an idle night compares firmware versions (the PMU has no
+ * current sensor). `awake_s` / `standby_s` count screen time since the previous line. */
+static void power_log(uint32_t now)
+{
+    static uint32_t last_log, last_tick, awake_ms, standby_ms;
+    if (last_tick) {
+        uint32_t dt = now - last_tick;
+        if (ui_is_awake()) {
+            awake_ms += dt;
+        } else {
+            standby_ms += dt;
+        }
+    }
+    last_tick = now;
+    if (now - last_log < POWER_LOG_MS) {
+        return;
+    }
+    last_log = now;
+    proto_stats_t ps;
+    proto_get_stats(&ps);
+    ESP_LOGI(TAG, "power: up %lu s, battery %d mV %d%%%s, awake %lu s, standby %lu s, rssi %d, "
+             "pings %lu, status %lu, sessions %lu, pong timeouts %lu",
+             (unsigned long)(now / 1000), s_batt_mv, s_batt_pct, s_charging ? " charging" : "",
+             (unsigned long)(awake_ms / 1000), (unsigned long)(standby_ms / 1000), net_wifi_rssi(),
+             (unsigned long)ps.pings, (unsigned long)ps.statuses, (unsigned long)ps.sessions,
+             (unsigned long)ps.pong_timeouts);
+    awake_ms = standby_ms = 0;
+    board_pm_dump();
+}
+#endif
+
 static void app_loop(void)
 {
     uint32_t boot_ms = esp_log_timestamp();
@@ -572,6 +645,8 @@ static void app_loop(void)
                 }
             } else if (ev.type == APP_EV_FACTORY_RESET) {
                 factory_reset();
+            } else if (ev.type == APP_EV_BOOT_TAP) {
+                boot_tap();
             } else if (ev.type == APP_EV_PROV_DONE) {
                 ESP_LOGI(TAG, "Bluetooth setup finished - restarting");
                 vTaskDelay(pdMS_TO_TICKS(4000));   /* the phone reads "connected" first */
@@ -581,10 +656,16 @@ static void app_loop(void)
         }
 
         uint32_t now = esp_log_timestamp();
-        if (board_power_key_pressed()) {
+        board_power_key_t key = board_power_key_poll();
+        if (key == BOARD_POWER_KEY_LONG) {
+            power_off();
+        } else if (key == BOARD_POWER_KEY_SHORT) {
             ui_wake();
         }
         poll_factory_reset_button(now);
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+        power_log(now);
+#endif
         if (now - last_batt >= BATTERY_POLL_MS || last_batt == 0) {
             last_batt = now;
             refresh_status();
@@ -617,6 +698,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(settings_init());
     ESP_ERROR_CHECK(board_init());
+    board_pm_init();    /* frequency scaling in standby; logs and runs at full speed if unavailable */
 
     buddy_settings_t st;
     settings_get(&st);
@@ -659,6 +741,9 @@ void app_main(void)
             .on_item_pin = ui_item_pin,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
+        if (board_boot_button_on_tap(boot_tap_isr) != ESP_OK) {
+            ESP_LOGE(TAG, "BOOT button interrupt failed - BOOT only opens the reset prompt");
+        }
         if (board_imu_available()) {
             xTaskCreatePinnedToCore(shake_task, "shake", 3072, NULL, 2, NULL, 1);
         }

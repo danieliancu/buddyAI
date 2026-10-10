@@ -28,6 +28,7 @@ def ev(kind, reason="", detected_by="watch", **detail):
         (ev("disconnect", "ws_error", ws={"tls": 0x801A}), ("connection", "probable", "tls_failure", "tls", "warn")),
         (ev("disconnect", "ws_error", ws={"type": 1, "errno": 104}), ("connection", "probable", "tcp_failure", "tcp", "warn")),
         (ev("disconnect", "ws_error", ws={"type": 2}), ("connection", "probable", "connection_timeout", "network", "warn")),
+        (ev("disconnect", "pong_timeout"), ("connection", "probable", "connection_timeout", "network", "warn")),
         (ev("disconnect", "ws_error", ws={"hs": 502}), ("server", "probable", "server_unavailable", "proxy", "error")),
         (ev("disconnect", "ws_closed", ws={"close": 1012}), ("server", "confirmed", "server_closed_service_restart", "process", "error")),
         (ev("disconnect", "ws_closed", ws={"close": 4000}), ("connection", "probable", "server_replaced", "network", "info")),

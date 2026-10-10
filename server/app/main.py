@@ -231,6 +231,10 @@ def main() -> None:
         host=s.host,
         port=s.port,
         ws_max_size=1 << 20,
+        # The watch pings with a message every 30 s, which the idle timeout watches; the protocol ping is only a
+        # backup. Fewer pings let the watch's radio sleep longer.
+        ws_ping_interval=60,
+        ws_ping_timeout=30,
         log_level="info",
         proxy_headers=True,
         forwarded_allow_ips=s.forwarded_allow_ips,

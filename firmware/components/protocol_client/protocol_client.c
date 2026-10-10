@@ -30,8 +30,16 @@
 static const char *TAG = "proto";
 
 /* ---- timing (ms) ---- */
-#define PING_INTERVAL_MS        15000
-#define STATUS_INTERVAL_MS      60000
+/* Idle traffic wakes the Wi-Fi radio out of modem sleep, so it is kept to what the link needs: the server closes
+ * a session that sent no message for 75 s (45 s on servers before the power work, still above one ping gap). */
+#define PING_INTERVAL_MS        30000
+#define PONG_TIMEOUT_MS         12000   /* nothing received this long after a ping: the link is dead */
+#define STATUS_INTERVAL_MS      (5 * 60 * 1000)  /* heartbeat; in between only when something changed, */
+#define STATUS_MIN_GAP_MS       30000            /* at most this often */
+#define STATUS_RSSI_STEP        10      /* dB: smaller moves are normal jitter */
+#define WS_PING_INTERVAL_S      60      /* protocol-level ping, a backup only (0 = the client's 10 s default) */
+#define WS_PONG_TIMEOUT_S       150
+#define TCP_KEEPALIVE_IDLE_S    120     /* the library default (5 s) would probe after every quiet 5 s */
 #define CONNECT_TIMEOUT_MS      10000
 #define HELLO_TIMEOUT_MS        15000
 #define THINKING_TIMEOUT_MS     30000
@@ -120,6 +128,12 @@ static uint32_t         s_seq_out;
 static int64_t          s_last_ping_ms;
 static int64_t          s_last_status_ms;
 static int64_t          s_ping_sent_ms;
+static proto_stats_t    s_stats;
+static bool             s_ping_pending;         /* a session ping went out and nothing came back yet */
+static volatile uint32_t s_rx_ms;               /* (uint32) now_ms() of the last frame received (WS task) */
+static int              s_status_batt = -2;     /* the values in the last status sent */
+static bool             s_status_charging;
+static int              s_status_rssi;
 
 /* The server asked something the current operation needs ("which one?", "delete it?"): listen again
  * once the reply has been played. Set by each turn_end with expect_reply, so a clarification followed by
@@ -500,12 +514,30 @@ static void send_status(void)
     if (s_cfg.get_status) {
         s_cfg.get_status(&batt, &charging);
     }
+    int rssi = net_wifi_rssi();
+    s_status_batt = batt;
+    s_status_charging = charging;
+    s_status_rssi = rssi;
     cJSON *m = cJSON_CreateObject();
     cJSON_AddNumberToObject(m, "battery_pct", batt);
     cJSON_AddBoolToObject(m, "charging", charging);
-    cJSON_AddNumberToObject(m, "rssi", net_wifi_rssi());
+    cJSON_AddNumberToObject(m, "rssi", rssi);
     cJSON_AddNumberToObject(m, "free_heap", esp_get_free_heap_size());
     send_json(m, "status", false, 0);
+    s_stats.statuses++;
+}
+
+/* Battery, charging or signal moved since the last status: worth telling the server before the heartbeat. */
+static bool status_changed(void)
+{
+    int batt = -1;
+    bool charging = false;
+    if (s_cfg.get_status) {
+        s_cfg.get_status(&batt, &charging);
+    }
+    int rssi = net_wifi_rssi();
+    return batt != s_status_batt || charging != s_status_charging
+        || (rssi < 0 && abs(rssi - s_status_rssi) >= STATUS_RSSI_STEP);
 }
 
 static void send_settings_changes(void)
@@ -752,6 +784,8 @@ static void on_hello_ack(const cJSON *j)
     s_backoff_floor_ms = 0;
     s_account_inactive = false;
     s_last_ping_ms = s_last_status_ms = now_ms();
+    s_ping_pending = false;
+    s_stats.sessions++;
     s_pairing_code[0] = '\0';
     if (s_paired_token) {
         s_boot_pending = false;     /* the server has the issue reports now */
@@ -1188,6 +1222,7 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
         if (conn != s_conn_id) {
             break;
         }
+        s_rx_ms = (uint32_t)now_ms();   /* any frame, a pong too: the link is alive */
         int op = ev->op_code;
         if (op == 0x08 || op == 0x09 || op == 0x0A) {
             break; /* close / ping / pong handled by the client */
@@ -1276,9 +1311,12 @@ static bool ws_open(const char *url)
         .task_core_id_set = true,
         .task_core_id = 0,
         .network_timeout_ms = CONNECT_TIMEOUT_MS,
-        .ping_interval_sec = 10,
-        .pingpong_timeout_sec = 30,
+        .ping_interval_sec = WS_PING_INTERVAL_S,
+        .pingpong_timeout_sec = WS_PONG_TIMEOUT_S,
         .keep_alive_enable = true,
+        .keep_alive_idle = TCP_KEEPALIVE_IDLE_S,
+        .keep_alive_interval = 15,
+        .keep_alive_count = 3,
         .crt_bundle_attach = esp_crt_bundle_attach,     /* used for wss:// only */
     };
     esp_websocket_client_handle_t ws = esp_websocket_client_init(&cfg);
@@ -1656,16 +1694,36 @@ static void handle_timers(void)
             enter_backoff();
         } else if (now - s_last_ping_ms >= PING_INTERVAL_MS) {
             s_last_ping_ms = now;
+            s_ping_sent_ms = now;
             send_simple("ping");
         }
         break;
     case CONN_SESSION:
+        if (s_ping_pending) {
+            if ((int32_t)(s_rx_ms - (uint32_t)s_ping_sent_ms) >= 0) {
+                s_ping_pending = false;
+            } else if (now - s_ping_sent_ms >= PONG_TIMEOUT_MS) {
+                ESP_LOGW(TAG, "no reply to ping in %d s - reconnecting", PONG_TIMEOUT_MS / 1000);
+                s_stats.pong_timeouts++;
+                bool recorded = session_lost("pong_timeout");
+                ws_destroy();   /* the client task has stopped: every event of this connection is in s_ws_live */
+                diag_ws_t w = ws_diag_snapshot();
+                if (recorded) {
+                    diag_ws_merge(&s_drop_ws, &w);
+                }
+                enter_backoff();
+                break;
+            }
+        }
         if (now - s_last_ping_ms >= PING_INTERVAL_MS) {
             s_last_ping_ms = now;
             s_ping_sent_ms = now;
+            s_ping_pending = true;
             send_simple("ping");
+            s_stats.pings++;
         }
-        if (now - s_last_status_ms >= STATUS_INTERVAL_MS) {
+        if (now - s_last_status_ms >= STATUS_INTERVAL_MS
+            || (now - s_last_status_ms >= STATUS_MIN_GAP_MS && status_changed())) {
             s_last_status_ms = now;
             send_status();
         }
@@ -1752,6 +1810,11 @@ void proto_network_down(void)
 {
     msg_t m = { .type = MSG_NET_DOWN };
     post(&m);
+}
+
+void proto_get_stats(proto_stats_t *out)
+{
+    *out = s_stats;     /* plain counters: a torn read only skews one log line */
 }
 
 void proto_reconnect(void)

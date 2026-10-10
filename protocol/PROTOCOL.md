@@ -9,8 +9,11 @@ Any incompatible change increments `protocol_version`.
   `wss://api.buddyai.example/ws/device` (prod). The firmware treats both identically.
 - **Text frames** carry JSON control messages (UTF-8).
 - **Binary frames** carry audio (one Opus packet per frame, see §4).
-- Keepalive: the device sends `ping` every 15 s when idle; the server closes a session after
-  45 s without any frame. WebSocket-level ping/pong is also accepted.
+- Keepalive: the device sends `ping` every 30 s (firmware before 2026-10: 15 s) and drops the session if
+  nothing at all arrives within 12 s of a ping (link drop `pong_timeout`). The server closes a session after
+  75 s without a message; WebSocket-level ping/pong frames do not reset that timer. Both sides also send
+  WebSocket pings, only as a backup (watch every 60 s, server every 60 s). Fewer idle frames let the watch's
+  Wi-Fi radio sleep longer.
 
 ## 2. Envelope
 
@@ -40,14 +43,14 @@ Message-specific fields sit at the top level next to the envelope fields.
 
 | type | Fields | Meaning |
 |---|---|---|
-| `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Diagnostic reports (token hello only, repeated until a `hello_ack`; admin **ola Diagnostics**, see §3.1.1): `boot: {reset_reason, prev_uptime_s?, …}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?, …}` when the previous session ended or connecting failed (`drop`: `wifi_lost`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`\|`reboot`\|`connect_failed`\|`hello_timeout`). |
+| `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Diagnostic reports (token hello only, repeated until a `hello_ack`; admin **ola Diagnostics**, see §3.1.1): `boot: {reset_reason, prev_uptime_s?, …}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?, …}` when the previous session ended or connecting failed (`drop`: `wifi_lost`\|`pong_timeout`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`\|`reboot`\|`connect_failed`\|`hello_timeout`). |
 | `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
 | `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
 | `playback_done` | `turn_id` | Device finished playing the reply. |
 | `settings_changed` | `base_version`, `changes: {…}` | User changed settings on the watch (subset of §5). |
-| `status` | `battery_pct`, `charging`, `rssi`, `free_heap` | Periodic telemetry (≤ 1/min). |
+| `status` | `battery_pct`, `charging`, `rssi`, `free_heap` | Telemetry: after `hello_ack`, every 5 min, and in between when the battery percentage or charging changes or the RSSI moves by 10 dB (at most every 30 s). The server records the end of a session as the device's last seen time. |
 | `ping` | — | Keepalive. |
 | `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
