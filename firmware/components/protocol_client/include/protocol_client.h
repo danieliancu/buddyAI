@@ -82,6 +82,7 @@ typedef struct {
     proto_event_cb_t  on_event;     /* called from the proto task */
     void             *ctx;
     proto_status_fn_t get_status;
+    int (*get_battery_mv)(void);    /* optional: sent in status next to the gauge % */
     const char       *fw_version;
     const char       *hw_model;
 } proto_config_t;

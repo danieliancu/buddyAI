@@ -42,8 +42,10 @@ static const char *TAG = "app";
 
 #define WIFI_CONNECT_GRACE_MS   20000
 #define BATTERY_POLL_MS         10000
+#define BATTERY_POLL_STANDBY_MS 60000   /* screen off: nobody sees the battery icon */
 #define POWER_LOG_MS            (10 * 60 * 1000)    /* development builds: firmware/README.md "Measuring power" */
 #define PWR_KEY_POLL_MS         200
+#define PWR_KEY_POLL_STANDBY_MS 1000    /* screen off: the PMU latches the press, so it is only seen later */
 #define FACTORY_RESET_HOLD_MS   8000    /* BOOT button hold time for the reset prompt */
 
 typedef enum {
@@ -52,6 +54,7 @@ typedef enum {
     APP_EV_FACTORY_RESET,   /* user confirmed the reset screen */
     APP_EV_PROV_DONE,       /* Bluetooth setup: joined the new Wi-Fi and saved it */
     APP_EV_BOOT_TAP,        /* BOOT button pressed briefly: start talking */
+    APP_EV_WAKE,            /* a touch or a BOOT press woke the watch from standby */
 } app_ev_type_t;
 
 typedef struct {
@@ -82,15 +85,36 @@ static void post_app(app_ev_type_t type, int arg)
     xQueueSend(s_app_q, &ev, 0);
 }
 
-/* GPIO interrupt (board_boot_button_on_tap). */
-static void boot_tap_isr(void)
+/* From the GPIO interrupt (board_boot_button_on_tap / board_set_wake_cb), or from the app task when a BOOT tap
+ * ended while the watch was waking up. */
+static void post_from_any(app_ev_type_t type)
 {
-    app_ev_t ev = { .type = APP_EV_BOOT_TAP };
+    app_ev_t ev = { .type = type };
+    if (!xPortInIsrContext()) {
+        xQueueSend(s_app_q, &ev, 0);
+        return;
+    }
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(s_app_q, &ev, &woken);
     if (woken) {
         portYIELD_FROM_ISR();
     }
+}
+
+static void boot_tap_isr(void)
+{
+    post_from_any(APP_EV_BOOT_TAP);
+}
+
+static void wake_isr(void)
+{
+    post_from_any(APP_EV_WAKE);
+}
+
+/* Screen standby (LVGL task): the radio sleeps longer between beacons; the app loop slows down by itself. */
+static void ui_standby(bool standby)
+{
+    net_wifi_set_standby(standby);
 }
 
 /* BOOT tap: the conversation screen with the mic on, from any screen, like the mic button (during a turn it
@@ -174,6 +198,11 @@ static void on_settings(const buddy_settings_t *s, void *ctx)
 static void on_net_event(net_event_t ev, void *ctx)
 {
     post_app(APP_EV_NET, ev);   /* runs in the event loop task - defer */
+}
+
+static int on_battery_mv(void)
+{
+    return s_batt_mv;
 }
 
 static void on_status_request(int *battery_pct, bool *charging)
@@ -356,59 +385,6 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_NOTE_TEXT:
         ui_note_text(ev->str, ev->num != 0);
         break;
-    }
-}
-
-/* ---- Shake to wake ----
- * While the screen is dimmed or off, the accelerometer is sampled at 25 Hz. A clear shake - three
- * strong jolts (acceleration more than SHAKE_G_MG away from 1 g) within SHAKE_WINDOW_MS - wakes the
- * screen, like a tap. Walking and ordinary arm movement stay well below it. Nothing is sent to the
- * server. While the screen is on, the sensor is not read. */
-#define SHAKE_SAMPLE_MS     40
-#define SHAKE_G_MG          1500
-#define SHAKE_PEAKS         3
-#define SHAKE_WINDOW_MS     1000
-#define SHAKE_PEAK_GAP_MS   100     /* one jolt is counted once */
-#define SHAKE_COOLDOWN_MS   2000
-
-static void shake_task(void *arg)
-{
-    int64_t peaks[SHAKE_PEAKS] = { 0 };
-    int n = 0;
-    int64_t last_peak = 0, cooldown_until = 0;
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(SHAKE_SAMPLE_MS));
-        if (ui_is_awake()) {
-            n = 0;
-            continue;
-        }
-        int x, y, z;
-        if (board_imu_read_accel_mg(&x, &y, &z) != ESP_OK) {
-            continue;
-        }
-        int64_t now = esp_timer_get_time() / 1000;
-        int mag = (int)sqrtf((float)x * x + (float)y * y + (float)z * z);
-        if (abs(mag - 1000) < SHAKE_G_MG || now < cooldown_until || now - last_peak < SHAKE_PEAK_GAP_MS) {
-            continue;
-        }
-        last_peak = now;
-        /* keep the peaks of the last SHAKE_WINDOW_MS */
-        int kept = 0;
-        for (int i = 0; i < n; i++) {
-            if (now - peaks[i] <= SHAKE_WINDOW_MS) {
-                peaks[kept++] = peaks[i];
-            }
-        }
-        n = kept;
-        if (n < SHAKE_PEAKS) {
-            peaks[n++] = now;
-        }
-        if (n >= SHAKE_PEAKS) {
-            ESP_LOGI(TAG, "shake: waking the screen");
-            n = 0;
-            cooldown_until = now + SHAKE_COOLDOWN_MS;
-            ui_wake();
-        }
     }
 }
 
@@ -630,7 +606,8 @@ static void app_loop(void)
 
     for (;;) {
         app_ev_t ev;
-        if (xQueueReceive(s_app_q, &ev, pdMS_TO_TICKS(PWR_KEY_POLL_MS)) == pdTRUE) {
+        uint32_t poll_ms = ui_is_awake() ? PWR_KEY_POLL_MS : PWR_KEY_POLL_STANDBY_MS;
+        if (xQueueReceive(s_app_q, &ev, pdMS_TO_TICKS(poll_ms)) == pdTRUE) {
             if (ev.type == APP_EV_NET) {
                 handle_net_event((net_event_t)ev.arg);
             } else if (ev.type == APP_EV_START_PORTAL) {
@@ -647,6 +624,8 @@ static void app_loop(void)
                 factory_reset();
             } else if (ev.type == APP_EV_BOOT_TAP) {
                 boot_tap();
+            } else if (ev.type == APP_EV_WAKE) {
+                ui_wake();
             } else if (ev.type == APP_EV_PROV_DONE) {
                 ESP_LOGI(TAG, "Bluetooth setup finished - restarting");
                 vTaskDelay(pdMS_TO_TICKS(4000));   /* the phone reads "connected" first */
@@ -666,7 +645,8 @@ static void app_loop(void)
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
         power_log(now);
 #endif
-        if (now - last_batt >= BATTERY_POLL_MS || last_batt == 0) {
+        uint32_t batt_ms = ui_is_awake() ? BATTERY_POLL_MS : BATTERY_POLL_STANDBY_MS;
+        if (now - last_batt >= batt_ms || last_batt == 0) {
             last_batt = now;
             refresh_status();
         }
@@ -739,13 +719,12 @@ void app_main(void)
             .on_note_session = ui_note_session_cb,
             .on_reminder_session = ui_reminder_session_cb,
             .on_item_pin = ui_item_pin,
+            .on_standby = ui_standby,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
+        board_set_wake_cb(wake_isr);
         if (board_boot_button_on_tap(boot_tap_isr) != ESP_OK) {
             ESP_LOGE(TAG, "BOOT button interrupt failed - BOOT only opens the reset prompt");
-        }
-        if (board_imu_available()) {
-            xTaskCreatePinnedToCore(shake_task, "shake", 3072, NULL, 2, NULL, 1);
         }
     }
 
@@ -767,6 +746,7 @@ void app_main(void)
         .on_event = on_proto_event,
         .ctx = NULL,
         .get_status = on_status_request,
+        .get_battery_mv = on_battery_mv,
         .fw_version = app->version,
         .hw_model = CONFIG_BUDDYAI_HW_MODEL,
     };

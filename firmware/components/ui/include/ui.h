@@ -71,6 +71,8 @@ typedef struct {
     /* reminder screen: open / close the reminder's edit mic */
     void (*on_reminder_session)(bool open, int number);
     void (*on_item_pin)(int number, bool pinned);
+    /* The screen went to standby (true) or woke (false); runs in the LVGL task, keep it short. */
+    void (*on_standby)(bool standby);
 } ui_callbacks_t;
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);

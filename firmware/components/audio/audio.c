@@ -41,7 +41,6 @@ static const char *TAG = "audio";
 #define WRITE_CHUNK_SAMPLES     (PLAY_RATE / 50)            /* 20 ms */
 #define DEC_OUT_MAX_SAMPLES     (PLAY_RATE * 120 / 1000)    /* up to 120 ms packets */
 #define PA_IDLE_OFF_MS          400
-#define WRITER_IDLE_WAIT_MS     200     /* nothing to play: sleep until data arrives instead of polling */
 /* Jitter buffer: a reply starts playing once PREBUFFER_MS is queued, its end
  * has arrived, or PREBUFFER_MAX_WAIT_MS passed. The server streams TTS
  * fragment by fragment and the TTS sometimes delivers slower than real time;
@@ -326,6 +325,7 @@ static void decode_task(void *arg)
         if (p->len == 0) {
             s_end_gen = p->gen;         /* end-of-turn marker reached */
             s_end_seen = true;
+            xSemaphoreGive(s_ring.data_sem);    /* an idle writer reports the end (empty reply) */
             free(p);
             continue;
         }
@@ -567,10 +567,12 @@ static void writer_task(void *arg)
             xSemaphoreGive(s_play_lock);
             pa_on = false;
         }
-        /* Idle (amplifier off, nothing queued): wait for the next write to the ring (a reply, a beep) or
-         * audio_typing_start(), which both give data_sem, instead of polling every 10-20 ms. */
-        if (!pa_on && !s_typing && ring_count(&s_ring) == 0 && uxQueueMessagesWaiting(s_pkt_q) == 0) {
-            xSemaphoreTake(s_ring.data_sem, pdMS_TO_TICKS(WRITER_IDLE_WAIT_MS));
+        /* Idle (amplifier off, nothing queued, the end reported): sleep until the next write to the ring (a reply,
+         * a beep), an end-of-reply marker or audio_typing_start(), which all give data_sem - no periodic wake-up,
+         * so the chip can light-sleep. */
+        if (!pa_on && !s_typing && ring_count(&s_ring) == 0 && uxQueueMessagesWaiting(s_pkt_q) == 0 &&
+            !(s_end_seen && s_end_gen == gen && reported_gen != gen && s_play_turn_valid)) {
+            xSemaphoreTake(s_ring.data_sem, portMAX_DELAY);
         }
     }
 }

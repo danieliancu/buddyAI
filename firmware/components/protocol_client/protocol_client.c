@@ -522,6 +522,12 @@ static void send_status(void)
     cJSON_AddNumberToObject(m, "battery_pct", batt);
     cJSON_AddBoolToObject(m, "charging", charging);
     cJSON_AddNumberToObject(m, "rssi", rssi);
+    if (s_cfg.get_battery_mv) {
+        int mv = s_cfg.get_battery_mv();
+        if (mv > 0) {
+            cJSON_AddNumberToObject(m, "battery_mv", mv);   /* the gauge % alone is not trusted yet */
+        }
+    }
     cJSON_AddNumberToObject(m, "free_heap", esp_get_free_heap_size());
     send_json(m, "status", false, 0);
     s_stats.statuses++;
@@ -1752,7 +1758,10 @@ static void proto_task(void *arg)
 {
     for (;;) {
         msg_t m;
-        if (xQueueReceive(s_q, &m, pdMS_TO_TICKS(250)) == pdTRUE) {
+        /* Idle session: the timers here are seconds apart (ping 30 s, its 12 s deadline, status), so wake once a
+         * second and let the chip light-sleep in between. Connecting, a turn or an open note: every 250 ms. */
+        bool idle = s_conn == CONN_SESSION && s_conv == PROTO_CONV_IDLE && !s_note_open;
+        if (xQueueReceive(s_q, &m, pdMS_TO_TICKS(idle ? 1000 : 250)) == pdTRUE) {
             handle_msg(&m);
         }
         handle_timers();

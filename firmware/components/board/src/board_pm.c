@@ -6,11 +6,12 @@
  *   - CPU frequency scaling / automatic light sleep: here. While the screen is awake (and therefore during every
  *     conversation, which keeps it awake) a lock holds the CPU at full speed for LVGL, Opus and the TLS link;
  *     in standby the lock is released and the CPU drops to CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ.
- *   - UI standby: the screen dims to its standby level (components/ui, apply_brightness).
+ *   - UI standby: the screen switches off after its timeout (components/ui, apply_brightness -> board_standby).
  *
- * Automatic light sleep (CONFIG_BUDDYAI_PM_LIGHT_SLEEP, off by default) additionally needs the I2S port stopped
- * in standby (the I2S driver holds an APB lock while enabled) and the LVGL tick off the 5 ms esp_timer; both are
- * done here and in board_display.c. It is untested on hardware: see firmware/README.md "Measuring power".
+ * Standby (board_standby): the panel sleeps, the audio codecs and the I2S port are closed (the I2S driver holds an
+ * APB lock while enabled), the touch INT and the BOOT key become light-sleep wake-up sources, and the CPU lock is
+ * released. With CONFIG_BUDDYAI_PM_LIGHT_SLEEP the chip then sleeps between Wi-Fi beacons (automatic light sleep;
+ * the LVGL tick reads the clock instead of a 5 ms timer, board_display.c). See firmware/README.md §10.
  */
 #include <stdio.h>
 #include "esp_log.h"
@@ -19,6 +20,20 @@
 #include "board.h"
 
 static const char *TAG = "board_pm";
+
+static board_button_cb_t s_wake_cb;
+
+void board_set_wake_cb(board_button_cb_t cb)
+{
+    s_wake_cb = cb;
+}
+
+void board_wake_from_isr(void)
+{
+    if (s_wake_cb) {
+        s_wake_cb();
+    }
+}
 
 #if CONFIG_PM_ENABLE
 static esp_pm_lock_handle_t s_awake_lock;
@@ -65,18 +80,27 @@ void board_pm_set_awake(bool awake)
     s_awake = awake;
     if (awake) {
         esp_pm_lock_acquire(s_awake_lock);
-#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
-        board_audio_resume();
-#endif
     } else {
-#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
-        board_audio_suspend();
-#endif
         esp_pm_lock_release(s_awake_lock);
     }
 #else
     (void)awake;
 #endif
+}
+
+void board_standby(bool on)
+{
+    if (on) {
+        board_display_standby(true);
+        board_boot_button_standby(true);
+        board_audio_suspend();
+        board_pm_set_awake(false);
+    } else {
+        board_pm_set_awake(true);           /* full speed first: the panel comes back sooner */
+        board_boot_button_standby(false);
+        board_display_standby(false);
+        board_audio_resume();               /* before the user can speak: a conversation may follow */
+    }
 }
 
 void board_pm_dump(void)

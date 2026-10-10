@@ -51,6 +51,8 @@ bool      board_boot_button_down(void);
 /* `cb` runs in the GPIO interrupt on every short press (released within 1.5 s): only post from it. */
 typedef void (*board_button_cb_t)(void);
 esp_err_t board_boot_button_on_tap(board_button_cb_t cb);
+/* Standby: a BOOT press becomes a light-sleep wake-up source (see board_set_wake_cb). */
+void      board_boot_button_standby(bool on);
 
 /* ---- RTC (PCF85063, stores UTC) ---- */
 /* Accelerometer (QMI8658), in milli-g. Unavailable -> ESP_ERR_INVALID_STATE. */
@@ -69,6 +71,10 @@ lv_display_t *board_display_init(void);
 void board_display_set_draw_lines(int lines);
 esp_err_t board_display_set_brightness(int percent);   /* 0..100 */
 esp_err_t board_display_power(bool on);                 /* panel on/off (keeps LVGL running) */
+/* Standby: panel asleep (black, nothing rendered), touch INT armed as a wake-up source. Waking redraws a whole
+ * frame before the panel shows it and ignores the touch that woke it. Caller holds the LVGL lock; brightness is
+ * the caller's (0 while in standby). */
+void      board_display_standby(bool on);
 bool      board_display_lock(uint32_t timeout_ms);
 void      board_display_unlock(void);
 
@@ -91,6 +97,12 @@ void      board_audio_resume(void);
 esp_err_t board_pm_init(void);
 /* The screen is awake (or a conversation runs): hold the CPU at full speed. */
 void      board_pm_set_awake(bool awake);
+/* Whole-board standby: display + touch wake, BOOT wake, audio codecs closed, CPU lock released (and back).
+ * Caller holds the LVGL lock. */
+void      board_standby(bool on);
+/* Runs in an interrupt when a touch or a BOOT press wakes the watch from standby: only post from it. */
+void      board_set_wake_cb(board_button_cb_t cb);
+void      board_wake_from_isr(void);    /* board internal */
 /* Development: print the power management locks and time per mode (CONFIG_PM_PROFILING). */
 void      board_pm_dump(void);
 

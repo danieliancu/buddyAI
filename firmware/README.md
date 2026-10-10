@@ -297,7 +297,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 
 - **Microphone channel**: the uplink takes I2S RX left slot = ES7210 MIC1 (`board_audio.c`). Check that
   speech is captured (not silence / the AEC loopback MIC3), and tune the mic gain (`TODO(M0)`).
-- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, the 30 % standby level and
+- **Display brightness**: CO5300 brightness command (0x51) range, the 0 %–100 % mapping, sleep in / out (deep standby) with the redraw on wake, and
   screen-off/on (`board_display.c`).
 - **Touch orientation**: FT3168 coordinates vs. the 410×502 panel (`swap_xy` / `mirror_x` / `mirror_y`
   are all 0) and the column gap `0x16`.
@@ -317,27 +317,45 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
 
 ## 10. Power and standby
 
-**Three different things** save power, and they are independent:
+Target: **8 h on the 320 mAh battery** (about 40 mA average, aiming at 30-35 mA). In standby the screen is off,
+the chip light-sleeps between Wi-Fi beacons, and the watch stays connected to the server.
 
-| | What | Where |
-|---|---|---|
-| Wi-Fi modem sleep | The radio sleeps between access-point beacons while no conversation runs; every frame sent or received wakes it | `components/net` (`WIFI_PS_MIN_MODEM`, off during a turn) |
-| CPU power management | Full speed (240 MHz) while the screen is awake, which covers every conversation; `CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ` (80) in standby. Automatic light sleep: `CONFIG_BUDDYAI_PM_LIGHT_SLEEP`, off | `components/board/src/board_pm.c` |
-| UI standby | After the screen timeout the watch goes to its home screen, which shows only the time and date in light grey (plus a red battery below 15 %) at 30 % (`STANDBY_BRIGHTNESS`), shifting up to 12 px a minute against burn-in; a tap, the PWR key, a shake, a reminder or a conversation restores the user's brightness at once. The user's saved brightness is never changed | `components/ui/ui.c` (`apply_brightness`) |
+| | Awake (screen on) | Standby (screen off) | Where |
+|---|---|---|---|
+| Screen | user's brightness | CO5300 asleep (SLPIN + deep standby), black; nothing is drawn | `board_display.c` (`board_display_standby`) |
+| CPU | 240 MHz (power-management lock) | automatic light sleep between wake-ups (`CONFIG_BUDDYAI_PM_LIGHT_SLEEP`) | `board_pm.c` |
+| Wi-Fi | `MIN_MODEM` (every DTIM beacon); `NONE` during a turn | `MAX_MODEM`, `listen_interval` 3 (~300 ms; `CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL`, 0 = every DTIM) | `net_wifi.c` |
+| Audio | ES8311 / ES7210 open, I2S running, amplifier off when silent | codecs closed, I2S stopped | `board_audio.c` |
+| Timers | LVGL clock 1 s, power 200 ms, app loop 200 ms | paused; app loop 1 s, protocol task 1 s, battery 60 s | `ui.c`, `app_main.c`, `protocol_client.c` |
+
+**Waking from standby** (straight back to the watchface, no loading screen):
+- **a touch:** the FT3168 INT (GPIO38, low while touched) is a light-sleep wake-up source; the touch that wakes the
+  screen presses nothing (`lv_indev_wait_release`);
+- **BOOT:** wakes it, and a short press opens the conversation as usual;
+- **PWR:** short press, polled over I2C every 1 s in standby (the PMU latches it), so it reacts within ≤ 1 s;
+- **a reminder from the server**, or anything that opens a screen (`ui_note_activity`).
+
+Shake-to-wake is gone: the QMI8658 interrupt lines are not confirmed in the schematic, and reading the sensor 25 times
+a second kept the chip awake. The accelerometer is off.
 
 **Idle link traffic (connected, no conversation)**:
 - a JSON `ping` every 30 s, with a 12 s reply deadline (`pong_timeout`);
 - a WebSocket ping every 60 s, as a backup;
-- `status` every 5 min, or sooner when the battery or charging state changes;
+- `status` every 5 min, or sooner when the battery or charging state changes (with `battery_mv`);
 - TCP keepalive only after 120 s of silence.
 
 The server closes a session after 75 s without a message (`server/app/config.py`). See `protocol/PROTOCOL.md` §1.
 
-**Light sleep: before enabling `CONFIG_BUDDYAI_PM_LIGHT_SLEEP`**, check each of these on a watch:
-- **Touch wake.** The touch interrupt (GPIO38) is an edge interrupt and cannot wake the chip from light sleep. Touches may only be seen at the next timer wake (≤ 200 ms), or be missed.
-- **The first sound of a reply or beep.** The I2S port restarts on demand.
-- **Wi-Fi stability over a night.**
-- **The USB console.** It disconnects while the chip sleeps.
+**Charging:** 150 mA (about 0.5 C for the 320 mAh LiPo; it was 400 mA), 4.2 V, 25 mA termination (`board_core.c`).
+Check it against the battery's datasheet.
+
+**Known limits**
+- **No 32 kHz crystal** (its pins carry I2C SDA and I2S MCLK): the sleep clock is the internal RC oscillator, so the
+  radio wakes a little early for each beacon.
+- **USB connected:** the USB-Serial-JTAG link keeps the chip awake. Battery life only shows on battery.
+- **The gauge percentage** comes from the AXP2101 without a battery model loaded; trust the voltage (`battery_mv`) more.
+- **Waking from deep standby** re-initialises the panel and redraws a whole frame (about 0.2 s).
+- **An access point or phone hotspot that drops sleeping clients:** set `CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL` to 0.
 
 ### 10.1 Measuring power
 
@@ -361,10 +379,10 @@ With `CONFIG_PM_PROFILING=y` (menuconfig), the same line also prints the power-m
 
 | | Firmware | Setup |
 |---|---|---|
-| A | before the power work (commit `d1b8979`) | screen timeout 300 s, touch it every few minutes (awake, normal brightness) |
-| B | before the power work | default timeout, standby at its old 30 % |
-| C | current, with `CONFIG_BUDDYAI_STANDBY_DISPLAY_OFF=y` | the panel switches off in standby |
-| D | current | standby time and date at 30 %, new keep-alive, frequency scaling |
+| A | before the power work (commit `d1b8979`) | default timeout (standby at 30 %, no light sleep) |
+| B | master `99db6aa` | standby with the time and date at 30 %, 80 MHz, no light sleep |
+| C | branch `battery-light-sleep`, `CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL=0` | screen off + light sleep, radio at every DTIM |
+| D | branch `battery-light-sleep` (default) | screen off + light sleep, radio every 3 beacons |
 
 **Regression checks** with the current firmware:
 1. Bluetooth / Wi-Fi setup.
@@ -374,6 +392,13 @@ With `CONFIG_PM_PROFILING=y` (menuconfig), the same line also prints the power-m
 5. A conversation and a note dictation. Check the time to the first sound.
 6. Standby → tap: the user's brightness comes back at once, and the Account page still shows the user's value.
 7. Pull the router's power: the log shows `no reply to ping` within about 45 s, and the watch reconnects when the router is back.
+8. Standby: the screen goes fully black; a touch wakes it straight to the watchface and presses nothing; BOOT wakes it
+   and opens the conversation; PWR wakes it within 1 s; 20 standby / wake cycles in a row.
+9. A conversation started right after waking: the first words are heard, the first reply sound is not cut, no pop.
+
+**8-hour acceptance test** (no current meter): charge fully, unplug USB, home Wi-Fi, 8 h mostly in standby with a
+conversation and a reminder test every hour or two. Pass: still working after 8 h, every conversation and reminder
+worked. Record the first and last `power:` log lines (mV and %), or the `battery_mv` the server received in `status`.
 
 ## 11. Tests
 

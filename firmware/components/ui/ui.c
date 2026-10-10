@@ -35,11 +35,6 @@ ui_callbacks_t   g_ui_cb;
 #define GREET_W             184
 #define SLIDE_MS            350     /* screen slide, slowing down towards the end */
 #define NUM_BARS            5
-#define STANDBY_BRIGHTNESS  30      /* % in standby (or the user's level if lower); the user's setting is kept */
-#define STANDBY_CLOCK       0xA8A8A8 /* standby time and date: light grey, not full white (AMOLED wear) */
-#define STANDBY_SHIFT_MUL   4       /* standby pixel shift: the s_shift offsets x4, up to 12 px */
-#define STANDBY_LOW_BATT    15      /* % : below it the standby screen shows a red battery */
-#define STANDBY_FADE_MS     400     /* dimming fades, waking is immediate */
 #define SPINNER_MS          1000
 #define SPINNER_ARC         60
 #define CAPTION_MAX         600
@@ -48,7 +43,7 @@ ui_callbacks_t   g_ui_cb;
 #define CAPTION_H           78
 #define CAPTION_LINE_SPACE  (-3)    /* Noto Sans 20 px: 28 px line -> 25 px pitch, 3 lines fit */
 #define DATE_MAX_W          380     /* longer dates drop the weekday */
-#define TIME_Y              58      /* home screen: time and date from the top (centred in standby) */
+#define TIME_Y              58      /* home screen: time and date from the top */
 #define DATE_Y              120
 #define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
 #define STATUS_HINT_W       170
@@ -58,7 +53,7 @@ ui_callbacks_t   g_ui_cb;
 /* Centered vertically between the date line (ends ~y 185) and the mic button (starts at y 308). */
 #define SHORTCUT_Y          394     /* centred between the wave and the bottom edge */
 
-typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_state_t;
+typedef enum { POWER_ON, POWER_OFF } power_state_t;   /* screen awake / standby (panel asleep, board_standby) */
 
 static lv_display_t *s_disp;
 static lv_obj_t *s_scr;
@@ -68,10 +63,8 @@ static lv_obj_t *s_lbl_batt;
 static lv_obj_t *s_time_box;            /* clock: hours | colon | minutes, colon pinned in place */
 static lv_obj_t *s_time_hours;
 static lv_obj_t *s_time_minutes;
-static lv_obj_t *s_time_colon;
-static lv_obj_t *s_ambient_cover;       /* standby: black over everything but the time and date */
-static lv_obj_t *s_ambient_batt;        /* standby: battery icon, only when low */
-static bool      s_ambient;
+static lv_timer_t *s_clock_timer;       /* paused in standby, with the power timer */
+static lv_timer_t *s_power_timer;
 static lv_obj_t *s_lbl_date;
 static lv_obj_t *s_lbl_hint;
 static lv_obj_t *s_shortcuts;
@@ -157,10 +150,18 @@ void ui_load_screen(lv_obj_t *scr, bool to_left)
     }
 }
 
+static void apply_brightness(void);
+
+/* Something worth seeing (a message screen, an item, a reminder): restart the screen timeout and wake the screen
+ * if it is in standby (nothing else turns it on there: the power timer is paused). */
 void ui_note_activity(void)
 {
     if (s_disp) {
         lv_display_trigger_activity(s_disp);
+        if (s_power != POWER_ON) {
+            s_power = POWER_ON;
+            apply_brightness();
+        }
     }
 }
 
@@ -201,43 +202,38 @@ bool ui_consume_wake_tap(void)
     return s;
 }
 
-static int s_fade_var;     /* lv_anim target of the dimming fade (the value lives in the panel) */
+static void update_clock(bool force);
 
-static void fade_cb(void *var, int32_t v)
-{
-    board_display_set_brightness((int)v);
-}
-
-static void set_ambient(bool on);
-
-/* Writes the panel only: the standby level never reaches g_ui_settings or NVS. */
+/* Awake: CPU at full speed, audio codecs open, panel lit at the user's brightness, timers running.
+ * Standby: the panel asleep and black, nothing drawn, LVGL timers paused, CPU free to light-sleep between Wi-Fi
+ * beacons (board_standby). The user's saved brightness is never changed. */
 static void apply_brightness(void)
 {
-    lv_anim_delete(&s_fade_var, fade_cb);   /* a wake during the fade wins */
-    set_ambient(s_power != POWER_ON);
-    board_pm_set_awake(s_power == POWER_ON);    /* full CPU speed while awake (a conversation keeps it awake) */
-    switch (s_power) {
-    case POWER_ON:
-        board_display_power(true);
-        board_display_set_brightness(g_ui_settings.brightness);
-        break;
-    case POWER_DIM: {
-        int from = g_ui_settings.brightness;
-        int to = from < STANDBY_BRIGHTNESS ? from : STANDBY_BRIGHTNESS;
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, &s_fade_var);
-        lv_anim_set_exec_cb(&a, fade_cb);
-        lv_anim_set_values(&a, from, to);
-        lv_anim_set_duration(&a, STANDBY_FADE_MS);
-        lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-        lv_anim_start(&a);
-        break;
+    bool on = s_power == POWER_ON;
+    if (s_clock_timer) {
+        if (on) {
+            lv_timer_resume(s_clock_timer);
+            lv_timer_resume(s_power_timer);
+        } else {
+            lv_timer_pause(s_clock_timer);
+            lv_timer_pause(s_power_timer);
+        }
     }
-    case POWER_OFF:
+    if (on) {
+        if (s_time_hours) {
+            update_clock(true);     /* the first frame after standby shows the right time */
+        }
+        board_standby(false);
+        board_display_set_brightness(g_ui_settings.brightness);
+        if (s_disp) {
+            lv_display_trigger_activity(s_disp);    /* the screen timeout counts from the wake */
+        }
+    } else {
         board_display_set_brightness(0);
-        board_display_power(false);
-        break;
+        board_standby(true);
+    }
+    if (g_ui_cb.on_standby) {
+        g_ui_cb.on_standby(!on);
     }
 }
 
@@ -258,55 +254,10 @@ static void set_time_text(const char *t)
     lv_label_set_text(s_time_minutes, colon ? colon + 1 : "");
 }
 
-/* Burn-in shift of the whole watchface; wider in standby, where only the time and date stay lit. */
+/* Burn-in shift of the whole watchface. */
 static void apply_shift(void)
 {
-    int mul = s_ambient ? STANDBY_SHIFT_MUL : 1;
-    lv_obj_set_pos(s_content, s_shift[s_shift_idx][0] * mul, s_shift[s_shift_idx][1] * mul);
-}
-
-/* Standby ("always on"): only the time and the date, centred, in light grey, plus a red battery when it is low.
- * A black cover hides the rest (black AMOLED pixels are off); waking removes it, so whatever state the hidden
- * widgets are in shows again unchanged. */
-static void ambient_batt_update(void)
-{
-    if (!s_ambient_batt) {
-        return;
-    }
-    bool show = s_ambient && s_batt >= 0 && s_batt < STANDBY_LOW_BATT && !s_charging;
-    lv_label_set_text(s_ambient_batt, s_batt < 8 ? ICON_BATTERY_EMPTY : ICON_BATTERY_1);
-    lv_obj_set_flag(s_ambient_batt, LV_OBJ_FLAG_HIDDEN, !show);
-}
-
-static void set_ambient(bool on)
-{
-    if (!s_ambient_cover || on == s_ambient) {
-        return;
-    }
-    s_ambient = on;
-    lv_obj_t *lit[] = { s_time_hours, s_time_colon, s_time_minutes, s_lbl_date };
-    for (size_t i = 0; i < sizeof(lit) / sizeof(lit[0]); i++) {
-        if (on) {
-            lv_obj_set_style_text_color(lit[i], hex(STANDBY_CLOCK), 0);
-        } else {
-            lv_obj_remove_local_style_prop(lit[i], LV_STYLE_TEXT_COLOR, 0);
-        }
-    }
-    lv_obj_set_flag(s_ambient_cover, LV_OBJ_FLAG_HIDDEN, !on);
-    if (on) {
-        lv_obj_align(s_time_box, LV_ALIGN_CENTER, 0, -28);
-        lv_obj_align(s_lbl_date, LV_ALIGN_CENTER, 0, 32);
-        /* the lit parts above the cover (other widgets may have been raised since) */
-        lv_obj_move_foreground(s_ambient_cover);
-        lv_obj_move_foreground(s_time_box);
-        lv_obj_move_foreground(s_lbl_date);
-        lv_obj_move_foreground(s_ambient_batt);
-    } else {
-        lv_obj_align(s_time_box, LV_ALIGN_TOP_MID, 0, TIME_Y);
-        lv_obj_align(s_lbl_date, LV_ALIGN_TOP_MID, 0, DATE_Y);
-    }
-    ambient_batt_update();
-    apply_shift();
+    lv_obj_set_pos(s_content, s_shift[s_shift_idx][0], s_shift[s_shift_idx][1]);
 }
 
 static void update_clock(bool force)
@@ -599,23 +550,19 @@ static void power_timer_cb(lv_timer_t *t)
     if (busy || inactive < timeout) {
         want = POWER_ON;
     } else {
-#if CONFIG_BUDDYAI_STANDBY_DISPLAY_OFF
-        want = POWER_OFF;           /* power measurement only (scenario C, firmware/README.md) */
-#else
-        want = POWER_DIM;           /* stays on at the standby level: the panel never switches off on its own */
-#endif
+        want = POWER_OFF;           /* standby: the panel sleeps, black (board_standby) */
     }
     if (want != s_power) {
         ESP_LOGD(TAG, "screen power %d -> %d", s_power, want);
         if (want != POWER_ON && s_conv == UI_CONV_IDLE && s_caption[0]) {
-            s_caption[0] = '\0';        /* the last reply clears when the screen dims */
+            s_caption[0] = '\0';        /* the last reply clears when the screen goes off */
             show_caption();
         }
-        /* The dimmed screen stays on: only the watchface has burn-in pixel shift, so lists, settings
-         * and the conversation (idle by now: a turn keeps the screen awake) give way to it. The message
-         * screens (pairing code, Wi-Fi setup...) stay until the user leaves them. */
+        /* Waking shows the watchface: lists, settings and the conversation (idle by now: a turn keeps the
+         * screen awake) give way to it, at once (no slide while the panel goes to sleep). The message screens
+         * (pairing code, Wi-Fi setup...) stay until the user leaves them. */
         if (want != POWER_ON && !ui_is_watchface() && !ui_msg_is_active()) {
-            ui_go_watchface();
+            lv_screen_load(s_scr);
         }
         s_power = want;
         apply_brightness();
@@ -1026,7 +973,6 @@ static void build_watchface(void)
         parts[i] = l;
     }
     lv_label_set_text(parts[1], ":");
-    s_time_colon = parts[1];
     s_time_hours = parts[0];
     s_time_minutes = parts[2];
     set_time_text("--:--");
@@ -1162,23 +1108,6 @@ static void build_watchface(void)
 
     lv_obj_move_foreground(s_shortcuts);     /* above the art, which reaches down to them */
     lv_obj_move_foreground(s_btn_mic);
-
-    /* Standby cover (set_ambient): black, not clickable, so the first tap still reaches the widgets below
-     * (and is swallowed as the wake tap). */
-    s_ambient_cover = lv_obj_create(s_content);
-    lv_obj_remove_style_all(s_ambient_cover);
-    lv_obj_set_size(s_ambient_cover, BOARD_LCD_H_RES, BOARD_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_ambient_cover, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_ambient_cover, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(s_ambient_cover, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_ambient_cover, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_GESTURE_BUBBLE);
-
-    s_ambient_batt = lv_label_create(s_content);
-    lv_obj_set_style_text_font(s_ambient_batt, &buddy_font_28, 0);
-    lv_obj_set_style_text_color(s_ambient_batt, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_label_set_text(s_ambient_batt, ICON_BATTERY_1);
-    lv_obj_align(s_ambient_batt, LV_ALIGN_CENTER, 0, 80);
-    lv_obj_add_flag(s_ambient_batt, LV_OBJ_FLAG_HIDDEN);
 }
 
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
@@ -1205,14 +1134,13 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     update_clock(true);
     update_status();
     lv_screen_load(s_scr);
-    lv_timer_create(clock_timer_cb, 1000, NULL);
+    s_clock_timer = lv_timer_create(clock_timer_cb, 1000, NULL);
     s_anim_timer = lv_timer_create(anim_timer_cb, 40, NULL);
     lv_timer_pause(s_anim_timer);       /* resumed by apply_conv_visuals() while listening / speaking */
-    lv_timer_create(power_timer_cb, 200, NULL);
-    UNLOCK();
-
+    s_power_timer = lv_timer_create(power_timer_cb, 200, NULL);
     s_power = POWER_ON;
     apply_brightness();
+    UNLOCK();
     ESP_LOGI(TAG, "ui ready");
     return ESP_OK;
 }
@@ -1429,7 +1357,6 @@ void ui_set_status(int battery_pct, bool charging, ui_link_t link)
     s_charging = charging;
     s_link = link;
     update_status();
-    ambient_batt_update();
     UNLOCK();
 }
 

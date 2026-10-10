@@ -26,6 +26,8 @@ static const char *TAG = "board_disp";
 static esp_lcd_panel_io_handle_t s_io;
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
+static lv_indev_t *s_indev;
+static bool s_standby;
 static lv_display_t *s_disp;
 
 /* LVGL draw buffer: 20 lines (~16 KB), double buffered, in internal DMA RAM.
@@ -125,12 +127,10 @@ static esp_err_t touch_init(void)
     return esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &s_touch);
 }
 
-#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
 static uint32_t lvgl_tick_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
-#endif
 
 lv_display_t *board_display_init(void)
 {
@@ -148,22 +148,21 @@ lv_display_t *board_display_init(void)
     port_cfg.task_priority = 4;
     port_cfg.task_stack = 8192;
     port_cfg.task_affinity = 0;
-    port_cfg.task_max_sleep_ms = 100;
+    port_cfg.task_max_sleep_ms = 1000;  /* with nothing to animate, the LVGL task sleeps up to 1 s */
     port_cfg.timer_period_ms = 5;
     if (lvgl_port_init(&port_cfg) != ESP_OK) {
         ESP_LOGE(TAG, "lvgl port init failed");
         return NULL;
     }
-#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
-    /* The port's 5 ms tick timer would wake the chip 200 times a second: LVGL reads the clock instead.
-     * lvgl_port_stop() stops that timer and disables LVGL's timers, which are then enabled again. */
+    /* The port's 5 ms tick timer would wake the chip 200 times a second, also in standby: LVGL reads the clock
+     * instead. lvgl_port_stop() stops that timer and disables LVGL's timers, which are then enabled again
+     * (lvgl_port_stop() alone must not be used to pause LVGL: lv_timer_handler() then asks to run again in 1 ms). */
     if (lvgl_port_lock(0)) {
         lv_tick_set_cb(lvgl_tick_ms);
         lvgl_port_stop();
         lv_timer_enable(true);
         lvgl_port_unlock();
     }
-#endif
 
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = s_io,
@@ -198,7 +197,8 @@ lv_display_t *board_display_init(void)
             .disp = s_disp,
             .handle = s_touch,
         };
-        if (!lvgl_port_add_touch(&touch_cfg)) {
+        s_indev = lvgl_port_add_touch(&touch_cfg);
+        if (!s_indev) {
             ESP_LOGE(TAG, "lvgl add touch failed");
         }
     } else {
@@ -226,6 +226,58 @@ esp_err_t board_display_set_brightness(int percent)
     esp_err_t err = esp_lcd_panel_co5300_set_brightness(s_panel, (uint8_t)percent);
     s_last = err == ESP_OK ? percent : -1;
     return err;
+}
+
+/* Standby: the touch controller keeps running; its INT line (GPIO38, low while touched) wakes the chip from
+ * light sleep. A wake-up needs a level, and the GPIO's interrupt type follows it, so the LVGL port's edge handler
+ * gives way to this one-shot handler until board_display_standby(false). */
+static void touch_wake_isr(void *arg)
+{
+    gpio_intr_disable(BOARD_TOUCH_INT);
+    board_wake_from_isr();
+}
+
+static void touch_wake_mode(bool on)
+{
+    if (!s_touch) {
+        return;
+    }
+    gpio_intr_disable(BOARD_TOUCH_INT);
+    gpio_isr_handler_remove(BOARD_TOUCH_INT);
+    if (on) {
+        gpio_isr_handler_add(BOARD_TOUCH_INT, touch_wake_isr, NULL);
+        gpio_wakeup_enable(BOARD_TOUCH_INT, GPIO_INTR_LOW_LEVEL);   /* also sets the interrupt type */
+    } else {
+        gpio_wakeup_disable(BOARD_TOUCH_INT);
+        gpio_set_intr_type(BOARD_TOUCH_INT, GPIO_INTR_NEGEDGE);     /* as esp_lcd_touch_ft5x06 configured it */
+        gpio_isr_handler_add(BOARD_TOUCH_INT, (gpio_isr_t)s_touch->config.interrupt_callback, s_touch);
+    }
+    gpio_intr_enable(BOARD_TOUCH_INT);
+}
+
+void board_display_standby(bool on)
+{
+    if (!s_panel || on == s_standby) {
+        return;
+    }
+    s_standby = on;
+    if (on) {
+        board_display_set_brightness(0);
+        esp_lcd_panel_disp_on_off(s_panel, false);
+        esp_lcd_panel_disp_sleep(s_panel, true);        /* SLPIN + deep standby */
+        lv_display_enable_invalidation(s_disp, false);  /* nothing is drawn for a sleeping panel */
+        touch_wake_mode(true);
+    } else {
+        touch_wake_mode(false);
+        esp_lcd_panel_disp_sleep(s_panel, false);       /* reset + init after deep standby: the frame is lost */
+        lv_display_enable_invalidation(s_disp, true);
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(s_disp);                            /* a whole frame before the panel shows anything */
+        esp_lcd_panel_disp_on_off(s_panel, true);
+        if (s_indev) {
+            lv_indev_wait_release(s_indev);             /* the waking touch presses nothing */
+        }
+    }
 }
 
 esp_err_t board_display_power(bool on)

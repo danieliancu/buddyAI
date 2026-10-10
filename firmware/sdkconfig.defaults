@@ -20,10 +20,17 @@ CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
-# Power management: full speed while the screen is awake, CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ in
-# standby (components/board/src/board_pm.c); tickless idle lets the idle task skip ticks
+# Power management: full speed while the screen is awake; screen off = automatic light sleep
+# between Wi-Fi beacons (components/board/src/board_pm.c, CONFIG_BUDDYAI_PM_LIGHT_SLEEP).
+# Tickless idle lets the idle task skip ticks; the Wi-Fi MAC/baseband power down while asleep.
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_ESP_PHY_MAC_BB_PD=y
+# Sleep entry / exit and the Wi-Fi sleep path in IRAM: shorter, cheaper wake-ups (~10 KB of internal RAM;
+# 188 KB stayed free without them)
+CONFIG_PM_SLP_IRAM_OPT=y
+CONFIG_PM_RTOS_IDLE_OPT=y
+CONFIG_ESP_WIFI_SLP_IRAM_OPT=y
 
 # ---- PSRAM (octal, 80 MHz) ------------------------------------------------
 CONFIG_SPIRAM=y

@@ -50,7 +50,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
 | `playback_done` | `turn_id` | Device finished playing the reply. |
 | `settings_changed` | `base_version`, `changes: {…}` | User changed settings on the watch (subset of §5). |
-| `status` | `battery_pct`, `charging`, `rssi`, `free_heap` | Telemetry: after `hello_ack`, every 5 min, and in between when the battery percentage or charging changes or the RSSI moves by 10 dB (at most every 30 s). The server records the end of a session as the device's last seen time. |
+| `status` | `battery_pct`, `charging`, `rssi`, `free_heap`, `battery_mv?` | Telemetry: after `hello_ack`, every 5 min, and in between when the battery percentage or charging changes or the RSSI moves by 10 dB (at most every 30 s). The server records the end of a session as the device's last seen time. |
 | `ping` | — | Keepalive. |
 | `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |

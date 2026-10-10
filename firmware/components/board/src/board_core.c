@@ -109,7 +109,8 @@ static esp_err_t pmu_init(void)
 
     /* Charger: same parameters as the official Waveshare AXP2101 example. */
     reg_write8(s_pmu, AXP_IPRECHG, 0x02);                  /* precharge 50 mA */
-    reg_write8(s_pmu, AXP_ICC_CHG, 0x0A);                  /* constant current 400 mA */
+    /* 150 mA (code 6; 0x0A would be 400 mA): about 0.5 C for the watch's 320 mAh LiPo. */
+    reg_write8(s_pmu, AXP_ICC_CHG, 0x06);
     reg_write8(s_pmu, AXP_ITERM_CHG, 0x01 | 0x10);         /* termination 25 mA, enabled */
     reg_update8(s_pmu, AXP_CV_CHG, 0x07, 0x03);            /* 4.2 V */
 
@@ -315,7 +316,9 @@ static esp_err_t imu_init(void)
     vTaskDelay(pdMS_TO_TICKS(20));
     ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL1, 0x40), TAG, "imu ctrl1");
     ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL2, QMI_ACC_4G_125HZ), TAG, "imu ctrl2");
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x01), TAG, "imu ctrl7");
+    /* Accelerometer left off (CTRL7 = 0): nothing reads it since shake-to-wake went with the dark standby.
+     * board_imu_read_accel_mg() enables it on first use. */
+    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x00), TAG, "imu ctrl7");
     return ESP_OK;
 }
 
@@ -323,6 +326,12 @@ esp_err_t board_imu_read_accel_mg(int *x, int *y, int *z)
 {
     if (!s_imu) {
         return ESP_ERR_INVALID_STATE;
+    }
+    static bool enabled;
+    if (!enabled) {
+        ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x01), TAG, "imu on");
+        enabled = true;
+        vTaskDelay(pdMS_TO_TICKS(20));  /* first sample */
     }
     uint8_t d[6];
     ESP_RETURN_ON_ERROR(reg_read(s_imu, QMI_AX_L, d, sizeof(d)), TAG, "imu read");
@@ -391,10 +400,17 @@ bool board_boot_button_down(void)
 #define BOOT_TAP_MAX_US     (1500 * 1000)
 static board_button_cb_t s_boot_tap_cb;
 static volatile int64_t  s_boot_down_us;
+static volatile bool     s_boot_standby;    /* low-level wake-up mode (board_boot_button_standby) */
 
 static void boot_isr(void *arg)
 {
     int64_t now = esp_timer_get_time();
+    if (s_boot_standby) {   /* level interrupt: once, then board_boot_button_standby(false) takes over */
+        gpio_intr_disable(BOARD_BTN_BOOT);
+        s_boot_down_us = now;
+        board_wake_from_isr();
+        return;
+    }
     if (gpio_get_level(BOARD_BTN_BOOT) == 0) {
         s_boot_down_us = now;
     } else if (s_boot_down_us) {
@@ -415,4 +431,34 @@ esp_err_t board_boot_button_on_tap(board_button_cb_t cb)
     }
     ESP_RETURN_ON_ERROR(gpio_set_intr_type(BOARD_BTN_BOOT, GPIO_INTR_ANYEDGE), TAG, "boot intr");
     return gpio_isr_handler_add(BOARD_BTN_BOOT, boot_isr, NULL);
+}
+
+/* Standby: a press (low level) wakes the chip from light sleep and the screen; the tap that follows is timed from
+ * that press, so BOOT still opens the conversation straight from standby. */
+void board_boot_button_standby(bool on)
+{
+    if (on == s_boot_standby || !s_boot_tap_cb) {
+        return;
+    }
+    gpio_intr_disable(BOARD_BTN_BOOT);
+    if (on) {
+        s_boot_down_us = 0;
+        s_boot_standby = true;
+        gpio_wakeup_enable(BOARD_BTN_BOOT, GPIO_INTR_LOW_LEVEL);    /* also sets the interrupt type */
+        gpio_intr_enable(BOARD_BTN_BOOT);
+        return;
+    }
+    gpio_wakeup_disable(BOARD_BTN_BOOT);
+    gpio_set_intr_type(BOARD_BTN_BOOT, GPIO_INTR_ANYEDGE);
+    s_boot_standby = false;
+    gpio_intr_enable(BOARD_BTN_BOOT);
+    /* already released while the watch woke up: that was the tap */
+    int64_t down = s_boot_down_us;
+    if (down && gpio_get_level(BOARD_BTN_BOOT) == 1) {
+        s_boot_down_us = 0;
+        int64_t held = esp_timer_get_time() - down;
+        if (held >= BOOT_TAP_MIN_US && held < BOOT_TAP_MAX_US) {
+            s_boot_tap_cb();
+        }
+    }
 }

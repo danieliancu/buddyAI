@@ -11,6 +11,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "sdkconfig.h"
 #include "esp_netif_sntp.h"
 #include "esp_timer.h"
 #include "mdns.h"
@@ -140,6 +141,22 @@ esp_err_t net_init(net_event_cb_t cb, void *ctx)
     return ESP_OK;
 }
 
+/* Radio power save: off during a conversation turn (latency); in screen standby the radio wakes only every
+ * CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL beacons (WIFI_PS_MAX_MODEM; the access point keeps frames for it, so a
+ * reminder arrives a few hundred ms later at most); otherwise at every DTIM beacon (WIFI_PS_MIN_MODEM). */
+static bool s_ps_turn, s_ps_standby;
+
+static void apply_ps(void)
+{
+    if (!g_net_wifi_started) {
+        return;
+    }
+    wifi_ps_type_t ps = s_ps_turn ? WIFI_PS_NONE
+                      : (s_ps_standby && CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL > 0) ? WIFI_PS_MAX_MODEM
+                      : WIFI_PS_MIN_MODEM;
+    esp_wifi_set_ps(ps);
+}
+
 esp_err_t net_wifi_connect(const char *ssid, const char *pass)
 {
     wifi_config_t wc = {0};
@@ -149,6 +166,7 @@ esp_err_t net_wifi_connect(const char *ssid, const char *pass)
     wc.sta.pmf_cfg.capable = true;
     wc.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     wc.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    wc.sta.listen_interval = CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL;   /* beacons between wake-ups, standby only */
 
     s_sta_configured = true;
     s_attempt_reason = 0;
@@ -167,7 +185,7 @@ esp_err_t net_wifi_connect(const char *ssid, const char *pass)
         esp_wifi_disconnect();
         err = esp_wifi_connect();
     }
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    apply_ps();
     return err;
 }
 
@@ -200,7 +218,14 @@ int net_wifi_rssi(void)
 
 void net_wifi_set_power_save(bool enable)
 {
-    esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    s_ps_turn = !enable;
+    apply_ps();
+}
+
+void net_wifi_set_standby(bool standby)
+{
+    s_ps_standby = standby;
+    apply_ps();
 }
 
 /* ------------------------------------------------------------------------- */

@@ -40,6 +40,8 @@ int       net_wifi_last_disconnect_reason(void);  /* wifi_err_reason_t of the la
 int       net_wifi_attempt_reason(void);
 /* Modem sleep while idle; disabled during a conversation turn for latency. */
 void      net_wifi_set_power_save(bool enable);
+/* Screen standby: the radio sleeps longer between beacons (CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL). */
+void      net_wifi_set_standby(bool standby);
 
 /* ---- provisioning portal ---- */
 /* The "ola-XXXX" setup network is WPA2-protected with `ap_pass` (the watch's setup password, 8..63

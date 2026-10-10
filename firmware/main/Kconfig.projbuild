@@ -48,24 +48,25 @@ menu "BuddyAI"
             80 MHz keeps the Wi-Fi/TLS link comfortable.
 
     config BUDDYAI_PM_LIGHT_SLEEP
-        bool "Automatic light sleep in standby (experimental)"
+        bool "Automatic light sleep in standby"
         depends on PM_ENABLE && FREERTOS_USE_TICKLESS_IDLE
-        default n
+        default y
         help
-            Lets the CPU sleep between Wi-Fi beacons in standby: the I2S
-            audio port stops while the screen is in standby and the LVGL
-            tick reads the clock instead of a 5 ms timer. Not yet tested on
-            the watch: check touch wake-up, the first sound of a reply and
-            Wi-Fi stability before enabling it (firmware/README.md
-            "Measuring power").
+            While the screen is off, the chip sleeps between Wi-Fi beacons
+            (esp_pm automatic light sleep). The Wi-Fi association and the
+            server connection stay up; a touch, the BOOT key, the PWR key
+            (polled every second) or a message from the server wakes it.
+            Off: the CPU only drops to CONFIG_BUDDYAI_PM_MIN_FREQ_MHZ.
 
-    config BUDDYAI_STANDBY_DISPLAY_OFF
-        bool "Switch the display off in standby (power measurement only)"
-        depends on !BUDDYAI_RELEASE_BUILD
-        default n
+    config BUDDYAI_STANDBY_LISTEN_INTERVAL
+        int "Wi-Fi beacons between radio wake-ups in standby (0 = every DTIM)"
+        range 0 10
+        default 3
         help
-            Scenario C of the power measurement: the panel switches off
-            instead of dimming to the standby brightness. Customers' watches
-            keep the standby screen on.
+            While the screen is off the radio uses WIFI_PS_MAX_MODEM and
+            wakes every this many beacons (about 100 ms each): server
+            messages arrive up to that much later. 0 keeps
+            WIFI_PS_MIN_MODEM (every DTIM beacon), for access points or
+            phone hotspots that drop sleeping clients.
 
 endmenu

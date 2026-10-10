@@ -62,6 +62,7 @@ static esp_err_t i2s_init(void)
 
 static volatile bool s_pa_on;
 static volatile bool s_suspended;
+static int           s_volume = 70;     /* restored when the codecs are reopened */
 
 void board_audio_pa_enable(bool on)
 {
@@ -69,14 +70,16 @@ void board_audio_pa_enable(bool on)
     gpio_set_level(BOARD_AUDIO_PA_EN, on ? 1 : 0);
 }
 
+/* Standby: closing both codecs powers the ES8311 / ES7210 down and disables the I2S channels (esp_codec_dev
+ * closes its data interface), which also releases the I2S driver's power-management lock. */
 void board_audio_suspend(void)
 {
-    if (!s_tx || s_suspended || s_pa_on) {
+    if (!s_speaker || s_suspended || s_pa_on) {
         return;
     }
     s_suspended = true;
-    i2s_channel_disable(s_tx);
-    i2s_channel_disable(s_rx);
+    esp_codec_dev_close(s_mic);
+    esp_codec_dev_close(s_speaker);
 }
 
 void board_audio_resume(void)
@@ -84,8 +87,17 @@ void board_audio_resume(void)
     if (!s_suspended) {
         return;
     }
-    i2s_channel_enable(s_tx);
-    i2s_channel_enable(s_rx);
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate = BOARD_AUDIO_SAMPLE_RATE,
+        .channel = 1,
+        .bits_per_sample = BOARD_AUDIO_BITS,
+    };
+    if (esp_codec_dev_open(s_speaker, &fs) != ESP_CODEC_DEV_OK || esp_codec_dev_open(s_mic, &fs) != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "codec reopen failed");
+    }
+    esp_codec_dev_set_in_gain(s_mic, MIC_GAIN_DB);
+    esp_codec_dev_set_out_vol(s_speaker, s_volume);
+    esp_codec_dev_set_out_mute(s_speaker, false);  /* the amplifier is off: silent until the audio code plays */
     s_suspended = false;
 }
 
@@ -173,7 +185,7 @@ esp_err_t board_audio_init(void)
     s_mic = esp_codec_dev_new(&mic_cfg);
     ESP_RETURN_ON_FALSE(s_mic, ESP_FAIL, TAG, "mic dev");
 
-    /* Open both directions once at the fixed rate and keep them open. */
+    /* Open both directions at the fixed rate; they stay open while the screen is awake (board_audio_suspend). */
     esp_codec_dev_sample_info_t fs = {
         .sample_rate = BOARD_AUDIO_SAMPLE_RATE,
         .channel = 1,
@@ -208,5 +220,6 @@ esp_err_t board_audio_set_volume(int percent)
     } else if (percent > 100) {
         percent = 100;
     }
+    s_volume = percent;
     return esp_codec_dev_set_out_vol(s_speaker, percent) == ESP_CODEC_DEV_OK ? ESP_OK : ESP_FAIL;
 }
