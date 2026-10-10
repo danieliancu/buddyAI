@@ -68,9 +68,20 @@ def test_theme_blue_or_white_only() -> None:
     assert not changed and json.loads(result)["ok"] is False
 
 
-def test_nothing_to_change() -> None:
-    result, changed = apply(_device(), {})
-    assert not changed and json.loads(result)["ok"] is False
+def test_no_arguments_reads_the_current_settings() -> None:
+    dev = _device(volume=35, brightness=60, language="ro", screen_timeout_s=30)
+    result, changed = apply(dev, {})  # "how loud is it?"
+    r = json.loads(result)
+    assert not changed and r["ok"] is True and r["current"] is True
+    assert (r["volume"], r["brightness"], r["screen_timeout_s"]) == (35, 60, 30)
+    assert r["language"] == "Romanian" and r["theme"] in ("blue", "white")
+    assert _settings(dev).volume == 35  # nothing changed
+
+
+def test_reading_through_the_assistant_does_not_push_settings() -> None:
+    dev = _device(brightness=45)
+    out = AssistantTools().execute(None, "Europe/London", "watch_settings", "{}", dev)
+    assert not out.settings_changed and json.loads(out.result)["brightness"] == 45
 
 
 def test_tool_reports_a_settings_change_for_watches_without_an_owner() -> None:

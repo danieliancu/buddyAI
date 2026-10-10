@@ -1,7 +1,7 @@
 """Voice control of the watch settings: volume, brightness, language and colours.
 
 The assistant calls `watch_settings` ("a bit quieter", "brightness to maximum", "switch to Romanian",
-"make it red"). Relative changes come as signed steps (volume_change / brightness_change); the result
+"make it red"), or without arguments to read the current values ("how loud is it?"). Relative changes come as signed steps (volume_change / brightness_change); the result
 is clamped to each setting's range. The new settings are saved here and pushed to the watch when the
 turn ends (after the reply has been spoken).
 """
@@ -21,9 +21,9 @@ BRIGHTNESS_RANGE = (5, 100)
 
 SETTINGS_TOOL: dict[str, Any] = {
     "name": "watch_settings",
-    "description": "Change the watch's volume, screen brightness, language or colour theme (blue or white). "
-    "Pass only what "
-    "changes. Use volume / brightness for an exact level (0-100, e.g. 'maximum' = 100, 'minimum' = 0) and "
+    "description": "Read or change the watch's volume, screen brightness, language or colour theme (blue or "
+    "white). Call it with no arguments to read the current settings (also the screen timeout), e.g. 'what is "
+    "the volume?'. To change, pass only what changes. Use volume / brightness for an exact level (0-100, e.g. 'maximum' = 100, 'minimum' = 0) and "
     "volume_change / brightness_change for relative requests: +/-10 for 'a bit', +/-15 when no amount is "
     "given ('louder', 'dimmer'), +/-30 for 'much'. Returns the new values.",
     "parameters": {
@@ -50,7 +50,8 @@ SETTINGS_TOOL: dict[str, Any] = {
 SETTINGS_RULE = (
     "You can change the watch's volume, brightness, language and colours with the watch_settings tool, "
     "also for vague requests ('a bit quieter', 'brighter', 'much louder'). After changing, confirm briefly "
-    "with the new value, e.g. 'Volume 55.'"
+    "with the new value, e.g. 'Volume 55.' When asked what a setting is now (volume, brightness, language, "
+    "theme, screen timeout), call watch_settings with no arguments and answer with the value; never guess it."
 )
 
 
@@ -105,8 +106,8 @@ def apply(device_id: str, args: dict[str, Any]) -> tuple[str, bool]:
             theme = {"preset": args["theme"]}
         if theme:
             changes["theme"] = theme
-        if not changes:
-            return _err("nothing to change"), False
+        if not changes:  # a question about the settings: report them, change nothing
+            return json.dumps({"ok": True, "current": True, **_view(current)}, ensure_ascii=False), False
         new, _ = repo.update(device_id, changes)
     return json.dumps({"ok": True, **_view(new)}, ensure_ascii=False), True
 
@@ -116,8 +117,10 @@ def _view(s: DeviceSettings) -> dict[str, Any]:
     return {
         "volume": s.volume,
         "brightness": s.brightness,
-        "language": lang.name if lang else s.language,
+        "language": lang.name if lang else ("automatic (the language the user speaks)"
+                                            if s.language == languages.AUTO else s.language),
         "theme": "blue" if s.theme.preset == "midnight" else "white",
+        "screen_timeout_s": s.screen_timeout_s,
     }
 
 

@@ -89,7 +89,7 @@ export function totalCost(turns: ConversationTurn[]): number {
 
 const TOOL_LABEL: Record<string, string> = {
   web_search: "web search",
-  watch_settings: "settings changed",
+  watch_settings: "watch settings",  // read or changed
   item_create: "created",
   item_update: "changed",
   item_delete: "deleted",
