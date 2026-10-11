@@ -261,6 +261,7 @@ void ui_chat_anim(int level, uint32_t phase);
 void ui_chat_refresh_theme(void);
 void ui_chat_refresh_title(void);
 bool ui_chat_is_active(void);
+bool ui_items_is_active(void);     /* notes / reminders list or item screen */
 
 /* ---- notes & reminders (ui_items.c) ---- */
 void ui_items_init(void);

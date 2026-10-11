@@ -112,6 +112,16 @@ static int           s_order[MAX_ROWS];     /* reminders shown, in display order
 
 /* ---- detail ---- */
 static lv_obj_t   *s_det_scr;
+static lv_obj_t   *s_rem_scr;
+static lv_obj_t   *s_note_scr;
+
+/* A notes / reminders screen (a list or an item) is on display: it dims before standby, like the conversation. */
+bool ui_items_is_active(void)
+{
+    lv_obj_t *scr = lv_screen_active();
+    return scr && (scr == s_lists[0].scr || scr == s_lists[1].scr || scr == s_det_scr || scr == s_rem_scr ||
+                   scr == s_note_scr);
+}
 static lv_obj_t   *s_det_header;
 static lv_obj_t   *s_det_due;
 static lv_obj_t   *s_det_text;
