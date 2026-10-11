@@ -580,6 +580,7 @@ void ui_settings_refresh(void)
 void ui_settings_open(void)
 {
     ui_settings_refresh();
+    lv_obj_scroll_to_y(s_set_scr, 0, LV_ANIM_OFF);  /* always opens at the top, wherever it was left */
     ui_load_screen(s_set_scr, true);
 }
 
