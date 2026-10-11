@@ -44,6 +44,8 @@ ui_callbacks_t   g_ui_cb;
 #define CAPTION_LINE_SPACE  (-3)    /* Noto Sans 20 px: 28 px line -> 25 px pitch, 3 lines fit */
 #define DATE_MAX_W          380     /* longer dates drop the weekday */
 #define TIME_Y              58      /* home screen: time and date from the top */
+#define CHAT_DIM_BRIGHTNESS 30      /* conversation screen after the screen timeout: dimmed, still readable */
+#define CHAT_STANDBY_MS     60000   /* ... and standby only this long after the last activity */
 #define DATE_Y              120
 #define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
 #define STATUS_HINT_W       170
@@ -53,7 +55,9 @@ ui_callbacks_t   g_ui_cb;
 /* Centered vertically between the date line (ends ~y 185) and the mic button (starts at y 308). */
 #define SHORTCUT_Y          394     /* centred between the wave and the bottom edge */
 
-typedef enum { POWER_ON, POWER_OFF } power_state_t;   /* screen awake / standby (panel asleep, board_standby) */
+/* awake / dimmed (conversation screen only: lit at CHAT_DIM_BRIGHTNESS, everything else awake) / standby (panel
+ * asleep, board_standby) */
+typedef enum { POWER_ON, POWER_DIM, POWER_OFF } power_state_t;
 
 static lv_display_t *s_disp;
 static lv_obj_t *s_scr;
@@ -209,6 +213,11 @@ static void update_clock(bool force);
  * beacons (board_standby). The user's saved brightness is never changed. */
 static void apply_brightness(void)
 {
+    if (s_power == POWER_DIM) {     /* from POWER_ON only: the board stays awake, the panel just dims */
+        int b = g_ui_settings.brightness;
+        board_display_set_brightness(b < CHAT_DIM_BRIGHTNESS ? b : CHAT_DIM_BRIGHTNESS);
+        return;
+    }
     bool on = s_power == POWER_ON;
     if (s_clock_timer) {
         if (on) {
@@ -549,19 +558,21 @@ static void power_timer_cb(lv_timer_t *t)
     power_state_t want;
     if (busy || inactive < timeout) {
         want = POWER_ON;
+    } else if (ui_chat_is_active() && inactive < CHAT_STANDBY_MS && s_power != POWER_OFF) {
+        want = POWER_DIM;           /* mid-conversation: the answer stays readable a while longer */
     } else {
         want = POWER_OFF;           /* standby: the panel sleeps, black (board_standby) */
     }
     if (want != s_power) {
         ESP_LOGD(TAG, "screen power %d -> %d", s_power, want);
-        if (want != POWER_ON && s_conv == UI_CONV_IDLE && s_caption[0]) {
+        if (want == POWER_OFF && s_conv == UI_CONV_IDLE && s_caption[0]) {
             s_caption[0] = '\0';        /* the last reply clears when the screen goes off */
             show_caption();
         }
         /* Waking shows the watchface: lists, settings and the conversation (idle by now: a turn keeps the
          * screen awake) give way to it, at once (no slide while the panel goes to sleep). The message screens
          * (pairing code, Wi-Fi setup...) stay until the user leaves them. */
-        if (want != POWER_ON && !ui_is_watchface() && !ui_msg_is_active()) {
+        if (want == POWER_OFF && !ui_is_watchface() && !ui_msg_is_active()) {
             lv_screen_load(s_scr);
         }
         s_power = want;

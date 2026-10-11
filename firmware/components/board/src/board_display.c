@@ -237,6 +237,18 @@ static void touch_wake_isr(void *arg)
     board_wake_from_isr();
 }
 
+/* FT3168 interrupt mode (FT5x06 register G_MODE): 1 = "trigger", a short INT pulse per report, which the LVGL
+ * port reads on each falling edge; 0 = "polling", INT held low for as long as a finger is down. A light-sleep
+ * wake-up only sees a level, so a short pulse could slip past it and a quick tap was missed: standby switches the
+ * controller to polling, waking switches it back. */
+#define FT_REG_G_MODE   0xA4
+static uint8_t s_ft_g_mode = 0x01;
+
+static void touch_set_g_mode(uint8_t mode)
+{
+    esp_lcd_panel_io_tx_param(s_touch->io, FT_REG_G_MODE, &mode, 1);
+}
+
 static void touch_wake_mode(bool on)
 {
     if (!s_touch) {
@@ -245,9 +257,15 @@ static void touch_wake_mode(bool on)
     gpio_intr_disable(BOARD_TOUCH_INT);
     gpio_isr_handler_remove(BOARD_TOUCH_INT);
     if (on) {
+        uint8_t mode = 0;
+        if (esp_lcd_panel_io_rx_param(s_touch->io, FT_REG_G_MODE, &mode, 1) == ESP_OK && mode <= 1) {
+            s_ft_g_mode = mode;     /* restored on wake */
+        }
+        touch_set_g_mode(0x00);
         gpio_isr_handler_add(BOARD_TOUCH_INT, touch_wake_isr, NULL);
         gpio_wakeup_enable(BOARD_TOUCH_INT, GPIO_INTR_LOW_LEVEL);   /* also sets the interrupt type */
     } else {
+        touch_set_g_mode(s_ft_g_mode);
         gpio_wakeup_disable(BOARD_TOUCH_INT);
         gpio_set_intr_type(BOARD_TOUCH_INT, GPIO_INTR_NEGEDGE);     /* as esp_lcd_touch_ft5x06 configured it */
         gpio_isr_handler_add(BOARD_TOUCH_INT, (gpio_isr_t)s_touch->config.interrupt_callback, s_touch);
