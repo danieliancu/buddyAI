@@ -26,6 +26,8 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_ESP_PHY_MAC_BB_PD=y
+# Light-sleep exit hook: a touch pulse that woke the chip but ended before the CPU ran still wakes the screen
+CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y
 # CONFIG_PM_SLP_IRAM_OPT / PM_RTOS_IDLE_OPT / ESP_WIFI_SLP_IRAM_OPT stay off: their ~18 KB of internal RAM
 # left too little for the websocket task at run time ("Error create websocket task").
 # The USB Serial/JTAG port stops working for good after a light sleep: while a computer is connected

@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "esp_sleep.h"
 #include "sdkconfig.h"
 #include "board.h"
 
@@ -33,6 +34,29 @@ void board_wake_from_isr(void)
     if (s_wake_cb) {
         s_wake_cb();
     }
+}
+
+static volatile bool     s_standby;
+static volatile uint32_t s_gpio_wakes;
+
+/* The FT3168 reports a touch with a short INT pulse. It is enough to wake the chip from light sleep, but by the
+ * time the CPU runs again the pulse is often over, so the level interrupt never fires and the screen stayed dark
+ * (4 taps in 5 missed on battery, none with the CPU awake). Asking why the chip woke catches those: a GPIO
+ * wake-up in standby (touch or BOOT) wakes the screen. Runs in the idle task, right after the sleep. */
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+static esp_err_t light_sleep_exit_cb(int64_t sleep_time_us, void *arg)
+{
+    if (s_standby && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
+        s_gpio_wakes++;
+        board_wake_from_isr();
+    }
+    return ESP_OK;
+}
+#endif
+
+void board_pm_diag(uint32_t *gpio_wakes)
+{
+    *gpio_wakes = s_gpio_wakes;
 }
 
 #if CONFIG_PM_ENABLE
@@ -63,6 +87,12 @@ esp_err_t board_pm_init(void)
         ESP_LOGW(TAG, "esp_pm_configure: %s - running at full speed", esp_err_to_name(err));
         return err;
     }
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    esp_pm_sleep_cbs_register_config_t cbs = { .exit_cb = light_sleep_exit_cb };
+    if (esp_pm_light_sleep_register_cbs(&cbs) != ESP_OK) {
+        ESP_LOGW(TAG, "light sleep exit callback not registered: quick taps may not wake the screen");
+    }
+#endif
     ESP_LOGI(TAG, "power management: %d-%d MHz, light sleep %s", cfg.min_freq_mhz, cfg.max_freq_mhz,
              cfg.light_sleep_enable ? "on" : "off");
     return ESP_OK;
@@ -90,6 +120,7 @@ void board_pm_set_awake(bool awake)
 
 void board_standby(bool on)
 {
+    s_standby = on;
     if (on) {
         board_display_standby(true);
         board_boot_button_standby(true);

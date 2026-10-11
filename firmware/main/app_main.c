@@ -86,18 +86,14 @@ static void post_app(app_ev_type_t type, int arg)
     xQueueSend(s_app_q, &ev, 0);
 }
 
-/* From the GPIO interrupt (board_boot_button_on_tap / board_set_wake_cb), or from the app task when a BOOT tap
- * ended while the watch was waking up. */
+/* From a GPIO interrupt (board_boot_button_on_tap / board_set_wake_cb), the idle task right after a light sleep
+ * (board_pm.c), or the app task when a BOOT tap ended while the watch was waking up: never blocks. */
 static void post_from_any(app_ev_type_t type)
 {
     app_ev_t ev = { .type = type };
-    if (!xPortInIsrContext()) {
-        xQueueSend(s_app_q, &ev, 0);
-        return;
-    }
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(s_app_q, &ev, &woken);
-    if (woken) {
+    if (woken && xPortInIsrContext()) {
         portYIELD_FROM_ISR();
     }
 }
@@ -580,15 +576,15 @@ static void touch_diag_log(void)
     static bool was_connected;
     static uint32_t last_irqs = UINT32_MAX, last_wakes, last_standby;
     bool connected = usb_serial_jtag_is_connected();
-    uint32_t irqs;
-    uint8_t g_mode, g_mode_standby;
-    board_touch_diag(&irqs, &g_mode, &g_mode_standby);
+    uint32_t irqs, gpio_wakes;
+    board_touch_diag(&irqs);
+    board_pm_diag(&gpio_wakes);
+    irqs += gpio_wakes;     /* a change in either prints the line */
     if (connected && (!was_connected || irqs != last_irqs || s_wake_events != last_wakes ||
                       s_standby_entries != last_standby)) {
-        ESP_LOGI(TAG, "touch-diag: standby entries %lu, touch wake irqs %lu, wake events %lu, "
-                 "FT G_MODE normal %u / standby read-back %u",
-                 (unsigned long)s_standby_entries, (unsigned long)irqs, (unsigned long)s_wake_events,
-                 g_mode, g_mode_standby);
+        ESP_LOGI(TAG, "touch-diag: standby entries %lu, wake irqs + light-sleep GPIO wakes %lu (GPIO wakes %lu), "
+                 "wake events %lu", (unsigned long)s_standby_entries, (unsigned long)irqs,
+                 (unsigned long)gpio_wakes, (unsigned long)s_wake_events);
         last_irqs = irqs;
         last_wakes = s_wake_events;
         last_standby = s_standby_entries;
