@@ -138,9 +138,14 @@ lv_obj_t *ui_watch_screen(void)
     return s_scr;
 }
 
+static bool s_aod_active;    /* the standby clock is on display (see aod_show) */
+
 void ui_load_screen(lv_obj_t *scr, bool to_left)
 {
-    if (lv_screen_active() == scr) {
+    /* The standby clock stays until the watch wakes: a reconnect (session ready -> watchface) or any other
+     * background change must not replace it on the lit panel. Whatever has to be seen wakes the screen first
+     * (ui_note_activity), and waking shows the watchface. */
+    if (s_aod_active || lv_screen_active() == scr) {
         return;
     }
     lv_obj_t *old = lv_screen_active();
@@ -232,7 +237,6 @@ static lv_obj_t          *s_aod_hour, *s_aod_min;
 static lv_point_precise_t s_aod_marks[12][2];
 static lv_point_precise_t s_aod_hour_pts[2], s_aod_min_pts[2];
 static esp_timer_handle_t s_aod_timer;
-static bool               s_aod_active;
 
 static void aod_point(lv_point_precise_t *p, float deg, int len)
 {
@@ -1429,15 +1433,15 @@ void ui_set_conv_state(ui_conv_t st)
             show_caption();
         }
         s_conv = st;
-        ui_chat_set_state(st);      /* a turn opens the conversation screen */
-        notice_schedule();          /* a waiting notice shows once the conversation is over */
-        if (st != UI_CONV_IDLE) {
+        if (st != UI_CONV_IDLE) {   /* awake first: the conversation screen may not replace the standby clock */
             ui_note_activity();
             if (s_power != POWER_ON) {
                 s_power = POWER_ON;
                 apply_brightness();
             }
         }
+        ui_chat_set_state(st);      /* a turn opens the conversation screen */
+        notice_schedule();          /* a waiting notice shows once the conversation is over */
         apply_conv_visuals();
     }
     UNLOCK();
