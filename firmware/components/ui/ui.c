@@ -217,8 +217,8 @@ static void update_clock(bool force);
 /* ---- Standby clock (setting "standby_clock") ----
  * Instead of a black screen, standby shows a faint analogue clock: 12 thin hour marks and two thin hands in grey,
  * at AOD_BRIGHTNESS. Everything else is black (unlit AMOLED pixels). The panel stays on, but the chip still
- * light-sleeps: the panel keeps the frame by itself, and an esp_timer redraws the hands once a minute. The whole
- * face drifts a few pixels every minute against burn-in. */
+ * light-sleeps: the panel keeps the frame by itself, and an esp_timer redraws the hands once a minute. The face
+ * stays centred (a drift against burn-in looked off-centre); the marks are thin, grey and dim. */
 #define AOD_BRIGHTNESS      20      /* % (or the user's level if lower) */
 #define AOD_CX              (BOARD_LCD_H_RES / 2)
 #define AOD_CY              (BOARD_LCD_V_RES / 2)
@@ -229,7 +229,6 @@ static void update_clock(bool force);
 #define AOD_MIN_LEN         115     /* just longer than the hour hand */
 #define AOD_MARK_COLOR      0x5A5A5A
 #define AOD_HAND_COLOR      0x9A9A9A
-#define AOD_SHIFT_MUL       3       /* the s_shift offsets x3: up to 9 px */
 
 static lv_obj_t          *s_aod_scr;
 static lv_obj_t          *s_aod_face;
@@ -288,8 +287,6 @@ static void aod_update(void)
     aod_point(&s_aod_min_pts[1], min * 6.0f, AOD_MIN_LEN);
     lv_line_set_points(s_aod_hour, s_aod_hour_pts, 2);
     lv_line_set_points(s_aod_min, s_aod_min_pts, 2);
-    s_shift_idx = (s_shift_idx + 1) % (int)(sizeof(s_shift) / sizeof(s_shift[0]));
-    lv_obj_set_pos(s_aod_face, s_shift[s_shift_idx][0] * AOD_SHIFT_MUL, s_shift[s_shift_idx][1] * AOD_SHIFT_MUL);
 }
 
 /* Fires at the start of each minute while the standby clock shows. It runs in the esp_timer task, whose small
