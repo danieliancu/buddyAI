@@ -219,9 +219,8 @@ void ui_screens_init(void);
 void ui_settings_open(void);
 void ui_settings_refresh(void);
 /* Settings header: battery text / colour and Wi-Fi icon colour, mirrored from the watchface. */
-void ui_settings_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa);
+void ui_settings_status(lv_color_t wifi_color, lv_opa_t wifi_opa);
 /* The same for the reminder screen header (ui_items.c). */
-void ui_items_status(const char *batt, lv_color_t batt_color);
 void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, const char *body,
                  const char *code, const char *button, void (*button_cb)(void),
                  bool dismissable, uint32_t auto_close_ms);

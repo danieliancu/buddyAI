@@ -342,8 +342,7 @@ static void update_status(void)
     }
     lv_obj_set_style_text_color(s_lbl_wifi, wc, 0);
     lv_obj_set_style_text_opa(s_lbl_wifi, opa, 0);
-    ui_settings_status(batt, batt_color, wc, opa);
-    ui_items_status(batt, batt_color);
+    ui_settings_status(wc, opa);     /* the battery shows on the watchface only */
 }
 
 static void update_hint(void)

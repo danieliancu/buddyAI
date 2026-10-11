@@ -32,7 +32,6 @@
 static lv_obj_t *s_set_scr;
 static lv_obj_t *s_set_title;
 static lv_obj_t *s_set_wifi;
-static lv_obj_t *s_set_batt;
 static lv_obj_t *s_lbl_theme;
 static lv_obj_t *s_theme_sw;            /* off = blue ("midnight"), on = white ("mono") */
 static lv_obj_t *s_lbl_vol;
@@ -395,8 +394,8 @@ static void build_settings(void)
     lv_obj_set_style_pad_bottom(s_set_scr, 40, 0);
     lv_obj_set_style_pad_row(s_set_scr, 10, 0);
 
-    /* Header: Wi-Fi status + battery | title | close (back to the watchface; swiping right or
-     * down does the same). */
+    /* Header: Wi-Fi status | title | close (back to the watchface; swiping right or down does the same).
+     * The battery shows on the watchface only. */
     lv_obj_t *hdr = make_box(s_set_scr);
     lv_obj_set_size(hdr, 350, 48);
     lv_obj_set_style_margin_bottom(hdr, HEADER_GAP, 0);
@@ -408,8 +407,6 @@ static void build_settings(void)
     lv_obj_align(status, LV_ALIGN_LEFT_MID, 0, 0);
     s_set_wifi = lv_label_create(status);
     lv_label_set_text(s_set_wifi, ICON_WIFI);
-    s_set_batt = lv_label_create(status);
-    lv_label_set_text(s_set_batt, "");
     s_set_title = lv_label_create(hdr);
     lv_obj_set_style_text_font(s_set_title, &buddy_font_28, 0);
     lv_obj_center(s_set_title);
@@ -507,13 +504,11 @@ static void settings_styles_apply(void)
     }
 }
 
-void ui_settings_status(const char *batt, lv_color_t batt_color, lv_color_t wifi_color, lv_opa_t wifi_opa)
+void ui_settings_status(lv_color_t wifi_color, lv_opa_t wifi_opa)
 {
     if (!s_set_scr) {
         return;
     }
-    lv_label_set_text(s_set_batt, batt);
-    lv_obj_set_style_text_color(s_set_batt, batt_color, 0);
     lv_obj_set_style_text_color(s_set_wifi, wifi_color, 0);
     lv_obj_set_style_text_opa(s_set_wifi, wifi_opa, 0);
 }
