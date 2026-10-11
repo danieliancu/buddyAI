@@ -56,6 +56,7 @@ typedef enum {
     APP_EV_PROV_DONE,       /* Bluetooth setup: joined the new Wi-Fi and saved it */
     APP_EV_BOOT_TAP,        /* BOOT button pressed briefly: start talking */
     APP_EV_WAKE,            /* a touch or a BOOT press woke the watch from standby */
+    APP_EV_MOTION,          /* the accelerometer saw a movement in standby: shake or not? */
 } app_ev_type_t;
 
 typedef struct {
@@ -106,6 +107,57 @@ static void boot_tap_isr(void)
 static void wake_isr(void)
 {
     post_from_any(APP_EV_WAKE);
+}
+
+static void motion_isr(void)
+{
+    post_from_any(APP_EV_MOTION);
+}
+
+/* ---- Shake to wake ----
+ * In standby the accelerometer watches by itself (wake on motion, BOARD_WOM_THRESHOLD_MG) and wakes the chip on a
+ * movement. That is not yet a shake: for SHAKE_CHECK_MS the acceleration is sampled, and a clear shake - SHAKE_PEAKS
+ * strong jolts (more than SHAKE_G_MG away from 1 g) - wakes the screen like a tap. Anything else (walking, an arm
+ * swing) leaves it dark, and movements are then ignored for SHAKE_BACKOFF_MS so the chip can sleep. */
+#define SHAKE_CHECK_MS      1200
+#define SHAKE_SAMPLE_MS     25
+#define SHAKE_G_MG          1200
+#define SHAKE_PEAKS         3
+#define SHAKE_PEAK_GAP_MS   80      /* one jolt is counted once */
+#define SHAKE_BACKOFF_MS    10000
+
+static int64_t s_shake_quiet_until;
+
+static void shake_check(void)
+{
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    if (ui_is_awake() || now_ms < s_shake_quiet_until) {
+        if (!ui_is_awake()) {
+            board_imu_motion_rearm();   /* still backing off: the next movement after it counts */
+        }
+        return;
+    }
+    int peaks = 0;
+    int64_t last_peak = 0;
+    for (int64_t end = now_ms + SHAKE_CHECK_MS; now_ms < end && peaks < SHAKE_PEAKS;
+         now_ms = esp_timer_get_time() / 1000) {
+        int x, y, z;
+        if (board_imu_read_accel_mg(&x, &y, &z) == ESP_OK) {
+            int mag = (int)sqrtf((float)(x * x + y * y + z * z));
+            if (abs(mag - 1000) >= SHAKE_G_MG && now_ms - last_peak >= SHAKE_PEAK_GAP_MS) {
+                peaks++;
+                last_peak = now_ms;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(SHAKE_SAMPLE_MS));
+    }
+    if (peaks >= SHAKE_PEAKS) {
+        ESP_LOGI(TAG, "shake: waking the screen");
+        ui_wake();
+    } else {
+        s_shake_quiet_until = esp_timer_get_time() / 1000 + SHAKE_BACKOFF_MS;
+        board_imu_motion_rearm();
+    }
 }
 
 static uint32_t s_standby_entries, s_wake_events;  /* touch diagnostics (development builds) */
@@ -649,6 +701,8 @@ static void app_loop(void)
                 factory_reset();
             } else if (ev.type == APP_EV_BOOT_TAP) {
                 boot_tap();
+            } else if (ev.type == APP_EV_MOTION) {
+                shake_check();
             } else if (ev.type == APP_EV_WAKE) {
                 s_wake_events++;
                 ui_wake();
@@ -750,6 +804,7 @@ void app_main(void)
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
         board_set_wake_cb(wake_isr);
+        board_imu_set_motion_cb(motion_isr);
         if (board_boot_button_on_tap(boot_tap_isr) != ESP_OK) {
             ESP_LOGE(TAG, "BOOT button interrupt failed - BOOT only opens the reset prompt");
         }

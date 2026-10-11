@@ -73,6 +73,11 @@
 
 /* ---- Buttons ---- */
 #define BOARD_BTN_BOOT              GPIO_NUM_0      /* [XZ] BOOT_BUTTON_GPIO */
+
+/* ---- QMI8658 interrupt ---- */
+/* INT1 -> GPIO13: found on the watch 2026-10-11 (wake on motion on INT1 pulsed GPIO13 high, ~20 ms per event,
+ * only while shaking; no other unused pin moved). INT2's routing is still unknown. */
+#define BOARD_IMU_INT1              GPIO_NUM_13
 /* PWR key -> AXP2101 PWRON (short press IRQ / long press power-off), no GPIO */
 
 /* ---- microSD (SPI mode, unused by ola for now) ---- */
@@ -82,5 +87,5 @@
 #define BOARD_SD_CS                 GPIO_NUM_17     /* [WS-ARD] */
 
 /* ---- Unverified / unused lines (schematic net names only; confirm in M0) ---- */
-/* RTC_INT, QMI_INT1/QMI_INT2, MOTOR: routing to specific GPIOs not confirmed by
- * any example - intentionally not used. */
+/* RTC_INT, QMI_INT2, MOTOR: routing to specific GPIOs not confirmed by any
+ * example - intentionally not used. */

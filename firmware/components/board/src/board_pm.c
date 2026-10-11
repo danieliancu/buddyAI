@@ -46,7 +46,8 @@ static volatile uint32_t s_gpio_wakes;
 #if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
 static esp_err_t light_sleep_exit_cb(int64_t sleep_time_us, void *arg)
 {
-    if (s_standby && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
+    /* INT1 still high: the accelerometer woke it; motion_isr reports that one (a shake check, not a screen wake) */
+    if (s_standby && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO && !gpio_get_level(BOARD_IMU_INT1)) {
         s_gpio_wakes++;
         board_wake_from_isr();
     }
@@ -131,10 +132,12 @@ void board_standby(bool on)
     if (on) {
         board_display_standby(true);
         board_boot_button_standby(true);
+        board_imu_motion_standby(true);
         board_audio_suspend();
         board_pm_set_awake(false);
     } else {
         board_pm_set_awake(true);           /* full speed first: the panel comes back sooner */
+        board_imu_motion_standby(false);
         board_boot_button_standby(false);
         board_display_standby(false);
         board_audio_resume();               /* before the user can speak: a conversation may follow */
