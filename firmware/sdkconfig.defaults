@@ -26,11 +26,14 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_ESP_PHY_MAC_BB_PD=y
-# Sleep entry / exit and the Wi-Fi sleep path in IRAM: shorter, cheaper wake-ups (~10 KB of internal RAM;
-# 188 KB stayed free without them)
-CONFIG_PM_SLP_IRAM_OPT=y
-CONFIG_PM_RTOS_IDLE_OPT=y
-CONFIG_ESP_WIFI_SLP_IRAM_OPT=y
+# CONFIG_PM_SLP_IRAM_OPT / PM_RTOS_IDLE_OPT / ESP_WIFI_SLP_IRAM_OPT stay off: their ~18 KB of internal RAM
+# left too little for the websocket task at run time ("Error create websocket task").
+# The USB Serial/JTAG port stops working for good after a light sleep: while a computer is connected
+# (logs, flashing), the chip does not light-sleep. On battery or a plain charger this changes nothing.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# The CPU stays powered in light sleep: powering it down needs a backup of its state and of the cache
+# tags in internal RAM, which left the websocket task without memory. Costs a little sleep current.
+# CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP is not set
 
 # ---- PSRAM (octal, 80 MHz) ------------------------------------------------
 CONFIG_SPIRAM=y

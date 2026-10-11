@@ -1331,6 +1331,9 @@ static bool ws_open(const char *url)
     }
     esp_websocket_register_events(ws, WEBSOCKET_EVENT_ANY, ws_event_handler, (void *)(uintptr_t)s_conn_id);
     if (esp_websocket_client_start(ws) != ESP_OK) {
+        ESP_LOGE(TAG, "websocket start failed: internal RAM free %u, largest block %u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
         esp_websocket_client_destroy(ws);
         return false;
     }
