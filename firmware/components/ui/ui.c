@@ -226,7 +226,7 @@ static void update_clock(bool force);
 #define AOD_MARK_LEN        14
 #define AOD_MARK_LEN_Q      24      /* 12, 3, 6 and 9 */
 #define AOD_HOUR_LEN        95
-#define AOD_MIN_LEN         150
+#define AOD_MIN_LEN         115     /* just longer than the hour hand */
 #define AOD_MARK_COLOR      0x5A5A5A
 #define AOD_HAND_COLOR      0x9A9A9A
 #define AOD_SHIFT_MUL       3       /* the s_shift offsets x3: up to 9 px */
