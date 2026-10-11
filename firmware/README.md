@@ -335,6 +335,12 @@ the chip light-sleeps between Wi-Fi beacons, and the watch stays connected to th
 - **PWR:** short press, polled over I2C every 1 s in standby (the PMU latches it), so it reacts within ≤ 1 s;
 - **a reminder from the server**, or anything that opens a screen (`ui_note_activity`).
 
+**Clock in standby** (setting `standby_clock`, off by default; quick settings, the account's watch settings, or by
+voice): instead of the black screen, a faint analogue clock - 12 thin hour marks and two thin hands in grey at 20 %
+brightness (`AOD_*` in `ui.c`). The panel stays on (that is the extra cost, estimated 3-6 mA, not measured), the
+chip still light-sleeps, and an esp_timer redraws the hands once a minute; the face drifts up to 9 px against
+burn-in. A message screen (pairing code, Wi-Fi setup) keeps the black standby.
+
 Shake-to-wake is gone and the accelerometer is off: reading it 25 times a second kept the chip awake, and a
 wake-on-motion version (QMI8658 INT1, which a pin probe found on GPIO13) was dropped after testing on the watch.
 

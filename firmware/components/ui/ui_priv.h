@@ -78,6 +78,7 @@ extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° �
 #define SET_ICON_USERS      "\xEF\x83\x80"  /* U+F0C0: participants */
 #define SET_ICON_CALENDAR   "\xEF\x81\xB3"  /* U+F073, in buddy_font_set_lg */
 #define SET_ICON_TRASH      "\xEF\x87\xB8"  /* U+F1F8 */
+#define SET_ICON_CLOCK      "\xEF\x80\x97"  /* U+F017 */
 #define SET_ICON_PIN_NOTE   "\xEF\x82\x8D"  /* U+F08D thumbtack: pinned note */
 
 /* ---- strings ---- */
@@ -128,6 +129,7 @@ typedef enum {
     STR_RESET_BTN,
     STR_RESETTING,
     STR_POWER_OFF,      /* "Turning off…" (PWR key held) */
+    STR_STANDBY_CLOCK,  /* quick settings: "Clock in standby" (analogue clock instead of a black screen) */
     STR_OTA_T,
     STR_OTA_FAIL,
     STR_LISTENING,

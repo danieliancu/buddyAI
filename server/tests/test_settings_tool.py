@@ -78,6 +78,15 @@ def test_no_arguments_reads_the_current_settings() -> None:
     assert _settings(dev).volume == 35  # nothing changed
 
 
+def test_standby_clock_on_and_off_by_voice() -> None:
+    dev = _device()
+    result, changed = apply(dev, {"standby_clock": True})  # "show the clock while the watch rests"
+    assert changed and json.loads(result)["standby_clock"] == "on" and _settings(dev).standby_clock
+    apply(dev, {"standby_clock": False})
+    assert not _settings(dev).standby_clock
+    assert json.loads(apply(dev, {})[0])["standby_clock"] == "off"
+
+
 def test_reading_through_the_assistant_does_not_push_settings() -> None:
     dev = _device(brightness=45)
     out = AssistantTools().execute(None, "Europe/London", "watch_settings", "{}", dev)

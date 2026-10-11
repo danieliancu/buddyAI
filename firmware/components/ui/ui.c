@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "board.h"
 #include "ui_priv.h"
@@ -208,9 +209,127 @@ bool ui_consume_wake_tap(void)
 
 static void update_clock(bool force);
 
+/* ---- Standby clock (setting "standby_clock") ----
+ * Instead of a black screen, standby shows a faint analogue clock: 12 thin hour marks and two thin hands in grey,
+ * at AOD_BRIGHTNESS. Everything else is black (unlit AMOLED pixels). The panel stays on, but the chip still
+ * light-sleeps: the panel keeps the frame by itself, and an esp_timer redraws the hands once a minute. The whole
+ * face drifts a few pixels every minute against burn-in. */
+#define AOD_BRIGHTNESS      20      /* % (or the user's level if lower) */
+#define AOD_CX              (BOARD_LCD_H_RES / 2)
+#define AOD_CY              (BOARD_LCD_V_RES / 2)
+#define AOD_R               170     /* outer end of the hour marks */
+#define AOD_MARK_LEN        14
+#define AOD_MARK_LEN_Q      24      /* 12, 3, 6 and 9 */
+#define AOD_HOUR_LEN        95
+#define AOD_MIN_LEN         150
+#define AOD_MARK_COLOR      0x5A5A5A
+#define AOD_HAND_COLOR      0x9A9A9A
+#define AOD_SHIFT_MUL       3       /* the s_shift offsets x3: up to 9 px */
+
+static lv_obj_t          *s_aod_scr;
+static lv_obj_t          *s_aod_face;
+static lv_obj_t          *s_aod_hour, *s_aod_min;
+static lv_point_precise_t s_aod_marks[12][2];
+static lv_point_precise_t s_aod_hour_pts[2], s_aod_min_pts[2];
+static esp_timer_handle_t s_aod_timer;
+static bool               s_aod_active;
+
+static void aod_point(lv_point_precise_t *p, float deg, int len)
+{
+    float a = deg * (float)M_PI / 180.0f;
+    p->x = AOD_CX + (lv_value_precise_t)(sinf(a) * (float)len);
+    p->y = AOD_CY - (lv_value_precise_t)(cosf(a) * (float)len);
+}
+
+static lv_obj_t *aod_line(lv_point_precise_t *pts, int width, uint32_t color)
+{
+    lv_obj_t *l = lv_line_create(s_aod_face);
+    lv_line_set_points(l, pts, 2);
+    lv_obj_set_style_line_width(l, width, 0);
+    lv_obj_set_style_line_color(l, hex(color), 0);
+    lv_obj_set_style_line_rounded(l, true, 0);
+    lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
+    return l;
+}
+
+static void build_aod(void)
+{
+    s_aod_scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(s_aod_scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_aod_scr, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_aod_scr, LV_OBJ_FLAG_SCROLLABLE);
+    s_aod_face = lv_obj_create(s_aod_scr);
+    lv_obj_remove_style_all(s_aod_face);
+    lv_obj_set_size(s_aod_face, BOARD_LCD_H_RES, BOARD_LCD_V_RES);
+    lv_obj_remove_flag(s_aod_face, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    for (int i = 0; i < 12; i++) {
+        aod_point(&s_aod_marks[i][0], i * 30.0f, AOD_R);
+        aod_point(&s_aod_marks[i][1], i * 30.0f, AOD_R - (i % 3 == 0 ? AOD_MARK_LEN_Q : AOD_MARK_LEN));
+        aod_line(s_aod_marks[i], 3, AOD_MARK_COLOR);
+    }
+    s_aod_hour_pts[0].x = s_aod_min_pts[0].x = AOD_CX;
+    s_aod_hour_pts[0].y = s_aod_min_pts[0].y = AOD_CY;
+    s_aod_hour = aod_line(s_aod_hour_pts, 4, AOD_HAND_COLOR);
+    s_aod_min = aod_line(s_aod_min_pts, 3, AOD_HAND_COLOR);
+}
+
+/* Caller holds the lock. */
+static void aod_update(void)
+{
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    float min = (float)tm.tm_min + (float)tm.tm_sec / 60.0f;
+    aod_point(&s_aod_hour_pts[1], ((tm.tm_hour % 12) + min / 60.0f) * 30.0f, AOD_HOUR_LEN);
+    aod_point(&s_aod_min_pts[1], min * 6.0f, AOD_MIN_LEN);
+    lv_line_set_points(s_aod_hour, s_aod_hour_pts, 2);
+    lv_line_set_points(s_aod_min, s_aod_min_pts, 2);
+    s_shift_idx = (s_shift_idx + 1) % (int)(sizeof(s_shift) / sizeof(s_shift[0]));
+    lv_obj_set_pos(s_aod_face, s_shift[s_shift_idx][0] * AOD_SHIFT_MUL, s_shift[s_shift_idx][1] * AOD_SHIFT_MUL);
+}
+
+/* Fires at the start of each minute while the standby clock shows (esp_timer task). */
+static void aod_timer_cb(void *arg)
+{
+    LOCK();
+    if (s_aod_active) {
+        aod_update();
+        lv_refr_now(s_disp);
+        time_t now = time(NULL);
+        esp_timer_start_once(s_aod_timer, (uint64_t)(60 - now % 60) * 1000000ULL);
+    }
+    UNLOCK();
+}
+
+static void aod_show(void)
+{
+    if (!s_aod_scr) {
+        build_aod();
+        const esp_timer_create_args_t args = { .callback = aod_timer_cb, .name = "aod" };
+        esp_timer_create(&args, &s_aod_timer);
+    }
+    s_aod_active = true;
+    lv_screen_load(s_aod_scr);
+    aod_update();
+    lv_refr_now(s_disp);
+    time_t now = time(NULL);
+    esp_timer_stop(s_aod_timer);
+    esp_timer_start_once(s_aod_timer, (uint64_t)(60 - now % 60) * 1000000ULL);
+}
+
+static void aod_hide(void)
+{
+    if (!s_aod_active) {
+        return;
+    }
+    s_aod_active = false;
+    esp_timer_stop(s_aod_timer);
+    lv_screen_load(s_scr);      /* waking shows the watchface */
+}
+
 /* Awake: CPU at full speed, audio codecs open, panel lit at the user's brightness, timers running.
- * Standby: the panel asleep and black, nothing drawn, LVGL timers paused, CPU free to light-sleep between Wi-Fi
- * beacons (board_standby). The user's saved brightness is never changed. */
+ * Standby: the panel asleep and black (or the faint standby clock), LVGL timers paused, CPU free to light-sleep
+ * between Wi-Fi beacons (board_standby). The user's saved brightness is never changed. */
 static void apply_brightness(void)
 {
     if (s_power == POWER_DIM) {     /* from POWER_ON only: the board stays awake, the panel just dims */
@@ -229,17 +348,26 @@ static void apply_brightness(void)
         }
     }
     if (on) {
+        aod_hide();
         if (s_time_hours) {
             update_clock(true);     /* the first frame after standby shows the right time */
         }
-        board_standby(false);
+        board_standby(false, false);
         board_display_set_brightness(g_ui_settings.brightness);
         if (s_disp) {
             lv_display_trigger_activity(s_disp);    /* the screen timeout counts from the wake */
         }
     } else {
-        board_display_set_brightness(0);
-        board_standby(true);
+        /* the standby clock, unless a message screen (pairing code, Wi-Fi setup...) has to stay */
+        bool clock = g_ui_settings.standby_clock && s_scr && !ui_msg_is_active();
+        if (clock) {
+            aod_show();
+            int b = g_ui_settings.brightness;
+            board_display_set_brightness(b < AOD_BRIGHTNESS ? b : AOD_BRIGHTNESS);
+        } else {
+            board_display_set_brightness(0);
+        }
+        board_standby(true, clock);
     }
     if (g_ui_cb.on_standby) {
         g_ui_cb.on_standby(!on);

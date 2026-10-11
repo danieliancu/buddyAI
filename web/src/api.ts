@@ -296,6 +296,8 @@ export interface DeviceSettings {
   volume: number;
   brightness: number;
   screen_timeout_s: number;
+  /** Standby shows a faint analogue clock instead of a black screen (uses more battery). */
+  standby_clock: boolean;
   timezone: string;
   theme: Theme;
   max_listen_s: number;

@@ -217,6 +217,10 @@ static void merge_json(buddy_settings_t *s, const cJSON *j)
     if (cJSON_IsNumber(it)) {
         s->screen_timeout_s = (uint16_t)clamp_int(it->valueint, 5, 3600);
     }
+    it = cJSON_GetObjectItemCaseSensitive(j, "standby_clock");
+    if (cJSON_IsBool(it)) {
+        s->standby_clock = cJSON_IsTrue(it);
+    }
     it = cJSON_GetObjectItemCaseSensitive(j, "tz_posix");
     if (cJSON_IsString(it) && it->valuestring[0]) {
         strlcpy(s->tz_posix, it->valuestring, sizeof(s->tz_posix));
@@ -253,6 +257,7 @@ cJSON *settings_to_json(const buddy_settings_t *s)
     cJSON_AddNumberToObject(j, "volume", s->volume);
     cJSON_AddNumberToObject(j, "brightness", s->brightness);
     cJSON_AddNumberToObject(j, "screen_timeout_s", s->screen_timeout_s);
+    cJSON_AddBoolToObject(j, "standby_clock", s->standby_clock);
     cJSON_AddStringToObject(j, "tz_posix", s->tz_posix);
     cJSON *t = cJSON_AddObjectToObject(j, "theme");
     cJSON_AddStringToObject(t, "preset", s->theme.preset);

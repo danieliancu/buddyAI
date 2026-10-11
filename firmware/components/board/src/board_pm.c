@@ -125,18 +125,18 @@ void board_pm_set_awake(bool awake)
 #endif
 }
 
-void board_standby(bool on)
+void board_standby(bool on, bool keep_panel)
 {
     s_standby = on;
     if (on) {
-        board_display_standby(true);
+        board_display_standby(true, keep_panel);
         board_boot_button_standby(true);
         board_audio_suspend();
         board_pm_set_awake(false);
     } else {
         board_pm_set_awake(true);           /* full speed first: the panel comes back sooner */
         board_boot_button_standby(false);
-        board_display_standby(false);
+        board_display_standby(false, false);
         board_audio_resume();               /* before the user can speak: a conversation may follow */
     }
 }

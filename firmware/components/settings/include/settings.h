@@ -56,6 +56,7 @@ typedef struct {
     uint8_t          volume;            /* 0..100 */
     uint8_t          brightness;        /* 0..100 */
     uint16_t         screen_timeout_s;
+    bool             standby_clock;     /* standby shows a faint analogue clock instead of a black screen */
     char             tz_posix[SETTINGS_TZ_MAX];
     settings_theme_t theme;
     uint16_t         max_listen_s;

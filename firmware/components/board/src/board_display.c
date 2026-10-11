@@ -28,6 +28,7 @@ static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static lv_indev_t *s_indev;
 static bool s_standby;
+static bool s_panel_kept;   /* standby with the panel left on (the standby clock) */
 static volatile uint32_t s_touch_wake_irqs;   /* touch diagnostics */
 static lv_display_t *s_disp;
 
@@ -262,12 +263,27 @@ void board_touch_diag(uint32_t *wake_irqs)
     *wake_irqs = s_touch_wake_irqs;
 }
 
-void board_display_standby(bool on)
+void board_display_standby(bool on, bool keep_panel)
 {
     if (!s_panel || on == s_standby) {
         return;
     }
     s_standby = on;
+    if (on && keep_panel) {     /* the standby clock: the panel stays lit, its frame drawn by the caller */
+        s_panel_kept = true;
+        touch_wake_mode(true);
+        return;
+    }
+    if (!on && s_panel_kept) {
+        s_panel_kept = false;
+        touch_wake_mode(false);
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(s_disp);
+        if (s_indev) {
+            lv_indev_wait_release(s_indev);
+        }
+        return;
+    }
     if (on) {
         board_display_set_brightness(0);
         esp_lcd_panel_disp_on_off(s_panel, false);

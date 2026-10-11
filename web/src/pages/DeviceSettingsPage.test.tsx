@@ -10,6 +10,7 @@ const settings: DeviceSettings = {
   volume: 70,
   brightness: 80,
   screen_timeout_s: 15,
+  standby_clock: false,
   timezone: "Europe/London",
   theme: { preset: "midnight", accent: "#4F8CFF", background: "#000000", clock: "#FFFFFF", text: "#FFFFFF" },
   max_listen_s: 30,

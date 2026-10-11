@@ -513,6 +513,9 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
                 <Field label="Screen timeout" error={err("screen_timeout_s")}>
                   <Slider value={draft.screen_timeout_s} min={5} max={300} step={5} onChange={(v) => set("screen_timeout_s", v)} format={(v) => `${v} s`} />
                 </Field>
+                <Field label="Clock in standby" hint="A faint analogue clock instead of a black screen. Uses more battery." error={err("standby_clock")}>
+                  <Toggle checked={draft.standby_clock} onChange={(v) => set("standby_clock", v)} label="Show the time while the watch rests" />
+                </Field>
                 <Field label="Time zone" error={err("timezone")}>
                   <Select value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} className="h-6! py-0 text-xs">
                     {![...COMMON_TIMEZONES, ...TZ_GROUPS.flatMap(([, z]) => z)].includes(draft.timezone) && (

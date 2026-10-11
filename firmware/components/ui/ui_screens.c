@@ -197,6 +197,21 @@ static void add_theme_dot(lv_obj_t *parent, uint32_t rgb)
     lv_obj_remove_flag(d, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 }
 
+/* Clock in standby: a faint analogue clock instead of the black screen (more battery). */
+static lv_obj_t *s_aod_sw, *s_lbl_aod;
+
+static void aod_cb(lv_event_t *e)
+{
+    bool on = lv_obj_has_state(s_aod_sw, LV_STATE_CHECKED);
+    if (!g_ui_cb.on_settings_change || on == g_ui_settings.standby_clock) {
+        return;
+    }
+    cJSON *c = cJSON_CreateObject();
+    cJSON_AddBoolToObject(c, "standby_clock", on);
+    g_ui_cb.on_settings_change(c);
+    cJSON_Delete(c);
+}
+
 static void timeout_cb(lv_event_t *e)
 {
     const int n = (int)(sizeof(s_timeouts) / sizeof(s_timeouts[0]));
@@ -434,6 +449,16 @@ static void build_settings(void)
     s_sld_vol = make_level_card(s_set_scr, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, s_seg_vol, 0, 100);
     make_tap_row(s_set_scr, SET_ICON_POWER, &s_lbl_timeout, &s_val_timeout, timeout_cb);
 
+    lv_obj_t *arow = make_row_card(s_set_scr, SET_ICON_CLOCK, &s_lbl_aod);
+    s_aod_sw = lv_switch_create(arow);
+    lv_obj_set_size(s_aod_sw, 64, 34);
+    lv_obj_set_style_bg_color(s_aod_sw, lv_color_hex(0x3A3F48), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_aod_sw, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_aod_sw, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_ext_click_area(s_aod_sw, 12);
+    lv_obj_add_flag(s_aod_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(s_aod_sw, aod_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
     /* Language: English | Other (opens the picker) */
     lv_obj_t *lang = make_row_card(s_set_scr, SET_ICON_GLOBE, &s_lbl_lang);
     s_btn_lang_en = lv_button_create(lang);
@@ -524,6 +549,7 @@ void ui_settings_refresh(void)
     lv_label_set_text(s_lbl_bri, ui_str(STR_BRIGHTNESS));
     lv_label_set_text(s_lbl_vol, ui_str(STR_VOLUME));
     lv_label_set_text(s_lbl_timeout, ui_str(STR_SCREEN_TIMEOUT));
+    lv_label_set_text(s_lbl_aod, ui_str(STR_STANDBY_CLOCK));
     lv_label_set_text(s_lbl_lang, ui_str(STR_LANGUAGE));
     lv_label_set_text(s_lbl_wifi_btn, ui_str(STR_WIFI_SETUP));
 
@@ -546,6 +572,9 @@ void ui_settings_refresh(void)
     lv_obj_set_state(s_btn_lang_other, LV_STATE_CHECKED, foreign != NULL);
 
     lv_obj_set_state(s_theme_sw, LV_STATE_CHECKED, strcmp(g_ui_settings.theme.preset, "mono") == 0);
+    lv_obj_set_style_bg_color(s_aod_sw, g_ui_theme.accent, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(s_aod_sw, ui_on_color(g_ui_theme.accent), LV_PART_KNOB | LV_STATE_CHECKED);
+    lv_obj_set_state(s_aod_sw, LV_STATE_CHECKED, g_ui_settings.standby_clock);
 }
 
 void ui_settings_open(void)

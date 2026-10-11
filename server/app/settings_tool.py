@@ -21,9 +21,9 @@ BRIGHTNESS_RANGE = (5, 100)
 
 SETTINGS_TOOL: dict[str, Any] = {
     "name": "watch_settings",
-    "description": "Read or change the watch's volume, screen brightness, language or colour theme (blue or "
-    "white). Call it with no arguments to read the current settings (also the screen timeout), e.g. 'what is "
-    "the volume?'. To change, pass only what changes. Use volume / brightness for an exact level (0-100, e.g. 'maximum' = 100, 'minimum' = 0) and "
+    "description": "Read or change the watch's volume, screen brightness, language, colour theme (blue or "
+    "white) or the clock in standby. Call it with no arguments to read the current settings (also the screen "
+    "timeout), e.g. 'what is the volume?'. To change, pass only what changes. Use volume / brightness for an exact level (0-100, e.g. 'maximum' = 100, 'minimum' = 0) and "
     "volume_change / brightness_change for relative requests: +/-10 for 'a bit', +/-15 when no amount is "
     "given ('louder', 'dimmer'), +/-30 for 'much'. Returns the new values.",
     "parameters": {
@@ -43,15 +43,22 @@ SETTINGS_TOOL: dict[str, Any] = {
                 "enum": list(THEME_PRESETS),
                 "description": "Colour theme: 'midnight' = blue, 'mono' = white. There are no other colours.",
             },
+            "standby_clock": {
+                "type": "boolean",
+                "description": "Clock in standby: true shows a faint analogue clock while the watch rests (uses "
+                "more battery), false keeps the resting screen black",
+            },
         },
     },
 }
 
 SETTINGS_RULE = (
-    "You can change the watch's volume, brightness, language and colours with the watch_settings tool, "
+    "You can change the watch's volume, brightness, language, colours and the clock in standby with the "
+    "watch_settings tool, "
     "also for vague requests ('a bit quieter', 'brighter', 'much louder'). After changing, confirm briefly "
     "with the new value, e.g. 'Volume 55.' When asked what a setting is now (volume, brightness, language, "
-    "theme, screen timeout), call watch_settings with no arguments and answer with the value; never guess it."
+    "theme, screen timeout, clock in standby), call watch_settings with no arguments and answer with the value; "
+    "never guess it."
 )
 
 
@@ -106,6 +113,8 @@ def apply(device_id: str, args: dict[str, Any]) -> tuple[str, bool]:
             theme = {"preset": args["theme"]}
         if theme:
             changes["theme"] = theme
+        if isinstance(args.get("standby_clock"), bool):
+            changes["standby_clock"] = args["standby_clock"]
         if not changes:  # a question about the settings: report them, change nothing
             return json.dumps({"ok": True, "current": True, **_view(current)}, ensure_ascii=False), False
         new, _ = repo.update(device_id, changes)
@@ -120,6 +129,7 @@ def _view(s: DeviceSettings) -> dict[str, Any]:
         "language": lang.name if lang else ("automatic (the language the user speaks)"
                                             if s.language == languages.AUTO else s.language),
         "theme": "blue" if s.theme.preset == "midnight" else "white",
+        "standby_clock": "on" if s.standby_clock else "off",
         "screen_timeout_s": s.screen_timeout_s,
     }
 

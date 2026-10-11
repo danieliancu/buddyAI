@@ -53,6 +53,7 @@ LANGS = {
             "RESET_BTN": "Reset",
             "RESETTING": "Resetting…",
             "POWER_OFF": "Turning off…",
+            "STANDBY_CLOCK": "Clock in standby",
             "OTA_T": "Updating firmware",
             "OTA_FAIL": "Update failed",
             "LISTENING": "Listening…",
