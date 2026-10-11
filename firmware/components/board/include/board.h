@@ -75,6 +75,8 @@ esp_err_t board_display_power(bool on);                 /* panel on/off (keeps L
  * frame before the panel shows it and ignores the touch that woke it. Caller holds the LVGL lock; brightness is
  * the caller's (0 while in standby). */
 void      board_display_standby(bool on);
+/* Development: touch wake-ups seen in standby and the FT3168 G_MODE (normal / read back in standby). */
+void      board_touch_diag(uint32_t *wake_irqs, uint8_t *g_mode, uint8_t *g_mode_standby);
 bool      board_display_lock(uint32_t timeout_ms);
 void      board_display_unlock(void);
 

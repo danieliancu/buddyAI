@@ -28,6 +28,7 @@ static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static lv_indev_t *s_indev;
 static bool s_standby;
+static volatile uint32_t s_touch_wake_irqs;   /* touch diagnostics */
 static lv_display_t *s_disp;
 
 /* LVGL draw buffer: 20 lines (~16 KB), double buffered, in internal DMA RAM.
@@ -233,6 +234,7 @@ esp_err_t board_display_set_brightness(int percent)
  * gives way to this one-shot handler until board_display_standby(false). */
 static void touch_wake_isr(void *arg)
 {
+    s_touch_wake_irqs++;
     gpio_intr_disable(BOARD_TOUCH_INT);
     board_wake_from_isr();
 }
@@ -243,6 +245,7 @@ static void touch_wake_isr(void *arg)
  * controller to polling, waking switches it back. */
 #define FT_REG_G_MODE   0xA4
 static uint8_t s_ft_g_mode = 0x01;
+static uint8_t s_ft_g_mode_standby = 0xFF;  /* read back after switching to polling (touch diagnostics) */
 
 static void touch_set_g_mode(uint8_t mode)
 {
@@ -262,6 +265,9 @@ static void touch_wake_mode(bool on)
             s_ft_g_mode = mode;     /* restored on wake */
         }
         touch_set_g_mode(0x00);
+        if (esp_lcd_panel_io_rx_param(s_touch->io, FT_REG_G_MODE, &mode, 1) == ESP_OK) {
+            s_ft_g_mode_standby = mode;
+        }
         gpio_isr_handler_add(BOARD_TOUCH_INT, touch_wake_isr, NULL);
         gpio_wakeup_enable(BOARD_TOUCH_INT, GPIO_INTR_LOW_LEVEL);   /* also sets the interrupt type */
     } else {
@@ -271,6 +277,13 @@ static void touch_wake_mode(bool on)
         gpio_isr_handler_add(BOARD_TOUCH_INT, (gpio_isr_t)s_touch->config.interrupt_callback, s_touch);
     }
     gpio_intr_enable(BOARD_TOUCH_INT);
+}
+
+void board_touch_diag(uint32_t *wake_irqs, uint8_t *g_mode, uint8_t *g_mode_standby)
+{
+    *wake_irqs = s_touch_wake_irqs;
+    *g_mode = s_ft_g_mode;
+    *g_mode_standby = s_ft_g_mode_standby;
 }
 
 void board_display_standby(bool on)

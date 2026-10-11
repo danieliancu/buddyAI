@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -111,10 +112,15 @@ static void wake_isr(void)
     post_from_any(APP_EV_WAKE);
 }
 
+static uint32_t s_standby_entries, s_wake_events;  /* touch diagnostics (development builds) */
+
 /* Screen standby (LVGL task): the radio sleeps longer between beacons; the app loop slows down by itself. */
 static void ui_standby(bool standby)
 {
     net_wifi_set_standby(standby);
+    if (standby) {
+        s_standby_entries++;
+    }
 }
 
 /* BOOT tap: the conversation screen with the mic on, from any screen, like the mic button (during a turn it
@@ -567,6 +573,29 @@ static void handle_net_event(net_event_t ev)
 }
 
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
+/* Touch wake test: the counts survive a test on battery and are printed once a computer is connected again
+ * (the USB port does not work after a light sleep without it), then on every change. */
+static void touch_diag_log(void)
+{
+    static bool was_connected;
+    static uint32_t last_irqs = UINT32_MAX, last_wakes, last_standby;
+    bool connected = usb_serial_jtag_is_connected();
+    uint32_t irqs;
+    uint8_t g_mode, g_mode_standby;
+    board_touch_diag(&irqs, &g_mode, &g_mode_standby);
+    if (connected && (!was_connected || irqs != last_irqs || s_wake_events != last_wakes ||
+                      s_standby_entries != last_standby)) {
+        ESP_LOGI(TAG, "touch-diag: standby entries %lu, touch wake irqs %lu, wake events %lu, "
+                 "FT G_MODE normal %u / standby read-back %u",
+                 (unsigned long)s_standby_entries, (unsigned long)irqs, (unsigned long)s_wake_events,
+                 g_mode, g_mode_standby);
+        last_irqs = irqs;
+        last_wakes = s_wake_events;
+        last_standby = s_standby_entries;
+    }
+    was_connected = connected;
+}
+
 /* One line every POWER_LOG_MS: the battery voltage over an idle night compares firmware versions (the PMU has no
  * current sensor). `awake_s` / `standby_s` count screen time since the previous line. */
 static void power_log(uint32_t now)
@@ -625,6 +654,7 @@ static void app_loop(void)
             } else if (ev.type == APP_EV_BOOT_TAP) {
                 boot_tap();
             } else if (ev.type == APP_EV_WAKE) {
+                s_wake_events++;
                 ui_wake();
             } else if (ev.type == APP_EV_PROV_DONE) {
                 ESP_LOGI(TAG, "Bluetooth setup finished - restarting");
@@ -644,6 +674,7 @@ static void app_loop(void)
         poll_factory_reset_button(now);
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
         power_log(now);
+        touch_diag_log();
 #endif
         uint32_t batt_ms = ui_is_awake() ? BATTERY_POLL_MS : BATTERY_POLL_STANDBY_MS;
         if (now - last_batt >= batt_ms || last_batt == 0) {
