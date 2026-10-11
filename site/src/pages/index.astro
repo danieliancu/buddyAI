@@ -144,8 +144,34 @@ const jsonLd = [
   <Testimonials />
 
   <!-- Buy -->
-  <section id="buy" class="bg-bg-2 py-12" aria-labelledby="buy-title">
-    <div class="container-x grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
+  <section id="buy" class="relative overflow-hidden bg-bg-2 py-12" aria-labelledby="buy-title">
+    <!-- desktop only: faint glowing waves, like the one on the watch face -->
+    <svg
+      class="pointer-events-none absolute inset-0 hidden h-full w-full opacity-[0.18] lg:block"
+      viewBox="0 0 1440 600"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="buy-wave" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" stop-color="#4f8cff" stop-opacity="0" />
+          <stop offset="0.25" stop-color="#4f8cff" />
+          <stop offset="0.7" stop-color="#5b4cf0" />
+          <stop offset="1" stop-color="#5b4cf0" stop-opacity="0" />
+        </linearGradient>
+        <filter id="buy-wave-glow" x="-10%" y="-50%" width="120%" height="200%">
+          <feGaussianBlur stdDeviation="10" />
+        </filter>
+      </defs>
+      <g fill="none" stroke="url(#buy-wave)" stroke-linecap="round">
+        <path d="M0 420 C 240 330, 480 330, 720 400 S 1200 500, 1440 380" stroke-width="16" filter="url(#buy-wave-glow)" />
+        <path d="M0 420 C 240 330, 480 330, 720 400 S 1200 500, 1440 380" stroke-width="4" />
+        <path d="M0 470 C 300 400, 560 420, 800 460 S 1220 520, 1440 440" stroke-width="2.5" opacity="0.7" />
+        <path d="M0 360 C 280 290, 520 300, 760 350 S 1180 430, 1440 320" stroke-width="2" opacity="0.5" />
+        <path d="M0 520 C 320 470, 600 480, 860 510 S 1240 560, 1440 500" stroke-width="1.5" opacity="0.4" />
+      </g>
+    </svg>
+    <div class="container-x relative grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
       <!-- text on top, the watch-and-box picture under it; the buy box beside them -->
       <div class="flex flex-col items-center text-center lg:items-start lg:text-left">
         <p class="eyebrow">Get yours</p>
