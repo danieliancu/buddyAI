@@ -87,6 +87,13 @@ esp_err_t board_pm_init(void)
         ESP_LOGW(TAG, "esp_pm_configure: %s - running at full speed", esp_err_to_name(err));
         return err;
     }
+#if CONFIG_BUDDYAI_PM_LIGHT_SLEEP
+    /* GPIO wake-up as a light-sleep source: without it the pins armed by gpio_wakeup_enable() (touch INT, BOOT)
+     * do not wake the chip, and a touch was only noticed if it happened while the chip was awake anyway. */
+    if (esp_sleep_enable_gpio_wakeup() != ESP_OK) {
+        ESP_LOGW(TAG, "GPIO wake-up not enabled: touch and BOOT may not wake the watch");
+    }
+#endif
 #if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
     esp_pm_sleep_cbs_register_config_t cbs = { .exit_cb = light_sleep_exit_cb };
     if (esp_pm_light_sleep_register_cbs(&cbs) != ESP_OK) {
