@@ -217,8 +217,9 @@ static void update_clock(bool force);
 /* ---- Standby clock (setting "standby_clock") ----
  * Instead of a black screen, standby shows a faint analogue clock: 12 thin hour marks and two thin hands in grey,
  * at AOD_BRIGHTNESS. Everything else is black (unlit AMOLED pixels). The panel stays on, but the chip still
- * light-sleeps: the panel keeps the frame by itself, and an esp_timer redraws the hands once a minute. The face
- * stays centred (a drift against burn-in looked off-centre); the marks are thin, grey and dim. */
+ * light-sleeps: the panel keeps the frame by itself, and an esp_timer redraws the hands once a minute. Against
+ * burn-in the whole dial turns by 0, +1, 0, -1 degrees from one minute to the next: the hour marks move about 3 px
+ * sideways while the centre stays put (a drift looked off-centre). */
 #define AOD_BRIGHTNESS      20      /* % (or the user's level if lower) */
 #define AOD_CX              (BOARD_LCD_H_RES / 2)
 #define AOD_CY              (BOARD_LCD_V_RES / 2)
@@ -233,6 +234,9 @@ static void update_clock(bool force);
 static lv_obj_t          *s_aod_scr;
 static lv_obj_t          *s_aod_face;
 static lv_obj_t          *s_aod_hour, *s_aod_min;
+static lv_obj_t          *s_aod_mark_obj[12];
+static int                s_aod_turn;               /* index into s_aod_turns */
+static const int8_t       s_aod_turns[] = { 0, 1, 0, -1 };
 static lv_point_precise_t s_aod_marks[12][2];
 static lv_point_precise_t s_aod_hour_pts[2], s_aod_min_pts[2];
 static esp_timer_handle_t s_aod_timer;
@@ -266,9 +270,7 @@ static void build_aod(void)
     lv_obj_set_size(s_aod_face, BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_obj_remove_flag(s_aod_face, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     for (int i = 0; i < 12; i++) {
-        aod_point(&s_aod_marks[i][0], i * 30.0f, AOD_R);
-        aod_point(&s_aod_marks[i][1], i * 30.0f, AOD_R - (i % 3 == 0 ? AOD_MARK_LEN_Q : AOD_MARK_LEN));
-        aod_line(s_aod_marks[i], 3, AOD_MARK_COLOR);
+        s_aod_mark_obj[i] = aod_line(s_aod_marks[i], 3, AOD_MARK_COLOR);  /* placed by aod_update() */
     }
     s_aod_hour_pts[0].x = s_aod_min_pts[0].x = AOD_CX;
     s_aod_hour_pts[0].y = s_aod_min_pts[0].y = AOD_CY;
@@ -283,8 +285,15 @@ static void aod_update(void)
     struct tm tm;
     localtime_r(&now, &tm);
     float min = (float)tm.tm_min + (float)tm.tm_sec / 60.0f;
-    aod_point(&s_aod_hour_pts[1], ((tm.tm_hour % 12) + min / 60.0f) * 30.0f, AOD_HOUR_LEN);
-    aod_point(&s_aod_min_pts[1], min * 6.0f, AOD_MIN_LEN);
+    s_aod_turn = (s_aod_turn + 1) % (int)sizeof(s_aod_turns);
+    float turn = s_aod_turns[s_aod_turn];
+    for (int i = 0; i < 12; i++) {
+        aod_point(&s_aod_marks[i][0], i * 30.0f + turn, AOD_R);
+        aod_point(&s_aod_marks[i][1], i * 30.0f + turn, AOD_R - (i % 3 == 0 ? AOD_MARK_LEN_Q : AOD_MARK_LEN));
+        lv_line_set_points(s_aod_mark_obj[i], s_aod_marks[i], 2);
+    }
+    aod_point(&s_aod_hour_pts[1], ((tm.tm_hour % 12) + min / 60.0f) * 30.0f + turn, AOD_HOUR_LEN);
+    aod_point(&s_aod_min_pts[1], min * 6.0f + turn, AOD_MIN_LEN);
     lv_line_set_points(s_aod_hour, s_aod_hour_pts, 2);
     lv_line_set_points(s_aod_min, s_aod_min_pts, 2);
 }
