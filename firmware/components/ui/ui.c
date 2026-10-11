@@ -292,13 +292,14 @@ static void aod_update(void)
     lv_obj_set_pos(s_aod_face, s_shift[s_shift_idx][0] * AOD_SHIFT_MUL, s_shift[s_shift_idx][1] * AOD_SHIFT_MUL);
 }
 
-/* Fires at the start of each minute while the standby clock shows (esp_timer task). */
+/* Fires at the start of each minute while the standby clock shows. It runs in the esp_timer task, whose small
+ * stack cannot render a frame (it overflowed and restarted the watch): it only moves the hands, and the LVGL task
+ * draws them on its next pass (within LVGL's 1 s idle sleep). */
 static void aod_timer_cb(void *arg)
 {
     LOCK();
     if (s_aod_active) {
         aod_update();
-        lv_refr_now(s_disp);
         time_t now = time(NULL);
         esp_timer_start_once(s_aod_timer, (uint64_t)(60 - now % 60) * 1000000ULL);
     }
