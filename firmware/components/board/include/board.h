@@ -58,15 +58,6 @@ void      board_boot_button_standby(bool on);
 /* Accelerometer (QMI8658), in milli-g. Unavailable -> ESP_ERR_INVALID_STATE. */
 bool      board_imu_available(void);
 esp_err_t board_imu_read_accel_mg(int *x, int *y, int *z);
-/* Wake on Motion: the sensor toggles its INT1 or INT2 pin on a movement above threshold_mg (1..255). */
-esp_err_t board_imu_wom_enable(int threshold_mg, bool use_int1);
-uint8_t   board_imu_status1(void);
-#define   BOARD_WOM_THRESHOLD_MG  255   /* the sensor's maximum: a deliberate shake, not every small move */
-/* Shake to wake: `cb` runs in an interrupt on a movement while armed (standby), only post from it; the handler is
- * one-shot until board_imu_motion_rearm(). */
-void      board_imu_set_motion_cb(board_button_cb_t cb);
-void      board_imu_motion_standby(bool on);
-void      board_imu_motion_rearm(void);
 
 esp_err_t board_rtc_read(struct tm *utc);
 esp_err_t board_rtc_write(const struct tm *utc);

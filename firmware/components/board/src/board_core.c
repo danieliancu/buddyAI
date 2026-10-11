@@ -299,13 +299,6 @@ bool board_rtc_restore_system_time(void)
 #define QMI_CTRL1       0x02    /* b6: register address auto-increment */
 #define QMI_CTRL2       0x03    /* accel: b6..4 full scale, b3..0 output data rate */
 #define QMI_CTRL7       0x08    /* b0: accelerometer enable */
-#define QMI_CTRL9       0x0A    /* host command (CTRL9 protocol) */
-#define QMI_CAL1_L      0x0B    /* WoM: threshold in mg */
-#define QMI_CAL1_H      0x0C    /* WoM: b7..6 INT pin + initial level, b5..0 blanking (samples) */
-#define QMI_STATUSINT   0x2D    /* b7: CTRL9 command done */
-#define QMI_STATUS1     0x2F    /* b2: wake on motion */
-#define QMI_CMD_ACK     0x00
-#define QMI_CMD_WOM     0x08    /* CTRL_CMD_WRITE_WOM_SETTING */
 #define QMI_AX_L        0x35    /* AX, AY, AZ: int16 little endian */
 #define QMI_RESET       0x60
 #define QMI_ACC_4G_125HZ 0x16   /* +-4 g (8192 LSB/g), ~125 Hz */
@@ -352,105 +345,6 @@ esp_err_t board_imu_read_accel_mg(int *x, int *y, int *z)
     return ESP_OK;
 }
 
-/* Wake on Motion (QMI8658 datasheet "WoM"): the accelerometer runs in low-power mode (21 Hz) on its own and pulses
- * the selected INT pin when the acceleration changes by more than `threshold_mg`. INT1 is GPIO13 (BOARD_IMU_INT1):
- * in standby that pulse wakes the chip, and the app checks for a real shake (board_imu_motion_standby). */
-esp_err_t board_imu_wom_enable(int threshold_mg, bool use_int1)
-{
-    if (!s_imu) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (threshold_mg < 1) {
-        threshold_mg = 1;
-    } else if (threshold_mg > 255) {
-        threshold_mg = 255;
-    }
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x00), TAG, "wom off");
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL2, 0x1D), TAG, "wom odr");    /* +-4 g, low power 21 Hz */
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CAL1_L, (uint8_t)threshold_mg), TAG, "wom thr");
-    /* INT1 (0b11) or INT2 (0b01), initial level high; 4 samples blanking after enabling */
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CAL1_H, (use_int1 ? 0xC0 : 0x40) | 0x04), TAG, "wom cfg");
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL9, QMI_CMD_WOM), TAG, "wom cmd");
-    uint8_t st = 0;
-    for (int i = 0; i < 50 && !(st & 0x80); i++) {
-        vTaskDelay(pdMS_TO_TICKS(2));
-        reg_read(s_imu, QMI_STATUSINT, &st, 1);
-    }
-    reg_write8(s_imu, QMI_CTRL9, QMI_CMD_ACK);
-    if (!(st & 0x80)) {
-        ESP_LOGW(TAG, "QMI8658 WoM command not acknowledged");
-    }
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL1, 0x40 | 0x18), TAG, "int outputs");  /* INT1 + INT2 on */
-    ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x01), TAG, "wom on");
-    board_imu_status1();        /* clears a stale event */
-    return ESP_OK;
-}
-
-uint8_t board_imu_status1(void)
-{
-    uint8_t st = 0;
-    if (s_imu) {
-        reg_read(s_imu, QMI_STATUS1, &st, 1);
-    }
-    return st;
-}
-
-/* Standby: a movement (INT1 high, ~20 ms) wakes the chip from light sleep; the one-shot handler reports it.
- * The pulse outlasts the wake-up, so the level interrupt catches it (a touch's pulse does not, see board_pm.c). */
-static board_button_cb_t s_motion_cb;
-static bool s_motion_armed;
-
-static void motion_isr(void *arg)
-{
-    gpio_intr_disable(BOARD_IMU_INT1);
-    if (s_motion_cb) {
-        s_motion_cb();
-    }
-}
-
-void board_imu_set_motion_cb(board_button_cb_t cb)
-{
-    s_motion_cb = cb;
-    if (!s_imu) {
-        return;
-    }
-    gpio_config_t io = {
-        .pin_bit_mask = 1ULL << BOARD_IMU_INT1,
-        .mode = GPIO_MODE_INPUT,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,   /* push-pull output, the pull only defines it before init */
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io);
-    esp_err_t err = gpio_install_isr_service(0);
-    if (err == ESP_OK || err == ESP_ERR_INVALID_STATE) {
-        gpio_isr_handler_add(BOARD_IMU_INT1, motion_isr, NULL);
-    }
-}
-
-void board_imu_motion_standby(bool on)
-{
-    if (!s_imu || !s_motion_cb || on == s_motion_armed) {
-        return;
-    }
-    s_motion_armed = on;
-    gpio_intr_disable(BOARD_IMU_INT1);
-    if (on) {
-        board_imu_status1();    /* acknowledges a pending event: the sensor reports the next one only after that */
-        gpio_wakeup_enable(BOARD_IMU_INT1, GPIO_INTR_HIGH_LEVEL);   /* also sets the interrupt type */
-        gpio_intr_enable(BOARD_IMU_INT1);
-    } else {
-        gpio_wakeup_disable(BOARD_IMU_INT1);
-    }
-}
-
-void board_imu_motion_rearm(void)
-{
-    board_imu_status1();        /* acknowledge, or no further wake-on-motion pulse comes */
-    if (s_motion_armed) {
-        gpio_intr_enable(BOARD_IMU_INT1);
-    }
-}
-
 bool board_imu_available(void)
 {
     return s_imu != NULL;
@@ -475,10 +369,8 @@ esp_err_t board_init(void)
         ESP_LOGE(TAG, "RTC init failed");
     }
     if (imu_init() != ESP_OK) {
-        ESP_LOGE(TAG, "IMU init failed - shake to wake unavailable");
+        ESP_LOGE(TAG, "IMU init failed");
         s_imu = NULL;
-    } else if (board_imu_wom_enable(BOARD_WOM_THRESHOLD_MG, true) != ESP_OK) {
-        ESP_LOGE(TAG, "IMU wake on motion failed - shake to wake unavailable");
     }
 
     /* BOOT button (GPIO0, active low, external pull-up on the board). Only

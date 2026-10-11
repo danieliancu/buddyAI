@@ -335,10 +335,8 @@ the chip light-sleeps between Wi-Fi beacons, and the watch stays connected to th
 - **PWR:** short press, polled over I2C every 1 s in standby (the PMU latches it), so it reacts within ≤ 1 s;
 - **a reminder from the server**, or anything that opens a screen (`ui_note_activity`).
 
-- **a shake:** the QMI8658 watches by itself in wake-on-motion mode (low-power 21 Hz, threshold 255 mg) and pulses
-  INT1 = GPIO13 (found on the watch by a pin probe); that wakes the chip, which samples the accelerometer for 1.2 s
-  and wakes the screen only for a clear shake (3 jolts over 1.2 g). Walking or an arm swing leaves it dark, and
-  movements are then ignored for 10 s.
+Shake-to-wake is gone and the accelerometer is off: reading it 25 times a second kept the chip awake, and a
+wake-on-motion version (QMI8658 INT1, which a pin probe found on GPIO13) was dropped after testing on the watch.
 
 **Touch needs a firm tap in standby:** the FT3168 drops to its own monitor mode when idle and only notices a
 deliberate tap; a light touch is not seen at all (on battery: 7 firm taps in 7 woke the screen, 3 light ones in 3
