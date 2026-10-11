@@ -130,6 +130,7 @@ static int64_t s_shake_quiet_until;
 
 static void shake_check(void)
 {
+    board_imu_status1();    /* acknowledge the wake-on-motion event (the next one needs it) */
     int64_t now_ms = esp_timer_get_time() / 1000;
     if (ui_is_awake() || now_ms < s_shake_quiet_until) {
         if (!ui_is_awake()) {
@@ -137,13 +138,17 @@ static void shake_check(void)
         }
         return;
     }
-    int peaks = 0;
+    int peaks = 0, samples = 0, max_dev = 0;
     int64_t last_peak = 0;
     for (int64_t end = now_ms + SHAKE_CHECK_MS; now_ms < end && peaks < SHAKE_PEAKS;
          now_ms = esp_timer_get_time() / 1000) {
         int x, y, z;
         if (board_imu_read_accel_mg(&x, &y, &z) == ESP_OK) {
             int mag = (int)sqrtf((float)(x * x + y * y + z * z));
+            samples++;
+            if (abs(mag - 1000) > max_dev) {
+                max_dev = abs(mag - 1000);
+            }
             if (abs(mag - 1000) >= SHAKE_G_MG && now_ms - last_peak >= SHAKE_PEAK_GAP_MS) {
                 peaks++;
                 last_peak = now_ms;
@@ -151,6 +156,7 @@ static void shake_check(void)
         }
         vTaskDelay(pdMS_TO_TICKS(SHAKE_SAMPLE_MS));
     }
+    ESP_LOGI(TAG, "shake check: %d jolts, strongest %d mg from 1 g, %d samples", peaks, max_dev, samples);
     if (peaks >= SHAKE_PEAKS) {
         ESP_LOGI(TAG, "shake: waking the screen");
         ui_wake();

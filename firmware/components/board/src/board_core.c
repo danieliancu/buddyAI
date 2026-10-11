@@ -382,6 +382,7 @@ esp_err_t board_imu_wom_enable(int threshold_mg, bool use_int1)
     }
     ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL1, 0x40 | 0x18), TAG, "int outputs");  /* INT1 + INT2 on */
     ESP_RETURN_ON_ERROR(reg_write8(s_imu, QMI_CTRL7, 0x01), TAG, "wom on");
+    board_imu_status1();        /* clears a stale event */
     return ESP_OK;
 }
 
@@ -434,6 +435,7 @@ void board_imu_motion_standby(bool on)
     s_motion_armed = on;
     gpio_intr_disable(BOARD_IMU_INT1);
     if (on) {
+        board_imu_status1();    /* acknowledges a pending event: the sensor reports the next one only after that */
         gpio_wakeup_enable(BOARD_IMU_INT1, GPIO_INTR_HIGH_LEVEL);   /* also sets the interrupt type */
         gpio_intr_enable(BOARD_IMU_INT1);
     } else {
@@ -443,6 +445,7 @@ void board_imu_motion_standby(bool on)
 
 void board_imu_motion_rearm(void)
 {
+    board_imu_status1();        /* acknowledge, or no further wake-on-motion pulse comes */
     if (s_motion_armed) {
         gpio_intr_enable(BOARD_IMU_INT1);
     }
