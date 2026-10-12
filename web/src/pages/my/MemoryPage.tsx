@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Brain, Check, History, Pencil, Plus, ShieldAlert, Trash2, X } from "lucide-react";
 import { api, ApiError, type MemoryItem, type MemoryKind, type MemorySettings } from "../../api";
 import { fmtDate } from "../../format";
-import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Toggle, useAsync, PasswordInput } from "../../components/ui";
+import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Select, Spinner, Toggle, useAsync, PasswordInput } from "../../components/ui";
 
 const KIND_LABEL: Record<MemoryKind, string> = {
   profile: "About you",
@@ -55,17 +55,19 @@ export default function MemoryPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Memory</h1>
-          <p className="mt-1 text-sm text-muted">
+      <PageHeader
+        title="Memory"
+        subtitle={
+          <p className="text-[15px] sm:text-base">
             Say “remember that…” to your watch and olá keeps it for later conversations. You can correct or forget anything here.
           </p>
-        </div>
-        <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
-          Add
-        </Button>
-      </div>
+        }
+        actions={
+          <Button variant="primary" size="lg" icon={<Plus />} onClick={() => setAdding(true)}>
+            Add
+          </Button>
+        }
+      />
 
       <ErrorBox error={error} />
 
@@ -112,7 +114,7 @@ export default function MemoryPage() {
           <h2 className="mb-2 text-sm font-semibold">To confirm</h2>
           <ul className="space-y-2">
             {pending.map((m) => (
-              <li key={m.id} className="flex items-start gap-2 rounded-xl border border-warn/40 bg-surface p-3">
+              <li key={m.id} className="flex items-start gap-2 rounded-2xl border border-warn/40 bg-surface p-4 shadow-(--card-shadow)">
                 <p className="min-w-0 flex-1 text-sm">{m.fact}</p>
                 <Button size="sm" variant="primary" icon={<Check className="size-4" />} onClick={() => void act(() => api.me.memories.confirm(m.id))}>
                   Keep
@@ -139,7 +141,7 @@ export default function MemoryPage() {
         ) : (
           <ul className="space-y-2">
             {active.map((m) => (
-              <li key={m.id} className="rounded-xl border border-border bg-surface p-3">
+              <li key={m.id} className="rounded-(--r-card) border border-(--card-border) bg-surface shadow-(--card-shadow) p-4">
                 <div className="flex items-start gap-2">
                   <p className="min-w-0 flex-1 text-sm">{m.fact}</p>
                   <button
@@ -183,7 +185,7 @@ export default function MemoryPage() {
           {showHistory && (
             <ul className="mt-2 space-y-2">
               {history.map((m) => (
-                <li key={m.id} className="flex items-start gap-2 rounded-xl border border-border bg-surface/60 p-3 text-sm text-muted">
+                <li key={m.id} className="flex items-start gap-2 rounded-2xl border border-border bg-surface/60 p-4 text-sm text-muted">
                   <p className="min-w-0 flex-1 line-through decoration-muted/50">{m.fact}</p>
                   <button
                     className="rounded p-1.5 hover:bg-danger-bg hover:text-danger"
@@ -201,7 +203,7 @@ export default function MemoryPage() {
       )}
 
       {d.memories.length > 0 && (
-        <Card className="border-danger/40" title="Forget everything">
+        <Card title="Forget everything">
           <p className="mb-3 text-sm text-muted">Delete everything olá remembers about you. Your conversation history is not affected.</p>
           <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={() => setClearing(true)}>
             Forget everything…

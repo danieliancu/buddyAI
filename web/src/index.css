@@ -1,43 +1,68 @@
 @import "tailwindcss";
 
-/* Design tokens: dark-first, light on html[data-theme="light"] - set from the customer's choice
- * (light / dark / system, src/theme.ts and the inline script in index.html). */
+/* Design tokens: light by default (the customer account's soft blue look), dark on html[data-theme="dark"] -
+ * set from the customer's choice (light / dark / system, src/theme.ts and public/theme-init.js).
+ * The shape tokens (--r-*, --h-*, shadows, the primary button) give the customer area its rounded cards and
+ * pill buttons; .admin-ui below sets them back to the operator area's flat look. */
 :root {
-  --bg: #0b0f17;
-  --surface: #121826;
-  --surface-2: #1a2233;
-  --border: #263049;
-  --fg: #e6eaf2;
-  --muted: #8b95ab;
-  --accent: #4f8cff;
+  --bg: #f3f6fc;
+  --surface: #ffffff;
+  --surface-2: #eef3fc;
+  --border: #e3e9f4;
+  --fg: #0f1a3a;
+  --muted: #6b7790;
+  --accent: #1f6bff;
+  --accent-fg: #ffffff;
+  --ok: #0f9f6e;
+  --warn: #b45309;
+  --danger: #e5484d;
+  --ok-bg: rgba(16, 185, 129, 0.12);
+  --warn-bg: rgba(217, 119, 6, 0.1);
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --accent-bg: rgba(31, 107, 255, 0.09);
+  --r-card: 1.5rem;
+  --r-btn: 9999px;
+  --r-input: 0.875rem;
+  --h-btn: 2.75rem;
+  --h-input: 3rem;
+  --btn-px: 1.35rem;
+  --btn-weight: 600;
+  --card-pad: 1.25rem;
+  --input-bg: var(--surface-2);
+  --card-border: transparent;
+  --card-shadow: 0 1px 2px rgba(16, 40, 100, 0.04), 0 10px 30px -10px rgba(31, 80, 190, 0.14);
+  --btn-primary: linear-gradient(180deg, #3a86ff, #1a5fff);
+  --btn-glow: 0 8px 20px -6px rgba(31, 107, 255, 0.55);
+  --blob: rgba(108, 160, 255, 0.32);
+  --blob-2: rgba(108, 160, 255, 0.14);
+  --tabbar: rgba(255, 255, 255, 0.94);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a1020;
+  --surface: #121a2e;
+  --surface-2: #1a2440;
+  --border: #25304d;
+  --fg: #e8edf8;
+  --muted: #8f9bb5;
+  --accent: #4b8dff;
   --accent-fg: #ffffff;
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
-  --ok-bg: rgba(52, 211, 153, 0.12);
+  --ok-bg: rgba(52, 211, 153, 0.13);
   --warn-bg: rgba(251, 191, 36, 0.12);
-  --danger-bg: rgba(248, 113, 113, 0.12);
-  --accent-bg: rgba(79, 140, 255, 0.14);
+  --danger-bg: rgba(248, 113, 113, 0.13);
+  --accent-bg: rgba(75, 141, 255, 0.16);
+  --card-border: rgba(255, 255, 255, 0.05);
+  --card-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  --btn-primary: linear-gradient(180deg, #4b8dff, #2365f5);
+  --btn-glow: 0 8px 22px -8px rgba(60, 130, 255, 0.6);
+  --blob: rgba(60, 120, 255, 0.2);
+  --blob-2: rgba(60, 120, 255, 0.08);
+  --tabbar: rgba(18, 26, 46, 0.94);
   color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #f4f6fa;
-  --surface: #ffffff;
-  --surface-2: #eef1f6;
-  --border: #d9dee8;
-  --fg: #111827;
-  --muted: #5b6477;
-  --accent: #2563eb;
-  --accent-fg: #ffffff;
-  --ok: #059669;
-  --warn: #b45309;
-  --danger: #dc2626;
-  --ok-bg: rgba(5, 150, 105, 0.1);
-  --warn-bg: rgba(180, 83, 9, 0.1);
-  --danger-bg: rgba(220, 38, 38, 0.08);
-  --accent-bg: rgba(37, 99, 235, 0.1);
-  color-scheme: light;
 }
 
 /* Operator area (components/Layout.tsx): always light and neutral - a grey sidebar, a white content
@@ -58,6 +83,19 @@
   --warn-bg: rgba(217, 119, 6, 0.09);
   --danger-bg: rgba(220, 38, 38, 0.07);
   --accent-bg: rgba(37, 99, 235, 0.08);
+  --r-card: 0.75rem;
+  --r-btn: 0.5rem;
+  --r-input: 0.5rem;
+  --h-btn: 2.5rem;
+  --h-input: 2.5rem;
+  --btn-px: 1rem;
+  --btn-weight: 500;
+  --card-pad: 1rem;
+  --input-bg: var(--bg);
+  --card-border: var(--border);
+  --card-shadow: none;
+  --btn-primary: var(--accent);
+  --btn-glow: none;
   color-scheme: light;
 }
 
@@ -97,6 +135,54 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+@layer components {
+  .btn-primary {
+    background: var(--btn-primary);
+    box-shadow: var(--btn-glow);
+    color: var(--accent-fg);
+  }
+  /* a custom chevron on <select> (the native arrow is hidden) */
+  .select-chevron {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b7790' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+    background-size: 1.15rem;
+  }
+}
+
+/* Customer area background: two soft blue waves (top right, lower right) behind the content. */
+.app-backdrop {
+  position: relative;
+  isolation: isolate;
+}
+.app-backdrop::before,
+.app-backdrop::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+}
+.app-backdrop::before {
+  top: -14rem;
+  right: -16rem;
+  width: 44rem;
+  height: 30rem;
+  transform: rotate(-28deg);
+  background: radial-gradient(ellipse at 30% 70%, var(--blob), transparent 68%);
+  filter: blur(6px);
+}
+.app-backdrop::after {
+  bottom: -12rem;
+  right: -14rem;
+  width: 40rem;
+  height: 26rem;
+  transform: rotate(-24deg);
+  background: radial-gradient(ellipse at 40% 40%, var(--blob-2), transparent 70%);
+  filter: blur(10px);
+}
+
 /* Liquid box: a tall container that fills with flowing green (sliders and meters). */
 .liquid {
   position: relative;
@@ -106,6 +192,17 @@ input[type="range"] {
   border-radius: 10px;
   background: var(--surface-2);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+/* the slim, round meter (monthly AI interactions) */
+.liquid.meter {
+  border: 0;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--border) 80%, var(--surface-2));
+  box-shadow: none;
+}
+.liquid.meter .liquid-fill {
+  border-radius: 9999px;
+  box-shadow: none;
 }
 .liquid:focus-within {
   outline: 2px solid var(--ok);

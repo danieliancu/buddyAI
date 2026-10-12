@@ -318,7 +318,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
       )}
 
       {remoteChange && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn">
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn">
           <span className="flex-1">Settings were changed on the watch. Reload to see the new values (local edits will be lost).</span>
           <Button size="sm" variant="secondary" icon={<RefreshCw className="size-3.5" />} onClick={() => loadSettings()}>
             Reload
@@ -329,7 +329,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-6">
           {/* ---------------- AI ---------------- */}
-          <Card title={<SectionTitle icon={<Bot className="size-4" />}>{customer ? "Voice & language" : "AI"}</SectionTitle>}>
+          <Card title={customer ? "Voice & language" : "AI"} icon={<Bot />}>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 label="Language"
@@ -475,7 +475,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
           </Card>
 
           {/* ---------------- Aspect ---------------- */}
-          <Card title={<SectionTitle icon={<Palette className="size-4" />}>Appearance</SectionTitle>}>
+          <Card title="Appearance" icon={<Palette />}>
             <div className="mb-6 lg:hidden">{preview}</div>
             <div className="space-y-5">
               <Field label="Theme" error={err("theme")}>
@@ -580,15 +580,6 @@ function BackLink({ customer }: { customer: boolean }) {
     <Link to={customer ? "/my" : "/admin/devices"} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
       <ArrowLeft className="size-4" /> {customer ? "My watches" : "Devices"}
     </Link>
-  );
-}
-
-function SectionTitle({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="text-accent">{icon}</span>
-      {children}
-    </span>
   );
 }
 

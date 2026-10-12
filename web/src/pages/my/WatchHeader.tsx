@@ -27,16 +27,16 @@ export default function WatchHeader({
 
   return (
     <div className="mb-5">
-      <Link to="/my" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
+      <Link to="/my" className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-accent">
         <ArrowLeft className="size-4" /> My watches
       </Link>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{device?.name ?? "Watch"}</h1>
+            <h1 className="truncate text-[2rem] leading-tight font-bold tracking-tight sm:text-[2.4rem]">{device?.name ?? "Watch"}</h1>
             <button
               onClick={() => setRenaming(true)}
-              className="shrink-0 rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg"
+              className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-full bg-surface-2 text-muted hover:text-fg"
               aria-label="Rename watch"
               title="Rename"
             >
@@ -44,7 +44,7 @@ export default function WatchHeader({
             </button>
           </div>
           {device && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[15px] text-muted">
               <span className="inline-flex items-center gap-2">
                 <OnlineDot online={device.online} />
                 <StateBadge online={device.online} state={device.state} />
@@ -57,8 +57,8 @@ export default function WatchHeader({
         </div>
         <Button
           size="sm"
-          variant="ghost"
-          className="shrink-0 text-danger"
+          variant="danger"
+          className="shrink-0"
           icon={<Trash2 className="size-3.5" />}
           aria-label="Remove watch"
           onClick={() => setRemoving(true)}
@@ -67,7 +67,7 @@ export default function WatchHeader({
         </Button>
       </div>
 
-      <div className="mt-4 flex gap-1 border-b border-border" role="tablist">
+      <div className="mt-5 inline-flex gap-1 rounded-full bg-surface p-1 shadow-(--card-shadow)" role="tablist">
         <Tab to={base} active={active === "settings"}>
           Settings
         </Tab>
@@ -114,8 +114,8 @@ function Tab({ to, active, children }: { to: string; active: boolean; children: 
       role="tab"
       aria-selected={active}
       className={cx(
-        "-mb-px border-b-2 px-4 py-2 text-sm transition",
-        active ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg",
+        "rounded-full px-5 py-2 text-sm transition",
+        active ? "bg-accent-bg font-semibold text-accent" : "text-muted hover:text-fg",
       )}
     >
       {children}

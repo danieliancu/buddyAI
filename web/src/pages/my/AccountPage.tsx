@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { AlertTriangle, BadgeCheck, Brain, ChevronRight, Download, KeyRound, LogOut, Monitor, Moon, Palette, Sun, Trash2, UserRound } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { fmtDate } from "../../format";
-import { Badge, Button, buttonCls, Card, Dialog, ErrorBox, Field, Input, PasswordInput } from "../../components/ui";
+import { Badge, Button, buttonCls, Card, cardCls, cx, Dialog, ErrorBox, Field, IconTile, Input, PageHeader, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import PlanCard from "./PlanCard";
 import { useCustomer } from "./session";
@@ -13,22 +13,24 @@ export default function AccountPage() {
   const { account, signOut } = useCustomer();
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Account</h1>
-        <p className="mt-1 text-sm text-muted">Member since {fmtDate(account.created_at)}</p>
-      </div>
-      <PlanCard />
+      <PageHeader title="Account" subtitle={`Member since ${fmtDate(account.created_at)}`} />
       {account.memory && (
-        <Link to="/my/memory" className="block">
-          <Card title={<Title icon={<Brain className="size-4" />}>Memory</Title>} actions={<ChevronRight className="size-4 text-muted" />}>
-            <p className="text-sm text-muted">What olá remembers about you: see, correct or forget it.</p>
-          </Card>
+        <Link to="/my/memory" className={cx(cardCls, "flex items-start gap-4 p-(--card-pad) transition hover:bg-surface-2/40")}>
+          <IconTile>
+            <Brain className="size-6" />
+          </IconTile>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-bold">Memory</p>
+            <p className="mt-1 text-[15px] text-muted">What olá remembers about you: see, correct or forget it.</p>
+          </div>
+          <ChevronRight className="mt-1 size-5 shrink-0 text-muted" />
         </Link>
       )}
       <ProfileCard />
       <PasswordCard />
+      <PlanCard />
       <AppearanceCard />
-      <Card title="Your data">
+      <Card title="Your data" icon={<Download />}>
         <p className="mb-3 text-sm text-muted">
           Download everything we store about you: your profile, watch settings, conversation history, personas, notes and reminders, and memories (JSON file).
         </p>
@@ -37,11 +39,9 @@ export default function AccountPage() {
         </a>
       </Card>
       <DeleteAccountCard />
-      <div className="sm:hidden">
-        <Button className="w-full" variant="ghost" icon={<LogOut className="size-4" />} onClick={() => void signOut()}>
-          Sign out
-        </Button>
-      </div>
+      <Button className="w-full" variant="secondary" size="lg" icon={<LogOut />} onClick={() => void signOut()}>
+        Sign out
+      </Button>
     </div>
   );
 }
@@ -71,11 +71,11 @@ function ProfileCard() {
   };
 
   return (
-    <Card title={<Title icon={<UserRound className="size-4" />}>Profile</Title>}>
-      <form onSubmit={submit} className="space-y-4">
+    <Card title="Profile" icon={<UserRound />}>
+      <form onSubmit={submit} className="space-y-5">
         <Field label="Email">
-          <div className="flex h-10 items-center gap-2 text-sm">
-            <span className="min-w-0 truncate">{account.email}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-base">
+            <span className="min-w-0 break-all">{account.email}</span>
             {account.email_verified ? (
               <Badge tone="ok">
                 <BadgeCheck className="size-3" /> Confirmed
@@ -85,7 +85,7 @@ function ProfileCard() {
             )}
           </div>
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5">
           <Field label="Name" htmlFor="acc-name">
             <Input id="acc-name" maxLength={120} autoComplete="name" value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} />
           </Field>
@@ -95,7 +95,7 @@ function ProfileCard() {
         </div>
         <ErrorBox error={error} />
         <div className="flex items-center gap-3">
-          <Button type="submit" variant="primary" loading={busy} disabled={!dirty}>
+          <Button type="submit" variant="primary" size="lg" className="min-w-28" loading={busy} disabled={!dirty}>
             Save
           </Button>
           {saved && !dirty && <span className="text-sm text-ok">Saved</span>}
@@ -114,9 +114,9 @@ const THEMES: { value: ThemePref; label: string; icon: ReactNode }[] = [
 function AppearanceCard() {
   const [pref, setPref] = useThemePref();
   return (
-    <Card title={<Title icon={<Palette className="size-4" />}>Appearance</Title>}>
+    <Card title="Appearance" icon={<Palette />}>
       <p className="mb-3 text-sm text-muted">System follows your phone or computer. Saved in this browser.</p>
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface-2 p-1">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-full bg-surface-2 p-1">
         {THEMES.map((t) => (
           <button
             key={t.value}
@@ -126,8 +126,8 @@ function AppearanceCard() {
             onClick={() => setPref(t.value)}
             className={
               pref === t.value
-                ? "flex items-center justify-center gap-2 rounded-md bg-surface px-3 py-2 text-sm font-medium text-fg shadow-sm"
-                : "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm text-muted transition hover:text-fg"
+                ? "flex cursor-pointer items-center justify-center gap-2 rounded-full bg-surface px-3 py-2.5 text-sm font-semibold text-accent shadow-sm"
+                : "flex cursor-pointer items-center justify-center gap-2 rounded-full px-3 py-2.5 text-sm text-muted transition hover:text-fg"
             }
           >
             {t.icon}
@@ -146,6 +146,7 @@ function PasswordCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -170,27 +171,42 @@ function PasswordCard() {
   };
 
   return (
-    <Card title={<Title icon={<KeyRound className="size-4" />}>Password</Title>}>
-      <form onSubmit={submit} className="space-y-4">
-        <input type="text" autoComplete="username" hidden readOnly />
-        <Field label="Current password" htmlFor="pw-cur">
-          <PasswordInput id="pw-cur" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="New password" htmlFor="pw-new" hint="At least 8 characters">
-            <PasswordInput id="pw-new" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+    <section className={cardCls}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls="pw-form"
+        className="flex w-full cursor-pointer items-center gap-4 p-(--card-pad) text-left"
+      >
+        <IconTile>
+          <KeyRound className="size-6" />
+        </IconTile>
+        <span className="min-w-0 flex-1 text-lg font-bold">Password</span>
+        <ChevronRight className={cx("size-5 shrink-0 text-muted transition-transform", open && "rotate-90")} />
+      </button>
+      {open && (
+        <form id="pw-form" onSubmit={submit} className="space-y-4 border-t border-border p-(--card-pad)">
+          <input type="text" autoComplete="username" hidden readOnly />
+          <Field label="Current password" htmlFor="pw-cur">
+            <PasswordInput id="pw-cur" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
           </Field>
-          <Field label="Repeat new password" htmlFor="pw-new2">
-            <PasswordInput id="pw-new2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          </Field>
-        </div>
-        <ErrorBox error={error} />
-        {done && <p className="text-sm text-ok">Password changed. Other devices were signed out.</p>}
-        <Button type="submit" loading={busy} disabled={!current || !next}>
-          Change password
-        </Button>
-      </form>
-    </Card>
+          <div className="grid gap-4">
+            <Field label="New password" htmlFor="pw-new" hint="At least 8 characters">
+              <PasswordInput id="pw-new" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+            </Field>
+            <Field label="Repeat new password" htmlFor="pw-new2">
+              <PasswordInput id="pw-new2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </Field>
+          </div>
+          <ErrorBox error={error} />
+          {done && <p className="text-sm text-ok">Password changed. Other devices were signed out.</p>}
+          <Button type="submit" variant="primary" loading={busy} disabled={!current || !next}>
+            Change password
+          </Button>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -221,7 +237,7 @@ function DeleteAccountCard() {
   };
 
   return (
-    <Card className="border-danger/40" title={<Title icon={<AlertTriangle className="size-4 text-danger" />}>Delete account</Title>}>
+    <Card title="Delete account" icon={<AlertTriangle className="text-danger" />}>
       <p className="mb-3 text-sm text-muted">
         Permanently delete your account and everything in it. Download your data first if you want to keep a copy.
       </p>
@@ -260,14 +276,5 @@ function DeleteAccountCard() {
         </form>
       </Dialog>
     </Card>
-  );
-}
-
-function Title({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="text-accent">{icon}</span>
-      {children}
-    </span>
   );
 }

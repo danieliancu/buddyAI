@@ -1,6 +1,6 @@
-// The customer's theme before the first paint (same rule as applyTheme in src/theme.ts).
+// The customer's theme before the first paint (same rule as applyTheme in src/theme.ts): light unless chosen.
 try {
   var t = localStorage.getItem("ola-theme");
-  if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = t;
+  if (t === "system") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.dataset.theme = t === "dark" ? "dark" : "light";
 } catch (e) {}

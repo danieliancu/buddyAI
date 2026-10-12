@@ -1,11 +1,11 @@
 import { Link } from "react-router";
 import { useState } from "react";
-import { AlertTriangle, ChevronRight, MessageCircleQuestion, MessagesSquare, Plus, Watch } from "lucide-react";
+import { AlertTriangle, ChevronRight, MessageCircleQuestion, MessagesSquare, Plus, Settings, Watch } from "lucide-react";
 import { api, type Device, type LiveEvent, type MyUsage } from "../../api";
 import { useLive } from "../../live";
 import { fmtAgo } from "../../format";
 import { BatteryInfo, OnlineDot, StateBadge } from "../../components/DeviceBits";
-import { buttonCls, Card, Empty, ErrorBox, Spinner, cx, useAsync } from "../../components/ui";
+import { buttonCls, Card, cardCls, Empty, ErrorBox, IconTile, PageHeader, Spinner, cx, useAsync } from "../../components/ui";
 import { fmtDayMonth, turnRefusedText } from "../../components/BillingBits";
 import { useCustomer } from "./session";
 
@@ -53,30 +53,26 @@ export default function MyWatchesPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-5 flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{first ? `Hi, ${first}` : "My watches"}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {devices.data ? (list.length ? `${list.length} ${list.length === 1 ? "watch" : "watches"}` : "No watches yet") : " "}
-          </p>
-        </div>
-        <AddWatchButton verified={account.email_verified} />
-      </div>
+      <PageHeader
+        title={first ? `Hi, ${first}` : "My watches"}
+        subtitle={devices.data ? (list.length ? `${list.length} ${list.length === 1 ? "watch" : "watches"}` : "No watches yet") : " "}
+        actions={<AddWatchButton verified={account.email_verified} />}
+      />
 
       {usage.data && (
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-bg text-accent">
-            <MessageCircleQuestion className="size-4" />
-          </span>
+        <div className={cx(cardCls, "mb-4 flex items-center gap-4 p-(--card-pad)")}>
+          <IconTile size="lg">
+            <MessageCircleQuestion className="size-6" />
+          </IconTile>
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
+            <p className="text-sm text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
             <UsageBar pct={usagePct(usage.data)} />
           </div>
         </div>
       )}
 
       {!account.email_verified && (
-        <p className="mb-4 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+        <p className={cx(cardCls, "mb-4 px-(--card-pad) py-4 text-sm text-muted")}>
           Confirm your email address to add a watch. Use the link we emailed you, or “Resend email” above.
         </p>
       )}
@@ -111,13 +107,13 @@ export default function MyWatchesPage() {
 function AddWatchButton({ verified }: { verified: boolean }) {
   if (!verified) {
     return (
-      <span className={cx(buttonCls("primary"), "pointer-events-none opacity-50")} aria-disabled="true" title="Confirm your email first">
+      <span className={cx(buttonCls("primary", "lg"), "pointer-events-none opacity-50")} aria-disabled="true" title="Confirm your email first">
         <Plus className="size-4" /> Add watch
       </span>
     );
   }
   return (
-    <Link to="/my/setup?another=1" className={buttonCls("primary")}>
+    <Link to="/my/setup?another=1" className={buttonCls("primary", "lg")}>
       <Plus className="size-4" /> Add watch
     </Link>
   );
@@ -126,26 +122,26 @@ function AddWatchButton({ verified }: { verified: boolean }) {
 function WatchCard({ device: d, refused }: { device: Device; refused?: string }) {
   const href = `/my/watch/${encodeURIComponent(d.id)}`;
   return (
-    <div className="rounded-xl border border-border bg-surface">
-      <Link to={href} className="flex items-center gap-3 p-4 hover:bg-surface-2/50">
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-surface-2 text-accent">
-          <Watch className="size-5" />
+    <div className={cx(cardCls, "overflow-hidden")}>
+      <Link to={href} className="flex items-center gap-4 p-(--card-pad) hover:bg-surface-2/40">
+        <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-surface-2 text-accent">
+          <Watch className="size-7" strokeWidth={2.2} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <OnlineDot online={d.online} />
-            <h2 className="truncate font-semibold">{d.name}</h2>
+            <h2 className="truncate text-xl font-bold tracking-tight">{d.name}</h2>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-base text-muted">
             <StateBadge online={d.online} state={d.state} />
             {d.battery_pct != null && <BatteryInfo pct={d.battery_pct} charging={d.charging} />}
             {!d.online && <span className="text-xs">{d.last_seen_at ? `Seen ${fmtAgo(d.last_seen_at)}` : "Not connected yet"}</span>}
           </div>
         </div>
-        <ChevronRight className="size-5 shrink-0 text-muted" />
+        <ChevronRight className="size-6 shrink-0 text-muted" />
       </Link>
       {refused && (
-        <p className="mx-4 mb-3 flex items-start gap-2 rounded-lg bg-warn-bg px-3 py-2 text-xs text-warn">
+        <p className="mx-(--card-pad) mb-3 flex items-start gap-2 rounded-lg bg-warn-bg px-3 py-2 text-xs text-warn">
           <AlertTriangle className="mt-px size-3.5 shrink-0" />
           <span>
             {turnRefusedText(refused)}{" "}
@@ -157,12 +153,13 @@ function WatchCard({ device: d, refused }: { device: Device; refused?: string })
           </span>
         </p>
       )}
-      <div className="flex border-t border-border text-sm">
-        <Link to={href} className="flex-1 px-4 py-2.5 text-center text-muted hover:text-fg">
-          Settings
+      <div className="flex border-t border-border py-1 text-base">
+        <Link to={href} className="flex flex-1 items-center justify-center gap-2.5 px-4 py-3.5 text-fg/80 hover:text-accent">
+          <Settings className="size-5" /> Settings
         </Link>
-        <Link to={`${href}/history`} className="flex flex-1 items-center justify-center gap-1.5 border-l border-border px-4 py-2.5 text-muted hover:text-fg">
-          <MessagesSquare className="size-4" /> History
+        <span className="my-2 w-px bg-border" aria-hidden />
+        <Link to={`${href}/history`} className="flex flex-1 items-center justify-center gap-2.5 px-4 py-3.5 text-fg/80 hover:text-accent">
+          <MessagesSquare className="size-5" /> History
         </Link>
       </div>
     </div>
@@ -178,11 +175,11 @@ export function usagePct(u: MyUsage): number {
 /** 0% [bar] 100%: how much of the month's AI interactions is used. */
 function UsageBar({ pct }: { pct: number }) {
   return (
-    <div className="mt-1.5 flex items-center gap-2 text-xs text-muted" data-testid="usage-bar">
+    <div className="mt-2 flex items-center gap-3 text-sm text-muted" data-testid="usage-bar">
       <span className="tabular">0%</span>
       <div
-        className="liquid flex-1"
-        style={{ height: 10 }}
+        className="liquid meter flex-1"
+        style={{ height: 12 }}
         role="progressbar"
         aria-label="Monthly AI interactions used"
         aria-valuenow={pct}

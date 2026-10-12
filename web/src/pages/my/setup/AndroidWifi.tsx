@@ -110,7 +110,7 @@ export default function AndroidWifi({
       {!supported ? (
         <Unsupported support={support} />
       ) : (
-        <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="rounded-(--r-card) border border-(--card-border) bg-surface shadow-(--card-shadow) p-4">
           {phase.kind === "intro" && <Intro onStart={start} />}
           {phase.kind === "choosing" && <Busy text="Choose your olá watch in the list that opens…" />}
           {phase.kind === "password" && (

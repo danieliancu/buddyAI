@@ -1,7 +1,24 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Bell, CalendarClock, Check, ChevronDown, ChevronRight, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
-import { Badge, Button, Card, Dialog, Empty, ErrorBox, Field, Input, Select, Spinner, Textarea, useAsync } from "../../components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  cardCls,
+  cx,
+  Dialog,
+  Empty,
+  ErrorBox,
+  Field,
+  IconButton,
+  Input,
+  PageHeader,
+  Select,
+  Spinner,
+  Textarea,
+  useAsync,
+} from "../../components/ui";
 import { fmtDateTime, parseDate } from "../../format";
 import { useLive } from "../../live";
 
@@ -46,7 +63,7 @@ export function MyNotesPage() {
   return (
     <ItemsLayout
       title="Notes"
-      intro="Text only, as long as you like. Ask your watch: “note that…”, “show my notes”, “edit note 2”, “delete note 1”."
+      intro="Text-only notes, as long as you like. Ask your watch to create, show, edit or delete notes."
       onNew={() => setEditing("new")}
       error={q.error}
       onRetry={q.reload}
@@ -65,7 +82,7 @@ export function MyNotesPage() {
               item={n}
               onEdit={() => setEditing(n)}
               onDelete={() => setDeleting(n)}
-              leading={
+              corner={
                 <button
                   type="button"
                   onClick={() => togglePin(n)}
@@ -73,17 +90,17 @@ export function MyNotesPage() {
                   aria-pressed={!!n.pinned}
                   aria-label={n.pinned ? `Unpin note #${n.number}` : `Pin note #${n.number}`}
                   title={n.pinned ? "Unpin" : "Pin to the top"}
-                  className={
-                    n.pinned
-                      ? "grid size-6 shrink-0 place-items-center rounded-full bg-accent text-white transition disabled:opacity-60"
-                      : "grid size-6 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface-2 hover:text-fg disabled:opacity-60"
-                  }
+                  className={cx(
+                    "grid size-6 cursor-pointer place-items-center rounded-full border-2 border-surface transition disabled:opacity-60",
+                    n.pinned ? "bg-accent text-white" : "bg-surface-2 text-muted/70 hover:text-fg",
+                  )}
                 >
-                  <Pin className="size-3.5" />
+                  <Pin className="size-3" />
                 </button>
               }
+              head={<NoteTitle text={n.text} />}
             >
-              <NoteBody text={n.text} />
+              <NoteLines text={n.text} />
             </ItemCard>
           ))}
         </ul>
@@ -99,28 +116,33 @@ function stripMarker(line: string) {
   return line.replace(/^\s*(?:[-*•–—]|\d{1,3}[.)])\s+/, "");
 }
 
-/** A note laid out like on the watch: the first line is the title, then a divider, then numbered lines. */
-function NoteBody({ text }: { text: string }) {
-  const lines = text
+function noteLines(text: string): string[] {
+  return text
     .split("\n")
     .map((l) => stripMarker(l).trimEnd())
     .filter((l) => l.trim());
-  if (lines.length === 0) return <p className="text-sm text-muted italic">Empty note</p>;
-  const [title, ...rest] = lines;
+}
+
+/** A note laid out like on the watch: the first line is the title (beside the number)… */
+function NoteTitle({ text }: { text: string }) {
+  const [title] = noteLines(text);
+  if (!title) return <p className="text-muted italic">Empty note</p>;
+  return <p className="text-lg leading-snug font-bold break-words">{title}</p>;
+}
+
+/** …then the other lines, numbered. */
+function NoteLines({ text }: { text: string }) {
+  const rest = noteLines(text).slice(1);
+  if (rest.length === 0) return null;
   return (
-    <div className="text-sm">
-      <p className="font-semibold break-words">{title}</p>
-      {rest.length > 0 && (
-        <ol className="mt-2 divide-y divide-border border-t border-border">
-          {rest.map((l, i) => (
-            <li key={i} className="flex gap-2 py-1.5">
-              <span className="w-6 shrink-0 text-right font-mono text-accent">{i + 1}.</span>
-              <span className="min-w-0 flex-1 break-words">{l}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+    <ol className="mt-3">
+      {rest.map((l, i) => (
+        <li key={i} className="flex items-center gap-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-bg font-semibold text-accent tabular-nums">{i + 1}</span>
+          <span className={cx("min-w-0 flex-1 py-3.5 text-base break-words", i < rest.length - 1 && "border-b border-border")}>{l}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -248,7 +270,7 @@ export function MyRemindersPage() {
   return (
     <ItemsLayout
       title="Reminders"
-      intro="A time and a short text. Ask your watch: “remind me tomorrow at 9 to…”, “show my reminders”, “move reminder 2 to 5 pm”."
+      intro="A time and a short text. Ask your watch to create, show, move or delete reminders."
       onNew={() => setEditing("new")}
       error={q.error}
       onRetry={q.reload}
@@ -338,8 +360,8 @@ function DoneButton({ r, busy, onToggle }: Pick<RowProps, "r" | "busy" | "onTogg
       title={r.done ? "Reopen" : "Complete"}
       className={
         r.done
-          ? "grid size-6 shrink-0 place-items-center rounded-full border border-ok bg-ok text-white transition disabled:opacity-60"
-          : "grid size-6 shrink-0 place-items-center rounded-full border-2 border-border text-transparent transition hover:border-ok hover:text-ok disabled:opacity-60"
+          ? "grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border border-ok bg-ok text-white transition disabled:opacity-60"
+          : "grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border-2 border-border text-transparent transition hover:border-ok hover:text-ok disabled:opacity-60"
       }
     >
       <Check className="size-3.5" strokeWidth={3} />
@@ -397,14 +419,25 @@ function timeRange(r: Item): string {
 function ReminderRow({ r, muted, busy, onToggle, onEdit, onDelete }: RowProps & { muted: boolean }) {
   return (
     <div className={muted ? "opacity-70" : undefined}>
-      <ItemCard item={r} onEdit={onEdit} onDelete={onDelete} leading={<DoneButton r={r} busy={busy} onToggle={onToggle} />}>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <CalendarClock className="size-4 text-muted" />
-          <span className={r.done ? "font-medium text-muted" : "font-medium"}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
-          <ReminderMeta r={r} />
-        </div>
-        <p className={r.done ? "mt-1 text-sm text-muted line-through" : "mt-1 text-sm"}>{r.text}</p>
+      <ItemCard
+        item={r}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        leading={<DoneButton r={r} busy={busy} onToggle={onToggle} />}
+        head={
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <CalendarClock className="size-4 text-muted" />
+            <span className={cx("text-lg font-bold tabular-nums", r.done && "text-muted")}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
+          </div>
+        }
+      >
+        <p className={cx("mt-3 text-base break-words", r.done && "text-muted line-through")}>{r.text}</p>
         <ReminderPlace r={r} />
+        {(!!r.notify_before_min || r.done || r.overdue) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <ReminderMeta r={r} />
+          </div>
+        )}
       </ItemCard>
     </div>
   );
@@ -413,12 +446,12 @@ function ReminderRow({ r, muted, busy, onToggle, onEdit, onDelete }: RowProps & 
 /** The next thing to do: large, in the accent colour, with the time left. */
 function UpNextCard({ r, until, busy, onToggle, onEdit, onDelete }: RowProps & { until: string }) {
   return (
-    <div className="rounded-2xl border-2 border-accent bg-accent-bg p-5">
+    <div className="rounded-(--r-card) border-2 border-accent bg-surface bg-linear-to-br from-accent-bg to-transparent p-(--card-pad) shadow-(--btn-glow)">
       <div className="flex items-start gap-3">
         <DoneButton r={r} busy={busy} onToggle={onToggle} />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold tracking-wide text-accent uppercase">Up next · {until}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{timeRange(r)}</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums">{timeRange(r)}</p>
           <p className="mt-1 text-base">{r.text}</p>
           <ReminderPlace r={r} />
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -426,12 +459,14 @@ function UpNextCard({ r, until, busy, onToggle, onEdit, onDelete }: RowProps & {
             <ReminderMeta r={r} />
           </div>
         </div>
-        <button className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg" onClick={onEdit} aria-label={`Edit #${r.number}`}>
-          <Pencil className="size-4" />
-        </button>
-        <button className="rounded p-1.5 text-muted hover:bg-danger-bg hover:text-danger" onClick={onDelete} aria-label={`Delete #${r.number}`}>
-          <Trash2 className="size-4" />
-        </button>
+        <div className="flex gap-2">
+          <IconButton label={`Edit #${r.number}`} onClick={onEdit}>
+            <Pencil className="size-4" />
+          </IconButton>
+          <IconButton label={`Delete #${r.number}`} danger onClick={onDelete}>
+            <Trash2 className="size-4" />
+          </IconButton>
+        </div>
       </div>
     </div>
   );
@@ -552,15 +587,15 @@ function ItemsLayout({
 }) {
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-5 flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-          <p className="mt-1 text-sm text-muted">{intro}</p>
-        </div>
-        <Button variant="primary" icon={<Plus className="size-4" />} onClick={onNew}>
-          New
-        </Button>
-      </div>
+      <PageHeader
+        title={title}
+        subtitle={<p className="text-[15px] sm:text-base">{intro}</p>}
+        actions={
+          <Button variant="primary" size="lg" icon={<Plus />} onClick={onNew}>
+            New
+          </Button>
+        }
+      />
       <ErrorBox error={error} onRetry={onRetry} />
       {loading ? <Spinner /> : children}
     </div>
@@ -572,6 +607,8 @@ function ItemCard({
   onEdit,
   onDelete,
   leading,
+  corner,
+  head,
   children,
 }: {
   item: Item;
@@ -579,29 +616,34 @@ function ItemCard({
   onDelete: () => void;
   /** Before the number, e.g. the reminder's complete button. */
   leading?: ReactNode;
-  children: ReactNode;
+  /** On the number's top-left corner, e.g. the note's pin. */
+  corner?: ReactNode;
+  /** Beside the number (the title). */
+  head: ReactNode;
+  /** Full width under the title. */
+  children?: ReactNode;
 }) {
   return (
-    <li className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-start gap-3">
+    <li className={cx(cardCls, "p-(--card-pad)")}>
+      <div className="flex items-center gap-3 sm:gap-4">
         {leading}
-        <span className="mt-0.5 font-mono text-sm font-semibold text-accent">#{item.number}</span>
-        <div className="min-w-0 flex-1">{children}</div>
-        <button
-          className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg"
-          onClick={onEdit}
-          aria-label={`Edit #${item.number}`}
-        >
-          <Pencil className="size-4" />
-        </button>
-        <button
-          className="rounded p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
-          onClick={onDelete}
-          aria-label={`Delete #${item.number}`}
-        >
-          <Trash2 className="size-4" />
-        </button>
+        <span className="relative shrink-0">
+          <span className="grid h-12 min-w-14 place-items-center rounded-2xl bg-accent-bg px-2 text-lg font-bold text-accent tabular-nums">
+            #{item.number}
+          </span>
+          {corner && <span className="absolute -top-2 -left-2">{corner}</span>}
+        </span>
+        <div className="min-w-0 flex-1">{head}</div>
+        <div className="flex shrink-0 gap-2 self-start">
+          <IconButton label={`Edit #${item.number}`} onClick={onEdit}>
+            <Pencil className="size-4" />
+          </IconButton>
+          <IconButton label={`Delete #${item.number}`} danger onClick={onDelete}>
+            <Trash2 className="size-4" />
+          </IconButton>
+        </div>
       </div>
+      {children}
     </li>
   );
 }

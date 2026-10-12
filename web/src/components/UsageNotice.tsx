@@ -5,7 +5,7 @@ import { api, type MyPlan, type UsageNotice as Notice } from "../api";
 import { useLive } from "../live";
 import { startTopup } from "../pages/my/PlanCard";
 import { fmtCount, fmtLongDate, pence } from "./BillingBits";
-import { Button, Dialog, ErrorBox, cx } from "./ui";
+import { Button, buttonCls, Dialog, ErrorBox, cx } from "./ui";
 
 /**
  * Usage thresholds (80 / 95 / 100 % of the month's AI interactions), each shown once per period until
@@ -43,8 +43,13 @@ export default function UsageNotice() {
   if (notice.level === "limit") return <LimitDialog plan={plan} onClose={dismiss} />;
   const warn = notice.level === "warning";
   return (
-    <div className={cx("border-b", warn ? "border-warn/30 bg-warn-bg" : "border-accent/30 bg-accent-bg")}>
-      <div className={cx("mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-sm sm:px-6", warn ? "text-warn" : "text-accent")}>
+    <div className="mx-auto max-w-5xl px-4 pt-3 sm:px-6">
+      <div
+        className={cx(
+          "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border px-4 py-3 text-sm",
+          warn ? "border-warn/30 bg-warn-bg text-warn" : "border-accent/25 bg-accent-bg text-accent",
+        )}
+      >
         <Gauge className="size-4 shrink-0" />
         <p className="min-w-0 flex-1 basis-56">
           You've used {notice.threshold}% of your monthly AI interactions. Your allowance renews on {fmtLongDate(plan.usage.reset_at)}.
@@ -57,7 +62,7 @@ export default function UsageNotice() {
               See usage
             </Link>
           )}
-          <button onClick={() => void dismiss()} aria-label="Dismiss" className="rounded-lg p-1.5 hover:bg-surface-2/60">
+          <button onClick={() => void dismiss()} aria-label="Dismiss" className="rounded-full p-1.5 hover:bg-surface-2/60">
             <X className="size-4" />
           </button>
         </div>
@@ -108,7 +113,7 @@ function LimitDialog({ plan, onClose }: { plan: MyPlan; onClose: () => void }) {
           {plan.topup_available ? (
             <TopupButton plan={plan} />
           ) : (
-            <Link to="/my/account" onClick={onClose} className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-fg">
+            <Link to="/my/account" onClick={onClose} className={buttonCls("primary")}>
               See my plan
             </Link>
           )}

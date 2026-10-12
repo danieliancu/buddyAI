@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { CheckCircle2, MailCheck, Watch } from "lucide-react";
 import { api, ApiError } from "../../api";
-import { Button, buttonCls, ErrorBox, Field, Input, Spinner, PasswordInput } from "../../components/ui";
+import { Button, buttonCls, cardCls, cx, ErrorBox, Field, IconTile, Input, Spinner, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import { safeNext } from "./session";
 import { SITE_URL } from "../../site";
@@ -10,17 +10,17 @@ import { SITE_URL } from "../../site";
 /** Centered card used by all customer sign-in pages (mobile-first). */
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center px-4 pt-10 pb-6 sm:justify-center sm:pt-6">
+    <div className="app-backdrop flex min-h-screen flex-col items-center px-4 pt-10 pb-6 sm:justify-center sm:pt-6">
       <div className="w-full max-w-sm">
-        <a href={SITE_URL} className="mb-6 flex items-center justify-center gap-2.5" title="olácompanion website">
-          <span className="grid size-10 place-items-center rounded-xl bg-accent-bg text-accent">
-            <Watch className="size-5" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">olá</span>
+        <a href={SITE_URL} className="mb-7 flex items-center justify-center gap-3" title="olácompanion website">
+          <IconTile>
+            <Watch className="size-6" strokeWidth={2.4} />
+          </IconTile>
+          <span className="text-[1.75rem] font-semibold tracking-tight">olá</span>
         </a>
-        <div className="rounded-2xl border border-border bg-surface p-5 shadow-xl sm:p-6">
-          <h1 className="text-lg font-semibold">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+        <div className={cx(cardCls, "p-6")}>
+          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          {subtitle && <p className="mt-1.5 text-[15px] text-muted">{subtitle}</p>}
           <div className="mt-5">{children}</div>
         </div>
         {footer && <div className="mt-5 text-center text-sm text-muted">{footer}</div>}
@@ -119,7 +119,7 @@ export function LoginPage() {
           </Link>
         </div>
         <ErrorBox error={error} />
-        <Button type="submit" variant="primary" className="h-11 w-full" loading={busy}>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
           Sign in
         </Button>
       </form>
@@ -182,7 +182,7 @@ export function SignupPage() {
           <CountrySelect id="su-country" value={country} onChange={setCountry} />
         </Field>
         <ErrorBox error={error} />
-        <Button type="submit" variant="primary" className="h-11 w-full" loading={busy}>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
           Create account
         </Button>
       </form>
@@ -237,7 +237,7 @@ export function ForgotPasswordPage() {
             <Input id="fp-email" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
           </Field>
           <ErrorBox error={error} />
-          <Button type="submit" variant="primary" className="h-11 w-full" loading={busy}>
+          <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
             Send reset link
           </Button>
         </form>
@@ -305,7 +305,7 @@ export function ResetPasswordPage() {
           <PasswordInput id="rp-pw2" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </Field>
         <ErrorBox error={error} />
-        <Button type="submit" variant="primary" className="h-11 w-full" loading={busy}>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
           Save password
         </Button>
       </form>

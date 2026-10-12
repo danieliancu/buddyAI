@@ -30,12 +30,17 @@ afterEach(() => localStorage.clear());
 const shown = () => document.documentElement.dataset.theme;
 
 describe("customer theme: light / dark / system", () => {
-  it("defaults to system, which follows the device", () => {
-    expect(getThemePref()).toBe("system");
+  it("defaults to light, whatever the device", () => {
+    expect(getThemePref()).toBe("light");
     applyTheme();
+    expect(shown()).toBe("light");
+  });
+
+  it("system follows the device", () => {
+    applyTheme("system");
     expect(shown()).toBe("dark");
     setDevice(true);
-    applyTheme();
+    applyTheme("system");
     expect(shown()).toBe("light");
   });
 
@@ -50,10 +55,10 @@ describe("customer theme: light / dark / system", () => {
     expect(shown()).toBe("light");
   });
 
-  it("system forgets the choice and tracks the device switching", () => {
-    setThemePref("light");
+  it("system is kept and tracks the device switching", () => {
+    setThemePref("dark");
     setThemePref("system");
-    expect(localStorage.getItem(THEME_KEY)).toBeNull();
+    expect(localStorage.getItem(THEME_KEY)).toBe("system");
     startThemeSync();
     expect(shown()).toBe("dark");
     setDevice(true);
@@ -67,22 +72,25 @@ describe("customer theme: light / dark / system", () => {
     expect(shown()).toBe("dark");
   });
 
-  it("an unknown stored value counts as system", () => {
+  it("an unknown stored value counts as light", () => {
     localStorage.setItem(THEME_KEY, "purple");
-    expect(getThemePref()).toBe("system");
+    expect(getThemePref()).toBe("light");
   });
 
   it("the hook updates when the theme is changed", () => {
     const { result } = renderHook(() => useThemePref());
-    expect(result.current[0]).toBe("system");
-    act(() => result.current[1]("light"));
     expect(result.current[0]).toBe("light");
-    expect(shown()).toBe("light");
+    act(() => result.current[1]("dark"));
+    expect(result.current[0]).toBe("dark");
+    expect(shown()).toBe("dark");
   });
 
   it("the early script in public/ applies the same rule before the app loads", () => {
     const script = readFileSync(resolve(__dirname, "../public/theme-init.js"), "utf8");
     const run = () => new Function(script)();
+    run();
+    expect(shown()).toBe("light");
+    localStorage.setItem(THEME_KEY, "system");
     run();
     expect(shown()).toBe("dark");
     setDevice(true);

@@ -40,7 +40,7 @@ export function SetupNetworkSteps({ platform }: { platform: "android" | "iphone"
 
 export function NumberedStep({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
-    <li className="flex gap-3 rounded-xl border border-border bg-surface p-4">
+    <li className="flex gap-3 rounded-(--r-card) border border-(--card-border) bg-surface shadow-(--card-shadow) p-4">
       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent-bg text-sm font-semibold text-accent">{n}</span>
       <div className="min-w-0">
         <p className="font-medium">{title}</p>
@@ -53,7 +53,7 @@ export function NumberedStep({ n, title, children }: { n: number; title: string;
 /** Android recovery: hidden unless Bluetooth setup can't be used, failed, or the customer asks for help. */
 export function RecoveryHelp({ open, onToggle, reason }: { open: boolean; onToggle: () => void; reason?: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border">
+    <div className="rounded-(--r-card) border border-(--card-border) bg-surface shadow-(--card-shadow)">
       <button
         type="button"
         onClick={onToggle}

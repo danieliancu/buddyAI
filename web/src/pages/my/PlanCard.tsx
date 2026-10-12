@@ -57,13 +57,7 @@ export default function PlanCard() {
   if (!p.billing_enabled && !p.enforced && (p.status.kind === "none" || p.status.kind === "internal")) return null;
 
   return (
-    <Card
-      title={
-        <span className="inline-flex items-center gap-2">
-          <Sparkles className="size-4 text-accent" /> olá Care
-        </span>
-      }
-    >
+    <Card title="olá Care" icon={<Sparkles />}>
       <div className="space-y-5">
         {returned && <ReturnNotice kind={returned} waiting={waiting} onClose={() => setParams({}, { replace: true })} />}
         <StatusLine plan={p} />
@@ -306,7 +300,7 @@ function Actions({ plan }: { plan: MyPlan }) {
 function HowInteractionsWork({ plan }: { plan: MyPlan }) {
   const included = fmtCount(plan.usage.included || plan.usage.limit);
   return (
-    <details className="group rounded-xl border border-border px-4 py-3 text-sm">
+    <details className="group rounded-2xl bg-surface-2 px-4 py-3 text-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
         How interactions work
         <ChevronDown className="size-4 text-muted transition group-open:rotate-180" />

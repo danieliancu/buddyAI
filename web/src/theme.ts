@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** The customer's colour theme, kept in this browser. "system" follows the device (prefers-color-scheme). */
+/** The customer's colour theme, kept in this browser (light until they choose). "system" follows the device. */
 export type ThemePref = "system" | "light" | "dark";
 
 /** Also read by the inline script in index.html (applies the theme before the first paint). */
@@ -10,9 +10,9 @@ const CHANGED = "ola-theme-changed";
 export function getThemePref(): ThemePref {
   try {
     const v = localStorage.getItem(THEME_KEY);
-    return v === "light" || v === "dark" ? v : "system";
+    return v === "dark" || v === "system" ? v : "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
@@ -20,14 +20,14 @@ function systemTheme(): "light" | "dark" {
   return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
-/** Sets html[data-theme] to the theme actually shown (index.css: dark by default, light tokens on "light"). */
+/** Sets html[data-theme] to the theme actually shown (index.css: light by default, dark tokens on "dark"). */
 export function applyTheme(pref: ThemePref = getThemePref()) {
   document.documentElement.dataset.theme = pref === "system" ? systemTheme() : pref;
 }
 
 export function setThemePref(pref: ThemePref) {
   try {
-    if (pref === "system") localStorage.removeItem(THEME_KEY);
+    if (pref === "light") localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, pref);
   } catch {
     // storage blocked (private mode): the choice still applies until the page is reloaded

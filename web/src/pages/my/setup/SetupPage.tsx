@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { ChevronRight, CircleCheck, Circle, MailWarning, QrCode, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
 import { api, type CareActivation, type MyPlan, type Onboarding, type SetupPlatform } from "../../../api";
 import { careErrorText, fmtDayMonth, pence } from "../../../components/BillingBits";
-import { Button, Card, ErrorBox, Spinner, buttonCls, cx, useAsync } from "../../../components/ui";
+import { Button, Card, ErrorBox, PageHeader, Spinner, buttonCls, cx, useAsync } from "../../../components/ui";
 import PairCodeForm from "../PairCodeForm";
 import { useCustomer } from "../session";
 import AndroidWifi, { type ConnectWatch } from "./AndroidWifi";
@@ -112,10 +112,7 @@ export default function SetupPage({ bleSupport, connectWatch }: { bleSupport?: B
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Set up your olá watch</h1>
-        <p className="mt-1 text-sm text-muted">About five minutes. Keep the watch charged and next to your phone.</p>
-      </header>
+      <PageHeader title="Set up your olá watch" subtitle="About five minutes. Keep the watch charged and next to your phone." />
 
       <Progress ob={ob} wifiDone={wifiDone || paired || path === "code"} />
 
@@ -203,7 +200,7 @@ function WatchShowsChoice({ onPick }: { onPick: (w: WatchShows) => void }) {
         <button
           type="button"
           onClick={() => onPick("code")}
-          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-4 text-center transition hover:border-accent hover:bg-surface-2"
+          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-(--r-card) border border-(--card-border) bg-surface p-4 text-center shadow-(--card-shadow) transition hover:border-accent hover:bg-surface-2"
         >
           <span className="font-mono text-3xl font-semibold tracking-widest text-accent" aria-hidden>
             123 456
@@ -216,7 +213,7 @@ function WatchShowsChoice({ onPick }: { onPick: (w: WatchShows) => void }) {
         <button
           type="button"
           onClick={() => onPick("wifi")}
-          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-4 text-center transition hover:border-accent hover:bg-surface-2"
+          className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-3 rounded-(--r-card) border border-(--card-border) bg-surface p-4 text-center shadow-(--card-shadow) transition hover:border-accent hover:bg-surface-2"
         >
           <QrCode className="size-10 text-accent" aria-hidden />
           <span>
@@ -317,7 +314,7 @@ function PlatformButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-surface p-4 text-center transition hover:border-accent hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60"
+      className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-(--r-card) border border-(--card-border) bg-surface p-4 text-center shadow-(--card-shadow) transition hover:border-accent hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60"
     >
       {children}
       <span>
@@ -427,7 +424,7 @@ function Done({ ob, plan, onPlanChange, onFinish }: { ob: Onboarding; plan: MyPl
       <Notice tone="ok" icon={<CircleCheck className="size-4" />}>
         <b>Your watch is paired.</b> Tap the watch and start talking.
       </Notice>
-      <Card title="olá Care">
+      <Card title="olá Care" icon={<Sparkles />}>
         <div className="space-y-3">
           <CareSummary care={ob.care} plan={plan} />
           {ob.care?.status === "failed" && (

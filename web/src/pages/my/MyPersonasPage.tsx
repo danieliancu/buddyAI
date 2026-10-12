@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pencil, Plus, Sparkles, Star, Trash2 } from "lucide-react";
 import { api, type MyPersona } from "../../api";
-import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, Spinner, useAsync } from "../../components/ui";
+import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, PageHeader, Spinner, useAsync } from "../../components/ui";
 import { PersonaDialog, type Editing } from "../PersonasPage";
 
 export default function MyPersonasPage() {
@@ -15,15 +15,15 @@ export default function MyPersonasPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-5 flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Personas</h1>
-          <p className="mt-1 text-sm text-muted">A persona sets how Olá talks. Pick one for each watch in its settings.</p>
-        </div>
-        <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing("new")}>
-          New
-        </Button>
-      </div>
+      <PageHeader
+        title="Personas"
+        subtitle={<p className="text-[15px] sm:text-base">A persona sets how olá talks. Pick one for each watch in its settings.</p>}
+        actions={
+          <Button variant="primary" size="lg" icon={<Plus />} onClick={() => setEditing("new")}>
+            New
+          </Button>
+        }
+      />
 
       <ErrorBox error={personas.error} onRetry={personas.reload} />
       {personas.loading && !personas.data ? (
@@ -41,7 +41,7 @@ export default function MyPersonasPage() {
             ) : (
               <ul className="space-y-3">
                 {own.map((p) => (
-                  <li key={p.id} className="rounded-xl border border-border bg-surface p-4">
+                  <li key={p.id} className="rounded-(--r-card) border border-(--card-border) bg-surface shadow-(--card-shadow) p-(--card-pad)">
                     <div className="flex items-start gap-2">
                       <h3 className="min-w-0 flex-1 truncate font-semibold">{p.name}</h3>
                       <button
@@ -70,7 +70,7 @@ export default function MyPersonasPage() {
             <h2 className="mb-2 text-sm font-semibold">From olá</h2>
             <ul className="space-y-3">
               {system.map((p) => (
-                <li key={p.id} className="rounded-xl border border-border bg-surface/60 p-4">
+                <li key={p.id} className="rounded-(--r-card) border border-border bg-surface/60 p-(--card-pad)">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="min-w-0 flex-1 truncate font-semibold">{p.name}</h3>
                     {p.is_default && (
