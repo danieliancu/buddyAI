@@ -263,3 +263,14 @@ def test_cli_rejects_unknown_role():
         with pytest.raises(cli.OperatorError):
             cli.create_operator(db, f"op-{secrets.token_hex(3)}", PASSWORD, "superuser")
         assert db.exec(select(AdminUser).where(AdminUser.role == "superuser")).first() is None
+
+
+def test_support_records_a_data_subject_request_in_the_audit_trail():
+    _, me = _customer()
+    c, name = _signed_in("support")
+    r = c.post(f"/api/accounts/{me['id']}/requests", json={"kind": "access", "stage": "received", "note": "email request"})
+    assert r.status_code == 200, r.text
+    rows = _audit("dsar.access.received", account_id=me["id"])
+    assert rows and rows[-1].actor == name and rows[-1].detail == "email request"
+    bad = c.post(f"/api/accounts/{me['id']}/requests", json={"kind": "gossip", "stage": "received"})
+    assert bad.status_code == 422
