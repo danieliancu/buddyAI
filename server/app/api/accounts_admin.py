@@ -165,6 +165,22 @@ async def set_status(account_id: int, body: StatusBody, request: Request, db: Se
     return accounts.public(acc)
 
 
+class RequestNoteBody(BaseModel):
+    """A data subject request received outside the app (usually by email), and what was done about it."""
+
+    kind: Literal["access", "erasure", "rectification", "restriction", "objection", "portability", "other"]
+    stage: Literal["received", "identity_verified", "completed", "refused", "extended"]
+    note: str = Field(default="", max_length=500)  # what was done; never paste the customer's message or personal data
+
+
+@router.post("/{account_id}/requests")
+def record_request(account_id: int, body: RequestNoteBody, request: Request, db: Session = Depends(get_session)) -> dict:
+    """Track a data subject request (UK GDPR: one month to respond) in the account's audit trail."""
+    acc = _account(db, account_id)
+    accounts.audit(db, request.session["admin"], f"dsar.{body.kind}.{body.stage}", acc.id, detail=body.note.strip())
+    return {"ok": True}
+
+
 @router.get("/{account_id}/audit")
 def audit_log(account_id: int, db: Session = Depends(get_session)) -> list[dict]:
     rows = db.exec(

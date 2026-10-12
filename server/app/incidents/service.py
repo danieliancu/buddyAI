@@ -14,7 +14,6 @@ from collections import deque
 from datetime import timedelta
 from typing import Any, Iterable
 
-from app.config import get_settings
 from app.db.models import Device, DeviceIssue, DiagIncident, utcnow
 from app.db.repositories import IncidentRepo, _aware
 from app.db.session import session_scope
@@ -243,7 +242,9 @@ async def maintenance_loop(hub: Any) -> None:
 
 
 def prune() -> int:
-    days = get_settings().incident_retention_days
+    from app.retention import RetentionPolicy
+
+    days = RetentionPolicy.from_settings().incident_days
     if days <= 0:
         return 0
     with session_scope() as db:

@@ -28,8 +28,7 @@ MAX_ATTEMPTS = 6
 LEASE_S = 120
 BATCH = 20
 BACKFILL_BATCH = 200
-SUPERSEDED_KEEP_DAYS = 90
-FINISHED_KEEP_DAYS = 7
+# Retention periods: settings memory_superseded_days / memory_jobs_days (app/retention.py).
 
 
 def text_hash(text: str) -> str:
@@ -182,12 +181,14 @@ def backfill(model_key: str, limit: int = BACKFILL_BATCH) -> int:
 
 def housekeeping() -> None:
     from app.memory.repo import MemoryRepo
+    from app.retention import RetentionPolicy
 
+    policy = RetentionPolicy.from_settings()
     now = utcnow()
     with session_scope() as db:
-        n = MemoryRepo(db).purge_superseded(now - timedelta(days=SUPERSEDED_KEEP_DAYS))
+        n = MemoryRepo(db).purge_superseded(now - timedelta(days=policy.memory_superseded_days))
         db.execute(sa_delete(MemoryJob).where(col(MemoryJob.state).in_(["done", "dead"]),
-                                              col(MemoryJob.updated_at) < now - timedelta(days=FINISHED_KEEP_DAYS)))
+                                              col(MemoryJob.updated_at) < now - timedelta(days=policy.memory_jobs_days)))
         db.commit()
     if n:
         log.info("memory purge superseded rows=%s", n)

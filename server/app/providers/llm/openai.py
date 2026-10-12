@@ -13,7 +13,7 @@ from typing import Any
 
 from openai import AsyncOpenAI, OpenAIError
 
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_dict_summary, error_summary
 from app.providers.llm.base import (
     LLMChunk,
     LLMProvider,
@@ -53,15 +53,16 @@ class OpenAILLM(LLMProvider):
                     yield chunk
                 return
             tools = chat_tools(request.tools)
-            stream = await self._client.chat.completions.create(
-                model=request.model,
-                messages=request.messages,
-                stream=True,
-                stream_options={"include_usage": True},
-                max_completion_tokens=request.max_tokens,
+            stream = await self._client.chat.completions.create(**{
+                "model": request.model,
+                "messages": request.messages,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+                "max_completion_tokens": request.max_tokens,
                 **({"tools": tools} if tools else {}),
                 **request.params,
-            )
+                "store": False,  # never kept by OpenAI for evals/distillation; after params so it can't be overridden
+            })
             calls = ToolCallAccumulator()
             async for event in stream:
                 if event.choices:
@@ -80,7 +81,7 @@ class OpenAILLM(LLMProvider):
             if tool_calls:
                 yield LLMChunk(tool_calls=tool_calls)
         except OpenAIError as exc:
-            raise ProviderError("llm", str(exc)) from exc
+            raise ProviderError("llm", error_summary(exc)) from exc
 
     async def web_search(
         self,
@@ -106,17 +107,18 @@ class OpenAILLM(LLMProvider):
         if location:
             hosted["user_location"] = {"type": "approximate", "city": location, **({"timezone": timezone_name} if timezone_name else {})}
         try:
-            r = await self._client.responses.create(
-                model=model,
-                instructions=instructions,
-                input=query,
-                tools=[hosted],
-                max_tool_calls=MAX_PROVIDER_SEARCHES,
-                max_output_tokens=400,
+            r = await self._client.responses.create(**{
+                "model": model,
+                "instructions": instructions,
+                "input": query,
+                "tools": [hosted],
+                "max_tool_calls": MAX_PROVIDER_SEARCHES,
+                "max_output_tokens": 400,
                 **p,
-            )
+                "store": False,  # no stored response on OpenAI's side (no previous_response_id is used)
+            })
         except OpenAIError as exc:
-            raise ProviderError("llm", f"web search failed: {exc}") from exc
+            raise ProviderError("llm", f"web search failed: {error_summary(exc)}") from exc
         citations = CitationFilter()
         text = (citations.feed(getattr(r, "output_text", "") or "") + citations.flush()).strip()
         searches = count_searches(r.output)
@@ -134,14 +136,15 @@ class OpenAILLM(LLMProvider):
             params["reasoning"] = {"effort": effort}
         tools: list[dict[str, Any]] = [{"type": "web_search", **request.web_search}]
         tools += [{"type": "function", **t} for t in request.tools or []]
-        stream = await self._client.responses.create(
-            model=request.model,
-            input=_responses_input(request.messages),
-            tools=tools,
-            stream=True,
-            max_output_tokens=request.max_tokens,
+        stream = await self._client.responses.create(**{
+            "model": request.model,
+            "input": _responses_input(request.messages),
+            "tools": tools,
+            "stream": True,
+            "max_output_tokens": request.max_tokens,
             **params,
-        )
+            "store": False,
+        })
         citations = CitationFilter()
         async for event in stream:
             if event.type == "response.output_text.delta":
@@ -167,7 +170,8 @@ class OpenAILLM(LLMProvider):
                 )
             elif event.type in ("response.failed", "error"):
                 err = getattr(getattr(event, "response", None), "error", None) or event
-                raise ProviderError("llm", str(getattr(err, "message", err)))
+                raise ProviderError("llm", error_dict_summary(
+                    {"type": getattr(err, "type", None), "code": getattr(err, "code", None)}))
 
 
 def _responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

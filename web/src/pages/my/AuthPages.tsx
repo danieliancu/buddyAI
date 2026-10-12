@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { CheckCircle2, MailCheck, Watch } from "lucide-react";
+import { CheckCircle2, MailCheck } from "lucide-react";
+import BrandMark from "../../components/BrandMark";
 import { api, ApiError } from "../../api";
-import { Button, buttonCls, cardCls, cx, ErrorBox, Field, IconTile, Input, Spinner, PasswordInput } from "../../components/ui";
+import { Button, buttonCls, cardCls, cx, ErrorBox, Field, Input, Spinner, PasswordInput } from "../../components/ui";
 import { CountrySelect } from "./countries";
 import { safeNext } from "./session";
 import { SITE_URL } from "../../site";
@@ -13,9 +14,7 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
     <div className="app-backdrop flex min-h-screen flex-col items-center px-4 pt-10 pb-6 sm:justify-center sm:pt-6">
       <div className="w-full max-w-sm">
         <a href={SITE_URL} className="mb-7 flex items-center justify-center gap-3" title="olácompanion website">
-          <IconTile>
-            <Watch className="size-6" strokeWidth={2.4} />
-          </IconTile>
+          <BrandMark size={38} />
           <span className="text-[1.75rem] font-semibold tracking-tight">olá</span>
         </a>
         <div className={cx(cardCls, "p-6")}>

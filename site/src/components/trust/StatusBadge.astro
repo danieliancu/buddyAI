@@ -1,0 +1,60 @@
+---
+/* A status pill for /trust/: icon + text + colour (never colour alone). Colours meet WCAG AA on their tint. */
+import { STATUS, type Status } from "../../data/trust";
+
+interface Props {
+  status: Status;
+  class?: string;
+}
+const { status, class: cls } = Astro.props;
+---
+<span class:list={["trust-badge", cls]} data-status={status}>
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    {status === "active" && <><circle cx="8" cy="8" r="6.5" /><path d="M5.2 8.2l1.9 1.9 3.7-3.9" /></>}
+    {status === "firmware" && <><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" /><path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2" /></>}
+    {status === "progress" && <><circle cx="8" cy="8" r="6.5" /><path d="M8 4.5V8l2.3 1.6" /></>}
+    {status === "planned" && <><rect x="2" y="3" width="12" height="11" rx="1.5" /><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" /></>}
+    {status === "unverified" && <><circle cx="8" cy="8" r="6.5" /><path d="M6.2 6.2a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" /><path d="M8 11.6h.01" /></>}
+  </svg>
+  {STATUS[status].label}
+</span>
+
+<style>
+  .trust-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem 0.2rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .trust-badge[data-status="active"] {
+    color: #065f46;
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+  .trust-badge[data-status="firmware"] {
+    color: #1e40af;
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  .trust-badge[data-status="progress"] {
+    color: #92400e;
+    background: #fffbeb;
+    border-color: #fde68a;
+  }
+  .trust-badge[data-status="planned"] {
+    color: #5b21b6;
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+  }
+  .trust-badge[data-status="unverified"] {
+    color: #374151;
+    background: #f3f4f6;
+    border-color: #d1d5db;
+  }
+</style>

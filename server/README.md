@@ -90,6 +90,11 @@ abort/stale-frame checks.
 - **Operators** (you): `/admin` in the web app, `app/api/devices.py`, `accounts_admin.py`, `usage.py`,
   `system.py`, `firmware.py`, orders in `shop.py`. On a public server, create the operator with
   `python -m app.cli create-operator <name>` (web setup is disabled by `BUDDYAI_ALLOW_WEB_SETUP=false`).
+  Operators have a role (`admin` = everything, `support` = no system/firmware/money settings/audit log; the
+  matrix is in `app/security.py`), optional TOTP two-factor authentication (My security in `/admin`;
+  `BUDDYAI_ADMIN_MFA_REQUIRED=true` makes it mandatory) and revocable sessions. CLI: `create-operator <name>
+  [--role admin|support]`, `set-operator-role`, `reset-operator-password`, `reset-operator-mfa`,
+  `disable-operator`, `enable-operator`. Operator sign-ins and admin actions are in the audit log (`/admin/audit`).
 - **Customers**: `/api/me/...` (`app/api/me.py`). Every device route checks ownership (`DeviceRepo.owned`),
   and other customers' watches answer 404. History never carries over when a watch changes owner.
   Customers can export or delete their data.

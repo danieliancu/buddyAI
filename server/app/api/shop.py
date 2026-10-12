@@ -18,7 +18,7 @@ from app.config import get_settings
 from app.db.models import Account, Order, TopUp, utcnow
 from app.db.session import get_session
 from app.ratelimit import CHECKOUT_STATUS_PER_IP, SIGNUP_PER_IP, client_ip
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(tags=["shop"])
 
@@ -354,7 +354,7 @@ class BillingSettingsBody(BaseModel):
     cost_critical_pence: int | None = Field(None, ge=1, le=1_000_000)
 
 
-@router.put("/api/billing/settings", dependencies=[Depends(require_admin)])
+@router.put("/api/billing/settings", dependencies=[Depends(require_admin_role)])
 def put_billing_settings(body: BillingSettingsBody, request: Request, db: Session = Depends(get_session)) -> dict:
     changes = body.model_dump(exclude_none=True)
     before = plan_mod.public(plan_mod.row(db))
@@ -377,7 +377,7 @@ class ComplimentaryBody(BaseModel):
     extend: bool = False
 
 
-@router.post("/api/accounts/{account_id}/complimentary", dependencies=[Depends(require_admin)])
+@router.post("/api/accounts/{account_id}/complimentary", dependencies=[Depends(require_admin_role)])
 def grant_complimentary(account_id: int, body: ComplimentaryBody, request: Request, db: Session = Depends(get_session)) -> dict:
     acc = db.get(Account, account_id)
     if not acc or acc.status == "deleted":
@@ -391,7 +391,7 @@ def grant_complimentary(account_id: int, body: ComplimentaryBody, request: Reque
     return {"created": created, "subscription": sub.model_dump()}
 
 
-@router.delete("/api/accounts/{account_id}/complimentary", dependencies=[Depends(require_admin)])
+@router.delete("/api/accounts/{account_id}/complimentary", dependencies=[Depends(require_admin_role)])
 def revoke_complimentary(account_id: int, request: Request, db: Session = Depends(get_session)) -> dict:
     acc = db.get(Account, account_id)
     if not acc:
@@ -404,7 +404,7 @@ class AllowanceBody(BaseModel):
     interaction_limit_override: int | None = Field(None, ge=1, le=1_000_000)
 
 
-@router.patch("/api/accounts/{account_id}/allowance", dependencies=[Depends(require_admin)])
+@router.patch("/api/accounts/{account_id}/allowance", dependencies=[Depends(require_admin_role)])
 def set_allowance(account_id: int, body: AllowanceBody, request: Request, db: Session = Depends(get_session)) -> dict:
     acc = db.get(Account, account_id)
     if not acc or acc.status == "deleted":

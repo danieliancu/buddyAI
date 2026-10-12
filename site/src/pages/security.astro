@@ -1,0 +1,65 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import SectionHeading from "../components/SectionHeading.astro";
+import Brand from "../components/Brand.astro";
+import { config } from "../config";
+
+const mail = `mailto:${config.supportEmail}?subject=Security`;
+---
+<Base
+  title="Security & vulnerability reporting"
+  crumb="Security"
+  description="How to report a security problem with the olácompanion watch, our website or your olá account, and how long the watch receives security updates."
+>
+  <PageHero
+    eyebrow="Security"
+    title="Security & vulnerability reporting"
+    lead="If you think you have found a security problem in the watch, our website or your olá account, please tell us. We welcome reports made in good faith and will look into every one."
+  />
+
+  <section class="container-x mt-6" aria-labelledby="report-title">
+    <SectionHeading id="report-title" title="How to report a vulnerability" />
+    <div class="glass mt-6 max-w-3xl p-6 text-muted">
+      <p>
+        Email <a class="link" href={mail}>{config.supportEmail}</a> with the subject “Security”. Please include:
+      </p>
+      <ul class="mt-3 list-disc space-y-1.5 pl-5">
+        <li>the product or page affected, and the version if you know it (for example the watch's firmware version);</li>
+        <li>the steps needed to reproduce the problem;</li>
+        <li>what you think the impact is, and anything else that helps us understand it.</li>
+      </ul>
+      <p class="mt-4">
+        While you investigate, please don't access, change or delete other people's data, and don't do anything that
+        disrupts the service for others. Use only your own account and your own watch, and stop as soon as you have
+        shown the problem exists.
+      </p>
+      <p class="mt-4">
+        We aim to acknowledge your report within 5 working days and to keep you informed while we look into it and fix
+        it. Please give us reasonable time to fix the problem before you share details publicly.
+      </p>
+    </div>
+  </section>
+
+  <section class="container-x mt-16" aria-labelledby="updates-title">
+    <SectionHeading id="updates-title" title="Security updates for the watch" />
+    <div class="glass mt-6 max-w-3xl p-6 text-muted">
+      <p>
+        <strong class="text-fg">We provide security updates for the <Brand name="watch" /> for at least two years from the date you buy it.</strong>
+      </p>
+      <p class="mt-4">
+        Updates are delivered to the watch over Wi-Fi, so keep it connected to receive them.
+      </p>
+    </div>
+  </section>
+
+  <section class="container-x mt-16" aria-labelledby="more-title">
+    <SectionHeading id="more-title" title="More information" />
+    <ul class="mt-6 grid max-w-3xl gap-4 sm:grid-cols-2">
+      <li class="glass p-5">
+        <a class="link font-semibold" href="/legal/privacy/">Privacy notice</a>
+        <p class="mt-1 text-sm text-muted">What we collect, why, how long we keep it and your rights.</p>
+      </li>
+    </ul>
+  </section>
+</Base>

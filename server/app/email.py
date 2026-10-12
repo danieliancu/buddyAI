@@ -1,11 +1,15 @@
 """Outgoing email. `console` (default, development) logs the message; `smtp` sends it.
 
+The console backend writes the body (with its one-time links) to the log only in local development
+(setting email_console_bodies, automatic: public_url not https); otherwise recipient and subject only.
+
 The provider is chosen later (see plan M7): any SMTP service works (Resend, Postmark, SES, ...).
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import smtplib
 import ssl
@@ -32,14 +36,28 @@ class EmailSender(Protocol):
     async def send(self, email: Email) -> None: ...
 
 
-class ConsoleEmailSender:
-    """Development: prints emails (including links) to the server log."""
+def console_bodies() -> bool:
+    """Whether the console backend may log email bodies (they contain sign-in / reset links)."""
+    s = get_settings()
+    if s.email_console_bodies is not None:
+        return s.email_console_bodies
+    return not s.public_url.startswith("https")
 
-    sent: list[Email] = []  # inspected by tests
+
+class ConsoleEmailSender:
+    """Development: prints emails to the server log - with the body (and its links) only when allowed."""
+
+    sent: collections.deque[Email] = collections.deque(maxlen=100)  # the latest emails, inspected by tests
+
+    def __init__(self, bodies: bool | None = None) -> None:
+        self.bodies = bodies
 
     async def send(self, email: Email) -> None:
         ConsoleEmailSender.sent.append(email)
-        log.info("EMAIL to=%s subject=%r\n%s", email.to, email.subject, email.text)
+        if console_bodies() if self.bodies is None else self.bodies:
+            log.info("EMAIL to=%s subject=%r\n%s", email.to, email.subject, email.text)
+        else:
+            log.info("EMAIL to=%s subject=%r (body withheld)", email.to, email.subject)
 
 
 class SMTPEmailSender:
@@ -63,8 +81,27 @@ class SMTPEmailSender:
             smtp.send_message(msg)
 
 
+_warned: set[str] = set()
+
+
+def _warn_once(key: str, message: str, *args: object) -> None:
+    if key not in _warned:
+        _warned.add(key)
+        log.warning(message, *args)
+
+
 def get_sender() -> EmailSender:
-    return SMTPEmailSender() if get_settings().email_backend == "smtp" else ConsoleEmailSender()
+    s = get_settings()
+    backend = s.email_backend
+    if backend == "smtp":
+        return SMTPEmailSender()
+    if backend != "console":
+        _warn_once(f"backend:{backend}", "unknown email_backend %r: emails are only logged (without their "
+                   "content), not delivered", backend[:20])
+        return ConsoleEmailSender(bodies=False)
+    if s.public_url.startswith("https"):
+        _warn_once("console:https", "email_backend is console on a public server: emails are not being delivered")
+    return ConsoleEmailSender()
 
 
 async def send(email: Email) -> None:

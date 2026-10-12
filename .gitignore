@@ -22,6 +22,7 @@ firmware/sdkconfig.old
 Thumbs.db
 # Deployment secrets and backups
 deploy/.env
+deploy/backup.env
 deploy/backups/
 # Local credentials (never commit)
 superadmin.txt

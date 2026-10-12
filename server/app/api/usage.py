@@ -16,7 +16,7 @@ from app.db.repositories import PricingRepo, TurnRepo, UsageRepo
 from app.db.session import get_session
 from app.pipeline.metrics import percentile
 from app.pricing.currency import convert, get_currency, set_currency
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(prefix="/api", tags=["usage"], dependencies=[Depends(require_admin)])
 
@@ -160,7 +160,7 @@ def currency() -> dict:
     return get_currency()
 
 
-@router.put("/pricing/currency")
+@router.put("/pricing/currency", dependencies=[Depends(require_admin_role)])
 def update_currency(body: CurrencyBody, request: Request, db: Session = Depends(get_session)) -> dict:
     before = get_currency()
     out = set_currency(body.currency, body.usd_rate)
@@ -174,7 +174,7 @@ class PriceBody(BaseModel):
     note: str | None = None
 
 
-@router.put("/pricing/{rule_id}")
+@router.put("/pricing/{rule_id}", dependencies=[Depends(require_admin_role)])
 def update_price(rule_id: int, body: PriceBody, request: Request, db: Session = Depends(get_session)) -> dict:
     old = PricingRepo(db).s.get(PricingRule, rule_id)
     old_price = old.price_usd if old else None

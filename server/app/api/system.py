@@ -8,12 +8,13 @@ import socket
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app import languages, usage_ops
+from app import accounts, languages, usage_ops
 from app.config import get_settings
+from app.db.session import session_scope
 from app.device_settings import DeviceSettings
 from app.providers.base import ProviderError, UsageItem
 from app.providers.llm.base import LLMRequest
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(prefix="/api/system", tags=["system"], dependencies=[Depends(require_admin)])
 
@@ -60,13 +61,16 @@ class KeysBody(BaseModel):
 
 
 @router.put("/keys")
-def set_keys(body: KeysBody, request: Request) -> dict:
-    get_settings().store_provider_keys({k: v.strip() for k, v in body.model_dump().items() if v})
+def set_keys(body: KeysBody, request: Request, user: str = Depends(require_admin_role)) -> dict:
+    changes = {k: v.strip() for k, v in body.model_dump().items() if v}
+    get_settings().store_provider_keys(changes)
     request.app.state.router._cache.clear()  # rebuild provider clients with the new keys
+    with session_scope() as db:  # key NAMES only, never the values
+        accounts.audit(db, user, "system.keys_change", detail=", ".join(sorted(changes)) or "none")
     return info()
 
 
-@router.post("/test/{target}")
+@router.post("/test/{target}", dependencies=[Depends(require_admin_role)])
 async def test_provider(target: str, request: Request) -> dict:
     """target: llm | stt | tts_<language code> (e.g. tts_en, tts_ro, tts_de)
 

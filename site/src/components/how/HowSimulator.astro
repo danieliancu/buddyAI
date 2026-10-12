@@ -11,7 +11,7 @@ interface Props {
   embedded?: boolean;
 }
 const { embedded = false } = Astro.props;
-const list = tabs(prices.trialMonths);
+const list = tabs(prices.trialDays);
 /** Onboarding comes first in the row, but the section opens on Home. */
 const DEFAULT_TAB = "home";
 const Root = embedded ? "div" : "section";

@@ -12,10 +12,12 @@ import { config, prices, formatPrice } from "../../config";
   <h2>1. Price and free period</h2>
   <p>
     <Brand name="care" /> costs {formatPrice(prices.care.GBP, "GBP")} per month (UK) or {formatPrice(prices.care.EUR, "EUR")} per
-    month (EU), including VAT. It starts with a free {prices.trialMonths}-month trial. When you buy the watch you pay for the
-    watch only and agree that we save your card for <Brand name="care" />; nothing is charged for it then. The free trial starts
-    when you first pair your watch with your olá account. After the trial it renews automatically every month and your
-    saved card is charged, unless you cancel before the trial ends. If your account already had a <Brand name="care" />
+    month (EU). This is the total price you pay each month. It starts with a free {prices.trialDays}-day trial. When you buy
+    the watch you pay for the watch only and agree that we save your card for <Brand name="care" />; nothing is charged for it
+    then. The free trial starts when you first pair your watch with your olá account, not when you buy it. The first
+    charge is taken when the free trial ends. After that the subscription renews automatically every month and your saved
+    card is charged the monthly price at the start of each monthly period, until you cancel. If you cancel before the
+    trial ends, you are not charged. If your account already had a <Brand name="care" />
     subscription or free trial, or has complimentary access, no new free trial applies.
   </p>
 
@@ -80,7 +82,13 @@ import { config, prices, formatPrice } from "../../config";
   <p>
     You can cancel anytime from your account (Account, then "Manage billing"), which opens our payment provider's secure billing
     portal. The subscription then ends at the end of the current paid period (or of the free period) and you won't be
-    charged again. You also have a 14-day right to cancel the subscription from the day the contract starts.
+    charged again. The service keeps working until then. We don't refund part of a period: if you cancel partway
+    through a month you have paid for, that month is not refunded. This doesn't affect your 14-day right to
+    cancel the subscription from the day the contract starts.
+  </p>
+  <p>
+    If you delete your olá account, your <Brand name="care" /> subscription is cancelled straight away, so you won't be
+    charged again. The service stops at once and there is no refund for the current period.
   </p>
 
   <h2>5. Price changes</h2>

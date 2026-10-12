@@ -87,25 +87,31 @@ services:
     depends_on:
       - server
 
+  # Daily database dump (deploy/backup/backup.sh): verified, checksummed, 14 days kept in the backupdata
+  # volume. Optional (Coolify environment variables, deploy/README.md section 8): age encryption,
+  # rclone off-site copy, serverdata tar.
   backup:
-    image: postgres:16-alpine
+    build:
+      context: deploy/backup
     restart: unless-stopped
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGHOST: postgres
+      PGUSER: buddyai
+      PGDATABASE: buddyai
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_RCLONE_REMOTE: ${BACKUP_RCLONE_REMOTE:-}
+      BACKUP_RCLONE_CONFIG_B64: ${BACKUP_RCLONE_CONFIG_B64:-}
+      BACKUP_REMOTE_KEEP_DAYS: ${BACKUP_REMOTE_KEEP_DAYS:-}
+      BACKUP_LOCAL_KEEP_DAYS: ${BACKUP_LOCAL_KEEP_DAYS:-}
+      BACKUP_INTERVAL_S: ${BACKUP_INTERVAL_S:-}
+      BACKUP_SERVERDATA: ${BACKUP_SERVERDATA:-}
     volumes:
       - backupdata:/backups
+      - serverdata:/serverdata:ro
     depends_on:
       postgres:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          f=/backups/buddyai-$$(date +%Y%m%d-%H%M).dump
-          pg_dump -h postgres -U buddyai -d buddyai -Fc -f "$$f" && echo "backup ok: $$f" || echo "BACKUP FAILED"
-          find /backups -name 'buddyai-*.dump' -mtime +14 -delete
-          sleep 86400
-        done
 
 volumes:
   pgdata:

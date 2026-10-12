@@ -3,7 +3,8 @@ import { NavLink } from "react-router";
 import { Brain, CalendarClock, MailWarning, NotebookPen, Sparkles, UserRound, Watch } from "lucide-react";
 import { api } from "../api";
 import { useCustomer } from "../pages/my/session";
-import { Button, IconTile, cx } from "./ui";
+import { Button, cx } from "./ui";
+import BrandMark from "./BrandMark";
 import UsageNotice from "./UsageNotice";
 import { SITE_URL } from "../site";
 
@@ -38,9 +39,7 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
       <header className={cx("sticky top-0 z-30 transition-colors", scrolled && "bg-bg/80 shadow-[0_1px_0_var(--border)] backdrop-blur-md")}>
         <div className="mx-auto flex h-20 max-w-5xl items-center gap-3 px-4 sm:px-6">
           <a href={SITE_URL} className="flex items-center gap-3" title="olácompanion website" aria-label="olá — go to the website">
-            <IconTile>
-              <Watch className="size-6" strokeWidth={2.4} />
-            </IconTile>
+            <BrandMark />
             <span className="text-[1.75rem] font-semibold tracking-tight">olá</span>
           </a>
           <nav className="ml-6 hidden items-center gap-1 sm:flex">

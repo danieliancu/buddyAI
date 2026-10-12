@@ -7,12 +7,14 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.security import websocket_admin
+
 router = APIRouter()
 
 
 @router.websocket("/api/live")
 async def live(ws: WebSocket) -> None:
-    if not ws.session.get("admin"):
+    if not await asyncio.to_thread(websocket_admin, ws):
         await ws.close(code=4401)
         return
     await ws.accept()

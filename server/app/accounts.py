@@ -240,6 +240,7 @@ def export(db: Session, account: Account) -> dict[str, Any]:
     names = {d.id: d.name for d in devices}
     memories = db.exec(select(Memory).where(Memory.account_id == account.id).order_by(Memory.id)).all()
     return {
+        **_export_billing(db, account),
         "exported_at": utcnow(),
         "account": public(account),
         "watches": out_devices,
@@ -260,12 +261,83 @@ def export(db: Session, account: Account) -> dict[str, Any]:
     }
 
 
-def delete_account(db: Session, account: Account) -> list[str]:
+def _export_billing(db: Session, account: Account) -> dict[str, Any]:
+    """Orders, subscriptions, consents, top-ups, monthly usage counts and the account's audit trail."""
+    from app.db.models import BillingConsent, Order, Subscription, TopUp, UsageOperation
+
+    aid = account.id
+    orders = db.exec(select(Order).where(Order.account_id == aid).order_by(Order.id)).all()
+    subs = db.exec(select(Subscription).where(Subscription.account_id == aid).order_by(Subscription.id)).all()
+    consents = db.exec(select(BillingConsent).where(BillingConsent.account_id == aid).order_by(BillingConsent.id)).all()
+    topups = db.exec(select(TopUp).where(TopUp.account_id == aid).order_by(TopUp.id)).all()
+    months: dict[str, dict[str, Any]] = {}
+    for created, interaction in db.exec(select(UsageOperation.created_at, UsageOperation.interaction)
+                                        .where(UsageOperation.account_id == aid)).all():
+        m = months.setdefault(f"{created:%Y-%m}", {"month": f"{created:%Y-%m}", "requests": 0, "ai_interactions": 0})
+        m["requests"] += 1
+        m["ai_interactions"] += 1 if interaction else 0
+    events = db.exec(select(AuditLog).where(AuditLog.account_id == aid).order_by(AuditLog.id)).all()
+    return {
+        "orders": [
+            {
+                "id": o.id, "date": o.created_at, "status": o.status, "currency": o.currency,
+                "amount_total": o.amount_total, "amount_tax": o.amount_tax, "amount_shipping": o.amount_shipping,
+                "shipping_name": o.shipping_name, "shipping_address": o.shipping_address,
+                "shipped_at": o.shipped_at, "delivered_at": o.delivered_at,
+            }
+            for o in orders
+        ],
+        "subscriptions": [
+            {
+                "source": s.source, "status": s.status, "created_at": s.created_at, "trial_end": s.trial_end,
+                "current_period_start": s.current_period_start, "current_period_end": s.current_period_end,
+                "cancel_at_period_end": s.cancel_at_period_end, "updated_at": s.updated_at,
+            }
+            for s in subs
+        ],
+        "billing_consents": [
+            {
+                "created_at": c.created_at, "status": c.status, "terms_version": c.terms_version,
+                "terms_sha256": c.terms_sha256, "amount_minor": c.amount_minor, "currency": c.currency,
+                "site_accepted_at": c.site_accepted_at, "ip": c.site_ip, "user_agent": c.site_user_agent,
+                "stripe_terms_consent": c.stripe_tos_consent, "stripe_consent_at": c.stripe_consent_at,
+            }
+            for c in consents
+        ],
+        "top_ups": [
+            {"created_at": t.created_at, "status": t.status, "amount_pence": t.amount_pence,
+             "interactions": t.interactions, "paid_at": t.paid_at, "refunded_at": t.refunded_at}
+            for t in topups
+        ],
+        "monthly_usage": sorted(months.values(), key=lambda m: m["month"]),
+        # who did what to this account (you, the system or an operator); the free-text detail is left out
+        "account_events": [{"action": e.action, "at": e.created_at, "by": e.actor} for e in events],
+    }
+
+
+def delete_account(db: Session, account: Account, detail: str = "self-service") -> list[str]:
     """Erase personal data. Returns the unpaired device ids (the caller disconnects them).
 
-    Usage records are kept for accounting but detached from content (turn link removed).
+    Runs in one transaction under the account lock. Live ola Care subscriptions are cancelled in Stripe
+    first; if Stripe fails, app.billing.BillingError(502) is raised and nothing is deleted.
+
+    Deleted: conversation history, notes/reminders, memories, personas, watch settings, sign-in tokens,
+    the account's private web-search cache, voice-change records and usage notices; name, email, password
+    and country are erased (the row stays, anonymised, status "deleted").
+
+    Kept (legal basis):
+    - orders, incl. the shipping name/address: tax and accounting records (HMRC, 6 years);
+    - billing consents: evidence that recurring billing was agreed (disputes / chargebacks);
+    - subscriptions, top-ups, revenue events, usage records: accounting, no conversation content
+      (usage records lose their link to the deleted turns);
+    - the audit log: accountability for actions on customer data (UK GDPR art. 5(2)).
     """
+    from app import billing
+    from app.db.models import SearchCache, UsageNotice, VoiceOperation
+    from sqlalchemy import delete as sa_delete
+
     lock_account(db, account.id)
+    billing.cancel_all_for_account(db, account)  # raises before anything is deleted
     device_ids = [d.id for d in db.exec(select(Device).where(Device.account_id == account.id)).all()]
     turns = db.exec(select(Turn).where(Turn.account_id == account.id)).all()
     turn_ids = [t.id for t in turns]
@@ -299,6 +371,12 @@ def delete_account(db: Session, account: Account) -> list[str]:
         db.delete(it)
     for tok in db.exec(select(AuthToken).where(AuthToken.account_id == account.id)).all():
         db.delete(tok)
+    db.execute(sa_delete(SearchCache).where(SearchCache.scope == f"account:{account.id}"))
+    db.execute(sa_delete(VoiceOperation).where(VoiceOperation.account_id == account.id))
+    db.execute(sa_delete(UsageNotice).where(UsageNotice.account_id == account.id))
+    # Audited in the same transaction (not with audit(), which commits on its own): the entry exists exactly
+    # when the deletion does.
+    db.add(AuditLog(actor=f"account:{account.id}", action="account.delete", account_id=account.id, detail=detail))
     account.status = "deleted"
     account.email = f"deleted-{account.id}@deleted.invalid"
     account.name = ""

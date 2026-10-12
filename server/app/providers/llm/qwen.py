@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI, OpenAIError
 
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_summary
 from app.providers.llm.base import LLMChunk, LLMProvider, LLMRequest, ToolCallAccumulator, chat_tools
 
 
@@ -54,4 +54,4 @@ class QwenLLM(LLMProvider):
             if tool_calls:
                 yield LLMChunk(tool_calls=tool_calls)
         except OpenAIError as exc:
-            raise ProviderError("llm", str(exc)) from exc
+            raise ProviderError("llm", error_summary(exc)) from exc

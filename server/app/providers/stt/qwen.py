@@ -13,7 +13,7 @@ import uuid
 
 import websockets
 
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_summary
 from app.providers.stt.base import PartialCallback, STTProvider, STTSession
 
 log = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class _QwenSTTSession(STTSession):
                 open_timeout=5,
             )
         except Exception as exc:
-            raise ProviderError("stt", f"connect failed: {exc}") from exc
+            raise ProviderError("stt", f"connect failed: {error_summary(exc)}") from exc
         await self.ws.send(
             json.dumps(
                 {
@@ -115,7 +115,7 @@ class _QwenSTTSession(STTSession):
                     return
                 elif event == "task-failed":
                     header = msg.get("header", {})
-                    self.error = f"{header.get('error_code')}: {header.get('error_message')}"
+                    self.error = str(header.get("error_code"))[:48]  # the code only: the message is not logged
                     self.started.set()
                     self.finished.set()
                     return

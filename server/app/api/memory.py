@@ -129,7 +129,9 @@ def clear_memories(body: ClearBody, acc: Account = Depends(current_account), db:
         accounts.authenticate(db, acc.email, body.password)
     except accounts.AccountError as exc:
         raise HTTPException(403, "wrong password") from exc
-    return {"deleted": MemoryRepo(db).forget_all(acc.id)}
+    deleted = MemoryRepo(db).forget_all(acc.id)
+    accounts.audit(db, f"account:{acc.id}", "memory.clear", account_id=acc.id, detail=f"{deleted} memories")
+    return {"deleted": deleted}
 
 
 @router.put("/settings")

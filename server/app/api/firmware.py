@@ -14,12 +14,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app import accounts
 from app.api.system import base_url
 from app.config import get_settings
 from app.db.models import FirmwareRelease
 from app.db.repositories import FirmwareRepo
 from app.db.session import get_session
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(tags=["firmware"])
 ESP_IMAGE_MAGIC = 0xE9
@@ -48,9 +49,10 @@ def list_releases(db: Session = Depends(get_session)) -> list[dict]:
     return [r.model_dump() for r in FirmwareRepo(db).list()]
 
 
-@router.post("/api/firmware", dependencies=[Depends(require_admin)])
+@router.post("/api/firmware")
 async def upload(
-    file: UploadFile = File(...), notes: str = Form(""), version: str = Form(""), db: Session = Depends(get_session)
+    file: UploadFile = File(...), notes: str = Form(""), version: str = Form(""), db: Session = Depends(get_session),
+    user: str = Depends(require_admin_role),
 ) -> dict:
     data = await file.read(MAX_SIZE + 1)
     if len(data) > MAX_SIZE:
@@ -63,6 +65,7 @@ async def upload(
         FirmwareRelease(version=ver, filename=file.filename or "firmware.bin", sha256=sha, size=len(data), notes=notes)
     )
     (_fw_dir() / f"{rel.id}.bin").write_bytes(data)
+    accounts.audit(db, user, "firmware.upload", detail=f"release {rel.id}: {rel.version} {rel.filename} sha256 {sha[:16]}")
     return rel.model_dump()
 
 
@@ -79,12 +82,14 @@ class OtaBody(BaseModel):
     release_id: int
 
 
-@router.post("/api/devices/{device_id}/ota", dependencies=[Depends(require_admin)])
-async def offer_ota(device_id: str, body: OtaBody, request: Request, db: Session = Depends(get_session)) -> dict:
+@router.post("/api/devices/{device_id}/ota")
+async def offer_ota(device_id: str, body: OtaBody, request: Request, db: Session = Depends(get_session),
+                    user: str = Depends(require_admin_role)) -> dict:
     rel = FirmwareRepo(db).get(body.release_id)
     if not rel:
         raise HTTPException(404, "release not found")
     offer = {"version": rel.version, "url": f"{base_url()}/fw/{rel.id}.bin", "sha256": rel.sha256, "size": rel.size}
     if not await request.app.state.hub.offer_ota(device_id, offer):
         raise HTTPException(409, "device is offline")
+    accounts.audit(db, user, "firmware.ota_push", device_id=device_id, detail=f"release {rel.id}: {rel.version}")
     return {"ok": True, **offer}

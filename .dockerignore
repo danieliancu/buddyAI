@@ -9,4 +9,7 @@ web/dist
 site/dist
 site/.astro
 firmware
+deploy/backups
+deploy/.env
+deploy/backup.env
 .git
