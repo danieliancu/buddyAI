@@ -8,7 +8,7 @@ Internet ──► Caddy (HTTPS, ports 80/443)
                ├─ www.example.com  → marketing site (static) + /api/shop/* → server
                ├─ app.example.com  → customer app + operator app (/admin) + REST API + Stripe webhook
                └─ api.example.com  → watches: /ws/device (WebSocket) and /fw/* (firmware downloads)
-            server (FastAPI) ──► PostgreSQL        backup (nightly pg_dump → deploy/backups)
+            server (FastAPI) ──► PostgreSQL        backup (daily pg_dump → deploy/backups, encrypted off-site)
 ```
 
 ## 1. Rent the server
@@ -191,20 +191,145 @@ Firmware updates: build a signed release image (see `firmware/README.md`), uploa
 
 ## 8. Backups and restore
 
-- The `backup` service writes a database dump every 24 hours to `deploy/backups/` and keeps 14 days.
-- **Copy the dumps off the server.** A server failure would otherwise take the backups with it. Options:
-  - a Hetzner Storage Box (from about €4/month) with `rclone`;
-  - any S3 bucket with `restic`.
-- **Test a restore** at least once, on a test server:
+The `backup` service (image built from `deploy/backup/`, scripts `backup.sh`, `run.sh`, `restore.sh`)
+runs once at start and then every `BACKUP_INTERVAL_S` seconds (default 24 hours). Each run:
+
+1. dumps the database (`pg_dump -Fc`) to `deploy/backups/buddyai-YYYYMMDD-HHMM.dump`
+   (Coolify: the `backupdata` volume);
+2. checks the dump with `pg_restore --list` (an unreadable dump is a failed run);
+3. writes `buddyai-YYYYMMDD-HHMM.dump.sha256` (checksum of the plaintext dump, `sha256sum -c` format);
+4. with `BACKUP_AGE_RECIPIENT`: encrypts it to `….dump.age` and deletes the plaintext dump;
+5. with `BACKUP_RCLONE_REMOTE`: uploads the `.age` file and the `.sha256` off-site, then deletes
+   `buddyai-*` files older than `BACKUP_REMOTE_KEEP_DAYS` (default 30) on the remote.
+   **Unencrypted backups are never uploaded**: a remote without a recipient is a failed run;
+6. with `BACKUP_SERVERDATA=1`: the same for `buddyai-serverdata-YYYYMMDD-HHMM.tar.gz` (see 8.3);
+7. deletes local `buddyai-*` backups older than `BACKUP_LOCAL_KEEP_DAYS` (default 14).
+
+Without any of the new variables it behaves as before (daily local dump, 14 days), plus the integrity check
+and the checksum file. A failure logs one line `BACKUP FAILED: <step>`:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env exec -T postgres \
-  pg_restore -U buddyai -d buddyai --clean --if-exists < deploy/backups/buddyai-YYYYMMDD-HHMM.dump
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs backup | grep -E "backup ok|FAILED|ERROR"
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm backup backup.sh   # one run now
 ```
 
-- Also back up the `serverdata` volume. It holds the cookie secret, firmware images and any keys
-  entered in the web app:
-  `docker run --rm -v buddyai_serverdata:/d -v $PWD:/b alpine tar czf /b/serverdata.tgz -C /d .`
+The variables go in `deploy/.env` (Coolify: the resource's Environment Variables); all are optional and
+listed in `deploy/.env.example`. Local backups stay on the same server, so on their own they do **not**
+protect against losing the server: set up 8.1 and 8.2 before selling.
+
+### 8.1 Encryption key (age), generated offline
+
+Backups are encrypted with [age](https://age-encryption.org). Only the **public** key (recipient,
+`age1…`) is on the server; the private key (identity) never is, so a stolen backup or a compromised
+storage account reveals nothing.
+
+1. On an **offline** machine with `age` installed: `age-keygen -o buddyai-backup-key.txt`. It prints
+   `Public key: age1…`.
+2. Store `buddyai-backup-key.txt` like the firmware signing key (`firmware/keys/README.md`): two encrypted
+   copies (e.g. encrypted USB drives) in two different places, never in the repository, the server, CI,
+   e-mail or chat. **Without it, encrypted backups cannot be restored.**
+3. Put only the public key on the server: `BACKUP_AGE_RECIPIENT=age1…`. Several recipients
+   (comma-separated) let a second key holder restore, and allow rotating keys: add the new key, wait until
+   the old backups have expired, then remove the old one.
+
+### 8.2 Off-site copy (rclone)
+
+Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
+than the server) or an S3 bucket. Use credentials that can reach only the backup directory. Give the
+container the rclone configuration in one of three ways (never commit it):
+
+- **`deploy/backup.env`** (plain compose only, git-ignored, read if present): rclone's own environment
+  variables, for a remote called `offsite`:
+
+  ```
+  RCLONE_CONFIG_OFFSITE_TYPE=sftp
+  RCLONE_CONFIG_OFFSITE_HOST=<storage box host>
+  RCLONE_CONFIG_OFFSITE_USER=<user>
+  RCLONE_CONFIG_OFFSITE_PASS=<output of: rclone obscure 'the password'>
+  ```
+
+  (S3: `TYPE=s3`, `PROVIDER`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `REGION`, `ENDPOINT`.) Then
+  `BACKUP_RCLONE_REMOTE=offsite:buddyai-backups` in `deploy/.env`. `rclone obscure` only hides the
+  password from casual view; the file still is a secret.
+- **`BACKUP_RCLONE_CONFIG_B64`** (works on Coolify too): a complete `rclone.conf` encoded with
+  `base64 -w0 rclone.conf`. The container writes it to a private temp file for each run.
+- **A mounted file** at `/root/.config/rclone/rclone.conf` (e.g. a `docker-compose.override.yml`).
+
+Check with one run (command above): the log shows `uploaded off-site`, and `rclone ls offsite:buddyai-backups`
+lists `.age` and `.sha256` files only.
+
+### 8.3 serverdata (secret key, provider keys, firmware images)
+
+The `serverdata` volume holds the cookie secret key, the provider keys entered in the web app and the
+firmware images. It is mounted **read-only** into the backup container; `BACKUP_SERVERDATA=1` adds a
+verified `tar.gz` to each run. It contains secrets, so like the dumps it leaves the server only
+encrypted. Restore by hand: decrypt (`age -d -i key.txt -o sd.tar.gz <file>.age`), check the `.sha256`,
+then unpack into the volume while the server is stopped.
+
+### 8.4 Monthly restore test (separate database)
+
+Once a month, and after any change to the backup setup, restore the latest off-site backup into a
+**separate** database and record the date and result. `restore.sh` decrypts, checks the `.sha256` and the
+archive, refuses the production database (unless `--force-production`), refuses a non-empty target
+(unless `--clean`) and restores in one transaction. There is no default target.
+
+On a trusted machine that holds the identity file (not the server):
+
+```bash
+rclone copy offsite:buddyai-backups ./restore-test --include 'buddyai-YYYYMMDD-HHMM.dump*'
+docker build -t buddyai-backup deploy/backup
+docker build -f deploy/postgres.Dockerfile -t buddyai-postgres .          # same database image (pgvector)
+docker network create restore-test
+docker run -d --name restore-db --network restore-test -e POSTGRES_USER=buddyai \
+  -e POSTGRES_PASSWORD=<throwaway> -e POSTGRES_DB=buddyai_restore_test buddyai-postgres
+docker run --rm -it --network restore-test -v "$PWD/restore-test:/restore:ro" -v /path/to/key-dir:/key:ro \
+  buddyai-backup restore.sh --identity /key/buddyai-backup-key.txt \
+  --target postgresql://buddyai:<throwaway>@restore-db:5432/buddyai_restore_test \
+  /restore/buddyai-YYYYMMDD-HHMM.dump.age
+```
+
+It prints the table and account counts and the newest `audit_log` entry; compare them with production.
+Then delete the test database, the container and the downloaded files (`docker rm -f restore-db`).
+An unencrypted local dump can be tested on the server the same way, into a new database
+(`docker compose … exec postgres createdb -U buddyai buddyai_restore_test`, then
+`docker compose … run --rm backup restore.sh --target postgresql://buddyai:…@postgres:5432/buddyai_restore_test /backups/<file>.dump`).
+
+### 8.5 Disaster recovery and deleted data
+
+Restoring a backup brings back everything that was deleted after it was taken: deleted accounts,
+erased conversation history. Those deletions must be applied again **before** the restored database
+goes live.
+
+1. Stop the server (`docker compose … stop server`) so nothing changes meanwhile.
+2. Note the backup time (`restore.sh` prints `archive created at`).
+3. If the old production database is still readable, export the deletions recorded after that time
+   **before** overwriting it:
+
+   ```sql
+   \copy (select id, created_at, actor, action, account_id, device_id from audit_log
+          where created_at >= '<backup time>' and action in ('account.delete', 'history.delete')
+          order by id) to 'deletions.csv' csv header
+   ```
+
+   If it is gone, collect the deletions from the server's JSON logs and support records instead.
+4. Restore (into a new database, or `--clean --force-production` into the old one).
+5. Re-apply every deletion through the application's own deletion code, not hand-written SQL:
+   `account.delete` → delete that account again (`app.accounts.delete_account`); `history.delete` →
+   delete that device's conversation history again (operator app, or `ConversationRepo.delete_device_history`).
+   A follow-up script can automate this step; it does not exist yet.
+6. Only then start the server and Caddy.
+
+Note: operator history deletion writes `history.delete` today; check that customer self-service deletions
+(account, history) also write their audit events before relying on step 3. Data deleted on request
+otherwise stays only in backups until they expire (local 14 days, off-site 30 days by default): use the
+same periods in the privacy notice.
+
+### 8.6 Coolify
+
+Same service, same variables (set them in Coolify's Environment Variables; use
+`BACKUP_RCLONE_CONFIG_B64` for the rclone configuration). Local backups are in the `backupdata` volume.
+Coolify also has its own scheduled database backups to S3; check in your Coolify version whether they cover
+a PostgreSQL that runs inside a compose stack like this one before relying on them instead.
 
 ## 9. Memory (long-term memory, staged rollout)
 
@@ -280,5 +405,7 @@ memory text) and `GET /api/diagnostics` → `memory` (job queue and failures).
 - [ ] Measured battery life, published on the site.
 - [ ] Firmware release image built with the production signing key (keep the key offline, with a backup).
 - [ ] Secure Boot + flash encryption enabled on **production units only** (see `firmware/README.md`).
+- [ ] Backups encrypted and copied off-site (section 8.1–8.2), the age key stored offline in two places,
+      and a restore test into a separate database done and recorded (8.4).
 - [ ] Test purchase end-to-end in Stripe test mode, then one real purchase with live keys and a refund.
 - [ ] Beta with 2–3 friendly customers before the public launch.
