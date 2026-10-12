@@ -1,6 +1,7 @@
 alembic==1.20.0
 av==18.1.0
 bcrypt==5.0.0
+cryptography==50.0.2
 fastapi==0.141.1
 httpx==0.28.1
 lingua-language-detector==2.1.1
@@ -9,6 +10,7 @@ numpy==2.4.6
 openai==3.19.2
 psycopg[binary]==3.3.6
 pydantic-settings==2.15.0
+pyotp==2.10.0
 pylatexenc==2.11
 stripe==15.6.1
 onnxruntime==1.30.0
