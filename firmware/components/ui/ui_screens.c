@@ -12,8 +12,10 @@
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
 
-/* Settings layout: cards on the theme background. Flat fills and 1-2 px borders only - no
- * shadows, gradients, glows or translucent layers, so scrolling and the screen slide stay cheap. */
+/* Settings layout: cards on the theme background, on two pages that fit the screen (no scrolling):
+ * page 1 theme, brightness, volume, screen timeout; page 2 standby clock, language, Wi-Fi.
+ * Swipe left / right (or the arrows at the bottom) to change page. Flat fills and 1-2 px borders
+ * only - no shadows, gradients, glows or translucent layers, so the screen slide stays cheap. */
 #define CARD_W          386
 #define CARD_PAD        12
 #define CARD_INNER_W    (CARD_W - 2 * CARD_PAD)
@@ -27,6 +29,11 @@
 /* The close X (72 px + 28 px touch margin) reaches ~102 px down: the first card starts below it. */
 #define HEADER_GAP      36
 #define LANG_PILL_W     100
+#define CARD_GAP        8
+#define NAV_H           48      /* page arrows and dots, at the bottom */
+#define NAV_BOTTOM      6
+#define NAV_BTN_W       72
+#define PAGE_COUNT      2
 
 /* ---- settings screen ---- */
 static lv_obj_t *s_set_scr;
@@ -49,6 +56,11 @@ static lv_obj_t *s_btn_lang_en;     /* English */
 static lv_obj_t *s_btn_lang_other;  /* "Other" or the chosen foreign language: opens the picker */
 static lv_obj_t *s_lbl_lang_other;
 static lv_obj_t *s_lbl_wifi_btn;
+static lv_obj_t *s_pages[PAGE_COUNT];
+static lv_obj_t *s_dots[PAGE_COUNT];
+static lv_obj_t *s_nav_prev;
+static lv_obj_t *s_nav_next;
+static int       s_page;
 
 /* Colours derived from the theme, refreshed in ui_settings_refresh(). */
 static lv_style_t s_st_card;
@@ -232,12 +244,41 @@ static void wifi_btn_cb(lv_event_t *e)
     }
 }
 
+static void show_page(int page)
+{
+    s_page = page;
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        lv_obj_set_flag(s_pages[i], LV_OBJ_FLAG_HIDDEN, i != page);
+        lv_obj_set_state(s_dots[i], LV_STATE_CHECKED, i == page);
+    }
+    /* The arrow that leads nowhere is hidden but keeps its place, so the dots stay centred. */
+    lv_obj_set_style_opa(s_nav_prev, page > 0 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_opa(s_nav_next, page < PAGE_COUNT - 1 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_flag(s_nav_prev, LV_OBJ_FLAG_CLICKABLE, page > 0);
+    lv_obj_set_flag(s_nav_next, LV_OBJ_FLAG_CLICKABLE, page < PAGE_COUNT - 1);
+}
+
+/* Left: next page. Right: previous page, or back to the watchface from page 1. Down: watchface. */
 static void settings_gesture_cb(lv_event_t *e)
 {
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
-    if (dir == LV_DIR_RIGHT || dir == LV_DIR_BOTTOM) {
+    if (dir == LV_DIR_LEFT && s_page < PAGE_COUNT - 1) {
+        lv_indev_wait_release(lv_indev_active());
+        show_page(s_page + 1);
+    } else if (dir == LV_DIR_RIGHT && s_page > 0) {
+        lv_indev_wait_release(lv_indev_active());
+        show_page(s_page - 1);
+    } else if (dir == LV_DIR_RIGHT || dir == LV_DIR_BOTTOM) {
         lv_indev_wait_release(lv_indev_active());
         ui_go_watchface();
+    }
+}
+
+static void nav_cb(lv_event_t *e)
+{
+    int page = s_page + (int)(intptr_t)lv_event_get_user_data(e);
+    if (page >= 0 && page < PAGE_COUNT) {
+        show_page(page);
     }
 }
 
@@ -374,6 +415,56 @@ static lv_obj_t *make_level_card(lv_obj_t *parent, const char *icon, lv_obj_t **
     return s;
 }
 
+/* A page: a column of cards under the header, in the height the screen leaves above the page arrows. */
+static lv_obj_t *make_page(lv_obj_t *parent)
+{
+    lv_obj_t *p = make_box(parent);
+    lv_obj_set_width(p, BOARD_LCD_H_RES);
+    lv_obj_set_flex_grow(p, 1);
+    lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(p, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(p, CARD_GAP, 0);
+    return p;
+}
+
+static lv_obj_t *make_nav_arrow(lv_obj_t *parent, const char *icon, int step)
+{
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_set_size(b, NAV_BTN_W, NAV_H);
+    lv_obj_set_ext_click_area(b, 10);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(b, nav_cb, LV_EVENT_CLICKED, (void *)(intptr_t)step);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &buddy_font_28, 0);
+    lv_label_set_text(l, icon);
+    lv_obj_center(l);
+    return b;
+}
+
+/* [<]  o o  [>] at the bottom: the arrows change page, the dots show which one is open. */
+static void build_nav(lv_obj_t *scr)
+{
+    lv_obj_t *nav = make_box(scr);
+    lv_obj_add_flag(nav, LV_OBJ_FLAG_FLOATING);
+    lv_obj_set_size(nav, LV_SIZE_CONTENT, NAV_H);
+    lv_obj_set_flex_flow(nav, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(nav, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(nav, 14, 0);
+    /* floating: aligned to the padded content area, so undo the screen's bottom padding */
+    lv_obj_align(nav, LV_ALIGN_BOTTOM_MID, 0, -NAV_BOTTOM + lv_obj_get_style_pad_bottom(scr, 0));
+    s_nav_prev = make_nav_arrow(nav, ICON_LEFT, -1);
+    for (int i = 0; i < PAGE_COUNT; i++) {
+        lv_obj_t *d = make_box(nav);
+        lv_obj_add_style(d, &s_st_seg, 0);
+        lv_obj_add_style(d, &s_st_seg_on, LV_STATE_CHECKED);
+        lv_obj_set_size(d, 12, 12);
+        lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+        s_dots[i] = d;
+    }
+    s_nav_next = make_nav_arrow(nav, ICON_RIGHT, +1);
+}
+
 static void build_settings(void)
 {
     lv_style_init(&s_st_card);
@@ -401,13 +492,13 @@ static void build_settings(void)
     s_set_scr = lv_obj_create(NULL);
     lv_obj_add_style(s_set_scr, ui_style_screen(), 0);
     lv_obj_add_event_cb(s_set_scr, settings_gesture_cb, LV_EVENT_GESTURE, NULL);
-    lv_obj_set_scroll_dir(s_set_scr, LV_DIR_VER);
+    lv_obj_remove_flag(s_set_scr, LV_OBJ_FLAG_SCROLLABLE);     /* two pages instead of a long scroll */
     lv_obj_set_scrollbar_mode(s_set_scr, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(s_set_scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_set_scr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_top(s_set_scr, 18, 0);
-    lv_obj_set_style_pad_bottom(s_set_scr, 40, 0);
-    lv_obj_set_style_pad_row(s_set_scr, 10, 0);
+    lv_obj_set_style_pad_bottom(s_set_scr, NAV_H + NAV_BOTTOM + 4, 0);
+    lv_obj_set_style_pad_row(s_set_scr, 0, 0);
 
     /* Header: Wi-Fi status | title | close (back to the watchface; swiping right or down does the same).
      * The battery shows on the watchface only. */
@@ -427,8 +518,14 @@ static void build_settings(void)
     lv_obj_center(s_set_title);
     lv_obj_t *close = ui_add_close_x(s_set_scr, back_cb);   /* the same X as on every screen */
 
+    lv_obj_t *p1 = make_page(s_set_scr);
+    lv_obj_t *p2 = make_page(s_set_scr);
+    s_pages[0] = p1;
+    s_pages[1] = p2;
+
+    /* ---- page 1 ---- */
     /* Theme: a switch between the two themes, blue (off) and white (on) */
-    lv_obj_t *trow = make_row_card(s_set_scr, SET_ICON_PALETTE, &s_lbl_theme);
+    lv_obj_t *trow = make_row_card(p1, SET_ICON_PALETTE, &s_lbl_theme);
     settings_theme_t blue, white;
     settings_theme_preset("midnight", &blue);
     settings_theme_preset("mono", &white);
@@ -445,11 +542,12 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_theme_sw, theme_cb, LV_EVENT_VALUE_CHANGED, NULL);
     add_theme_dot(trow, white.accent);
 
-    s_sld_bri = make_level_card(s_set_scr, SET_ICON_SUN, &s_lbl_bri, &s_val_bri, s_seg_bri, 5, 100);
-    s_sld_vol = make_level_card(s_set_scr, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, s_seg_vol, 0, 100);
-    make_tap_row(s_set_scr, SET_ICON_POWER, &s_lbl_timeout, &s_val_timeout, timeout_cb);
+    s_sld_bri = make_level_card(p1, SET_ICON_SUN, &s_lbl_bri, &s_val_bri, s_seg_bri, 5, 100);
+    s_sld_vol = make_level_card(p1, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, s_seg_vol, 0, 100);
+    make_tap_row(p1, SET_ICON_POWER, &s_lbl_timeout, &s_val_timeout, timeout_cb);
 
-    lv_obj_t *arow = make_row_card(s_set_scr, SET_ICON_CLOCK, &s_lbl_aod);
+    /* ---- page 2 ---- */
+    lv_obj_t *arow = make_row_card(p2, SET_ICON_CLOCK, &s_lbl_aod);
     s_aod_sw = lv_switch_create(arow);
     lv_obj_set_size(s_aod_sw, 64, 34);
     lv_obj_set_style_bg_color(s_aod_sw, lv_color_hex(0x3A3F48), LV_PART_MAIN);
@@ -460,7 +558,7 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_aod_sw, aod_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* Language: English | Other (opens the picker) */
-    lv_obj_t *lang = make_row_card(s_set_scr, SET_ICON_GLOBE, &s_lbl_lang);
+    lv_obj_t *lang = make_row_card(p2, SET_ICON_GLOBE, &s_lbl_lang);
     s_btn_lang_en = lv_button_create(lang);
     s_btn_lang_other = lv_button_create(lang);
     lv_obj_t *pills[2] = { s_btn_lang_en, s_btn_lang_other };
@@ -487,7 +585,10 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_btn_lang_en, lang_en_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(s_btn_lang_other, lang_other_cb, LV_EVENT_CLICKED, NULL);
 
-    make_tap_row(s_set_scr, SET_ICON_WIFI, &s_lbl_wifi_btn, NULL, wifi_btn_cb);
+    make_tap_row(p2, SET_ICON_WIFI, &s_lbl_wifi_btn, NULL, wifi_btn_cb);
+
+    build_nav(s_set_scr);
+    show_page(0);
     lv_obj_move_foreground(close);
 }
 
@@ -575,12 +676,21 @@ void ui_settings_refresh(void)
     lv_obj_set_style_bg_color(s_aod_sw, g_ui_theme.accent, LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(s_aod_sw, ui_on_color(g_ui_theme.accent), LV_PART_KNOB | LV_STATE_CHECKED);
     lv_obj_set_state(s_aod_sw, LV_STATE_CHECKED, g_ui_settings.standby_clock);
+    lv_obj_set_style_text_color(s_nav_prev, g_ui_theme.accent, 0);
+    lv_obj_set_style_text_color(s_nav_next, g_ui_theme.accent, 0);
 }
 
 void ui_settings_open(void)
 {
     ui_settings_refresh();
-    lv_obj_scroll_to_y(s_set_scr, 0, LV_ANIM_OFF);  /* always opens at the top, wherever it was left */
+    show_page(0);                                   /* always opens on page 1, wherever it was left */
+    ui_load_screen(s_set_scr, true);
+}
+
+/* Back from the language picker: stays on the page it was opened from (page 2). */
+void ui_settings_return(void)
+{
+    ui_settings_refresh();
     ui_load_screen(s_set_scr, true);
 }
 

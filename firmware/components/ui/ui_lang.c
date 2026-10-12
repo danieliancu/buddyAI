@@ -92,7 +92,7 @@ static void pick_cb(lv_event_t *e)
     g_ui_cb.on_settings_change(c);
     cJSON_Delete(c);
     show_keyboard(false);
-    ui_settings_open();
+    ui_settings_return();
 }
 
 static void rebuild(void)
@@ -144,7 +144,7 @@ static void rebuild(void)
 static void close_cb(lv_event_t *e)
 {
     show_keyboard(false);
-    ui_settings_open();
+    ui_settings_return();
 }
 
 static void search_cb(lv_event_t *e)

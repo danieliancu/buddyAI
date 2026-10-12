@@ -219,6 +219,7 @@ extern ui_callbacks_t  g_ui_cb;
 /* ---- screens (ui_screens.c) ---- */
 void ui_screens_init(void);
 void ui_settings_open(void);
+void ui_settings_return(void);     /* back from the language picker: keeps the settings page */
 void ui_settings_refresh(void);
 /* Settings header: battery text / colour and Wi-Fi icon colour, mirrored from the watchface. */
 void ui_settings_status(lv_color_t wifi_color, lv_opa_t wifi_opa);
