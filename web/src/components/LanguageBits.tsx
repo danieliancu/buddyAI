@@ -162,13 +162,14 @@ export function LanguagePicker({
         }}
         onKeyDown={onKey}
         className={cx(
-          "h-10 w-full rounded-lg border bg-bg pr-8 pl-3 text-sm text-fg placeholder:text-muted/70",
-          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30",
+          // same height, corners and fill as Input / Select (ui.tsx), so it lines up with the dropdowns beside it
+          "h-(--h-input) w-full rounded-(--r-input) border bg-(--input-bg) pr-10 pl-3 text-sm text-fg placeholder:text-muted/70",
+          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25",
           invalid ? "border-danger" : "border-border",
         )}
       />
       <ChevronDown
-        className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted"
+        className="pointer-events-none absolute top-1/2 right-3.5 size-[1.15rem] -translate-y-1/2 text-muted"
         aria-hidden
       />
       {open && (
@@ -176,7 +177,7 @@ export function LanguagePicker({
           ref={list}
           id={listId}
           role="listbox"
-          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-surface py-1 text-sm shadow-lg"
+          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-(--r-input) border border-border bg-surface py-1 text-sm shadow-lg"
         >
           {filtered.length === 0 && <li className="px-3 py-2 text-muted">No matching language</li>}
           {filtered.map((it, i) => {
