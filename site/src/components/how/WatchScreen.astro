@@ -1,0 +1,197 @@
+---
+/* The watch, front view, with its screen simulated in HTML: a copy of the firmware UI (see
+ * watch-screen.css). Lists, details and the conversation are filled in by src/scripts/how-sim.ts. */
+import { Image } from "astro:assets";
+import photo from "../../assets/how/watch-front.png";
+import wave from "../../assets/how/wave.png";
+import waveWhite from "../../assets/how/wave-white.png";
+import "@fontsource/noto-sans/500.css";
+import "@fontsource/noto-sans/700.css";
+import "./watch-screen.css";
+
+const g = (cp: number) => String.fromCodePoint(cp);
+const I = {
+  mic: g(0xf130), pen: g(0xf304), cal: g(0xf073), gear: g(0xf013), wifi: g(0xf1eb), batt: g(0xf241),
+  close: g(0xf00d), left: g(0xf053), right: g(0xf054), palette: g(0xf53f), sun: g(0xf185), vol: g(0xf028),
+  power: g(0xf011), clock: g(0xf017), globe: g(0xf0ac), lock: g(0xf023),
+};
+
+/* A decorative QR code (finder squares + a fixed pattern), like the one the watch shows in Wi-Fi setup. */
+const N = 25;
+const cells: [number, number][] = [];
+let seed = 1234567;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const finder = (x: number, y: number) =>
+  [[0, 0], [N - 7, 0], [0, N - 7]].some(([fx, fy]) => x >= fx - 1 && x <= fx + 7 && y >= fy - 1 && y <= fy + 7);
+for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (!finder(x, y) && rnd() < 0.48) cells.push([x, y]);
+const finders = [[0, 0], [N - 7, 0], [0, N - 7]];
+
+const marks = Array.from({ length: 12 }, (_, i) => {
+  const a = (i * 30 * Math.PI) / 180;
+  const len = i % 3 === 0 ? 24 : 14;
+  const r1 = 170, r0 = 170 - len;
+  return { x1: 205 + r0 * Math.sin(a), y1: 251 - r0 * Math.cos(a), x2: 205 + r1 * Math.sin(a), y2: 251 - r1 * Math.cos(a) };
+});
+---
+<div class="ws" data-ws>
+  <Image src={photo} alt="The olácompanion watch, front view" widths={[360, 560, 820, 1230]} sizes="(min-width: 1024px) 520px, 92vw" class="ws-photo" loading="eager" />
+
+  <div class="ws-glass">
+    <div class="ws-screen" data-screen data-theme="midnight" data-conv="idle" aria-live="polite">
+      <!-- watchface -->
+      <section class="ws-view is-on" data-view="watchface" aria-label="Watchface">
+        <div class="wf-status">
+          <span class="fa wf-wifi">{I.wifi}</span>
+          <span class="wf-hint" data-hint></span>
+          <span class="wf-batt"><span data-batt>82%</span><span class="fa">{I.batt}</span></span>
+        </div>
+        <div class="wf-time" data-time>09:41</div>
+        <div class="wf-date" data-date>Monday, 12 October</div>
+        <div class="wf-halo h1"></div>
+        <div class="wf-halo h2"></div>
+        <img class="wf-wave" data-wave src={wave.src} data-blue={wave.src} data-white={waveWhite.src} alt="" width="410" height="130" />
+        <div class="wf-ring"></div>
+        <div class="wf-mic fa" role="button" tabindex="0" aria-label="Tap to talk" data-act="talk">{I.mic}</div>
+        <div class="wf-greet" data-greet>
+          <b>Hi there!</b>
+          <span>How can I help you today?</span>
+        </div>
+        <div class="wf-short s1 fa" role="button" tabindex="0" aria-label="Notes" data-act="open:notes">{I.pen}<span class="wf-badge" data-badge="notes">3</span></div>
+        <div class="wf-short s2 fa" role="button" tabindex="0" aria-label="Reminders" data-act="open:reminders">{I.cal}<span class="wf-badge" data-badge="reminders">2</span></div>
+        <div class="wf-short s3 fa" role="button" tabindex="0" aria-label="Settings" data-act="open:settings">{I.gear}</div>
+      </section>
+
+      <!-- conversation -->
+      <section class="ws-view" data-view="chat" aria-label="Conversation">
+        <div class="ch-title">Olá!</div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+        <div class="ch-list" data-chat></div>
+        <div class="ch-ring"></div>
+        <div class="ch-spin"></div>
+        <div class="ch-mic" role="button" tabindex="0" aria-label="Talk" data-act="talk"><span class="fa" data-chat-icon>{I.mic}</span></div>
+      </section>
+
+      <!-- notes / reminders: lists and details are rendered by the script -->
+      <section class="ws-view" data-view="notes" aria-label="Notes">
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+        <div class="ls-body" data-list="notes"></div>
+      </section>
+      <section class="ws-view" data-view="note" aria-label="Note">
+        <div class="dt-head" data-note-head>Note #1</div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:notes">{I.close}</div>
+        <div class="dt-body" data-note-body></div>
+        <div class="dt-bar" data-note-bar></div>
+      </section>
+      <section class="ws-view" data-view="reminders" aria-label="Reminders">
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+        <div class="ls-body" data-list="reminders"></div>
+      </section>
+      <section class="ws-view" data-view="reminder" aria-label="Reminder">
+        <div class="dt-head" data-rem-head>Reminder #1</div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:reminders">{I.close}</div>
+        <div class="dt-body" data-rem-body></div>
+        <div class="dt-bar" data-rem-bar></div>
+      </section>
+
+      <!-- settings: two pages -->
+      <section class="ws-view" data-view="settings" aria-label="Settings" data-swipe>
+        <div class="st-head">
+          <span class="fa wf-wifi">{I.wifi}</span>
+          <h4>Settings</h4>
+        </div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+
+        <div class="st-page is-on" data-page="0">
+          <div class="st-card st-row">
+            <span class="st-ico fa">{I.palette}</span><span class="st-name">Theme</span>
+            <span class="st-dot" style="background:#4f8cff"></span>
+            <span class="st-sw theme" role="switch" aria-checked="false" aria-label="Theme: white" tabindex="0" data-act="theme"></span>
+            <span class="st-dot" style="background:#ffffff"></span>
+          </div>
+          <div class="st-card" data-level="brightness">
+            <div class="st-level-top"><span class="st-ico fa">{I.sun}</span><span class="st-name">Brightness</span><span class="st-val" data-val>80%</span></div>
+            <div class="st-blocks" role="slider" aria-label="Brightness" aria-valuemin="5" aria-valuemax="100" tabindex="0">{Array.from({ length: 10 }, () => <i></i>)}</div>
+          </div>
+          <div class="st-card" data-level="volume">
+            <div class="st-level-top"><span class="st-ico fa">{I.vol}</span><span class="st-name">Volume</span><span class="st-val" data-val>60%</span></div>
+            <div class="st-blocks" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" tabindex="0">{Array.from({ length: 10 }, () => <i></i>)}</div>
+          </div>
+          <div class="st-card st-row ws-tap" role="button" tabindex="0" data-act="timeout">
+            <span class="st-ico fa">{I.power}</span><span class="st-name">Screen timeout</span><span data-timeout>15 s</span><span class="st-chev fa">{I.right}</span>
+          </div>
+        </div>
+
+        <div class="st-page" data-page="1">
+          <div class="st-card st-row">
+            <span class="st-ico fa">{I.clock}</span><span class="st-name">Clock in standby</span>
+            <span class="st-sw aod" role="switch" aria-checked="false" aria-label="Clock in standby" tabindex="0" data-act="aod"></span>
+          </div>
+          <div class="st-card st-row">
+            <span class="st-ico fa">{I.globe}</span><span class="st-name">Language</span>
+            <span class="st-pill on" role="button" tabindex="0" data-act="lang:en">English</span>
+            <span class="st-pill" role="button" tabindex="0" data-act="lang:other" data-lang-other>Other</span>
+          </div>
+          <div class="st-card st-row ws-tap" role="button" tabindex="0" data-act="open:wifi">
+            <span class="st-ico fa">{I.wifi}</span><span class="st-name">Wi-Fi setup</span><span class="st-chev fa">{I.right}</span>
+          </div>
+        </div>
+
+        <div class="st-nav">
+          <span class="st-arrow fa off" role="button" tabindex="0" aria-label="Previous page" data-act="page:-1">{I.left}</span>
+          <span class="st-pdot on" data-pdot></span>
+          <span class="st-pdot" data-pdot></span>
+          <span class="st-arrow fa" role="button" tabindex="0" aria-label="Next page" data-act="page:1">{I.right}</span>
+        </div>
+      </section>
+
+      <!-- onboarding -->
+      <section class="ws-view" data-view="wifi" aria-label="Wi-Fi setup">
+        <div class="ms wi">
+          <div class="ms-title">Wi-Fi setup</div>
+          <svg class="wi-qr" viewBox={`0 0 ${N} ${N}`} shape-rendering="crispEdges" aria-hidden="true">
+            {finders.map(([x, y]) => (
+              <g>
+                <rect x={x} y={y} width="7" height="7" fill="#000" />
+                <rect x={x + 1} y={y + 1} width="5" height="5" fill="#fff" />
+                <rect x={x + 2} y={y + 2} width="3" height="3" fill="#000" />
+              </g>
+            ))}
+            {cells.map(([x, y]) => <rect x={x} y={y} width="1" height="1" fill="#000" />)}
+          </svg>
+          <!-- only on the iPhone step of the simulation (the real watch does not show it) -->
+          <div class="wi-join" data-wi-join hidden>iPhone: join the Wi-Fi network<br /><span class="wi-net">ola-1A2B</span></div>
+          <div class="wi-pass">K7P4 M9XQ</div>
+          <div class="wi-hint">iPhone: scan the code with the Camera.<br />Android: tap Connect to watch in your ola account.</div>
+        </div>
+      </section>
+      <section class="ws-view" data-view="pairing" aria-label="Pairing">
+        <div class="ms">
+          <div class="ms-ico fa">{I.lock}</div>
+          <div class="ms-title">Pair this watch</div>
+          <div>Open the ola web app, choose<br />"Add watch" and enter this code:</div>
+          <div class="ms-code">123 456</div>
+        </div>
+      </section>
+      <section class="ws-view" data-view="message" aria-label="Message">
+        <div class="ms"><div class="ms-title" data-msg>Turning off…</div></div>
+      </section>
+
+      <!-- standby clock -->
+      <section class="ws-view" data-view="standby" aria-label="Standby clock">
+        <svg class="sb-face" viewBox="0 0 410 502" aria-hidden="true">
+          {marks.map((m) => <line x1={m.x1} y1={m.y1} x2={m.x2} y2={m.y2} stroke="#5a5a5a" stroke-width="3" stroke-linecap="round" />)}
+          <line data-hand="h" x1="205" y1="251" x2="205" y2="156" stroke="#9a9a9a" stroke-width="4" stroke-linecap="round" />
+          <line data-hand="m" x1="205" y1="251" x2="205" y2="136" stroke="#9a9a9a" stroke-width="3" stroke-linecap="round" />
+        </svg>
+      </section>
+      <section class="ws-view" data-view="off" aria-label="Screen off"></section>
+    </div>
+  </div>
+
+  <button type="button" class="ws-hot" data-hot="talk" aria-label="Top button: talk">
+    <span class="ws-hot-label">Talk</span>
+  </button>
+  <button type="button" class="ws-hot" data-hot="power" aria-label="Bottom button: power (hold to turn off)">
+    <span class="ws-hot-label">Power</span>
+  </button>
+</div>

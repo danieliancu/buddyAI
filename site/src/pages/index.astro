@@ -5,7 +5,7 @@ import { Image, getImage } from "astro:assets";
 import Base from "../layouts/Base.astro";
 import Icon from "../components/Icon.astro";
 import Highlights from "../components/Highlights.astro";
-import Steps from "../components/Steps.astro";
+import HowSimulator from "../components/how/HowSimulator.astro";
 import UseCases from "../components/UseCases.astro";
 import Designed from "../components/Designed.astro";
 import Testimonials from "../components/Testimonials.astro";
@@ -120,7 +120,7 @@ const jsonLd = [
     <div class="container-x">
       <h2 id="how-title" class="text-2xl font-extrabold tracking-tight text-fg">How it Works</h2>
       <p class="mt-1 text-muted">Get started in just a few simple steps.</p>
-      <div class="mt-6"><Steps /></div>
+      <div class="mt-6"><HowSimulator embedded /></div>
     </div>
   </section>
 

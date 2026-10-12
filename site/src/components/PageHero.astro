@@ -8,8 +8,10 @@ interface Props {
   fitEm?: number;
   /** Phones: title and gradient on one line (from sm up they are on two). */
   oneLineOnPhone?: boolean;
+  /** Title and gradient on one line on every screen. */
+  oneLine?: boolean;
 }
-const { title, gradient, lead, eyebrow, fitEm, oneLineOnPhone = false } = Astro.props;
+const { title, gradient, lead, eyebrow, fitEm, oneLineOnPhone = false, oneLine = false } = Astro.props;
 const line = fitEm ? "whitespace-nowrap" : undefined;
 ---
 <section class="container-x pb-6 pt-14 sm:pt-20" aria-labelledby="page-title">
@@ -17,9 +19,9 @@ const line = fitEm ? "whitespace-nowrap" : undefined;
   <h1
     id="page-title"
     style={fitEm ? `--fit-em: ${fitEm}` : undefined}
-    class:list={["mt-2 max-w-4xl font-extrabold leading-tight tracking-tight text-fg sm:text-5xl", fitEm ? "fit-title" : "text-4xl", oneLineOnPhone && "whitespace-nowrap sm:whitespace-normal"]}
+    class:list={["mt-2 max-w-4xl font-extrabold leading-tight tracking-tight text-fg sm:text-5xl", fitEm ? "fit-title" : "text-4xl", oneLineOnPhone && !oneLine && "whitespace-nowrap sm:whitespace-normal", oneLine && "whitespace-nowrap"]}
   >
-    <span class={line}>{title}</span>{gradient && <>{" "}<br class={oneLineOnPhone ? "hidden sm:inline" : undefined} /><span class:list={["text-gradient", line]}>{gradient}</span></>}
+    <span class={line}>{title}</span>{gradient && <>{" "}{!oneLine && <br class={oneLineOnPhone ? "hidden sm:inline" : undefined} />}<span class:list={["text-gradient", line]}>{gradient}</span></>}
   </h1>
   {lead && <p class="mt-5 max-w-2xl text-lg text-muted">{lead}</p>}
   <slot />

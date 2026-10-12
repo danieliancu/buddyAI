@@ -1,0 +1,326 @@
+---
+/* "See it in action": tabs (Onboarding, Home, Talk, Notes, Reminders, Settings) over the watch with its screen
+ * simulated in HTML. Each step drives the screen; the screen and the side buttons also work directly. */
+import WatchScreen from "./WatchScreen.astro";
+import Icon from "../Icon.astro";
+import { tabs } from "./tabs";
+import { config, prices } from "../../config";
+
+interface Props {
+  /** Inside another section (the home page): no heading of its own, no #tab links in the address. */
+  embedded?: boolean;
+}
+const { embedded = false } = Astro.props;
+const list = tabs(prices.trialMonths);
+/** Onboarding comes first in the row, but the section opens on Home. */
+const DEFAULT_TAB = "home";
+const Root = embedded ? "div" : "section";
+---
+<!-- its own page: a full-width tinted band like the home page's "How it Works" (embedded: the home page gives it) -->
+<Root class:list={[!embedded && "bg-bg-2 py-10 lg:py-14"]} style="--sim-bg: var(--bg-2)" aria-labelledby={embedded ? undefined : "sim-title"} data-howsim={embedded ? "" : "links"}>
+  <div class:list={[!embedded && "container-x"]}>
+  {!embedded && (
+    <div class="mx-auto hidden max-w-3xl text-center lg:block">
+      <h2 id="sim-title" class="text-2xl font-bold tracking-tight text-fg sm:text-3xl">See it in action</h2>
+      <p class="mt-3 text-base text-muted sm:text-lg">
+        Pick a part of the watch and follow the steps, or use it yourself: tap the screen, swipe, and press the two side buttons.
+      </p>
+    </div>
+  )}
+
+  <div class:list={["sim-tabbar", !embedded && "lg:mt-6"]} data-tabbar>
+    <div role="tablist" aria-label="Parts of the watch" class="sim-tabs no-scrollbar">
+      {list.map((t) => (
+        <button type="button" role="tab" id={`tab-${t.id}`} aria-controls={`panel-${t.id}`} aria-selected={t.id === DEFAULT_TAB ? "true" : "false"} tabindex={t.id === DEFAULT_TAB ? 0 : -1} class="sim-tab">
+          {t.label}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  <div class="mt-2 grid items-start gap-3 lg:mt-10 lg:grid-cols-[minmax(0,500px)_minmax(0,1fr)] lg:gap-12">
+    <div class="sim-stage">
+      <div class="sim-device">
+        <WatchScreen />
+      </div>
+      <!-- phones and tablets: Play all sits on the picture (the panel's own button is desktop only) -->
+      <button type="button" class="sim-play-over" data-demo data-demo-stage>
+        <Icon name="play" size={16} /> Play all
+      </button>
+    </div>
+
+    <div class="lg:relative lg:self-stretch">
+      {list.map((t) => (
+        <div role="tabpanel" id={`panel-${t.id}`} aria-labelledby={`tab-${t.id}`} hidden={t.id !== DEFAULT_TAB} class="sim-panel">
+          <div class="hidden shrink-0 flex-wrap items-end justify-between gap-3 lg:flex">
+            <div class="min-w-0">
+              <h3 class="text-xl font-bold tracking-tight text-fg sm:text-2xl">{t.title}</h3>
+              <p class="mt-1 text-muted">{t.lead}</p>
+            </div>
+            <button type="button" class="btn btn-ghost !min-h-10 !py-2 text-sm" data-demo>
+              <Icon name="play" size={16} /> Play all
+            </button>
+          </div>
+          <ol class="sim-steps mt-5 space-y-3" data-steps>
+            {t.steps.map((st, n) => (
+              <li>
+                <button type="button" class="sim-step" data-step data-run={st.run} data-hot={st.hot} aria-pressed="false">
+                  <span class="sim-num">{n + 1}</span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block font-semibold text-fg">{st.title}</span>
+                    <span class="mt-1 block text-sm text-muted">{st.text}</span>
+                    {st.say && (
+                      <span class="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span class="sim-say-label"><Icon name="mic" size={13} /> Say</span>
+                        {st.say.map((p) => <span class="sim-say">“{p}”</span>)}
+                      </span>
+                    )}
+                    {st.touch && (
+                      <span class="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+                        <Icon name="tap" size={14} /> {st.touch}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {t.id === "onboarding" && (
+            <p class="mt-4 shrink-0 text-sm text-muted">
+              Already have a watch? <a class="link" href={config.appUrl}>Sign in to your olá account</a>.
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+  </div>
+</Root>
+
+<style>
+  .sim-tabs {
+    display: flex;
+    gap: 0.25rem;
+    max-width: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding: 0.3rem;
+    border-radius: 999px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+  }
+  .sim-tab {
+    flex-shrink: 0;
+    scroll-snap-align: center;
+    padding: 0.55rem 1.05rem;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--muted);
+    transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+  }
+  .sim-tab:hover {
+    color: var(--fg);
+  }
+  .sim-tab[aria-selected="true"] {
+    color: #fff;
+    background: linear-gradient(90deg, var(--btn-from), var(--btn-to));
+    box-shadow: 0 6px 16px rgba(91, 76, 240, 0.3);
+  }
+  /* Phones and tablets: the tab row sticks under the site menu, the watch under the tab row
+     (--tabbar-h is measured by how-sim.ts), and the steps box fills the rest of the screen. */
+  .sim-tabbar {
+    display: flex;
+    justify-content: center;
+  }
+  @media (max-width: 1023.98px) {
+    .sim-tabbar {
+      position: sticky;
+      top: 4rem;
+      z-index: 15;
+      margin-inline: -1rem;
+      padding: 0.5rem 1rem;
+      background: var(--sim-bg);
+    }
+    .sim-stage {
+      top: calc(4rem + var(--tabbar-h, 3.6rem)) !important;
+    }
+  }
+  @media (min-width: 640px) and (max-width: 1023.98px) {
+    .sim-tabbar {
+      margin-inline: -1.5rem;
+      padding-inline: 1.5rem;
+    }
+  }
+
+  /* The watch: on phones it stays at the top of the screen while the steps scroll under it. */
+  .sim-stage {
+    position: sticky;
+    top: 4rem;
+    z-index: 10;
+    margin-inline: -1rem;
+    padding: 0.5rem 1rem;
+    background: #000;
+  }
+  .sim-device {
+    width: min(70vw, 36vh, 340px);
+    margin-inline: auto;
+  }
+  @media (min-width: 640px) {
+    .sim-stage {
+      margin-inline: 0;
+      border-radius: 1.5rem;
+      padding: 1rem;
+    }
+    .sim-device {
+      width: min(100%, 52vh, 420px);
+    }
+  }
+  @media (min-width: 1024px) {
+    .sim-stage {
+      top: 5.5rem;
+      padding: 1.5rem;
+    }
+    .sim-device {
+      width: min(100%, 68vh, 460px);
+    }
+  }
+
+  /* The steps scroll inside a box (thin scrollbar); the chosen step is scrolled to the top, with half of the
+     one before it still showing (how-sim.ts). Desktop: the box is as tall as the watch. Phones and tablets:
+     it fills the screen under the watch (height set by how-sim.ts), and the page scroll carries on past it. */
+  .sim-panel[hidden] {
+    display: none !important;
+  }
+  .sim-steps {
+    position: relative;
+    overflow-y: auto;
+    padding: 1rem 0.5rem 0 0.25rem;
+    margin-top: 0.25rem !important;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1rem, #000 calc(100% - 1.5rem), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 1rem, #000 calc(100% - 1.5rem), transparent 100%);
+  }
+  .sim-steps::-webkit-scrollbar {
+    width: 6px;
+  }
+  .sim-steps::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+  }
+  .sim-steps::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  @media (min-width: 1024px) {
+    .sim-panel {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .sim-steps {
+      flex: 1;
+      min-height: 0;
+      overscroll-behavior: contain;
+      padding: 1.25rem 0.75rem 0 0.25rem;
+      margin-top: 0.5rem !important;
+    }
+  }
+
+  .sim-step {
+    display: flex;
+    gap: 0.85rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.9rem 1rem;
+    border-radius: 0.875rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+    cursor: pointer;
+  }
+  .sim-step:hover {
+    border-color: var(--border-strong);
+  }
+  .sim-step.is-active {
+    border-color: var(--accent);
+    background: var(--bg-2);
+    box-shadow: 0 8px 22px rgba(91, 76, 240, 0.12);
+  }
+  .sim-num {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent);
+    background: rgba(91, 76, 240, 0.1);
+  }
+  .sim-step.is-active .sim-num {
+    color: #fff;
+    background: linear-gradient(90deg, var(--btn-from), var(--btn-to));
+  }
+  .sim-say-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--violet);
+  }
+  .sim-say {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--fg);
+    background: #fff;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+  }
+  .sim-play-over {
+    position: absolute;
+    left: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+  }
+  .sim-play-over:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  @media (min-width: 1024px) {
+    /* desktop: Play all is next to the steps, not on the picture */
+    .sim-play-over {
+      display: none;
+    }
+  }
+  /* while playing, the button on the picture stays fully visible (it is always there) */
+  .sim-play-over[aria-busy="true"] {
+    opacity: 1 !important;
+    border-color: rgba(139, 123, 255, 0.7);
+  }
+  [data-demo][aria-busy="true"] {
+    opacity: 0.6;
+  }
+</style>
+
+<script>
+  import "../../scripts/how-sim";
+</script>
