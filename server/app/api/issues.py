@@ -7,9 +7,10 @@ from sqlmodel import Session
 
 from app.db.models import Device
 from app.db.repositories import IncidentRepo, IssueRepo
+from app import accounts
 from app.db.session import get_session
 from app.issues import issue_out
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(prefix="/api", tags=["issues"], dependencies=[Depends(require_admin)])
 
@@ -32,5 +33,8 @@ def list_issues(
 
 
 @router.delete("/issues")
-def clear_issues(device_id: str | None = None, db: Session = Depends(get_session)) -> dict:
-    return {"deleted": IncidentRepo(db).clear(device_id)[1]}  # the events and the incidents they belong to
+def clear_issues(device_id: str | None = None, db: Session = Depends(get_session),
+                 user: str = Depends(require_admin_role)) -> dict:
+    deleted = IncidentRepo(db).clear(device_id)[1]  # the events and the incidents they belong to
+    accounts.audit(db, user, "issues.clear", device_id=device_id, detail=f"{deleted} deleted")
+    return {"deleted": deleted}

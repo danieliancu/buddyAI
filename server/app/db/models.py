@@ -25,6 +25,14 @@ class AdminUser(SQLModel, table=True):
     username: str = Field(index=True, unique=True, max_length=64)
     password_hash: str
     created_at: datetime = Field(default_factory=utcnow)
+    role: str = Field(default="admin", max_length=20)  # admin | support (app/security.py, role matrix)
+    session_version: int = 0  # bump to sign the operator out everywhere (session "admin_v")
+    disabled: bool = False
+    # Two-factor authentication (TOTP, app/mfa.py): the secret is Fernet-encrypted; set (pending) before
+    # mfa_enabled turns on. recovery_codes: JSON list of bcrypt hashes of the unused recovery codes.
+    mfa_enabled: bool = False
+    totp_secret_enc: Optional[str] = None
+    recovery_codes: Optional[str] = None
 
 
 class Account(SQLModel, table=True):

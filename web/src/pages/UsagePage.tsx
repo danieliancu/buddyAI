@@ -9,6 +9,7 @@ import { KIND_LABEL, STATUS_LABEL, langLabel, langName, langNative, UNIT_LABEL, 
 import { DevicePicker, TurnStatusBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, cx, useAsync } from "../components/ui";
 import { FinanceTab, PlanSettingsTab } from "./FinanceTabs";
+import { useIsAdmin } from "../operator";
 
 const PERIODS = [
   { days: 1, label: "24 h" },
@@ -26,9 +27,14 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
+/** Tabs a "support" operator does not see (money settings; the server refuses their changes anyway). */
+const ADMIN_TABS: Tab[] = ["pricing", "plan"];
+
 export default function UsagePage() {
   const [params, setParams] = useSearchParams();
-  const tab = (TABS.find((t) => t.id === params.get("tab"))?.id ?? "cost") as Tab;
+  const isAdmin = useIsAdmin();
+  const tabs = TABS.filter((t) => isAdmin || !ADMIN_TABS.includes(t.id));
+  const tab = (tabs.find((t) => t.id === params.get("tab"))?.id ?? "cost") as Tab;
   const days = Number(params.get("days")) || 7;
   const deviceId = params.get("device") ?? "";
   const setParam = (k: string, v: string) => {
@@ -45,7 +51,7 @@ export default function UsagePage() {
       <PageHeader title="Usage & performance" subtitle="Estimated provider usage and cost, and response latency (TTFA)." />
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <div className="flex rounded-lg border border-border bg-surface p-0.5" role="tablist">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.id}
               role="tab"

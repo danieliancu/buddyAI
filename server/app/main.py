@@ -17,6 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import languages, usage_ops
 from app.api import accounts_admin, auth, devices, finance, firmware, incidents, issues, live, me, shop, system, usage
+from app.api import audit as audit_api
 from app.api import memory as memory_api
 from app.config import get_settings, load_providers_config
 from app.db.models import utcnow
@@ -135,6 +136,7 @@ def create_app() -> FastAPI:
     )
     for r in (
         auth.router,
+        audit_api.router,
         memory_api.router,
         me.router,
         shop.router,

@@ -17,6 +17,54 @@ export interface AuthStatus {
   web_setup_allowed?: boolean;
 }
 
+/** Operator role: "admin" (everything) or "support" (no system, firmware, money settings or audit log). */
+export type OperatorRole = "admin" | "support";
+
+/** GET /api/auth/me: the signed-in operator. */
+export interface OperatorMe {
+  user: string;
+  username: string;
+  role: OperatorRole;
+  mfa_enabled: boolean;
+  /** The server requires two-factor authentication for every operator (BUDDYAI_ADMIN_MFA_REQUIRED). */
+  mfa_required: boolean;
+  /** Required but not set up yet: only the two-factor setup works until it is. */
+  mfa_setup_needed: boolean;
+  recovery_codes_left: number;
+}
+
+export interface MfaSetup {
+  /** Base32 secret, for typing into an authenticator app. */
+  secret: string;
+  otpauth_uri: string;
+}
+
+export interface AuditEvent {
+  id: number;
+  created_at: string;
+  actor: string;
+  action: string;
+  account_id: number | null;
+  device_id: string | null;
+  detail: string;
+}
+
+export interface AuditPage {
+  total: number;
+  limit: number;
+  offset: number;
+  events: AuditEvent[];
+}
+
+export interface AuditFilters {
+  /** Action prefix, e.g. "operator." */
+  action?: string;
+  actor?: string;
+  account_id?: number | null;
+  limit?: number;
+  offset?: number;
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -722,8 +770,16 @@ export class ApiError extends Error {
       .map((e) => ({ ...e, loc: (e.loc ?? []).filter((p, i) => !(i === 0 && p === "body")) }));
   }
 
+  /** The operator sign-in needs a two-factor code (401 with detail.mfa_required). */
+  get mfaRequired(): boolean {
+    return this.status === 401 && !!this.detail && typeof this.detail === "object" && "mfa_required" in this.detail;
+  }
+
   static describe(status: number, detail: unknown): string {
     if (status === 429) return "Too many attempts, try again in a few minutes.";
+    if (detail && typeof detail === "object" && !Array.isArray(detail) && "message" in detail) {
+      return String((detail as { message: unknown }).message);
+    }
     if (typeof detail === "string") return detail ? detail.charAt(0).toUpperCase() + detail.slice(1) : `Error ${status}`;
     if (Array.isArray(detail)) {
       return detail
@@ -841,11 +897,24 @@ const operatorApi = {
     status: () => get<AuthStatus>("/api/auth/status", { no401: true }),
     setup: (username: string, password: string) =>
       post<{ user: string }>("/api/auth/setup", { username, password }, { no401: true }),
-    login: (username: string, password: string) =>
-      post<{ user: string }>("/api/auth/login", { username, password }, { no401: true }),
+    /** `code`: a 6-digit authenticator code or a recovery code, when the server asks for one (ApiError.mfaRequired). */
+    login: (username: string, password: string, code?: string) =>
+      post<{ user: string }>("/api/auth/login", code ? { username, password, code } : { username, password }, { no401: true }),
     logout: () => post<{ ok: boolean }>("/api/auth/logout", {}, { no401: true }),
-    me: () => get<{ user: string }>("/api/auth/me"),
+    /** Sign this operator out in every browser (including this one). */
+    logoutAll: () => post<{ ok: boolean }>("/api/auth/logout-all", {}, { no401: true }),
+    me: () => get<OperatorMe>("/api/auth/me"),
+    mfa: {
+      /** A new secret (two-factor stays off until `enable` confirms a code). */
+      setup: () => post<MfaSetup>("/api/auth/mfa/setup"),
+      /** Turns two-factor on; returns the recovery codes (shown once). */
+      enable: (code: string) => post<{ recovery_codes: string[]; me: OperatorMe }>("/api/auth/mfa/enable", { code }),
+      disable: (password: string, code: string) => post<{ me: OperatorMe }>("/api/auth/mfa/disable", { password, code }),
+    },
   },
+  /** Global audit log (admin role only), newest first. */
+  audit: (f: AuditFilters = {}) =>
+    get<AuditPage>(`/api/audit${q({ action: f.action, actor: f.actor, account_id: f.account_id, limit: f.limit, offset: f.offset })}`),
   devices: {
     /** All watches, or only those of one customer. */
     list: (accountId?: number) => get<Device[]>(`/api/devices${q({ account_id: accountId })}`),

@@ -10,11 +10,12 @@ from sqlmodel import Session
 
 from app.db.models import Device, DiagIncident, utcnow
 from app.db.repositories import IncidentRepo, _aware
+from app import accounts
 from app.db.session import get_session
 from app.incidents.classify import CATEGORIES, CONFIDENCES, SEVERITIES
 from app.incidents import texts
 from app.incidents.service import detail_out, incident_out
-from app.security import require_admin
+from app.security import require_admin, require_admin_role
 
 router = APIRouter(prefix="/api", tags=["incidents"], dependencies=[Depends(require_admin)])
 
@@ -130,5 +131,8 @@ def get_incident(incident_id: int, db: Session = Depends(get_session)) -> dict:
 
 
 @router.delete("/incidents")
-def clear_incidents(device_id: str | None = None, db: Session = Depends(get_session)) -> dict:
-    return {"deleted": IncidentRepo(db).clear(device_id)[0]}
+def clear_incidents(device_id: str | None = None, db: Session = Depends(get_session),
+                    user: str = Depends(require_admin_role)) -> dict:
+    deleted = IncidentRepo(db).clear(device_id)[0]
+    accounts.audit(db, user, "incidents.clear", device_id=device_id, detail=f"{deleted} deleted")
+    return {"deleted": deleted}

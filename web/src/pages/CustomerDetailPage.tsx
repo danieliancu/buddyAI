@@ -8,6 +8,7 @@ import { fmtMinor, OrderDialog } from "./OrdersPage";
 import { BatteryInfo, OnlineDot, StateBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, useAsync } from "../components/ui";
 import { AccountStatusBadge } from "./CustomersPage";
+import { useIsAdmin } from "../operator";
 
 const ACTION_LABEL: Record<string, string> = {
   "account.create": "Account created",
@@ -301,6 +302,7 @@ function ComplimentaryControls({ account: a, onChanged }: { account: AccountDeta
 }
 
 function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged: () => void }) {
+  const isAdmin = useIsAdmin();
   const al = a.allowance;
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -360,34 +362,36 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
           label={`AI interactions this period (${fmtDayMonth(al.period_start)} – ${fmtDayMonth(al.period_end)}): ${al.used.toLocaleString("en-GB")} of ${al.limit.toLocaleString("en-GB")}${al.extra ? ` (incl. ${al.extra} extra)` : ""}`}
         />
         {a.cost && <CostLine cost={a.cost} />}
-        {!a.internal && <ComplimentaryControls account={a} onChanged={onChanged} />}
-        <form onSubmit={submit} className="mt-4 space-y-2">
-          <Field
-            label="Interactions per month (override)"
-            htmlFor="al-override"
-            hint={al.override != null ? "An authorised exception to the plan's allowance for this account." : "Empty = plan default."}
-          >
-            <div className="flex gap-2">
-              <Input
-                id="al-override"
-                inputMode="numeric"
-                placeholder="Plan default"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                className="min-w-0 flex-1"
-              />
-              <Button type="submit" loading={busy}>
-                Save
-              </Button>
-            </div>
-          </Field>
-          {al.override != null && (
-            <button type="button" className="text-xs text-accent hover:underline" onClick={() => void save(null)} disabled={busy}>
-              Reset to plan default
-            </button>
-          )}
-          <ErrorBox error={error} />
-        </form>
+        {!a.internal && isAdmin && <ComplimentaryControls account={a} onChanged={onChanged} />}
+        {isAdmin && (
+          <form onSubmit={submit} className="mt-4 space-y-2">
+            <Field
+              label="Interactions per month (override)"
+              htmlFor="al-override"
+              hint={al.override != null ? "An authorised exception to the plan's allowance for this account." : "Empty = plan default."}
+            >
+              <div className="flex gap-2">
+                <Input
+                  id="al-override"
+                  inputMode="numeric"
+                  placeholder="Plan default"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  className="min-w-0 flex-1"
+                />
+                <Button type="submit" loading={busy}>
+                  Save
+                </Button>
+              </div>
+            </Field>
+            {al.override != null && (
+              <button type="button" className="text-xs text-accent hover:underline" onClick={() => void save(null)} disabled={busy}>
+                Reset to plan default
+              </button>
+            )}
+            <ErrorBox error={error} />
+          </form>
+        )}
       </div>
     </Card>
   );

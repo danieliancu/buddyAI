@@ -4,6 +4,7 @@ import { api, type KeyName, type TestResult, type TestTarget } from "../api";
 import { LanguagePicker } from "../components/LanguageBits";
 import { useLanguages } from "../languages";
 import { Badge, Button, Card, ErrorBox, Field, Input, PageHeader, Spinner, useAsync } from "../components/ui";
+import SecurityCard from "../components/SecurityCard";
 
 const KEYS: { name: KeyName; label: string; secret: boolean; placeholder: string }[] = [
   { name: "openai_api_key", label: "OpenAI API key", secret: true, placeholder: "sk-…" },
@@ -80,6 +81,7 @@ export default function SystemPage() {
         </div>
       )}
       <div className="space-y-4">
+        <SecurityCard />
         <Card title={<span className="inline-flex items-center gap-2"><Server className="size-4 text-accent" /> Server</span>}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <Row label="Watch WebSocket URL (server_url)">

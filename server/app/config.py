@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     # First-run operator setup from the browser. Keep it off on public servers and create the
     # operator with `python -m app.cli create-operator` instead.
     allow_web_setup: bool = True
+    # Operators must use two-factor authentication (TOTP): without it, only enrolment works (app/security.py).
+    admin_mfa_required: bool = False
 
     # Session / protocol
     # Closes a session that sent nothing for this long. The watch pings every 30 s (firmware before the

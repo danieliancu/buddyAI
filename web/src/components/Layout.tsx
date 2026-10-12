@@ -8,7 +8,9 @@ import {
   Menu,
   MessagesSquare,
   Package,
+  ScrollText,
   Server,
+  ShieldCheck,
   Sparkles,
   Stethoscope,
   Users,
@@ -17,9 +19,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useLive } from "../live";
+import type { OperatorRole } from "../api";
 import { cx } from "./ui";
 
-type NavItem = { to: string; label: string; icon: LucideIcon };
+/** adminOnly: hidden for the "support" role (the server refuses those pages' changes anyway). */
+type NavItem = { to: string; label: string; icon: LucideIcon; adminOnly?: boolean };
 
 /** The operator menu, in groups (light sidebar, white content panel - see .admin-ui in index.css). */
 const NAV: { title: string; items: NavItem[] }[] = [
@@ -43,16 +47,34 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "Configuration",
     items: [
       { to: "/admin/personas", label: "Personas", icon: Sparkles },
-      { to: "/admin/firmware", label: "Firmware", icon: Cpu },
-      { to: "/admin/system", label: "System", icon: Server },
+      { to: "/admin/firmware", label: "Firmware", icon: Cpu, adminOnly: true },
+      { to: "/admin/system", label: "System", icon: Server, adminOnly: true },
+    ],
+  },
+  {
+    title: "Security",
+    items: [
+      { to: "/admin/security", label: "My security", icon: ShieldCheck },
+      { to: "/admin/audit", label: "Audit log", icon: ScrollText, adminOnly: true },
     ],
   },
 ];
 
 const ALL = NAV.flatMap((g) => g.items);
 
-export default function Layout({ user, onLogout, children }: { user: string; onLogout: () => void; children: ReactNode }) {
+export default function Layout({
+  user,
+  role = "admin",
+  onLogout,
+  children,
+}: {
+  user: string;
+  role?: OperatorRole;
+  onLogout: () => void;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
+  const nav = NAV.map((g) => ({ ...g, items: g.items.filter((i) => role === "admin" || !i.adminOnly) })).filter((g) => g.items.length);
   const { pathname } = useLocation();
   const { connected } = useLive(() => undefined);
   const current = ALL.find((n) => pathname === n.to || pathname.startsWith(n.to + "/"));
@@ -71,7 +93,7 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
         </span>
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <div key={group.title}>
             <p className="px-3 pb-1.5 text-[13px] text-muted">{group.title}</p>
             <div className="space-y-0.5">
@@ -100,7 +122,10 @@ export default function Layout({ user, onLogout, children }: { user: string; onL
           {connected ? "Live connected" : "Reconnecting…"}
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-muted">{user}</span>
+          <span className="truncate text-muted" title={`Role: ${role}`}>
+            {user}
+            {role !== "admin" && <span className="ml-1 text-[10px] uppercase">({role})</span>}
+          </span>
           <button onClick={onLogout} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-muted hover:bg-black/[0.05] hover:text-fg">
             <LogOut className="size-3.5" /> Log out
           </button>

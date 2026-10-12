@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router";
-import { api, onUnauthorized } from "./api";
+import { api, onUnauthorized, type OperatorMe } from "./api";
 import { AreaContext } from "./area";
+import { OperatorContext } from "./operator";
 import { LiveProvider } from "./live";
 import Layout from "./components/Layout";
-import { ErrorBox, Spinner } from "./components/ui";
+import { Button, ErrorBox, PageHeader, Spinner } from "./components/ui";
 import AuthPage from "./pages/AuthPage";
 import DevicesPage from "./pages/DevicesPage";
 import DeviceSettingsPage from "./pages/DeviceSettingsPage";
@@ -15,13 +16,15 @@ import FirmwarePage from "./pages/FirmwarePage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import OrdersPage from "./pages/OrdersPage";
+import AuditPage from "./pages/AuditPage";
+import SecurityCard from "./components/SecurityCard";
 import { safeNext } from "./pages/my/session";
 
 // recharts is heavy: load the usage/diagnostics page on demand.
 const UsagePage = lazy(() => import("./pages/UsagePage"));
 const DiagnosticsPage = lazy(() => import("./pages/DiagnosticsPage"));
 
-type State = { status: "loading" } | { status: "in"; user: string } | { status: "out" } | { status: "error"; error: unknown };
+type State = { status: "loading" } | { status: "in"; me: OperatorMe } | { status: "out" } | { status: "error"; error: unknown };
 
 /** The /admin/* area: requires an operator session, otherwise redirects to /admin/login?next=… */
 export default function OperatorApp() {
@@ -33,8 +36,15 @@ export default function OperatorApp() {
     setState({ status: "loading" });
     api.auth
       .status()
-      .then((s) => setState(s.user ? { status: "in", user: s.user } : { status: "out" }))
+      .then(async (s) => setState(s.user ? { status: "in", me: await api.auth.me() } : { status: "out" }))
       .catch((error) => setState({ status: "error", error }));
+  }, []);
+  /** Re-read the operator (role, two-factor state) without the loading screen. */
+  const refresh = useCallback(() => {
+    api.auth
+      .me()
+      .then((me) => setState({ status: "in", me }))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -66,42 +76,76 @@ export default function OperatorApp() {
     navigate("/admin/login", { replace: true });
   };
 
+  const me = state.me;
+  const admin = me.role === "admin";
+  if (me.mfa_setup_needed) {
+    // The server requires two-factor authentication: nothing else works until it is set up (no live socket either).
+    return (
+      <AreaContext.Provider value="admin">
+        <OperatorContext.Provider value={{ me, refresh }}>
+          <div className="admin-ui min-h-screen bg-bg px-4 py-10 text-fg">
+            <div className="mx-auto max-w-2xl">
+              <PageHeader
+                title="Set up two-factor authentication"
+                subtitle={`Signed in as ${me.username}.`}
+                actions={<Button onClick={logout}>Log out</Button>}
+              />
+              <SecurityCard />
+            </div>
+          </div>
+        </OperatorContext.Provider>
+      </AreaContext.Provider>
+    );
+  }
+
   return (
     <AreaContext.Provider value="admin">
-      <LiveProvider area="admin">
-        <Layout user={state.user} onLogout={logout}>
-          <Routes>
-            <Route index element={<Navigate to="/admin/devices" replace />} />
-            <Route path="devices" element={<DevicesPage />} />
-            <Route path="devices/:id" element={<DeviceSettingsPage />} />
-            <Route path="customers" element={<CustomersPage />} />
-            <Route path="customers/:id" element={<CustomerDetailPage />} />
-            <Route path="orders" element={<OrdersPage />} />
-            <Route path="conversations" element={<ConversationsPage />} />
-            <Route path="personas" element={<PersonasPage />} />
-            <Route
-              path="usage"
-              element={
-                <Suspense fallback={<Spinner />}>
-                  <UsagePage />
-                </Suspense>
-              }
-            />
-            <Route
-              path="diagnostics"
-              element={
-                <Suspense fallback={<Spinner />}>
-                  <DiagnosticsPage />
-                </Suspense>
-              }
-            />
-            <Route path="issues" element={<Navigate to="/admin/diagnostics" replace />} />
-            <Route path="firmware" element={<FirmwarePage />} />
-            <Route path="system" element={<SystemPage />} />
-            <Route path="*" element={<Navigate to="/admin/devices" replace />} />
-          </Routes>
-        </Layout>
-      </LiveProvider>
+      <OperatorContext.Provider value={{ me, refresh }}>
+        <LiveProvider area="admin">
+          <Layout user={me.username} role={me.role} onLogout={logout}>
+            <Routes>
+              <Route index element={<Navigate to="/admin/devices" replace />} />
+              <Route path="devices" element={<DevicesPage />} />
+              <Route path="devices/:id" element={<DeviceSettingsPage />} />
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="customers/:id" element={<CustomerDetailPage />} />
+              <Route path="orders" element={<OrdersPage />} />
+              <Route path="conversations" element={<ConversationsPage />} />
+              <Route path="personas" element={<PersonasPage />} />
+              <Route
+                path="usage"
+                element={
+                  <Suspense fallback={<Spinner />}>
+                    <UsagePage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="diagnostics"
+                element={
+                  <Suspense fallback={<Spinner />}>
+                    <DiagnosticsPage />
+                  </Suspense>
+                }
+              />
+              <Route path="issues" element={<Navigate to="/admin/diagnostics" replace />} />
+              {admin && <Route path="firmware" element={<FirmwarePage />} />}
+              {admin && <Route path="system" element={<SystemPage />} />}
+              {admin && <Route path="audit" element={<AuditPage />} />}
+              <Route
+                path="security"
+                element={
+                  <>
+                    <PageHeader title="Security" subtitle="Your operator account: two-factor authentication and sessions." />
+                    <SecurityCard />
+                  </>
+                }
+              />
+              <Route path="*" element={<Navigate to="/admin/devices" replace />} />
+            </Routes>
+          </Layout>
+        </LiveProvider>
+      </OperatorContext.Provider>
     </AreaContext.Provider>
   );
 }

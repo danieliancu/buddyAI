@@ -23,6 +23,8 @@ dependencies = [
     "numpy>=1.26",
     "onnxruntime>=1.17",
     "tzdata>=2024.1",
+    "pyotp>=2.9",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
