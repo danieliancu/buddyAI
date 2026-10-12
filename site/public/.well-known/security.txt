@@ -1,0 +1,5 @@
+Contact: mailto:ola@olacompanion.com
+Expires: 2027-10-12T00:00:00.000Z
+Policy: https://www.olacompanion.com/security/
+Preferred-Languages: en
+Canonical: https://www.olacompanion.com/.well-known/security.txt

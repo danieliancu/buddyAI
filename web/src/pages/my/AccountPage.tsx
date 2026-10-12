@@ -263,10 +263,12 @@ function DeleteAccountCard() {
           <div className="rounded-lg border border-danger/30 bg-danger-bg px-3 py-3 text-danger">
             <p className="font-medium">This cannot be undone. We will:</p>
             <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
-              <li>erase your profile, personas, memories and all conversation history;</li>
+              <li>erase your profile, personas, memories, notes, reminders and all conversation history;</li>
               <li>remove your watches from the account (they go back to the pairing screen);</li>
+              <li>cancel your olácare subscription straight away, so you won't be charged again (there's no refund for the current month);</li>
               <li>sign you out everywhere.</li>
             </ul>
+            <p className="mt-1.5">We keep order and billing records for as long as the law requires.</p>
           </div>
           <input type="text" autoComplete="username" hidden readOnly />
           <Field label="Enter your password to confirm" htmlFor="del-pw">

@@ -11,7 +11,7 @@ export interface Faq {
 
 const w = prices.watch;
 const c = prices.care;
-const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after your free ${prices.trialMonths}-month subscription. Cancel anytime.`;
+const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after your free ${prices.trialDays}-day subscription. Cancel anytime.`;
 
 export const faqGroups: { title: string; items: Faq[] }[] = [
   {
@@ -111,7 +111,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "How much does it cost?",
-        a: `${priceLine} Prices include VAT.`,
+        a: `${priceLine} The price shown is the total price you pay; delivery costs are shown at checkout.`,
       },
       {
         q: "Why is there a subscription?",
@@ -119,7 +119,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "When does the free period start, and what happens after it?",
-        a: `Your free ${prices.trialMonths}-month ${brandHtml("care")} trial starts when you pair your watch with your olá account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
+        a: `Your free ${prices.trialDays}-day ${brandHtml("care")} trial starts when you pair your watch with your olá account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
       },
       {
         q: "Is there a usage limit?",
@@ -127,7 +127,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,
-        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the free ${prices.trialMonths}-month trial you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
+        a: `Anytime: sign in to your account, open Account and choose “Manage billing”. If you cancel during the free ${prices.trialDays}-day trial you won't be charged. After cancelling, the AI assistant stops answering at the end of the period you've paid for.`,
       },
     ],
   },

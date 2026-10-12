@@ -17,44 +17,133 @@ import { privacyLine } from "../../data/features";
   <ul>
     <li><strong>Account data</strong> (name, email, password hash, country) — to provide your account. Legal basis: contract.</li>
     <li><strong>Order data</strong> (items, amounts, shipping address, tracking) — to deliver your order and meet tax and accounting duties. Legal basis: contract and legal obligation.</li>
-    <li><strong>Payment data</strong> — handled by Stripe; we do not store your full card details. Legal basis: contract.</li>
-    <li><strong>Voice and conversations</strong> — when you tap the mic, your voice is sent to our servers and to our AI partners (OpenAI) to transcribe it and generate a spoken reply. Transcripts and replies are stored in your conversation history. Legal basis: contract.</li>
+    <li>
+      <strong>Payment and billing data</strong> — payments are handled by Stripe; we do not store your full card details.
+      When you agree at checkout that we may charge your saved card for <Brand name="care" />, we keep a record of that
+      agreement, including the IP address and browser details recorded at the time. Legal basis: contract, legal
+      obligation, and our legitimate interests in being able to show that you agreed to recurring billing.
+    </li>
+    <li>
+      <strong>Voice</strong> — the watch sends audio only after you press the top button or tap the mic. Our server passes
+      it to our AI provider, OpenAI, to turn it into text. We do not store recordings of your voice on our servers.
+      Legal basis: contract.
+    </li>
+    <li>
+      <strong>Conversations</strong> — the text of what you said and olá's replies. Replies are written by OpenAI's
+      language models and turned into speech by OpenAI. Transcripts and replies are stored in your conversation history.
+      Legal basis: contract.
+    </li>
+    <li>
+      <strong>Long-term memory</strong> — memory is on by default. olá can remember facts when you ask it to (for example
+      “remember that…”) and can learn facts from your conversations, so that its answers suit you. You can switch memory
+      off on the Memory page of your account, forget single items, or forget everything. Sensitive information, such as
+      details about your health, religion or political views, is kept only if you explicitly ask olá to remember it.
+      Legal basis: contract; for sensitive information, your explicit consent, which you can withdraw by deleting it.
+    </li>
+    <li><strong>Notes and reminders</strong> you create with olá or in your account. Legal basis: contract.</li>
+    <li>
+      <strong>Web search</strong> — for questions about current events, olá may use OpenAI's hosted web search. Your
+      approximate city, worked out from your watch's time zone, is sent with the search so results are relevant. Some
+      general answers (for example weather, transport, sport, business and news) may be stored for a short time and
+      reused for other users' similar questions; these stored answers do not identify you. Legal basis: contract.
+    </li>
     <li><strong>Watch settings and usage</strong> (language, persona, colours, the number of AI interactions used in each billing period). Legal basis: contract.</li>
+    <li>
+      <strong>Diagnostics</strong> — technical records about the watch and the service, such as errors and incidents.
+      They do not contain the content of your conversations. Legal basis: legitimate interests (keeping the service
+      working and secure).
+    </li>
+    <li>
+      <strong>Application logs</strong> — operational records our servers keep to run the service and protect it. We are
+      working to remove personal content from them. Legal basis: legitimate interests (security and operations).
+    </li>
     <li><strong>Website analytics</strong> — {config.plausibleDomain ? "cookieless, aggregated statistics (Plausible); no personal profiles." : "none at present."} Legal basis: legitimate interests.</li>
   </ul>
 
   <h2>3. Who we share it with</h2>
+  <p>We use these service providers, who process data on our behalf:</p>
   <ul>
-    <li>OpenAI (AI processing of voice and text), as our processor.</li>
-    <li>Stripe (payments and billing).</li>
-    <li>Our hosting provider and email provider.</li>
-    <li>Delivery carriers (name and address only).</li>
+    <li>OpenAI — speech-to-text, AI replies, text-to-speech and web search.</li>
+    <li>Stripe — payments and billing.</li>
+    <li>Our email delivery provider — account and service emails.</li>
+    <li>Our hosting provider — the servers that run olá.</li>
+    <li>Delivery carriers — name, address and contact details needed to deliver your order.</li>
   </ul>
   <p>We never sell your data and we don't use it for advertising.</p>
 
   <h2>4. International transfers</h2>
   <p>
-    Some providers may process data outside the UK/EEA (for example in the United States). Where they do, we rely on
-    appropriate safeguards such as the UK International Data Transfer Addendum / EU Standard Contractual Clauses or an
-    adequacy decision.
+    Some providers may process data outside the UK, for example OpenAI in the United States. Where your data is
+    transferred outside the UK, we use safeguards recognised under UK data protection law, such as the International
+    Data Transfer Agreement or the UK Addendum to the EU Standard Contractual Clauses, or rely on UK adequacy
+    regulations where they apply.
   </p>
 
   <h2>5. How long we keep it</h2>
+  <ul>
+    <li><strong>Conversation history</strong> (transcripts and replies): until you delete it or your account.</li>
+    <li><strong>Memories</strong>: until you forget them (one by one or all at once) or delete your account.</li>
+    <li><strong>Notes and reminders</strong>: until you delete them or your account.</li>
+    <li><strong>Voice recordings</strong>: not stored on our servers.</li>
+    <li>
+      <strong>Stored web search answers</strong>: general answers that don't identify you expire after a short time.
+      Answers linked to your account also expire, and are deleted with your account.
+    </li>
+    <li><strong>Diagnostics and incident records</strong>: 90 days.</li>
+    <li><strong>Application logs</strong>: for a limited period, for security and operations.</li>
+    <li>
+      <strong>Backups</strong>: we take daily backups of our database and keep them for 14 days. Data you delete may stay in
+      these backups until they expire, for up to 14 days. Where we keep encrypted off-site copies, these expire after 30 days.
+    </li>
+    <li>
+      <strong>Order, payment and billing records</strong>, including the record of your agreement to recurring billing: as
+      long as the law requires for tax and accounting (typically 6–10 years), and as long as we need them to show that you
+      agreed.
+    </li>
+    <li><strong>Usage counts</strong> (how many interactions were used, without any content): as long as we need them for billing.</li>
+  </ul>
+
+  <h2>6. Deleting your account</h2>
+  <p>When you delete your account in your olá account settings, we:</p>
+  <ul>
+    <li>delete your profile, conversation history, memories, notes and reminders, and personas;</li>
+    <li>unpair your watches;</li>
+    <li>
+      cancel any <Brand name="care" /> subscription straight away in Stripe, so you won't be charged again. There is no
+      automatic refund for the current period.
+    </li>
+  </ul>
   <p>
-    Conversation history: until you delete it or close your account. Order and tax records: as long as the law requires
-    (typically 6–10 years).
+    We keep order, payment and billing-consent records (including the IP address and browser details recorded when you
+    agreed to recurring billing) as required for tax and accounting and to show that you agreed, and usage counts without
+    any content for billing. Deleted data may remain in our backups until they expire, as described above.
   </p>
 
-  <h2>6. Your rights</h2>
+  <h2>7. Your rights</h2>
   <p>
-    You can access, correct, export or delete your data, object to or restrict certain processing, and withdraw consent
-    where we rely on it. You can export or delete your conversation history yourself in your account at any time. You
-    can complain to the UK Information Commissioner's Office (ico.org.uk) or your local EU data protection authority.
+    You have the right to access your data, to have it corrected, to have it erased, to restrict or object to certain
+    processing, to receive your data in a portable format, and to withdraw your consent where we rely on consent.
+  </p>
+  <p>
+    Many of these you can do yourself in your account: download a copy of your data, delete your conversation history,
+    manage or switch off memory, and delete your account. For anything else, email
+    <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>. We respond within one month.
+  </p>
+  <p>
+    If you're unhappy with how we handle your data, you can complain to the UK Information Commissioner's Office
+    (<a href="https://ico.org.uk/" rel="noopener">ico.org.uk</a>, 0303 123 1113). If you live in the EU, you can also
+    contact your local data protection authority. We'd appreciate the chance to put things right first.
   </p>
 
-  <h2>7. Children</h2>
+  <h2>8. Children</h2>
   <p>olá is intended for adults. You must be 18 or over to buy an <Brand name="watch" /> and create an account.</p>
 
-  <h2>8. Security</h2>
-  <p>Connections between the watch, your olá account and our servers are encrypted. Access to personal data is restricted to people who need it.</p>
+  <h2>9. Security</h2>
+  <p>
+    Your olá account and our website are served over encrypted (HTTPS) connections, and our servers reach our AI
+    provider over encrypted connections. Your conversations are not end-to-end encrypted: our servers and OpenAI process
+    them so that olá can answer you. Access to personal data is restricted to people who need it. See
+    <a href="/trust/">Trust &amp; compliance</a> for what is active today, and <a href="/security/">Security</a> to report a
+    vulnerability.
+  </p>
 </Legal>

@@ -49,7 +49,7 @@ const jsonLd = [
       { "@type": "PropertyValue", name: "Display", value: "AMOLED touch screen, 410 × 502 pixels" },
       { "@type": "PropertyValue", name: "Connectivity", value: "Wi-Fi (2.4 GHz)" },
       { "@type": "PropertyValue", name: "Languages", value: `${languageCount} + Auto` },
-      { "@type": "PropertyValue", name: "Subscription", value: `olácare, ${formatPrice(prices.care.GBP, "GBP")}/month after a free ${prices.trialMonths}-month subscription` },
+      { "@type": "PropertyValue", name: "Subscription", value: `olácare, ${formatPrice(prices.care.GBP, "GBP")}/month after a free ${prices.trialDays}-day subscription` },
     ],
     offers: [
       { ...offerBase, priceCurrency: "GBP", price: prices.watch.GBP.toFixed(2) },
@@ -98,10 +98,10 @@ const jsonLd = [
         <!-- phones: a corner ribbon on the watch picture, flush with the screen's right edge (the top bar is hidden here) -->
         <div class="pointer-events-none absolute -right-4 top-0 size-44 overflow-hidden sm:hidden" aria-hidden="true">
           <div class="absolute right-[-3.6rem] top-[2.6rem] w-64 rotate-45 bg-[#ea580c] py-1.5 text-center font-extrabold uppercase leading-tight tracking-wide text-white shadow-[0_4px_10px_rgba(234,88,12,.35)]">
-            <span class="block text-sm">Free {prices.trialMonths}-month</span><span class="block text-[11px]">subscription</span>
+            <span class="block text-sm">Free {prices.trialDays}-day</span><span class="block text-[11px]">subscription</span>
           </div>
         </div>
-        <p class="sr-only sm:hidden">Free {prices.trialMonths}-month subscription</p>
+        <p class="sr-only sm:hidden">Free {prices.trialDays}-day subscription</p>
       </div>
       <HeroChat class="z-10 hidden xl:absolute xl:bottom-0 xl:top-10 xl:-right-24 xl:block xl:w-[21rem]" />
     </div>
@@ -181,7 +181,7 @@ const jsonLd = [
         </p>
         <ul class="mt-5 hidden flex-wrap gap-x-5 gap-y-2 text-sm text-fg lg:flex">
           <li class="flex items-center gap-2"><Icon name="rocket" size={18} class="text-accent" /> Early Access</li>
-          <li class="flex items-center gap-2"><Icon name="gift" size={18} class="text-accent" /> <span>Free {prices.trialMonths}-month <Brand name="care" /> subscription</span></li>
+          <li class="flex items-center gap-2"><Icon name="gift" size={18} class="text-accent" /> <span>Free {prices.trialDays}-day <Brand name="care" /> subscription</span></li>
           <li class="flex items-center gap-2"><Icon name="truck" size={18} class="text-accent" /> Ships to the UK &amp; EU</li>
         </ul>
         <Image

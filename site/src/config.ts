@@ -9,7 +9,7 @@ export type Currency = "GBP" | "EUR";
 // Must match the Stripe prices (products "olacompanion" and "olacare", GBP + EUR, trial length):
 // STRIPE_PRICE_WATCH_GBP/EUR and STRIPE_PRICE_CARE_GBP/EUR in server/.env. After changing a price or
 // the rate, create Stripe prices with the new amounts.
-// Consumer prices must include VAT: configure the Stripe prices as tax-inclusive.
+// The company is not VAT-registered: the prices shown are the total prices (do not describe them as including VAT).
 // watch = what checkout charges (the Stripe watch price); watchWas = the regular price shown struck through
 // while the sale runs (set it equal to `watch`, or remove the line, when the sale ends). A "was" price must
 // be a price the watch was genuinely sold at (UK/EU price-reduction rules).
@@ -32,7 +32,8 @@ export const prices = {
       ? { GBP: PRICE_GBP.watchWas, EUR: toEur(PRICE_GBP.watchWas) }
       : null,
   care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
-  trialMonths: 1,
+  /** Free olácare trial, in days from first pairing (server: care_trial_days). */
+  trialDays: 30,
   /** AI interactions included per month (server: Plan settings, interaction_limit). */
   interactionsPerMonth: 1000,
   /** One-off extra usage (server: topup_interactions, topup_price_pence). */
@@ -83,7 +84,7 @@ export function formatPrice(amount: number, currency: Currency): string {
 }
 
 /** Date of the last content update of the legal pages (set by hand when their text changes). */
-export const legalLastUpdated = "2026-10-05";
+export const legalLastUpdated = "2026-10-12";
 
 export function formatDate(iso: string): string {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });

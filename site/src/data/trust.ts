@@ -155,7 +155,7 @@ export const items: Item[] = [
     group: "data",
     status: "active",
     title: "Your controls",
-    text: "From your olá account you can delete your conversation history, download a copy of your data, switch off olá's memory, or delete your account.",
+    text: "From your olá account you can delete your conversation history, download a copy of your data, switch off olá's memory, or delete your account. Deleting your account also cancels your olácare subscription straight away.",
   },
   // models.py audit_log; api/devices.py history.view / history.delete.
   {
@@ -185,6 +185,31 @@ export const items: Item[] = [
     title: "Encryption at rest",
     text: "We haven't verified encryption at rest for our database and backups, so we don't claim it.",
   },
+  // The items below are implemented on a development branch and not yet in production (2026-10-12).
+  {
+    group: "data",
+    status: "progress",
+    title: "Two-factor sign-in and roles for our team",
+    text: "Two-factor sign-in for our team's admin accounts, and roles that limit each team member to the tools they need.",
+  },
+  {
+    group: "data",
+    status: "progress",
+    title: "Personal content removed from logs",
+    text: "Removing personal content, such as what you say to olá, from our application logs. Logs are kept for a limited period for security and operations.",
+  },
+  {
+    group: "data",
+    status: "progress",
+    title: "Limiting what our AI provider stores",
+    text: "Asking OpenAI not to store responses as application state. OpenAI may still keep data for a limited time for abuse monitoring under its terms.",
+  },
+  {
+    group: "data",
+    status: "progress",
+    title: "Encrypted off-site backups",
+    text: "Keeping encrypted copies of our database backups in a separate location, which expire after 30 days.",
+  },
   {
     group: "data",
     status: "progress",
@@ -193,6 +218,12 @@ export const items: Item[] = [
   },
 
   // --- compliance ----------------------------------------------------------------------------------------
+  {
+    group: "compliance",
+    status: "progress",
+    title: "Vulnerability reporting and security update period",
+    text: "A published way to report security problems to us, and the period for which the watch receives security updates. See “Security & vulnerability reporting” under Policies and contact below.",
+  },
   // deploy/README.md §10: "UKCA/CE marking, RED (radio) test report, WEEE and battery registration".
   {
     group: "compliance",
