@@ -45,9 +45,7 @@ describe("trust & compliance page", () => {
     expect(active).not.toMatch(/secure boot|flash encryption|signed (software )?updates|wss:\/\//i);
   });
 
-  it("keeps the battery figures unverified", () => {
-    for (const label of ["Battery", "Charging", "Battery life"]) {
-      expect(specs.find((s) => s.label === label)?.status).toBe("unverified");
-    }
+  it("lists the battery, charging and battery life", () => {
+    for (const label of ["Battery", "Charging", "Battery life"]) expect(specs.find((s) => s.label === label)).toBeTruthy();
   });
 });

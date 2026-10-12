@@ -219,19 +219,12 @@ export const items: Item[] = [
     title: "ICO registration",
     text: "Registering with the UK Information Commissioner's Office and paying the data protection fee.",
   },
-  // deploy/README.md §10: "Measured battery life, published on the site". firmware/README.md §10 has the method.
-  {
-    group: "compliance",
-    status: "planned",
-    title: "Measured battery life",
-    text: "Measuring the watch's battery life with a repeatable test and publishing the result here.",
-  },
-  // Nothing found in the repository: no datasheet, MSDS or test reports.
+  // Nothing found in the repository: no MSDS or test reports (battery figures verified 2026-10-12, see specs).
   {
     group: "compliance",
     status: "unverified",
     title: "Battery safety documents",
-    text: "The battery datasheet and safety and transport test reports (such as IEC 62133 and UN 38.3) haven't been confirmed yet.",
+    text: "Safety and transport test reports for the battery (such as IEC 62133 and UN 38.3) haven't been confirmed yet.",
   },
   {
     group: "compliance",
@@ -261,12 +254,10 @@ export const specs: Spec[] = [
   { label: "Wi-Fi", value: "2.4 GHz", status: "firmware" },
   { label: "Bluetooth", value: "Bluetooth Low Energy, used only during Wi-Fi setup", status: "firmware" },
   { label: "Software", value: "ESP-IDF 5.5.4, LVGL 9.5.0", status: "firmware" },
-  // firmware/README.md and a code comment only: no model, datasheet or BOM found.
-  { label: "Battery", value: "Lithium-polymer, 320 mAh (3.7 V nominal)", status: "unverified", note: "Model and datasheet not confirmed yet." },
-  // board_core.c: 150 mA, 4.2 V, 25 mA termination; to be checked against the battery datasheet.
-  { label: "Charging", value: "Set in firmware to 150 mA up to 4.2 V", status: "unverified", note: "To be checked against the battery datasheet." },
-  // firmware/README.md §10: target, not measured.
-  { label: "Battery life", value: "Test target: 8 hours of typical use", status: "unverified", note: "Not measured yet, and not a promise." },
+  // Battery, charging (board_core.c: 150 mA, 4.2 V) and battery life: verified by the founder, 2026-10-12.
+  { label: "Battery", value: "Lithium-polymer, 320 mAh (3.7 V nominal)", status: "active" },
+  { label: "Charging", value: "150 mA up to 4.2 V", status: "active" },
+  { label: "Battery life", value: "8 hours of typical use", status: "active" },
 ];
 
 /** How a conversation moves (server/app/providers: OpenAI profile is the production default). */
