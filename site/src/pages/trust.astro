@@ -16,8 +16,7 @@ const controlSections: { status: Status; title: string; intro: string }[] = [
     title: "Implemented in firmware",
     intro: "In the watch's release firmware. The watches in testing today run development firmware, so these apply once release firmware is installed on a unit.",
   },
-  { status: "planned", title: "Planned", intro: "Steps we have committed to that are not active yet." },
-  { status: "unverified", title: "Not yet verified", intro: "Things we can't confirm yet, so we don't claim them." },
+  { status: "progress", title: "In progress", intro: "Work that has started and isn't finished yet. Until it is, we don't claim it." },
 ];
 const controls = items.filter((i) => i.group !== "compliance");
 const compliance = items.filter((i) => i.group === "compliance");

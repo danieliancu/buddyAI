@@ -97,19 +97,19 @@ export const items: Item[] = [
   // firmware/README.md §8 (production units only); confirmed as the plan by the founder, 2026-10-12.
   {
     group: "firmware",
-    status: "planned",
+    status: "progress",
     title: "Secure Boot",
     text: "Secure Boot V2 on the units we sell, so the watch starts only software signed by us. It is not enabled in current builds.",
   },
   {
     group: "firmware",
-    status: "planned",
+    status: "progress",
     title: "Flash and settings encryption",
     text: "Encrypting the watch's flash memory and its settings storage, which holds your Wi-Fi password and the watch's access token. Until this is enabled, these are stored on the watch without encryption.",
   },
   {
     group: "firmware",
-    status: "planned",
+    status: "progress",
     title: "Locking the chip's debug and download interfaces",
     text: "Restricting the debug (JTAG) and firmware download interfaces on the units we sell.",
   },
@@ -167,27 +167,27 @@ export const items: Item[] = [
   // deploy/README.md §10: sign OpenAI's Data Processing Addendum.
   {
     group: "data",
-    status: "planned",
+    status: "progress",
     title: "Data processing agreement with our AI provider",
     text: "Signing a data processing agreement with OpenAI for the processing it does on our behalf.",
   },
   // No retention setting found on the provider requests.
   {
     group: "data",
-    status: "unverified",
+    status: "progress",
     title: "How long our AI provider keeps data",
     text: "OpenAI's handling of the data it processes for us is governed by its API terms. We haven't yet confirmed a retention setting with them.",
   },
   // No evidence of database or backup encryption at rest in server/ or deploy/.
   {
     group: "data",
-    status: "unverified",
+    status: "progress",
     title: "Encryption at rest",
     text: "We haven't verified encryption at rest for our database and backups, so we don't claim it.",
   },
   {
     group: "data",
-    status: "unverified",
+    status: "progress",
     title: "Independent security testing",
     text: "No independent security assessment or penetration test has been completed yet. There are no results to publish.",
   },
