@@ -8,20 +8,20 @@ export function SetupNetworkSteps({ platform }: { platform: "android" | "iphone"
     <ol className="space-y-3" data-testid="softap-steps">
       <NumberedStep n={1} title="Open Wi-Fi setup on the watch">
         A new watch shows it by itself. Otherwise open <b className="text-fg">Settings</b> on the watch and tap{" "}
-        <b className="text-fg">Wi-Fi setup</b>. The watch shows a network name like <b className="font-mono text-fg">ola-1A2B</b>, a
-        password and a QR code.
+        <b className="text-fg">Wi-Fi setup</b>. The watch shows a QR code and a password.
       </NumberedStep>
       <NumberedStep n={2} title={`Join ola-XXXX on your ${platform === "iphone" ? "iPhone" : "phone"}`}>
         {platform === "iphone" ? (
           <>
             Open the <b className="text-fg">Camera</b> and point it at the QR code on the watch, then tap <b className="text-fg">Join</b>.
-            Or open <b className="text-fg">Settings → Wi-Fi</b>, choose <b className="font-mono text-fg">ola-XXXX</b> and type the
-            password shown on the watch.
+            Or open <b className="text-fg">Settings → Wi-Fi</b>, choose the network whose name starts with{" "}
+            <b className="font-mono text-fg">ola-</b> (for example <span className="font-mono">ola-1A2B</span>) and type the password shown
+            on the watch.
           </>
         ) : (
           <>
-            Open <b className="text-fg">Settings → Wi-Fi</b> (or scan the QR code with the camera), choose{" "}
-            <b className="font-mono text-fg">ola-XXXX</b> and type the password shown on the watch.
+            Open <b className="text-fg">Settings → Wi-Fi</b> (or scan the QR code with the camera), choose the network whose name
+            starts with <b className="font-mono text-fg">ola-</b> and type the password shown on the watch.
           </>
         )}
       </NumberedStep>

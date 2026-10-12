@@ -852,9 +852,10 @@ void ui_show_pairing(const char *code)
     UNLOCK();
 }
 
-/* Wi-Fi setup: the setup network, its password (also the Bluetooth setup password) and a Wi-Fi QR code
- * that an iPhone camera joins directly. The password exists only on this screen. */
-static lv_obj_t *s_wifi_scr, *s_wifi_qr, *s_wifi_net, *s_wifi_pass, *s_wifi_hint;
+/* Wi-Fi setup: a Wi-Fi QR code that an iPhone camera joins directly, and the setup network's password (also
+ * the Bluetooth setup password on Android). The network name is not shown: the QR code carries it, and the
+ * account's iPhone steps say to pick the "ola-" network. The password exists only on this screen. */
+static lv_obj_t *s_wifi_scr, *s_wifi_qr, *s_wifi_pass, *s_wifi_hint;
 
 static void build_wifi_setup(void)
 {
@@ -876,9 +877,6 @@ static void build_wifi_setup(void)
     lv_qrcode_set_light_color(s_wifi_qr, lv_color_white());
     lv_obj_set_style_border_color(s_wifi_qr, lv_color_white(), 0);
     lv_obj_set_style_border_width(s_wifi_qr, 6, 0);   /* quiet zone: cameras need it */
-
-    s_wifi_net = lv_label_create(s_wifi_scr);
-    lv_obj_set_style_text_align(s_wifi_net, LV_TEXT_ALIGN_CENTER, 0);
 
     s_wifi_pass = lv_label_create(s_wifi_scr);
     lv_obj_set_style_text_font(s_wifi_pass, &buddy_font_28, 0);
@@ -907,8 +905,6 @@ void ui_show_wifi_setup(const char *ap_ssid, const char *setup_pass)
     }
     memset(qr, 0, sizeof(qr));
     char line[96];
-    snprintf(line, sizeof(line), "%s\n%s", ui_str(STR_WIFI_BODY), ssid);
-    lv_label_set_text(s_wifi_net, line);
     char grouped[12];
     setup_pass_grouped(setup_pass, grouped, sizeof(grouped));
     snprintf(line, sizeof(line), "%s  %s", ui_str(STR_WIFI_PASS), grouped[0] ? grouped : "-");
