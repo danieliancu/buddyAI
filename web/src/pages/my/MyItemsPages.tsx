@@ -99,6 +99,7 @@ export function MyNotesPage() {
                 </button>
               }
               head={<NoteTitle text={n.text} />}
+              sticky
             >
               <NoteLines text={n.text} />
             </ItemCard>
@@ -146,13 +147,31 @@ function NoteLines({ text }: { text: string }) {
   );
 }
 
+/** The note as stored: the title on the first line, then the other lines. */
+function joinNote(title: string, body: string): string {
+  const rest = body.replace(/^\s*\n/, "").trimEnd();
+  return rest ? `${title.trim()}\n${rest}` : title.trim();
+}
+
+/** Edit a note as a bold title plus its lines (stored as one text, the first line being the title). */
 function NoteDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: () => void; onSaved: () => void }) {
-  const [text, setText] = useState("");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
   const form = useSave(editing, onClose, onSaved);
+  const text = joinNote(title, body);
 
   useEffect(() => {
-    if (editing) setText(editing === "new" ? "" : editing.text);
+    if (!editing) return;
+    const full = editing === "new" ? "" : editing.text;
+    const cut = full.indexOf("\n");
+    setTitle(cut < 0 ? full : full.slice(0, cut));
+    setBody(cut < 0 ? "" : full.slice(cut + 1));
   }, [editing]);
+
+  const payload = () => {
+    if (!title.trim()) return body.trim() ? "Write a title first." : "Write something first.";
+    return { kind: "note" as const, text, due_at: null };
+  };
 
   return (
     <Dialog
@@ -162,13 +181,28 @@ function NoteDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: 
       title={editing === "new" ? "New note" : `Note #${editing ? editing.number : ""}`}
       footer={<DialogButtons onClose={onClose} busy={form.busy} formId="note-form" />}
     >
-      <form
-        id="note-form"
-        className="space-y-4"
-        onSubmit={(e) => form.submit(e, text.trim() ? { kind: "note", text: text.trim(), due_at: null } : "Write something first.")}
-      >
-        <Field label="Text" htmlFor="ntext" hint={`${text.length.toLocaleString("en-GB")}/${NOTE_MAX.toLocaleString("en-GB")}`}>
-          <Textarea id="ntext" rows={12} maxLength={NOTE_MAX} value={text} onChange={(e) => setText(e.target.value)} />
+      <form id="note-form" className="space-y-4" onSubmit={(e) => form.submit(e, payload())}>
+        <Field label="Title" htmlFor="ntitle">
+          <Input
+            id="ntitle"
+            className="text-base font-bold"
+            maxLength={NOTE_MAX}
+            value={title}
+            onChange={(e) => setTitle(e.target.value.replace(/\n/g, " "))}
+          />
+        </Field>
+        <Field
+          label="Lines"
+          htmlFor="ntext"
+          hint={`One per line, numbered on the watch · ${text.length.toLocaleString("en-GB")}/${NOTE_MAX.toLocaleString("en-GB")}`}
+        >
+          <Textarea
+            id="ntext"
+            rows={10}
+            maxLength={Math.max(0, NOTE_MAX - title.length - 1)}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
         </Field>
         <ErrorBox error={form.error} />
       </form>
@@ -415,6 +449,15 @@ function timeRange(r: Item): string {
   return `${start ? timeFmt.format(start) : "—"}${r.end_at ? ` – ${toLocalInput(r.end_at).slice(11)}` : ""}`;
 }
 
+function ReminderWhen({ r, muted, className }: { r: Item; muted: boolean; className: string }) {
+  return (
+    <div className={cx("flex-wrap items-center gap-x-2 gap-y-1", className)}>
+      <CalendarClock className="size-4 text-muted" />
+      <span className={cx("text-lg font-bold tabular-nums", r.done && "text-muted")}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
+    </div>
+  );
+}
+
 /** One reminder in a day's list (the day is in the heading, so only the time is shown). */
 function ReminderRow({ r, muted, busy, onToggle, onEdit, onDelete }: RowProps & { muted: boolean }) {
   return (
@@ -424,14 +467,11 @@ function ReminderRow({ r, muted, busy, onToggle, onEdit, onDelete }: RowProps & 
         onEdit={onEdit}
         onDelete={onDelete}
         leading={<DoneButton r={r} busy={busy} onToggle={onToggle} />}
-        head={
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <CalendarClock className="size-4 text-muted" />
-            <span className={cx("text-lg font-bold tabular-nums", r.done && "text-muted")}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
-          </div>
-        }
+        head={<ReminderWhen r={r} muted={muted} className="hidden sm:flex" />}
       >
-        <p className={cx("mt-3 text-base break-words", r.done && "text-muted line-through")}>{r.text}</p>
+        {/* phones: the time goes on its own line under the buttons, not squeezed beside them */}
+        <ReminderWhen r={r} muted={muted} className="mt-3 flex sm:hidden" />
+        <p className={cx("mt-2 text-base break-words sm:mt-3", r.done && "text-muted line-through")}>{r.text}</p>
         <ReminderPlace r={r} />
         {(!!r.notify_before_min || r.done || r.overdue) && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -609,6 +649,7 @@ function ItemCard({
   leading,
   corner,
   head,
+  sticky,
   children,
 }: {
   item: Item;
@@ -620,12 +661,21 @@ function ItemCard({
   corner?: ReactNode;
   /** Beside the number (the title). */
   head: ReactNode;
+  /** Keep the title row visible (under the page header) while scrolling through the card. */
+  sticky?: boolean;
   /** Full width under the title. */
   children?: ReactNode;
 }) {
   return (
     <li className={cx(cardCls, "p-(--card-pad)")}>
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div
+        className={cx(
+          "flex items-center gap-3 sm:gap-4",
+          // notes: the title row stays under the page header while scrolling through a long note
+          sticky &&
+            "sticky top-20 z-10 -mx-(--card-pad) -mt-(--card-pad) rounded-t-(--r-card) bg-surface px-(--card-pad) pt-(--card-pad) pb-2",
+        )}
+      >
         {leading}
         <span className="relative shrink-0">
           <span className="grid h-12 min-w-14 place-items-center rounded-2xl bg-accent-bg px-2 text-lg font-bold text-accent tabular-nums">
