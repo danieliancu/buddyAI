@@ -5,7 +5,7 @@ import { STATUS, flow, items, specs } from "./trust";
 
 /* /trust/ must never overclaim: every statement has a known status, and no wording promises absolute
  * security, end-to-end encryption or certification that we can't back up. */
-const page = readFileSync(resolve(__dirname, "../pages/trust.astro"), "utf8");
+const page = readFileSync(resolve(__dirname, "../pages/_trust.astro"), "utf8");
 const texts = [
   ...items.flatMap((i) => [i.title, i.text]),
   ...specs.flatMap((s) => [s.label, s.value, s.note ?? ""]),

@@ -1,4 +1,5 @@
-/* Content of /trust/ (Trust & compliance). Every claim has a status, and the source it was checked against
+/* Content of /trust/ (Trust & compliance) - ON HOLD: the page is src/pages/_trust.astro (not published);
+ * rename it back to trust.astro and restore the footer, privacy and security links to publish it. Every claim has a status, and the source it was checked against
  * is noted beside it (repository paths are for us; they are not shown on the page). Keep the wording
  * modest: no certification, no end-to-end encryption, nothing "impossible". Re-check before each update. */
 
