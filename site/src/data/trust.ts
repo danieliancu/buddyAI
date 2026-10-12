@@ -272,7 +272,10 @@ export const specs: Spec[] = [
 /** How a conversation moves (server/app/providers: OpenAI profile is the production default). */
 export const flow: { title: string; text: string }[] = [
   { title: "You press", text: "Nothing is sent until you press the top button or tap the mic on the watch." },
-  { title: "From the watch", text: "Your voice is compressed and streamed to our service over an encrypted (TLS) connection." },
+  {
+    title: "From the watch",
+    text: "Your voice is compressed and streamed to our service. Release firmware sends it only over an encrypted (TLS) connection; see “Implemented in firmware” below.",
+  },
   {
     title: "Our server and OpenAI",
     text: "Our server passes the audio to our AI provider, OpenAI, to turn it into text, then asks OpenAI's language model for a reply, using your recent conversation, your persona and relevant saved memories. For questions about current events, OpenAI's web search may be used, with your approximate city.",
