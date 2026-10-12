@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_summary, http_error_summary
 from app.providers.tts.base import PCMChunk, TTSProvider, TTSRequest
 
 log = logging.getLogger(__name__)
@@ -46,15 +46,15 @@ class HTTPStreamingTTS(TTSProvider):
         try:
             async with self._client.stream("POST", **self.build_request(text, request)) as r:
                 if r.status_code != 200:
-                    body = (await r.aread())[:300]
-                    raise ProviderError("tts", f"{self.label} HTTP {r.status_code}: {body!r}")
+                    body = (await r.aread())[:2000]
+                    raise ProviderError("tts", f"{self.label} {http_error_summary(r.status_code, body)}")
                 async for data in r.aiter_bytes(4800):
                     await out.put(data)
             await out.put(_DONE)
         except ProviderError as exc:
             await out.put(exc)
         except httpx.HTTPError as exc:
-            await out.put(ProviderError("tts", f"{self.label} request failed: {exc}"))
+            await out.put(ProviderError("tts", f"{self.label} request failed: {error_summary(exc)}"))
 
     async def _fetch(self, text: str, request: TTSRequest, out: asyncio.Queue) -> None:
         """One fragment, hedged: a request that has not produced audio after `hedge_after_s` (or

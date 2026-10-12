@@ -158,6 +158,18 @@ def search_instructions(tz: str, now: datetime | None = None) -> str:
             "Anything before today has already happened.")
 
 
+def purge_expired(db, now: datetime | None = None, grace_days: int | None = None) -> int:
+    """Delete cache rows that expired more than `grace_days` ago (setting search_cache_grace_days, see
+    app/retention.py). The caller commits. Returns the number of rows deleted."""
+    if grace_days is None:
+        from app.config import get_settings
+
+        grace_days = get_settings().search_cache_grace_days
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=grace_days)
+    res = db.exec(delete(SearchCache).where(col(SearchCache.expires_at) < cutoff))  # type: ignore[call-overload]
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
 def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
@@ -216,7 +228,7 @@ class WebSearch:
             complete = False  # what was found is used, never cached
         if not answer:
             complete = False
-            log.info("web_search(%s) -> not found (attempt %s)", query[:120], self.attempts)
+            log.info("web_search(query %s chars) -> not found (attempt %s)", len(query), self.attempts)
         usage = [
             UsageItem("llm", self.provider, self.model, "input_token", tokens_in),
             UsageItem("llm", self.provider, self.model, "output_token", tokens_out),
@@ -225,7 +237,7 @@ class WebSearch:
         if answer and complete:
             ttl = timedelta(seconds=int(self.ttl_s.get(category, DEFAULT_TTL_S["other"])))
             with session_scope() as db:
-                db.exec(delete(SearchCache).where(col(SearchCache.expires_at) < now - timedelta(days=1)))  # type: ignore[call-overload]
+                purge_expired(db, now)
                 row = db.exec(select(SearchCache).where(SearchCache.key == key)).first() or SearchCache(key=key, scope=scope, category=category, expires_at=now)
                 row.location, row.language, row.query = location, language[:8], query
                 row.answer, row.fetched_at, row.expires_at = answer, now, now + ttl

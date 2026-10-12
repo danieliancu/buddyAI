@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_starttls: bool = True
+    # The console backend writes email bodies (with their one-time links) to the log. None = automatic: only
+    # when public_url is not https (local development); never on a public server unless set to true.
+    email_console_bodies: bool | None = None
 
     # Shop & subscription (Stripe). Billing is off until stripe_secret_key is set: every watch is
     # then entitled (development / private use).
@@ -111,8 +114,16 @@ class Settings(BaseSettings):
     # Closes a session that sent nothing for this long. The watch pings every 30 s (firmware before the
     # power work: 15 s); WebSocket control frames don't count, only messages.
     session_idle_timeout_s: int = 75
+    # Retention periods (app/retention.py has the policy; changing them needs business/legal approval).
     # ola Diagnostics: incidents not updated for this many days are deleted (0 = keep forever)
     incident_retention_days: int = 90
+    conversation_retention_days: int = 0  # turns + conversations; 0 = kept until the user/account deletes them
+    voice_ops_retention_days: int = 7  # voice-change idempotency records (voice_operations)
+    memory_superseded_days: int = 90  # replaced memories kept for undo/audit, then deleted
+    memory_jobs_days: int = 7  # finished/dead memory jobs
+    audit_retention_days: int = 0  # audit_log; 0 = kept
+    search_cache_grace_days: int = 1  # expired web-search answers are deleted after this many days
+    retention_interval_s: int = 3600  # how often the retention job runs
     # AI usage operations (app/usage_ops.py): the lease a process holds on a running operation, how often it
     # renews it, how often expired leases are recovered, and the database lock wait for admission.
     usage_lease_s: int = 90

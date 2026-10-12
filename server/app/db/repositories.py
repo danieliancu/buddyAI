@@ -951,7 +951,7 @@ class ItemRepo:
 class VoiceOpRepo:
     """Durable record of voice changes (see VoiceOperation): idempotency across retries and reconnects."""
 
-    KEEP_DAYS = 7
+    KEEP_DAYS = 7  # default only: the period is the setting voice_ops_retention_days (app/retention.py)
 
     def __init__(self, s: Session) -> None:
         self.s = s
@@ -993,6 +993,12 @@ class VoiceOpRepo:
             self.s.add(r)
         self.s.commit()
 
-    def prune(self, now: datetime) -> None:
-        self.s.exec(sa_delete(VoiceOperation).where(VoiceOperation.created_at < now - timedelta(days=self.KEEP_DAYS)))  # type: ignore[call-overload]
+    def prune(self, now: datetime, keep_days: int | None = None) -> int:
+        """Delete records older than `keep_days` (default: the voice_ops_retention_days setting)."""
+        if keep_days is None:
+            from app.config import get_settings
+
+            keep_days = get_settings().voice_ops_retention_days
+        res = self.s.exec(sa_delete(VoiceOperation).where(VoiceOperation.created_at < now - timedelta(days=keep_days)))  # type: ignore[call-overload]
         self.s.commit()
+        return int(res.rowcount or 0)

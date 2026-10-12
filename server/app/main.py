@@ -68,6 +68,11 @@ async def lifespan(app: FastAPI):
     from app.incidents import service as diagnostics
 
     diag_maint = asyncio.create_task(diagnostics.maintenance_loop(app.state.hub), name="diagnostics")
+    # Retention periods (app/retention.py): voice operations, search cache, optional history/audit limits.
+    from app import logging_redact, retention
+
+    logging_redact.install()  # again: uvicorn has replaced its handlers by now
+    retention_task = asyncio.create_task(retention.retention_loop(), name="retention")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -90,6 +95,7 @@ async def lifespan(app: FastAPI):
     memory_jobs.cancel()
     care_recovery.cancel()
     diag_maint.cancel()
+    retention_task.cancel()
     # ola Diagnostics: every live session is about to be closed by this shutdown - recorded as the cause, so
     # the watches' reports of the drop are grouped under a confirmed server-side event.
     from app.incidents.events import server_event
@@ -226,6 +232,9 @@ def main() -> None:
         configure_json_logging()
     else:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from app.logging_redact import install as install_log_redaction
+
+    install_log_redaction()  # tokens / codes / bearer values never reach the log
     uvicorn.run(
         "app.main:app",
         host=s.host,

@@ -24,7 +24,7 @@ import httpx
 import numpy as np
 import websockets
 
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_dict_summary, error_summary, http_error_summary
 from app.providers.stt.base import PartialCallback, STTProvider, STTSession
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class _OpenAISTTSession(STTSession):
                 open_timeout=self.p.open_timeout_s,
             )
         except Exception as exc:
-            log.warning("stt realtime connect failed (%s): the fallback will transcribe", exc)
+            log.warning("stt realtime connect failed (%s): the fallback will transcribe", error_summary(exc))
             return
         transcription = {"model": self.p.model}
         if self.language and self.language != "auto":  # "auto": let the model detect it
@@ -120,8 +120,8 @@ class _OpenAISTTSession(STTSession):
         try:
             await self.ws.send(json.dumps(event))
         except websockets.ConnectionClosed as exc:
-            reason = exc.rcvd.reason if exc.rcvd else str(exc)
-            self.error = self.error or f"connection closed: {reason}"
+            code = exc.rcvd.code if exc.rcvd else None
+            self.error = self.error or f"connection closed: {code}"
             raise ProviderError("stt", self.error) from exc
 
     async def _read(self) -> None:
@@ -140,14 +140,14 @@ class _OpenAISTTSession(STTSession):
                     self.final = msg.get("transcript", "")
                     self.done.set()
                 elif kind == "conversation.item.input_audio_transcription.failed":
-                    self.error = str(msg.get("error"))
+                    self.error = error_dict_summary(msg.get("error"))
                     self.done.set()
                 elif kind == "error":
-                    self.error = str(msg.get("error"))
+                    self.error = error_dict_summary(msg.get("error"))
                     self.done.set()
         except websockets.ConnectionClosed as exc:
             if not self.done.is_set():
-                self.error = self.error or f"connection closed: {exc}"
+                self.error = self.error or f"connection closed: {exc.rcvd.code if exc.rcvd else None}"
         finally:
             self.done.set()
 
@@ -218,9 +218,9 @@ class _OpenAISTTSession(STTSession):
                 files={"file": ("speech.wav", wav.getvalue(), "audio/wav")},
             )
         except httpx.HTTPError as exc:
-            raise ProviderError("stt", f"fallback transcription failed: {type(exc).__name__} {exc}") from exc
-        if r.status_code != 200:
-            raise ProviderError("stt", f"fallback transcription failed: HTTP {r.status_code} {r.text[:200]}")
+            raise ProviderError("stt", f"fallback transcription failed: {error_summary(exc)}") from exc
+        if r.status_code != 200:  # the status and error type only: the body is not logged
+            raise ProviderError("stt", f"fallback transcription failed: {http_error_summary(r.status_code, r.content)}")
         return str(r.json().get("text", "")).strip()
 
     async def close(self) -> None:

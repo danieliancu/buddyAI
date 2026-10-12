@@ -619,6 +619,7 @@ def export(acc: Account = Depends(current_account), db: Session = Depends(get_se
     import json
 
     data = json.dumps(accounts.export(db, acc), default=str, ensure_ascii=False, indent=2)
+    accounts.audit(db, f"account:{acc.id}", "account.export", account_id=acc.id)
     return Response(
         data,
         media_type="application/json",
@@ -638,7 +639,15 @@ async def delete_account(
         accounts.authenticate(db, acc.email, body.password)
     except accounts.AccountError as exc:
         raise HTTPException(403, "wrong password") from exc
-    device_ids = accounts.delete_account(db, acc)
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.billing import BillingError
+
+    try:  # Stripe is called first: off the event loop
+        device_ids = await run_in_threadpool(accounts.delete_account, db, acc)
+    except BillingError as exc:
+        db.rollback()
+        raise HTTPException(exc.status, exc.message) from exc
     hub = hub_of(request)
     for device_id in device_ids:
         hub.forget_owner(device_id)

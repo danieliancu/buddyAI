@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 import websockets
 
 from app import languages
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, error_dict_summary, error_summary
 from app.providers.tts.base import PCMChunk, TTSProvider, TTSRequest
 
 log = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class QwenRealtimeTTS(TTSProvider):
                 url, additional_headers={"Authorization": f"Bearer {self.api_key}"}, max_size=2**23, open_timeout=5
             )
         except Exception as exc:
-            raise ProviderError("tts", f"connect failed: {exc}") from exc
+            raise ProviderError("tts", f"connect failed: {error_summary(exc)}") from exc
 
         async def send(event: dict) -> None:
             await ws.send(json.dumps(event, ensure_ascii=False))
@@ -77,7 +77,7 @@ class QwenRealtimeTTS(TTSProvider):
                 elif kind == "session.finished":
                     break
                 elif kind == "error":
-                    raise ProviderError("tts", str(msg.get("error")))
+                    raise ProviderError("tts", error_dict_summary(msg.get("error")))
             if writer_task.done() and writer_task.exception():
                 raise writer_task.exception()  # type: ignore[misc]
         except websockets.ConnectionClosed as exc:

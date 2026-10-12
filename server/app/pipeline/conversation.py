@@ -57,6 +57,21 @@ from app.providers.tts.base import TTSRequest
 
 log = logging.getLogger(__name__)
 
+
+def args_shape(arguments: str | None) -> str:
+    """What may be logged about tool arguments: the keys and the length, never the values (they carry the
+    user's words: note text, reminder text, search queries)."""
+    try:
+        parsed = json.loads(arguments or "{}")
+    except (ValueError, TypeError):
+        parsed = None
+    keys = ",".join(sorted(str(k)[:32] for k in parsed)) if isinstance(parsed, dict) else "?"
+    return f"keys=[{keys}] len={len(arguments or '')}"
+
+
+def result_ok(result: str) -> bool:
+    return '"ok": true' in result or '"ok":true' in result
+
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
 PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
@@ -776,7 +791,7 @@ class ConversationPipeline:
             await self._edit_no_call(turn, io, edit_texts.which_of(lang, options))
             return
         except (ValueError, ItemTextError) as exc:
-            log.info("note edit refused: %s", exc)
+            log.info("note edit refused: %s", type(exc).__name__)  # the message may quote the note
             turn.assistant_text = f"(not applied: {exc})"
             await io.send(turn, "llm_display", text="?")
             return
@@ -794,7 +809,7 @@ class ConversationPipeline:
             return
         notes_edit.undo_set(account_id, it.uid, lines, it2.version)
         STORE.refresh_version(self._voice_ctx(turn), it2.uid, it2.version)
-        log.info("note #%s edit %s", it.number, call.arguments[:200])
+        log.info("note #%s edit %s", it.number, args_shape(call.arguments))
         turn.assistant_text = f"note_edit {call.arguments[:300]}"
         turn.items_changed = True
         turn.changed_line = highlight
@@ -834,11 +849,11 @@ class ConversationPipeline:
             await self._edit_no_call(turn, io, edit_texts.which_of(lang, exc.names[:3]))
             return
         except ValueError as exc:
-            log.info("reminder edit refused: %s", exc)
+            log.info("reminder edit refused: %s", type(exc).__name__)  # the message may quote the reminder
             turn.assistant_text = f"(not applied: {exc})"
             await io.send(turn, "llm_display", text="?")
             return
-        log.info("reminder #%s edit %s", it.number, call.arguments[:200])
+        log.info("reminder #%s edit %s", it.number, args_shape(call.arguments))
         if result.deleted:  # deleted from its own screen: back to the reminders list
             turn.assistant_text = f"reminder_edit {call.arguments[:300]}"
             turn.items_changed = True
@@ -870,7 +885,8 @@ class ConversationPipeline:
             )
             turn.usage.extend(outcome.usage)
             turn.search_note = search_note(call.arguments, outcome.result)
-            log.info("web_search(%s) -> %s", call.arguments[:120], "cache hit" if outcome.cache_hit else "searched")
+            log.info("web_search(%s) -> %s ok=%s", args_shape(call.arguments),
+                     "cache hit" if outcome.cache_hit else "searched", result_ok(outcome.result))
             return outcome.result
         assert self.tools is not None
         call_ctx = self._call_ctx(turn) if turn.account_id is not None else None
@@ -878,10 +894,8 @@ class ConversationPipeline:
             self.tools.execute, turn.account_id, turn.settings.timezone, call.name, call.arguments, turn.device_id,
             call_ctx,
         )
-        if call.name.startswith("memory_"):  # memory contents never go to the logs
-            log.info("tool %s -> ok=%s", call.name, '"ok": true' in out.result)
-        else:
-            log.info("tool %s(%s) -> %s", call.name, call.arguments, out.result[:200])
+        # Tool arguments and results carry the user's words (notes, reminders, memories): never logged.
+        log.info("tool %s(%s) -> ok=%s", call.name, args_shape(call.arguments), result_ok(out.result))
         turn.items_changed |= out.changed
         turn.settings_changed |= out.settings_changed
         turn.expect_reply |= out.awaits_answer

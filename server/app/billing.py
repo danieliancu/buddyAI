@@ -48,6 +48,19 @@ class BillingError(Exception):
         self.message = message
 
 
+def stripe_error_summary(exc: BaseException) -> str:
+    """What may be logged about a Stripe error: its type, HTTP status and error code - never its message
+    (it can quote customer details)."""
+    parts = [type(exc).__name__]
+    status = getattr(exc, "http_status", None)
+    if status:
+        parts.append(f"HTTP {status}")
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code:
+        parts.append(code[:48])
+    return " ".join(parts)
+
+
 def _ts(value: Any) -> datetime | None:
     return datetime.fromtimestamp(int(value), tz=timezone.utc) if value else None
 
@@ -185,7 +198,7 @@ def create_subscription_checkout(db: Session, account: Account) -> str:
     try:
         session = stripe.checkout.Session.create(api_key=s.stripe_secret_key, **params)
     except stripe.StripeError as exc:
-        log.warning("subscription checkout failed: %s", exc)
+        log.warning("subscription checkout failed: %s", stripe_error_summary(exc))
         raise BillingError(502, "payment provider unavailable, please try again") from exc
     return session["url"]
 
@@ -248,7 +261,7 @@ def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
         topup.status = "expired"
         db.add(topup)
         db.commit()
-        log.warning("top-up checkout failed: %s", exc)
+        log.warning("top-up checkout failed: %s", stripe_error_summary(exc))
         raise BillingError(502, "payment provider unavailable, please try again") from exc
     topup.stripe_session_id = session["id"]
     db.add(topup)
@@ -282,7 +295,57 @@ def verify_webhook(payload: bytes, signature: str) -> dict[str, Any]:
     return json.loads(payload)
 
 
+# --- account deletion: subscriptions end first ------------------------------------------------------
+
+CANCEL_ON_DELETE = ("trialing", "active", "past_due", "unpaid", "incomplete")
+CANCEL_FAILED = ("We couldn't cancel your olácare subscription, so nothing was deleted. "
+                 "Please try again, or contact us.")
+
+
+def _cancel_stripe_subscription(sub_id: str) -> None:
+    """Cancel now (no refund, no proration). Already cancelled in Stripe counts as done."""
+    s = get_settings()
+    try:
+        stripe.Subscription.cancel(sub_id, api_key=s.stripe_secret_key)
+    except stripe.InvalidRequestError:
+        current = stripe.Subscription.retrieve(sub_id, api_key=s.stripe_secret_key)
+        if current.get("status") not in ("canceled", "incomplete_expired"):
+            raise
+
+
+def cancel_all_for_account(db: Session, acc: Account) -> int:
+    """Before an account is deleted: cancel every live ola Care subscription immediately (Stripe first, then
+    the local mirror is marked "canceled"; complimentary grants just end). Any Stripe failure raises
+    BillingError(502) before anything is changed locally, so the caller deletes nothing. The caller commits.
+    Returns how many subscriptions were cancelled."""
+    s = get_settings()
+    subs = db.exec(select(Subscription).where(Subscription.account_id == acc.id,
+                                              col(Subscription.status).in_(CANCEL_ON_DELETE))).all()
+    remote = [sub for sub in subs if sub.source == "stripe" and sub.stripe_subscription_id]
+    if s.billing_enabled:
+        for sub in remote:
+            try:
+                _cancel_stripe_subscription(sub.stripe_subscription_id)
+            except stripe.StripeError as exc:
+                log.warning("account %s deletion: subscription %s not cancelled (%s)", acc.id, sub.id,
+                            stripe_error_summary(exc))
+                raise BillingError(502, CANCEL_FAILED) from exc
+    for sub in subs:
+        sub.status = "canceled"
+        sub.cancel_at_period_end = False
+        sub.updated_at = utcnow()
+        db.add(sub)
+    return len(subs)
+
+
 # --- webhook handling (plain dicts: testable without Stripe) --------------------------------------
+
+
+async def _send_to_customer(acc: Account | None, message: "email.Email") -> None:
+    """Webhook emails to the customer: never to a deleted account (late Stripe events still arrive)."""
+    if acc is None or acc.status == "deleted":
+        return
+    await email.send(message)
 
 
 def _fetch_subscription(sub_id: str) -> dict[str, Any]:
@@ -388,6 +451,8 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
     if cs.get("subscription"):
         upsert_subscription(db, fetch_subscription(cs["subscription"]))
 
+    if acc.status == "deleted":
+        return
     if new_account or acc.password_hash is None:
         await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
     await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency))
@@ -503,6 +568,8 @@ async def _watch_order_paid(db: Session, cs: dict[str, Any], fetch_payment_inten
         return
     _revenue(db, cs["id"], acc.id, "watch", order.amount_total, order.currency, order.amount_tax)
     accounts.audit(db, "system", "order.paid", acc.id, detail=f"order {order.id} (watch; ola Care starts at pairing)")
+    if acc.status == "deleted":
+        return
     if new_account or acc.password_hash is None:
         await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
     terms = consent.terms_text if consent is not None and consent.status == "accepted" else None
@@ -523,7 +590,8 @@ async def _watch_order_failed(db: Session, cs: dict[str, Any]) -> None:
         )
         db.commit()
         changed = result.rowcount == 1
-    if changed and order.email:
+    owner = db.get(Account, order.account_id) if order.account_id else None
+    if changed and order.email and not (owner is not None and owner.status == "deleted"):
         await email.send(email.order_payment_failed(order.email))
 
 
@@ -736,14 +804,14 @@ async def _apply(
         care_activation.complete_from_subscription(db, obj)
         acc = db.get(Account, row.account_id) if row.account_id else None
         if acc and acc.status == "active" and not row.cancel_at_period_end:
-            await email.send(email.trial_ending(acc.email, row.trial_end))
+            await _send_to_customer(acc, email.trial_ending(acc.email, row.trial_end))
     elif kind.startswith("customer.subscription."):
         upsert_subscription(db, obj)
         care_activation.complete_from_subscription(db, obj)
     elif kind == "invoice.payment_failed":
         acc = db.exec(select(Account).where(Account.stripe_customer_id == obj.get("customer"))).first()
         if acc:
-            await email.send(email.payment_failed(acc.email))
+            await _send_to_customer(acc, email.payment_failed(acc.email))
     elif kind == "charge.refunded":
         _refund(db, obj)
 
