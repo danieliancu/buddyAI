@@ -1,0 +1,258 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import SectionHeading from "../components/SectionHeading.astro";
+import StatusBadge from "../components/trust/StatusBadge.astro";
+import { config, formatDate } from "../config";
+import { GROUPS, STATUS, STATUS_ORDER, flow, items, lastReviewed, specs, type Group, type Status } from "../data/trust";
+
+const groups = Object.keys(GROUPS) as Group[];
+const count = (g: Group, s: Status) => items.filter((i) => i.group === g && i.status === s).length;
+/** Security controls (everything but the compliance documents), by status. */
+const controlSections: { status: Status; title: string; intro: string }[] = [
+  { status: "active", title: "Active", intro: "Checked in the configuration we run in production." },
+  {
+    status: "firmware",
+    title: "Implemented in firmware",
+    intro: "In the watch's release firmware. The watches in testing today run development firmware, so these apply once release firmware is installed on a unit.",
+  },
+  { status: "planned", title: "Planned", intro: "Steps we have committed to that are not active yet." },
+  { status: "unverified", title: "Not yet verified", intro: "Things we can't confirm yet, so we don't claim them." },
+];
+const controls = items.filter((i) => i.group !== "compliance");
+const compliance = items.filter((i) => i.group === "compliance");
+const links = [
+  { href: "/legal/privacy/", label: "Privacy notice", text: "What we collect, why, who processes it and your rights." },
+  { href: "/legal/terms-of-sale/", label: "Terms of sale", text: "Buying the watch." },
+  { href: "/legal/subscription-terms/", label: "Subscription terms", text: "olácare, the service behind the assistant." },
+  { href: "/legal/warranty/", label: "Guarantee & warranty", text: "Your rights if something is wrong with the watch." },
+  { href: "/legal/cookies/", label: "Cookie notice", text: "What the website stores on your device." },
+];
+---
+<Base
+  title="Trust & compliance"
+  crumb="Trust & compliance"
+  description="How the olácompanion watch works, how your voice and text move between the watch, our servers and our AI provider, which security measures are active, and which tests and documents are still to come."
+>
+  <PageHero
+    eyebrow="Trust"
+    title="Trust & compliance"
+    lead="A plain account of what the watch is, how your data moves, what protects it today and what is still to come. We label every statement with its status, so you can see what is checked and what isn't yet."
+  >
+    <p class="mt-3 text-sm text-muted">Last reviewed {formatDate(lastReviewed)}.</p>
+  </PageHero>
+
+  <!-- status overview -->
+  <section class="bg-bg-2 py-10 lg:py-14" aria-labelledby="overview-title">
+    <div class="container-x">
+      <SectionHeading id="overview-title" title="Status at a glance" subtitle="What each label means, and where things stand." />
+      <dl class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {STATUS_ORDER.map((s) => (
+          <div class="glass p-4">
+            <dt><StatusBadge status={s} /></dt>
+            <dd class="mt-2 text-sm text-muted">{STATUS[s].definition}</dd>
+          </div>
+        ))}
+      </dl>
+      <ul class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {groups.map((g) => (
+          <li class="glass p-5">
+            <h3 class="font-semibold text-fg">{GROUPS[g].title}</h3>
+            <p class="mt-1 text-sm text-muted">{GROUPS[g].text}</p>
+            <ul class="mt-3 flex flex-wrap gap-2">
+              {STATUS_ORDER.filter((s) => count(g, s) > 0).map((s) => (
+                <li class="inline-flex items-center gap-1.5 text-sm text-fg">
+                  <StatusBadge status={s} /> <span class="font-semibold tabular-nums">{count(g, s)}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <!-- specifications -->
+  <section class="container-x mt-14" aria-labelledby="specs-title">
+    <SectionHeading
+      id="specs-title"
+      title="Watch specifications"
+      subtitle="The hardware the watch's firmware is written for. Battery details are shown as not yet verified until we have the battery's datasheet and our own measurements."
+    />
+    <div class="glass mt-6 overflow-hidden">
+      <table class="trust-table w-full text-left text-sm">
+        <caption class="sr-only">Watch specifications and the status of each</caption>
+        <thead class="bg-bg-2 text-muted">
+          <tr>
+            <th scope="col" class="px-4 py-3 font-semibold">Part</th>
+            <th scope="col" class="px-4 py-3 font-semibold">Specification</th>
+            <th scope="col" class="px-4 py-3 font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {specs.map((sp) => (
+            <tr>
+              <th scope="row" class="px-4 py-3 font-semibold text-fg">{sp.label}</th>
+              <td class="px-4 py-3 text-fg">
+                {sp.value}
+                {sp.note && <span class="mt-0.5 block text-xs text-muted">{sp.note}</span>}
+              </td>
+              <td class="px-4 py-3"><StatusBadge status={sp.status} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- data flow -->
+  <section class="container-x mt-16" aria-labelledby="flow-title">
+    <SectionHeading id="flow-title" title="How your data moves" subtitle="What happens between pressing the button and hearing the answer." />
+    <ol class="mt-6 grid gap-4 md:grid-cols-4">
+      {flow.map((f, i) => (
+        <li class="glass p-5">
+          <span class="grid h-8 w-8 place-items-center rounded-full bg-bg-2 text-sm font-bold text-accent">{i + 1}</span>
+          <h3 class="mt-3 font-semibold text-fg">{f.title}</h3>
+          <p class="mt-1 text-sm text-muted">{f.text}</p>
+        </li>
+      ))}
+    </ol>
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="glass p-5">
+        <h3 class="font-semibold text-fg">What we keep</h3>
+        <ul class="mt-2 list-disc space-y-1.5 pl-5 text-sm text-muted">
+          <li>The text of what you said and what olá answered, in your conversation history, until you delete it or close your account.</li>
+          <li>Your notes and reminders, and the facts olá remembers about you (you can switch memory off), until you delete them.</li>
+          <li>No recordings of your voice on our servers.</li>
+        </ul>
+        <p class="mt-3 text-sm text-muted">
+          Some records, such as orders and billing, are kept for longer for legal reasons. The <a class="link" href="/legal/privacy/">privacy notice</a> explains what we keep and for how long.
+        </p>
+      </div>
+      <div class="glass p-5">
+        <h3 class="font-semibold text-fg">Not end-to-end encrypted</h3>
+        <p class="mt-2 text-sm text-muted">
+          Your words travel encrypted between the watch, our servers and our AI provider, but they are not end-to-end encrypted: our servers and OpenAI process them so that olá can answer you. OpenAI may process data outside the UK and EEA, as described in our privacy notice.
+        </p>
+        <p class="mt-3 text-sm text-muted">
+          When a member of our team opens or deletes a customer's conversation history in our admin tools, it is recorded in an audit log.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- security controls -->
+  <section class="bg-bg-2 mt-16 py-10 lg:py-14" aria-labelledby="controls-title">
+    <div class="container-x">
+      <SectionHeading id="controls-title" title="Security controls" subtitle="Grouped by status. We only list what we can support from our code and our production configuration." />
+      <div class="mt-8 space-y-10">
+        {controlSections.map((cs) => {
+          const list = controls.filter((c) => c.status === cs.status);
+          return list.length > 0 && (
+            <div>
+              <h3 class="flex flex-wrap items-center gap-3 text-lg font-bold text-fg">
+                <StatusBadge status={cs.status} />
+                <span class="text-base font-normal text-muted">{cs.intro}</span>
+              </h3>
+              <ul class="mt-4 grid gap-4 md:grid-cols-2">
+                {list.map((c) => (
+                  <li class="glass p-5">
+                    <p class="text-xs font-semibold tracking-wide text-muted uppercase">{GROUPS[c.group].title}</p>
+                    <h4 class="mt-1 font-semibold text-fg">{c.title}</h4>
+                    <p class="mt-1 text-sm text-muted">{c.text}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+
+  <!-- compliance evidence -->
+  <section class="container-x mt-16" aria-labelledby="evidence-title">
+    <SectionHeading
+      id="evidence-title"
+      title="Product testing & compliance evidence"
+      subtitle="We don't show certification marks or claim conformity until the documents are in hand."
+    />
+    <div class="glass mt-6 p-5">
+      <h3 class="font-semibold text-fg">Confirmed</h3>
+      <p class="mt-1 text-sm text-muted">No product test reports or declarations are confirmed yet. They will be listed here as each one is completed.</p>
+    </div>
+    <ul class="mt-4 grid gap-4 md:grid-cols-2">
+      {compliance.map((c) => (
+        <li class="glass p-5">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <h3 class="font-semibold text-fg">{c.title}</h3>
+            <StatusBadge status={c.status} />
+          </div>
+          <p class="mt-2 text-sm text-muted">{c.text}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <!-- links -->
+  <section class="container-x mt-16" aria-labelledby="links-title">
+    <SectionHeading id="links-title" title="Policies and contact" />
+    <ul class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {links.map((l) => (
+        <li class="glass p-5">
+          <a class="link font-semibold" href={l.href}>{l.label}</a>
+          <p class="mt-1 text-sm text-muted">{l.text}</p>
+        </li>
+      ))}
+      <li class="glass p-5">
+        <a class="link font-semibold" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>
+        <p class="mt-1 text-sm text-muted">Questions about this page, your data or the watch's security.</p>
+      </li>
+    </ul>
+  </section>
+
+  <!-- closing -->
+  <section class="container-x mt-16 mb-4" aria-labelledby="closing-title">
+    <div class="glass p-6">
+      <h2 id="closing-title" class="text-xl font-bold text-fg">Keeping this page up to date</h2>
+      <p class="mt-2 text-muted">
+        We'll update this page as tests are completed and documents are confirmed, and change each status only when we can back it up.
+        Last reviewed {formatDate(lastReviewed)}.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .trust-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+  .trust-table th[scope="row"] {
+    width: 11rem;
+  }
+  /* phones: each row becomes a small card */
+  @media (max-width: 639.98px) {
+    .trust-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    .trust-table,
+    .trust-table tbody,
+    .trust-table tr,
+    .trust-table th,
+    .trust-table td {
+      display: block;
+      width: auto !important;
+    }
+    .trust-table tr {
+      padding: 0.75rem 1rem;
+    }
+    .trust-table th[scope="row"],
+    .trust-table td {
+      padding: 0.15rem 0 !important;
+    }
+  }
+</style>
