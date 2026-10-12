@@ -1,0 +1,43 @@
+################################################################################
+# DANGER - PRODUCTION UNITS ONLY - IRREVERSIBLE
+#
+# Building and flashing with this overlay makes the bootloader PERMANENTLY BURN
+# eFuses on the first boot of the unit:
+#   - Secure Boot V2 (only firmware signed with keys/buddyai_signing_key.pem runs,
+#     forever; losing the key means the unit can never be updated again)
+#   - flash encryption in RELEASE mode (no plaintext reflashing or reading)
+#   - Secure Download Mode (ROM download mode restricted; espefuse.py can no
+#     longer read the eFuses)
+#   - NVS encryption (keys in the encrypted nvs_keys partition)
+#   - JTAG is disabled as a side effect.
+# None of this can be undone.
+#
+# Only for finished customer units. Test the exact build on a SACRIFICIAL unit
+# first. Read firmware/README.md section 8 completely before using it.
+#
+# Not used by any default build: neither `idf.py build` (sdkconfig.defaults)
+# nor the release build (sdkconfig.defaults;sdkconfig.release) reads this file.
+# It is only applied when named explicitly, layered AFTER sdkconfig.release:
+#   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release;sdkconfig.production"
+################################################################################
+
+# PRODUCTION UNITS ONLY - burns eFuses on first boot (irreversible)
+# Hardware Secure Boot V2 replaces "signed apps without secure boot"
+# CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT is not set
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/buddyai_signing_key.pem"
+# Flash encryption, release mode
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_AES128=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE=y
+# NVS encryption, keys protected by flash encryption (nvs_keys partition)
+CONFIG_NVS_ENCRYPTION=y
+CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
+# The signed Secure Boot + flash encryption bootloader (~0x8870 bytes) does not
+# fit below 0x8000: move the partition table (layout in partitions_production.csv)
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_production.csv"

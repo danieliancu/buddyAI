@@ -20,6 +20,7 @@ components/settings   NVS storage (namespace "buddyai")
 components/ota        esp_https_ota + SHA-256 check (+ signature check in release)
 sdkconfig.defaults    development configuration (default)
 sdkconfig.release     release overlay (customer units)
+sdkconfig.production  production overlay - DANGER: burns eFuses, production units only (§8)
 keys/                 signing key location - never committed (see keys/README.md)
 ```
 
@@ -45,6 +46,16 @@ idf.py build
 Uses `sdkconfig.defaults` only (`sdkconfig` is generated and not committed). An `sdkconfig` generated
 before Bluetooth setup was added keeps `# CONFIG_BT_ENABLED is not set`: delete it (or build in a fresh
 directory, e.g. `idf.py -B build-ble -D SDKCONFIG=build-ble/sdkconfig build`) so the new defaults apply.
+
+> **Note: `firmware/sdkconfig` is generated, git-ignored, and can be stale.** Options already present in
+> an existing `sdkconfig` win over `sdkconfig.defaults` / `sdkconfig.release`, so an old copy can silently
+> keep Bluetooth off (`# CONFIG_BT_ENABLED is not set`) or protocomm security 0/1 enabled, which the
+> current defaults switch off. Do not trust it for anything you ship: build **release and production
+> images only in fresh build directories** with the documented `-D SDKCONFIG=…` and
+> `-D SDKCONFIG_DEFAULTS=…` flags (§7.3, §8.2); delete `build-release/` or `build-prod/` before building
+> an image to ship, so the same stale-options problem cannot happen there, and check the generated
+> `build-*/sdkconfig` when in doubt.
+
 Development builds:
 
 - accept `ws://` and `wss://` server URLs, try mDNS `_buddyai._tcp` discovery on the LAN;
@@ -220,8 +231,9 @@ based key scheme (XTS keys generated into the encrypted `nvs_keys` partition, `0
 
 ### 8.1 Production overlay
 
-Create `firmware/sdkconfig.production` with exactly this content (it is layered **after**
-`sdkconfig.release`):
+The overlay is committed as [`sdkconfig.production`](sdkconfig.production) (with a DANGER header). No
+default build reads it: only the build in §8.2 names it, layered **after** `sdkconfig.release`. Do not edit
+it casually: every option below is burnt into the unit. Its settings:
 
 ```
 # PRODUCTION UNITS ONLY - burns eFuses on first boot (irreversible)
@@ -291,6 +303,58 @@ own image (e.g. by `fw_version` suffix or device list on the server).
 
 From now on the unit is updated **only by signed OTA**.
 
+### 8.3 Production readiness checklist (spare-unit tests)
+
+Manual, physical tests. Do them on **spare units** before the first customer unit: the release items on
+an unlocked unit running the release build (§7), the production items on a **sacrificial** unit locked
+with §8.2. Record date, firmware version, unit MAC and result for each line.
+
+- [ ] **Signed OTA accepted** (release build): bump `PROJECT_VER`, build, offer the signed image (§7.4).
+      The watch downloads, restarts, reconnects and reports the new `fw_version`.
+- [ ] **Foreign-key image rejected**: sign a test image with a *different*, throwaway key (generated
+      only for this test, never the production key) and offer it. The watch logs a verification error,
+      keeps running the old version and does not restart into the test image. Repeat with an unsigned
+      development image.
+- [ ] **Rollback**: offer a correctly signed image that cannot reach a server session (e.g. a test build
+      whose built-in server URL points nowhere). After it restarts and fails to connect, reset it: the
+      bootloader goes back to the previous image, which then connects normally.
+- [ ] **Secure Boot active** (production unit): the first-boot log shows Secure Boot being enabled; every
+      later boot the app logs `secure boot ON, flash encryption ON`. An image signed with another key,
+      offered by OTA, is rejected as above.
+- [ ] **Flash encryption active**: the same log line; on the sacrificial unit, an attempt to read the
+      app partition over USB with `esptool.py` must fail or return data that does not match
+      `build-prod/buddyai_watch.bin`.
+- [ ] **NVS encryption active**: after Wi-Fi setup and pairing, settings survive a restart (NVS readable by
+      the firmware), and the Wi-Fi password, setup password and device token do not appear in plain text in
+      any data read from the flash in the previous test.
+- [ ] **JTAG / download mode state** (read-only commands only, never `burn_*`): `espefuse.py -p COMx summary`
+      before locking (expect a fresh chip, §8.2 step 1) and again after the first boot. If it can still read
+      the eFuses, check that the JTAG-disable and Secure Download Mode fields are set; if it is refused
+      (Secure Download Mode, §8.2 step 6), record the refusal as the result. Check also that a JTAG probe
+      cannot connect.
+- [ ] **Setup password random per unit**: two units (and one unit before and after a factory reset) show
+      different setup passwords, not derived from the MAC or the `ola-XXXX` name; the password does not
+      appear in the serial log.
+- [ ] **No default credentials**: the image has no built-in Wi-Fi network, password, device token or
+      operator account (`strings build-prod/buddyai_watch.bin` shows none of the test values used during
+      development), and the only server URL is the production one (§7.2). A fresh unit does nothing until
+      Wi-Fi setup and pairing.
+- [ ] **Battery and charging**: charging current about 150 mA with a USB power meter, charging stops at full
+      (4.2 V, 25 mA termination), the battery does not get noticeably warm, the percentage and `battery_mv`
+      are plausible, and the 8-hour acceptance test of §10.1 passes.
+
+### 8.4 Open decision: serial console on production units
+
+The release overlay keeps the serial console (UART / USB-Serial-JTAG log output, at WARN level), and
+`sdkconfig.release` is deliberately unchanged. Decide before the first production run:
+
+- **keep it**: service diagnostics on returned units (boot log, errors) over USB, without special
+  firmware; the log must never contain secrets (checked in §8.3);
+- **turn it off** (`CONFIG_ESP_CONSOLE_NONE=y` in `sdkconfig.production`): nothing readable over USB on a
+  customer unit, but no diagnostics either, and support would need another way (e.g. server-side logs).
+
+Whichever is chosen, test it on a sacrificial unit with the rest of §8.3, and record the decision here.
+
 ## 9. Hardware checks still pending
 
 The firmware builds but has not yet run on the watch. To verify on the first board:
@@ -303,7 +367,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
   are all 0) and the column gap `0x16`.
 - **AXP2101 rails**: the firmware leaves the power rails at the PMU's power-on defaults and only
   configures charger/ADC/gauge; confirm display, touch, audio codecs and PA are powered, charging
-  current (400 mA) and battery percentage.
+  current (150 mA, see §10 "Charging") and battery percentage.
 - **Speaker**: ES8311 output + NS4150B PA (GPIO46) — volume range, hiss when idle, clipping at 100 %.
 - **BOOT button (GPIO0)**: level while running (factory-reset long press).
 - **Wi-Fi setup** (see `docs/SETUP_TEST_CHECKLIST.md`): the WPA2 `ola-XXXX` network with the setup password
@@ -313,7 +377,7 @@ The firmware builds but has not yet run on the watch. To verify on the first boa
   advertising after setup; internal heap after `ble_prov_start` (NimBLE uses PSRAM, the controller needs
   internal RAM).
 - **Release/production**: signed OTA accepted and a foreign-key image rejected; NVS encryption and
-  flash encryption on a production unit (§8) — on a *sacrificial* unit first.
+  flash encryption on a production unit (§8) — on a *sacrificial* unit first; full list in §8.3.
 
 ## 10. Power and standby
 
