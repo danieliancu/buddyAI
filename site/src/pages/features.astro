@@ -44,6 +44,19 @@ const offline = {
     "Changes you make in your olá account reaching the watch",
   ],
 };
+const wifi = {
+  how: [
+    "It keeps up to 5 Wi-Fi networks, for example home, office and your phone's hotspot",
+    "It joins the strongest one in range by itself, and when you leave one it moves to another it knows",
+    "Add a network anytime in Settings › Wi-Fi setup: pick it from the nearby networks and type its password on the watch, or use your phone",
+    "A mistyped password never replaces one that works: the watch keeps the old one until the new one connects",
+  ],
+  why: [
+    "Wi-Fi instead of a mobile connection: no SIM and no second phone plan to pay for, and a mobile radio would drain the small battery much faster",
+    "2.4 GHz: it reaches further through walls than 5 GHz, and every home router and phone hotspot offers it",
+    "No phone app: nothing to install or keep running; the watch talks to olá on its own, so your phone doesn't need to be nearby",
+  ],
+};
 ---
 <Base
   title="Features: AI voice assistant, reminders, notes & live answers"
@@ -94,6 +107,26 @@ const offline = {
       <ul class="mt-2 space-y-1.5 text-sm text-muted">
         {offline.needs.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
       </ul>
+    </div>
+  </section>
+
+  <section class="container-x mt-8" aria-labelledby="wifi-how-title">
+    <div class="glass p-6 sm:p-8">
+      <h2 id="wifi-how-title" class="text-xl font-semibold text-fg">How Wi-Fi works</h2>
+      <div class="mt-2 grid gap-8 md:grid-cols-2">
+        <div>
+          <h3 class="mt-3 text-sm font-semibold uppercase tracking-wide text-muted">It remembers your networks</h3>
+          <ul class="mt-2 space-y-1.5 text-sm text-muted">
+            {wifi.how.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
+          </ul>
+        </div>
+        <div>
+          <h3 class="mt-3 text-sm font-semibold uppercase tracking-wide text-muted">Why it works this way</h3>
+          <ul class="mt-2 space-y-1.5 text-sm text-muted">
+            {wifi.why.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 

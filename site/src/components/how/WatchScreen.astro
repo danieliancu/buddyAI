@@ -14,7 +14,7 @@ const g = (cp: number) => String.fromCodePoint(cp);
 const I = {
   mic: g(0xf130), pen: g(0xf304), cal: g(0xf073), gear: g(0xf013), wifi: g(0xf1eb), batt: g(0xf241),
   close: g(0xf00d), left: g(0xf053), right: g(0xf054), palette: g(0xf53f), sun: g(0xf185), vol: g(0xf028),
-  power: g(0xf011), clock: g(0xf017), globe: g(0xf0ac), lock: g(0xf023),
+  power: g(0xf011), clock: g(0xf017), globe: g(0xf0ac), lock: g(0xf023), shift: g(0xf062), bs: g(0xf55a),
 };
 
 /* A decorative QR code (finder squares + a fixed pattern), like the one the watch shows in Wi-Fi setup. */
@@ -132,7 +132,7 @@ const marks = Array.from({ length: 12 }, (_, i) => {
             <span class="st-pill on" role="button" tabindex="0" data-act="lang:en">English</span>
             <span class="st-pill" role="button" tabindex="0" data-act="lang:other" data-lang-other>Other</span>
           </div>
-          <div class="st-card st-row ws-tap" role="button" tabindex="0" data-act="open:wifi">
+          <div class="st-card st-row ws-tap" role="button" tabindex="0" data-act="open:wlan">
             <span class="st-ico fa">{I.wifi}</span><span class="st-name">Wi-Fi setup</span><span class="st-chev fa">{I.right}</span>
           </div>
         </div>
@@ -142,6 +142,26 @@ const marks = Array.from({ length: 12 }, (_, i) => {
           <span class="st-pdot on" data-pdot></span>
           <span class="st-pdot" data-pdot></span>
           <span class="st-arrow fa" role="button" tabindex="0" aria-label="Next page" data-act="page:1">{I.right}</span>
+        </div>
+      </section>
+
+      <!-- Wi-Fi: saved and nearby networks, the password keyboard (firmware ui_wifi.c) -->
+      <section class="ws-view" data-view="wlan" aria-label="Wi-Fi">
+        <div class="wl-title">Wi-Fi</div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:settings">{I.close}</div>
+        <div class="wl-body" data-wlan></div>
+      </section>
+      <section class="ws-view" data-view="wpass" aria-label="Wi-Fi password">
+        <div class="wl-title" data-wpass-title>Wi-Fi</div>
+        <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:wlan">{I.close}</div>
+        <div class="wp-field"><span data-wpass-text></span><i class="wp-caret"></i></div>
+        <div class="wp-hint" data-wpass-hint></div>
+        <div class="wp-kb" data-kb>
+            <div class="wp-row"><span class="wp-k ch" data-act="key:1">1</span><span class="wp-k ch" data-act="key:2">2</span><span class="wp-k ch" data-act="key:3">3</span><span class="wp-k ch" data-act="key:4">4</span><span class="wp-k ch" data-act="key:5">5</span><span class="wp-k ch" data-act="key:6">6</span><span class="wp-k ch" data-act="key:7">7</span><span class="wp-k ch" data-act="key:8">8</span><span class="wp-k ch" data-act="key:9">9</span><span class="wp-k ch" data-act="key:0">0</span></div>
+            <div class="wp-row"><span class="wp-k ch" data-act="key:q">q</span><span class="wp-k ch" data-act="key:w">w</span><span class="wp-k ch" data-act="key:e">e</span><span class="wp-k ch" data-act="key:r">r</span><span class="wp-k ch" data-act="key:t">t</span><span class="wp-k ch" data-act="key:y">y</span><span class="wp-k ch" data-act="key:u">u</span><span class="wp-k ch" data-act="key:i">i</span><span class="wp-k ch" data-act="key:o">o</span><span class="wp-k ch" data-act="key:p">p</span></div>
+            <div class="wp-row"><span class="wp-k ch" data-act="key:a">a</span><span class="wp-k ch" data-act="key:s">s</span><span class="wp-k ch" data-act="key:d">d</span><span class="wp-k ch" data-act="key:f">f</span><span class="wp-k ch" data-act="key:g">g</span><span class="wp-k ch" data-act="key:h">h</span><span class="wp-k ch" data-act="key:j">j</span><span class="wp-k ch" data-act="key:k">k</span><span class="wp-k ch" data-act="key:l">l</span></div>
+            <div class="wp-row"><span class="wp-k wide fa" data-act="key:shift" aria-label="Shift">{I.shift}</span><span class="wp-k ch" data-act="key:z">z</span><span class="wp-k ch" data-act="key:x">x</span><span class="wp-k ch" data-act="key:c">c</span><span class="wp-k ch" data-act="key:v">v</span><span class="wp-k ch" data-act="key:b">b</span><span class="wp-k ch" data-act="key:n">n</span><span class="wp-k ch" data-act="key:m">m</span><span class="wp-k wide fa" data-act="key:bs" aria-label="Delete">{I.bs}</span></div>
+            <div class="wp-row"><span class="wp-k" data-act="key:-">-</span><span class="wp-k" data-act="key:_">_</span><span class="wp-k space" data-act="key:sp" aria-label="Space"></span><span class="wp-k" data-act="key:.">.</span><span class="wp-k wide wp-ok" data-act="key:ok">OK</span></div>
         </div>
       </section>
 

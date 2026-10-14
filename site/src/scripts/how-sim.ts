@@ -4,7 +4,7 @@
 
 type View =
   | "watchface" | "chat" | "notes" | "note" | "reminders" | "reminder" | "settings"
-  | "wifi" | "pairing" | "message" | "standby" | "off";
+  | "wifi" | "wlan" | "wpass" | "pairing" | "message" | "standby" | "off";
 type Conv = "idle" | "listening" | "thinking" | "speaking";
 type Hot = "talk" | "power";
 
@@ -17,8 +17,18 @@ interface Rem {
 const FA = {
   mic: "", speaker: "", right: "", pin: "", file: "", cal: "", bell: "",
   place: "", users: "", trash: "", check: "", warn: "",
+  pen: "", wifi: "", lock: "", refresh: "",
 };
-const ROW_COLOURS = ["var(--a)", "#FF8A3D", "#34C759", "#AF52DE", "#FF4F81", "#32D2F5"];
+/* Reminder state colours, as on the watch (ui_items.c): completed, advance alert, plain calendar. Notes use
+ * the theme colour (var(--a)). */
+const remColour = (r: Rem) => (r.done ? "#2fbf71" : r.notify ? "#ff8a3d" : "#4f8cff");
+/* Networks the Wi-Fi screen finds nearby (strongest first): signal 1 strong .. 0.4 weak. */
+const NEARBY = [
+  { ssid: "Cafe Central", lock: true, sig: 1 },
+  { ssid: "Office", lock: true, sig: 0.7 },
+  { ssid: "Library Free Wi-Fi", lock: false, sig: 0.7 },
+  { ssid: "BT-Hub-7F2A", lock: true, sig: 0.4 },
+];
 const TIMEOUTS = [10, 15, 30, 60, 120, 300];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -69,6 +79,17 @@ function setup(root: HTMLElement) {
     ] as Rem[],
     note: 1,
     rem: 2,
+    wlan: {
+      saved: ["Home", "Office", "Galaxy hotspot"],
+      on: "Home",
+      status: "on" as "on" | "trying" | "wrong" | "off",
+      join: "",
+      armed: -1,
+      net: "",
+      typed: "",
+      upper: false,
+      hint: "",
+    },
   });
   let s = fresh();
 
@@ -98,7 +119,7 @@ function setup(root: HTMLElement) {
   fit();
 
   // ---- views -------------------------------------------------------------------------------------------
-  const ORDER: View[] = ["watchface", "notes", "reminders", "settings", "chat", "note", "reminder"];
+  const ORDER: View[] = ["watchface", "notes", "reminders", "settings", "wlan", "wpass", "chat", "note", "reminder"];
   function show(v: View, how: "auto" | "none" = "auto") {
     if (v === s.view) return;
     const back = how === "auto" && ORDER.indexOf(v) < ORDER.indexOf(s.view) && ORDER.includes(v);
@@ -117,6 +138,8 @@ function setup(root: HTMLElement) {
     if (v === "reminders") renderRems();
     if (v === "note") renderNote();
     if (v === "reminder") renderRem();
+    if (v === "wlan") renderWlan();
+    if (v === "wpass") renderPass();
   }
 
   function setConv(c: Conv) {
@@ -244,9 +267,8 @@ function setup(root: HTMLElement) {
     const body = q("[data-list=notes]");
     body.replaceChildren();
     const sorted = [...s.notes].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.n - b.n);
-    sorted.forEach((n, i) => {
+    sorted.forEach((n) => {
       const row = el("div", "ls-row");
-      row.style.setProperty("--c", ROW_COLOURS[i % ROW_COLOURS.length]);
       row.dataset.act = `note:${n.n}`;
       row.setAttribute("role", "button");
       row.tabIndex = 0;
@@ -254,14 +276,20 @@ function setup(root: HTMLElement) {
       if (n.pinned) text.append(fa(FA.pin, "ls-pin"));
       text.append(n.title);
       text.append(el("span", "ls-meta", n.lines.join(", ")));
-      row.append(el("div", "ls-badge", `#${n.n}`), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
+      row.append(badge(FA.pen), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
       body.append(row);
     });
+  }
+  /** A list row's badge: the item's state as an icon, not its number (as on the watch, ui_items.c row_badge). */
+  function badge(glyph: string, cls?: string) {
+    const b = el("div", "ls-badge");
+    b.append(fa(glyph, cls));
+    return b;
   }
   const curNote = () => s.notes.find((n) => n.n === s.note) ?? s.notes[0];
   function renderNote(flash = -1, live?: { help?: boolean; said?: string; ask?: string; bad?: string }) {
     const n = curNote();
-    q("[data-note-head]").textContent = `Note #${n.n}`;
+    q("[data-note-head]").textContent = "Note";
     const card = el("div", "dt-card");
     const top = el("div", "dt-top");
     top.append(el("div", "dt-tile fa", FA.file), el("div", "dt-title", n.title));
@@ -302,34 +330,28 @@ function setup(root: HTMLElement) {
 
   // ---- reminders ---------------------------------------------------------------------------------------
   const remOrder = (a: Rem, b: Rem) => a.day - b.day || Number(!!a.done) - Number(!!b.done) || a.time.localeCompare(b.time);
-  function remRow(r: Rem, i: number) {
+  function remRow(r: Rem) {
     const row = el("div", `ls-row${r.done ? " done" : ""}`);
-    if (!r.done) row.style.setProperty("--c", ROW_COLOURS[i % ROW_COLOURS.length]);
+    row.style.setProperty("--c", remColour(r));
     row.dataset.act = `rem:${r.n}`;
     row.setAttribute("role", "button");
     row.tabIndex = 0;
     const text = el("div", "ls-text", r.text);
     const meta = el("span", "ls-meta", r.end ? `${r.time} – ${r.end}` : r.time);
-    if (r.notify) {
-      const bell = fa(FA.bell);
-      bell.style.color = "var(--a)";
-      meta.append(" ", bell);
-    }
     if (r.done) meta.append(" ", el("span", "ok", "✓ Completed"));
     text.append(meta);
-    row.append(el("div", "ls-badge", `#${r.n}`), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
+    row.append(badge(r.done ? FA.check : r.notify ? FA.bell : FA.cal), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
     return row;
   }
   function renderRems() {
     const body = q("[data-list=reminders]");
     body.replaceChildren();
     const days = [...new Set(s.rems.map((r) => r.day))].sort((a, b) => a - b);
-    let i = 0;
     for (const day of days) {
       const head = el("div", "ls-day");
       const d = dayDate(day);
       head.append(el("b", "", day === 0 ? "Today" : day === 1 ? "Tomorrow" : WEEKDAYS[d.getDay()]), el("span", "", `${d.getDate()} ${MONTHS[d.getMonth()]}`));
-      const rows = s.rems.filter((r) => r.day === day).sort(remOrder).map((r) => remRow(r, i++));
+      const rows = s.rems.filter((r) => r.day === day).sort(remOrder).map((r) => remRow(r));
       if (day === 0) {
         const frame = el("div", "ls-today");
         frame.append(head, ...rows);
@@ -340,7 +362,7 @@ function setup(root: HTMLElement) {
   const curRem = () => s.rems.find((r) => r.n === s.rem) ?? s.rems[0];
   function renderRem(opts: { flash?: string; live?: string; said?: string; status?: string } = {}) {
     const r = curRem();
-    q("[data-rem-head]").textContent = `Reminder #${r.n}`;
+    q("[data-rem-head]").textContent = "Reminder";
     const card = el("div", "dt-card rm-card");
     const top = el("div", "dt-top");
     const col = el("div");
@@ -350,7 +372,9 @@ function setup(root: HTMLElement) {
     col.append(time);
     if (r.done) col.append(el("div", "ok", "✓ Completed"));
     else if (opts.status) col.append(el("div", "", opts.status)), ((col.lastChild as HTMLElement).style.color = "var(--a)");
-    top.append(el("div", "dt-tile rm-tile fa", FA.cal), col);
+    const tile = el("div", "dt-tile rm-tile fa", FA.cal);
+    tile.style.setProperty("--c", remColour(r));
+    top.append(tile, col);
     card.append(top);
     const info = (icon: string, label: string, value: string, key: string) => {
       const row = el("div", `rm-info${opts.flash === key ? " dt-line flash" : ""}`);
@@ -392,6 +416,108 @@ function setup(root: HTMLElement) {
     bar.replaceChildren(del, mic, chk);
   }
   const remMic = (on: boolean) => q("[data-rem-bar] .mic").classList.toggle("rec", on);
+
+  // ---- Wi-Fi screen (firmware ui_wifi.c) -----------------------------------------------------------------
+  function wlRow(act: string, icon: HTMLElement, name: string, sub?: { text: string; cls: string }) {
+    const row = el("div", "wl-row");
+    row.dataset.act = act;
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    const t = el("div", "wl-txt");
+    t.append(el("b", "", name));
+    if (sub) t.append(el("span", sub.cls, sub.text));
+    row.append(icon, t);
+    return row;
+  }
+  function renderWlan() {
+    const w = s.wlan;
+    const body = q("[data-wlan]");
+    body.replaceChildren();
+    const [title, sub, icon] =
+      w.status === "trying" ? ["Connecting…", w.join, FA.wifi]
+      : w.status === "wrong" ? ["Wrong password", w.join, FA.warn]
+      : w.on ? ["Connected", w.on, FA.wifi]
+      : ["Not connected", "", FA.wifi];
+    const card = el("div", `wl-card ${w.status === "on" && !w.on ? "off" : w.status}`);
+    const ct = el("div", "wl-txt");
+    ct.append(el("b", "", title));
+    if (sub) ct.append(el("span", "dim", sub));
+    card.append(fa(icon, "wl-ico"), ct);
+    body.append(card);
+    // the network the watch is on is in the card above only
+    if (w.saved.some((n) => n !== w.on)) body.append(el("div", "wl-sec", "Saved networks"));
+    w.saved.forEach((ssid, i) => {
+      if (ssid === w.on) return;
+      const ico = fa(FA.wifi, "wl-ico");
+      ico.style.opacity = "0.6";
+      const row = wlRow(`wjoin:${i}`, ico, ssid, w.armed === i ? { text: "Tap again to forget", cls: "bad" } : undefined);
+      const bin = el("div", `wl-bin${w.armed === i ? " armed" : ""}`);
+      bin.append(fa(FA.trash));
+      bin.dataset.act = `wforget:${i}`;
+      bin.setAttribute("role", "button");
+      bin.setAttribute("aria-label", `Forget ${ssid}`);
+      row.append(bin);
+      body.append(row);
+    });
+    const sec = el("div", "wl-sec tap", "Nearby   ");
+    sec.append(fa(FA.refresh));
+    body.append(sec);
+    NEARBY.forEach((n, i) => {
+      if (w.saved.includes(n.ssid)) return;
+      const ico = fa(FA.wifi, "wl-ico");
+      ico.style.opacity = String(n.sig);
+      const row = wlRow(`wnear:${i}`, ico, n.ssid);
+      if (n.lock) row.append(fa(FA.lock, "wl-lock"));
+      body.append(row);
+    });
+    const phone = el("div", "wl-phone", "Set up with phone");
+    phone.dataset.act = "open:wifi";
+    phone.setAttribute("role", "button");
+    body.append(phone);
+  }
+  function renderPass() {
+    const w = s.wlan;
+    q("[data-wpass-title]").textContent = w.net;
+    const t = q("[data-wpass-text]");
+    t.textContent = w.typed || "Password";
+    t.classList.toggle("ph", !w.typed);
+    q("[data-wpass-hint]").textContent = w.hint;
+    q("[data-kb]").classList.toggle("upper", w.upper);
+  }
+  function openPass(ssid: string) {
+    Object.assign(s.wlan, { net: ssid, typed: "", hint: "", upper: false });
+    show("wpass");
+    renderPass();
+  }
+  /** Join a network: "Connecting…", then it is on and first among the saved networks (saved only once it connects). */
+  async function wlanJoin(ssid: string) {
+    const w = s.wlan;
+    Object.assign(w, { join: ssid, status: "trying", armed: -1 });
+    show("wlan");
+    renderWlan();
+    await wait(1600);
+    w.on = ssid;
+    w.status = "on";
+    w.saved = [ssid, ...w.saved.filter((n) => n !== ssid)].slice(0, 5);
+    renderWlan();
+  }
+  async function typeKey(k: string) {
+    const w = s.wlan;
+    if (k === "ok") {
+      if (w.typed.length < 8) {
+        w.hint = "At least 8 characters";
+        renderPass();
+        return;
+      }
+      await wlanJoin(w.net);
+      return;
+    }
+    if (k === "shift") w.upper = !w.upper;
+    else if (k === "bs") w.typed = w.typed.slice(0, -1);
+    else if (w.typed.length < 64) w.typed += k === "sp" ? " " : w.upper ? k.toUpperCase() : k;
+    w.hint = "";
+    renderPass();
+  }
 
   // ---- settings ----------------------------------------------------------------------------------------
   function applySettings() {
@@ -773,6 +899,39 @@ function setup(root: HTMLElement) {
       s.aod = true;
       applySettings();
     },
+    // Wi-Fi setup restarts the watch on its setup screen (the saved networks stay)
+    "set:wifi": async () => {
+      s.wlan = fresh().wlan;
+      await openSettings(1);
+      await wait(600);
+      highlight("[data-act='open:wlan']");
+      await wait(900);
+      clearHighlights();
+      show("wlan");
+      await wait(900);
+      highlight(".wl-row[data-act='wjoin:1']");
+    },
+    "set:wifi-add": async () => {
+      s.wlan = fresh().wlan;
+      ensureOn();
+      show("wlan", "none");
+      renderWlan();
+      await wait(800);
+      highlight("[data-act='wnear:0']");
+      await wait(900);
+      clearHighlights();
+      openPass(NEARBY[0].ssid);
+      for (const ch of "coffee2024") {
+        await wait(170);
+        s.wlan.typed += ch;
+        renderPass();
+      }
+      await wait(500);
+      highlight(".wp-ok");
+      await wait(700);
+      clearHighlights();
+      await wlanJoin(NEARBY[0].ssid);
+    },
     "set:page1": async () => openSettings(0),
     "setup:on": async () => {
       setConv("idle");
@@ -833,6 +992,7 @@ function setup(root: HTMLElement) {
       else if (what === "reminders") void run(async () => show("reminders"));
       else if (what === "settings") void run(() => openSettings(0));
       else if (what === "wifi") void run(async () => (iphoneLine(false), show("wifi")));
+      else if (what === "wlan") void run(async () => show("wlan"));
     },
     back: (what) => void run(async () => show(what as View)),
     note: (n) => void run(async () => ((s.note = Number(n)), show("note"))),
@@ -874,6 +1034,30 @@ function setup(root: HTMLElement) {
     aod: () => void run(async () => ((s.aod = !s.aod), applySettings())),
     lang: (l) => void run(async () => ((s.lang = l === "en" ? "en" : "ro"), applySettings())),
     page: (d) => void run(async () => setPage(s.page + Number(d))),
+    wjoin: (i) => {
+      const ssid = s.wlan.saved[Number(i)];
+      if (ssid && ssid !== s.wlan.on) void run(() => wlanJoin(ssid));
+    },
+    wforget: (i) =>
+      void run(async () => {
+        const w = s.wlan, n = Number(i);
+        if (w.armed === n) {
+          w.saved.splice(n, 1);
+          w.armed = -1;
+          renderWlan();
+          return;
+        }
+        w.armed = n;
+        renderWlan();
+        await wait(3000);
+        w.armed = -1;
+        renderWlan();
+      }),
+    wnear: (i) => {
+      const n = NEARBY[Number(i)];
+      if (n) void run(async () => (n.lock ? openPass(n.ssid) : await wlanJoin(n.ssid)));
+    },
+    key: (k) => void run(() => typeKey(k ?? "")),
   };
 
   screen.addEventListener("click", (e) => {

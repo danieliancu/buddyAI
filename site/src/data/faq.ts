@@ -31,7 +31,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. olá connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your olá account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password.",
+        a: "Yes. olá connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your olá account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password. The watch remembers up to 5 networks (home, office, a phone hotspot) and joins the strongest one in range by itself.",
       },
       {
         q: "What works without an internet connection?",

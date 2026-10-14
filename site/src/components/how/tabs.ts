@@ -182,7 +182,7 @@ export const tabs = (trialDays: number): Tab[] => [
       {
         title: "Pin or delete",
         text: "Pin keeps a note first. Delete asks for a second tap; by voice, olá asks you to confirm before anything is deleted.",
-        say: ["Delete note 3"],
+        say: ["Delete the shopping list"],
         touch: "Pin and trash buttons under the note",
         run: "notes:pin",
       },
@@ -270,10 +270,22 @@ export const tabs = (trialDays: number): Tab[] => [
       },
       {
         title: "Page 2: standby clock, language, Wi-Fi",
-        text: "Swipe left or tap the arrow. Turn on the clock in standby, pick the language olá speaks, or set up a new Wi-Fi.",
+        text: "Swipe left or tap the arrow. Turn on the clock in standby, pick the language olá speaks, or open Wi-Fi setup.",
         say: ["Switch to Romanian", "Turn on the clock in standby"],
         touch: "Swipe left or tap ›",
         run: "set:page2",
+      },
+      {
+        title: "Wi-Fi: your networks",
+        text: "Tap Wi-Fi setup on page 2. At the top, the network the watch is on; below, the other networks it remembers (up to 5 in all). Tap one to switch to it, tap its bin twice to forget it. The watch also joins the strongest saved network in range by itself, so going from home to the office or to your phone's hotspot needs nothing from you.",
+        touch: "Page 2 › Wi-Fi setup",
+        run: "set:wifi",
+      },
+      {
+        title: "Wi-Fi: a new network",
+        text: "Under Nearby, tap a network. If it has a password, type it on the watch's keyboard and tap OK. The watch saves it only once it connects, so a mistyped password changes nothing. Prefer your phone? Tap Set up with phone and type the password there, as in Onboarding.",
+        touch: "Nearby › a network",
+        run: "set:wifi-add",
       },
       {
         title: "More in your account",
