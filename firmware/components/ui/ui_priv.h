@@ -78,7 +78,10 @@ extern lv_font_t buddy_font_big;       /* Noto Sans Medium 56 px: ASCII, £ ° �
 #define SET_ICON_PIN        "\xEF\x8F\x85"  /* U+F3C5 map-marker-alt: location */
 #define SET_ICON_DOC        "\xEF\x85\x9C"  /* U+F15C file-alt: description */
 #define SET_ICON_USERS      "\xEF\x83\x80"  /* U+F0C0: participants */
-#define SET_ICON_CALENDAR   "\xEF\x81\xB3"  /* U+F073, in buddy_font_set_lg */
+#define SET_ICON_CALENDAR   "\xEF\x81\xB3"  /* U+F073, also in buddy_font_set_lg */
+#define SET_ICON_CHECK      "\xEF\x80\x8C"  /* U+F00C: completed reminder (list badge) */
+#define SET_ICON_EXCLAIM    "\xEF\x84\xAA"  /* U+F12A: overdue reminder (list badge) */
+#define SET_ICON_PEN        "\xEF\x8C\x84"  /* U+F304: note (list badge), as the watchface's notes shortcut */
 #define SET_ICON_TRASH      "\xEF\x87\xB8"  /* U+F1F8 */
 #define SET_ICON_CLOCK      "\xEF\x80\x97"  /* U+F017 */
 #define SET_ICON_PIN_NOTE   "\xEF\x82\x8D"  /* U+F08D thumbtack: pinned note */
@@ -171,6 +174,20 @@ typedef enum {
     STR_REMINDER_HELP,  /* reminder mic open: how to change it */
     STR_HELLO,          /* watchface greeting: "Hi there!" */
     STR_HELP_PROMPT,    /* watchface, under the greeting: "How can I help you today?" */
+    /* Wi-Fi screen (ui_wifi.c), English only for now */
+    STR_WIFI,
+    STR_WIFI_SAVED,
+    STR_WIFI_NEARBY,
+    STR_WIFI_CONNECTED,
+    STR_WIFI_CONNECTING,
+    STR_WIFI_OFFLINE,
+    STR_WIFI_WRONG_PASS,
+    STR_WIFI_NOT_FOUND,
+    STR_WIFI_SCANNING,
+    STR_WIFI_NONE,
+    STR_WIFI_PHONE,
+    STR_WIFI_FORGET_CONFIRM,
+    STR_WIFI_PASS_SHORT,
     STR__COUNT,
 } ui_str_t;
 
@@ -255,6 +272,11 @@ void      ui_hold_awake(bool hold);     /* keep the screen on (reminder alert) *
 /* ---- language picker (ui_lang.c); caller holds the lock ---- */
 void        ui_lang_init(void);
 void        ui_lang_open(void);
+
+/* ---- Wi-Fi screen (ui_wifi.c); caller holds the lock ---- */
+void        ui_wifi_init(void);
+/* from_settings: the X goes back to settings (else to the watchface). */
+void        ui_wifi_open(bool from_settings);
 const char *ui_lang_label(const char *code);
 
 /* ---- conversation screen (ui_chat.c); caller holds the lock ---- */

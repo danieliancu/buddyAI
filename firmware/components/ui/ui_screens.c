@@ -240,9 +240,7 @@ static void timeout_cb(lv_event_t *e)
 
 static void wifi_btn_cb(lv_event_t *e)
 {
-    if (g_ui_cb.on_wifi_setup) {
-        g_ui_cb.on_wifi_setup();
-    }
+    ui_wifi_open(true);     /* saved and nearby networks; the phone setup is one button there */
 }
 
 static void show_page(int page)
@@ -841,6 +839,11 @@ static void wifi_setup_action(void)
     }
 }
 
+static void wifi_screen_action(void)
+{
+    ui_wifi_open(false);
+}
+
 static void retry_action(void)
 {
     ui_go_watchface();
@@ -940,7 +943,7 @@ void ui_show_error(ui_error_t err, const char *detail)
     switch (err) {
     case UI_ERR_NO_WIFI:
         ui_msg_show(ICON_WIFI, red, ui_str(STR_ERR_NO_WIFI_T), ui_str(STR_ERR_NO_WIFI_B), NULL,
-                    ui_str(STR_WIFI_SETUP), wifi_setup_action, true, 0);
+                    ui_str(STR_WIFI_SETUP), wifi_screen_action, true, 0);
         break;
     case UI_ERR_SERVER_UNREACHABLE:
         ui_msg_show(ICON_UNLINK, amber, ui_str(STR_ERR_SERVER_T), ui_str(STR_ERR_SERVER_B), NULL,

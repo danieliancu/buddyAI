@@ -179,7 +179,7 @@ static void connect_task(void *arg)
         if (sta && esp_netif_get_ip_info(sta, &ip) == ESP_OK) {
             esp_ip4addr_ntoa(&ip.ip, s_ip, sizeof(s_ip));
         }
-        settings_set_wifi(s_cfg.ssid, s_cfg.password);
+        settings_add_wifi(s_cfg.ssid, s_cfg.password, true);
         settings_rotate_setup_pass();   /* the password shown during this setup stops working */
         s_state = WIFI_PROV_STA_CONNECTED;
         ESP_LOGI(TAG, "joined '%s': saved", s_cfg.ssid);

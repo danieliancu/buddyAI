@@ -261,7 +261,7 @@ static esp_err_t save_post(httpd_req_t *req)
         return ESP_OK;
     }
 
-    settings_set_wifi(ssid, pass);
+    settings_add_wifi(ssid, pass, false);   /* untried: kept apart from a working password until it connects */
     settings_set_server_url(url);   /* release: always "", clearing a URL an older firmware stored */
     settings_rotate_setup_pass();   /* the password shown during this setup stops working */
     ESP_LOGI(TAG, "credentials saved for '%s' (server_url %s)", ssid, url[0] ? url : "<auto>");

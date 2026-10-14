@@ -2,7 +2,7 @@
  * ola - persistent settings (NVS)
  *
  * Holds:
- *  - Wi-Fi credentials, configured server_url, last-known server, device token
+ *  - saved Wi-Fi networks (up to WIFI_SAVED_MAX), configured server_url, last-known server, device token
  *  - the device-facing settings object of PROTOCOL.md section 5 + its version
  *
  * All getters return copies and are thread-safe.
@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include "esp_err.h"
 #include "cJSON.h"
+#include "prov_util.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -89,8 +90,14 @@ bool      settings_theme_preset(const char *name, settings_theme_t *out);
 const char *const *settings_theme_preset_names(void);
 
 /* ---- provisioning / connection ---- */
-bool      settings_get_wifi(char ssid[SETTINGS_SSID_MAX], char pass[SETTINGS_PASS_MAX]);
-esp_err_t settings_set_wifi(const char *ssid, const char *pass);
+/* Saved Wi-Fi networks, most recently joined first (see wifi_list_* in prov_util.h). A watch set up by an
+ * older firmware (one network) is moved into the list on first use. */
+int       settings_get_wifi_list(wifi_saved_list_t *out);       /* returns the count */
+/* verified: the watch has just joined it (Bluetooth setup); false for the setup page (not tried yet). */
+esp_err_t settings_add_wifi(const char *ssid, const char *pass, bool verified);
+/* The watch joined this network: verified, moved to the front (flash written only if that changed). */
+esp_err_t settings_wifi_joined(const char *ssid, const char *pass);
+esp_err_t settings_forget_wifi(const char *ssid, const char *pass);
 bool      settings_get_server_url(char *out, size_t len);   /* configured (portal) */
 esp_err_t settings_set_server_url(const char *url);         /* "" clears */
 bool      settings_get_last_server(char *out, size_t len);  /* last successful */

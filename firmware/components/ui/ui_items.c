@@ -4,28 +4,29 @@
  * Two separate lists, each opened from its own icon under the date on the
  * watchface (pen = notes, calendar = reminders) or by the server when the user
  * asks to see them (items_open):
- *  - Notes: "#n  first line"; tapping asks the server for the full text
+ *  - Notes: the first line; tapping asks the server for the full text
  *    (item_open -> item_show).
  *  - Reminders: grouped by day under a "Today" / "Tomorrow" / weekday header
  *    with the date on the right, in time order (completed ones last in their
- *    day). Each row: a coloured "#n" badge, a bar in the same colour, the text
+ *    day). Each row: a coloured badge (the state's icon), a bar in the same colour, the text
  *    and "09:30" or "09:30 – 10:00" below, then a chevron. Days before today
  *    are not shown on the watch (the web app still lists them). "Overdue" (red)
  *    only for today's open reminders whose time (the end of a range) has
  *    passed; "Completed" (green) once marked done (Complete is on the detail
- *    screen). A bell marks a reminder with an advance notice (it also alerts
- *    that many minutes before the start; the server sends that alert). The snapshot already carries the whole (short) text.
+ *    screen). The badge: a check (completed), a red "!" (overdue), a bell (an
+ *    advance notice: it also alerts that many minutes before the start; the
+ *    server sends that alert) or a calendar. Numbers are not shown. The snapshot already carries the whole (short) text.
  *
  * Notes list: like the reminders list without days - one box per note: a
- * coloured "#n" badge, the note's first line, a pin on pinned notes (they come
+ * coloured badge with a pen, the note's first line, a pin on pinned notes (they come
  * first), a chevron.
- * Note screen: header ("Note #n" | X), the note's lines
+ * Note screen: header ("Note" | X), the note's lines
  * numbered 1. 2. 3. in a scrolling card, and a fixed bar: Delete (tap twice),
  * the mic and Pin. The mic opens the note edit mode: it stays open (red, white
  * stop square, pulsing ring) until tapped again, the screen is left or 2 min
  * pass without speech (protocol_client.c); every sentence is applied to this
  * note by the server and the changed line flashes.
- * Reminder detail: header like quick settings ("Reminder #n"
+ * Reminder detail: header like quick settings ("Reminder"
  * | X); one card from the header down to the buttons (it scrolls when taller):
  * a calendar tile with the date, the time ("09:30 – 10:15") and a status line
  * (Overdue / Completed / "Starts in 10 min" for the advance alert), then rows
@@ -65,10 +66,13 @@ static const char *TAG = "ui_items";
 #define CLOSE_Y         10          /* X: px from the top edge of the display */
 #define ROW_LINES       2           /* text lines per list row, then "…" */
 #define DONE_GREEN      0x2fbf71
+/* Reminder state colours, the same on every theme and screen: a calendar (blue), an advance alert
+ * (orange), overdue (DANGER, red), completed (DONE_GREEN). */
+#define REM_BLUE        0x4f8cff
+#define REM_ORANGE      0xff8a3d
 #define PILL_H          48
 #define LIST_W          370         /* reminders list: day headers and rows */
 #define BADGE_SIZE      46
-#define DONE_GREY       0x6b7280
 #define LOC_MAX         256         /* location: 120 chars, UTF-8 */
 #define PEOPLE_MAX      400         /* participants: 200 chars, UTF-8 */
 /* Reminder screen geometry (410 x 502) */
@@ -525,14 +529,6 @@ static void add_day_header(lv_obj_t *parent, const char *due, bool first)
     lv_label_set_text(r, date);
 }
 
-/* Row colours, in turn: the theme accent, then a few that read well on a dark background. */
-static lv_color_t row_color(int pos)
-{
-    static const uint32_t palette[] = { 0, 0xff8a3d, 0x34c759, 0xaf52de, 0xff4f81, 0x32d2f5 };
-    uint32_t c = palette[pos % (int)(sizeof(palette) / sizeof(palette[0]))];
-    return c ? lv_color_hex(c) : g_ui_theme.accent;
-}
-
 /* "15 min" / "2 h" / "1 h 30 min", units in the UI language */
 static void fmt_notice(int min, char *out, size_t len)
 {
@@ -546,6 +542,17 @@ static void fmt_notice(int min, char *out, size_t len)
     }
 }
 
+/* A reminder's state colour and badge icon. */
+static lv_color_t rem_state_color(bool done, bool overdue, int notify_before)
+{
+    return lv_color_hex(done ? DONE_GREEN : overdue ? DANGER : notify_before > 0 ? REM_ORANGE : REM_BLUE);
+}
+
+static const char *rem_state_icon(bool done, bool overdue, int notify_before)
+{
+    return done ? SET_ICON_CHECK : overdue ? SET_ICON_EXCLAIM : notify_before > 0 ? SET_ICON_BELL : SET_ICON_CALENDAR;
+}
+
 /* Bell (advance notice), optionally followed by "15 min before". */
 static void add_bell(lv_obj_t *parent, int minutes)
 {
@@ -556,7 +563,7 @@ static void add_bell(lv_obj_t *parent, int minutes)
     lv_obj_set_style_pad_column(box, 6, 0);
     lv_obj_t *bell = lv_label_create(box);
     lv_obj_set_style_text_font(bell, &buddy_font_set, 0);
-    lv_obj_set_style_text_color(bell, g_ui_theme.accent, 0);
+    lv_obj_set_style_text_color(bell, lv_color_hex(REM_ORANGE), 0);
     lv_label_set_text(bell, SET_ICON_BELL);
     if (minutes > 0) {
         char buf[24];
@@ -568,13 +575,32 @@ static void add_bell(lv_obj_t *parent, int minutes)
     }
 }
 
-/* Reminder row: [#n badge] [bar] text / time (+ Overdue / Completed) [>]. Flat fills only. */
+/* A list row's badge: a rounded square tinted with the row's colour, an icon in it (the item's
+ * state; the item's number is not shown, though the voice still accepts it). */
+static void row_badge(lv_obj_t *row, lv_color_t c, const char *icon, lv_color_t icon_color)
+{
+    lv_obj_t *badge = plain_box(row);
+    lv_obj_set_size(badge, BADGE_SIZE, BADGE_SIZE);
+    lv_obj_set_style_radius(badge, 12, 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(badge, lv_color_mix(c, g_ui_theme.background, 90), 0);
+    lv_obj_set_style_border_width(badge, 2, 0);
+    lv_obj_set_style_border_color(badge, c, 0);
+    lv_obj_t *ic = lv_label_create(badge);
+    lv_obj_set_style_text_font(ic, &buddy_font_set, 0);
+    lv_obj_set_style_text_color(ic, icon_color, 0);
+    lv_label_set_text(ic, icon);
+    lv_obj_center(ic);
+}
+
+/* Reminder row: [state badge] [bar] text / time (+ Overdue / Completed) [>]. Flat fills only.
+ * Badge and bar in the state colour: a green check (completed), a red "!" (overdue), an orange bell
+ * (advance notice) or a blue calendar. */
 static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
     const bool overdue = reminder_overdue(r->due, r->end, r->done);
-    const lv_color_t c = r->done ? lv_color_hex(DONE_GREY) : row_color(pos);
-    const lv_color_t bg = g_ui_theme.background;
+    const lv_color_t c = rem_state_color(r->done, overdue, r->notify_before);
 
     lv_obj_t *b = lv_button_create(parent);
     lv_obj_remove_style_all(b);
@@ -588,17 +614,7 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)idx);
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
-    lv_obj_t *badge = plain_box(b);
-    lv_obj_set_size(badge, BADGE_SIZE, BADGE_SIZE);
-    lv_obj_set_style_radius(badge, 12, 0);
-    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(badge, lv_color_mix(c, bg, 90), 0);
-    lv_obj_set_style_border_width(badge, 2, 0);
-    lv_obj_set_style_border_color(badge, c, 0);
-    lv_obj_t *num = lv_label_create(badge);
-    lv_obj_set_style_text_color(num, lv_color_white(), 0);
-    lv_label_set_text_fmt(num, "#%d", r->number);
-    lv_obj_center(num);
+    row_badge(b, c, rem_state_icon(r->done, overdue, r->notify_before), c);
 
     lv_obj_t *bar = plain_box(b);
     lv_obj_set_size(bar, 4, 36);
@@ -626,9 +642,6 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_t *d = lv_label_create(meta);
     lv_obj_set_style_text_opa(d, LV_OPA_60, 0);
     lv_label_set_text(d, range);
-    if (r->notify_before > 0) {
-        add_bell(meta, 0);
-    }
     if (r->done) {
         done_tag(lv_label_create(meta));
     } else if (overdue) {
@@ -640,11 +653,12 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_label_set_text(chev, ICON_RIGHT);
 }
 
-/* Note row: [#n badge] [bar] first line [pin] [>], like a reminder row. */
+/* Note row: [pen badge] [bar] first line [pin] [>], like a reminder row; all in the theme colour
+ * (blue, or white on the white theme). */
 static void add_note_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
-    const lv_color_t c = row_color(pos), bg = g_ui_theme.background;
+    const lv_color_t c = g_ui_theme.accent;
     lv_obj_t *b = lv_button_create(parent);
     lv_obj_remove_style_all(b);
     lv_obj_add_style(b, &s_st_rcard, 0);
@@ -657,17 +671,7 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)idx);
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
-    lv_obj_t *badge = plain_box(b);
-    lv_obj_set_size(badge, BADGE_SIZE, BADGE_SIZE);
-    lv_obj_set_style_radius(badge, 12, 0);
-    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(badge, lv_color_mix(c, bg, 90), 0);
-    lv_obj_set_style_border_width(badge, 2, 0);
-    lv_obj_set_style_border_color(badge, c, 0);
-    lv_obj_t *num = lv_label_create(badge);
-    lv_obj_set_style_text_color(num, lv_color_white(), 0);
-    lv_label_set_text_fmt(num, "#%d", r->number);
-    lv_obj_center(num);
+    row_badge(b, c, SET_ICON_PEN, c);
 
     lv_obj_t *bar = plain_box(b);
     lv_obj_set_size(bar, 4, 36);
@@ -1010,7 +1014,8 @@ static void detail_apply_done(bool overdue)
         char buf[48];
         fmt_due(s_det_due_str, s_det_end_str, buf, sizeof(buf));
         lv_obj_t *d = lv_label_create(s_det_due);
-        lv_label_set_text_fmt(d, ICON_CALENDAR " %s", buf);
+        lv_label_set_recolor(d, true);
+        lv_label_set_text_fmt(d, "#4f8cff " ICON_CALENDAR "# %s", buf);
         if (s_det_notify > 0) {
             add_bell(s_det_due, s_det_notify);
         }
@@ -1044,7 +1049,7 @@ static void show_detail(bool reminder, int number, const char *text, const char 
     s_det_notify = reminder ? notify : 0;
 
     lv_obj_set_style_text_color(s_det_header, g_ui_theme.accent, 0);
-    lv_label_set_text_fmt(s_det_header, "%s #%d", ui_str(reminder ? STR_REMINDER : STR_NOTE), number);
+    lv_label_set_text(s_det_header, ui_str(reminder ? STR_REMINDER : STR_NOTE));
 
     lv_obj_set_style_text_font(s_det_text, reminder ? &buddy_font_28 : &buddy_font_20, 0);
     lv_obj_set_style_text_opa(s_det_text, text ? LV_OPA_COVER : LV_OPA_50, 0);
@@ -1202,8 +1207,8 @@ static void rem_render(void)
     const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
     char buf[64];
 
-    /* title: "Reminder #3"; long translations use the smaller font */
-    snprintf(buf, sizeof(buf), "%s #%d", ui_str(STR_REMINDER), r->number);
+    /* title: "Reminder"; long translations use the smaller font */
+    snprintf(buf, sizeof(buf), "%s", ui_str(STR_REMINDER));
     lv_obj_set_style_text_font(s_rem_title, &buddy_font_28, 0);
     lv_point_t size;
     lv_text_get_size(&size, buf, &buddy_font_28, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
@@ -1215,9 +1220,10 @@ static void rem_render(void)
 
     lv_obj_set_style_bg_color(s_rem_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_rem_card, lv_color_mix(a, bg, 70), 0);
-    lv_obj_set_style_bg_color(s_rem_tile, lv_color_mix(a, bg, 150), 0);
-    lv_obj_set_style_text_color(s_rem_cal, ui_on_color(lv_color_mix(a, bg, 150)), 0);
-    lv_obj_set_style_border_color(s_rem_tile, lv_color_mix(lv_color_white(), a, 90), 0);
+    const lv_color_t sc = rem_state_color(r->done, reminder_overdue(r->due, r->end, r->done), r->notify_before);
+    lv_obj_set_style_bg_color(s_rem_tile, lv_color_mix(sc, bg, 90), 0);
+    lv_obj_set_style_text_color(s_rem_cal, sc, 0);
+    lv_obj_set_style_border_color(s_rem_tile, sc, 0);
 
     /* date + time */
     int y, mo, d, h, mi;
@@ -1557,7 +1563,7 @@ static void note_render(void)
         return;
     }
     const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
-    lv_label_set_text_fmt(s_note_title, "%s #%d", ui_str(STR_NOTE), s_note_number);
+    lv_label_set_text(s_note_title, ui_str(STR_NOTE));
     lv_obj_set_style_text_color(s_note_title, a, 0);
     lv_obj_set_style_bg_color(s_note_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_note_card, lv_color_mix(a, bg, 70), 0);
@@ -1751,7 +1757,7 @@ static void build_note_screen(void)
     lv_obj_remove_flag(s_note_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_note_scr, det_gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    /* header: "Note #n" | X */
+    /* header: "Note" | X */
     lv_obj_t *hdr = plain_box(s_note_scr);
     lv_obj_set_size(hdr, 350, REM_HDR_H);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, REM_HDR_Y);

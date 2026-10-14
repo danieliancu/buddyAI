@@ -712,8 +712,9 @@ void app_main(void)
     net_set_timezone(st.tz_posix);
     board_rtc_restore_system_time();
 
-    char ssid[SETTINGS_SSID_MAX], pass[SETTINGS_PASS_MAX];
-    bool have_wifi = settings_get_wifi(ssid, pass);
+    wifi_saved_list_t saved;
+    bool have_wifi = settings_get_wifi_list(&saved) > 0;
+    memset(&saved, 0, sizeof(saved));
     s_setup_mode = !have_wifi || s_setup_boot == SETUP_BOOT_MAGIC;
     s_setup_boot = 0;
     if (s_setup_mode) {
@@ -782,12 +783,11 @@ void app_main(void)
     if (!s_setup_mode) {
         s_wifi_configured = true;
         ui_set_hint(ui_text_connecting());
-        net_wifi_connect(ssid, pass);
+        net_wifi_connect_saved();
     } else {
         ESP_LOGI(TAG, "no Wi-Fi credentials - starting provisioning portal");
         start_portal();
     }
-    memset(pass, 0, sizeof(pass));
 
     ESP_LOGI(TAG, "free heap: internal %u KB, PSRAM %u KB",
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),

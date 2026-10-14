@@ -1334,6 +1334,7 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     ui_items_init();
     ui_chat_init();
     ui_lang_init();
+    ui_wifi_init();
     update_clock(true);
     update_status();
     lv_screen_load(s_scr);

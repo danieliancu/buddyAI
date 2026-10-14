@@ -19,7 +19,8 @@ static const char *TAG = "settings";
 
 #define NVS_NS              "buddyai"
 #define KEY_WIFI_SSID       "wifi_ssid"
-#define KEY_WIFI_PASS       "wifi_pass"
+#define KEY_WIFI_PASS       "wifi_pass"     /* one network, older firmware: moved into KEY_WIFI_NETS */
+#define KEY_WIFI_NETS       "wifi_nets"
 #define KEY_SERVER_URL      "server_url"
 #define KEY_LAST_SERVER     "last_server"
 #define KEY_TOKEN           "dev_token"
@@ -39,6 +40,8 @@ static buddy_settings_t  s_settings;
 static uint32_t          s_version;
 static listener_t        s_listeners[MAX_LISTENERS];
 static char              s_device_id[32];
+static wifi_saved_list_t s_wifi;
+static bool              s_wifi_loaded;
 
 /* ------------------------------------------------------------------------- */
 /* Theme presets                                                              */
@@ -455,21 +458,98 @@ void settings_add_listener(settings_listener_t cb, void *ctx)
     ESP_LOGE(TAG, "too many listeners");
 }
 
-bool settings_get_wifi(char ssid[SETTINGS_SSID_MAX], char pass[SETTINGS_PASS_MAX])
+/* Saved networks: one blob of wifi_saved_t entries, cached in RAM. Caller holds s_lock. */
+static esp_err_t wifi_save_locked(void)
 {
-    bool ok = nvs_get_string(KEY_WIFI_SSID, ssid, SETTINGS_SSID_MAX);
-    if (!nvs_get_string(KEY_WIFI_PASS, pass, SETTINGS_PASS_MAX)) {
-        pass[0] = '\0'; /* open network */
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
     }
-    return ok;
+    if (s_wifi.count > 0) {
+        err = nvs_set_blob(h, KEY_WIFI_NETS, s_wifi.net, sizeof(s_wifi.net[0]) * (size_t)s_wifi.count);
+    } else {
+        err = nvs_erase_key(h, KEY_WIFI_NETS);
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK;
+        }
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
 }
 
-esp_err_t settings_set_wifi(const char *ssid, const char *pass)
+static void wifi_load_locked(void)
 {
-    esp_err_t err = nvs_set_string(KEY_WIFI_SSID, ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_string(KEY_WIFI_PASS, pass);
+    if (s_wifi_loaded) {
+        return;
     }
+    s_wifi_loaded = true;
+    memset(&s_wifi, 0, sizeof(s_wifi));
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        size_t sz = sizeof(s_wifi.net);
+        if (nvs_get_blob(h, KEY_WIFI_NETS, s_wifi.net, &sz) == ESP_OK && sz % sizeof(s_wifi.net[0]) == 0) {
+            s_wifi.count = (int)(sz / sizeof(s_wifi.net[0]));
+        }
+        nvs_close(h);
+    }
+    wifi_list_sanitize(&s_wifi);
+    if (s_wifi.count > 0) {
+        return;
+    }
+    /* Set up by an older firmware: one network under two keys. It worked then, so it counts as verified. */
+    char ssid[SETTINGS_SSID_MAX], pass[SETTINGS_PASS_MAX];
+    if (nvs_get_string(KEY_WIFI_SSID, ssid, sizeof(ssid))) {
+        if (!nvs_get_string(KEY_WIFI_PASS, pass, sizeof(pass))) {
+            pass[0] = '\0';   /* open network */
+        }
+        wifi_list_add(&s_wifi, ssid, pass, true);
+        if (wifi_save_locked() == ESP_OK) {
+            nvs_set_string(KEY_WIFI_SSID, NULL);
+            nvs_set_string(KEY_WIFI_PASS, NULL);
+            ESP_LOGI(TAG, "Wi-Fi network '%s' moved to the saved-network list", ssid);
+        }
+        memset(pass, 0, sizeof(pass));
+    }
+}
+
+int settings_get_wifi_list(wifi_saved_list_t *out)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    wifi_load_locked();
+    *out = s_wifi;
+    xSemaphoreGive(s_lock);
+    return out->count;
+}
+
+esp_err_t settings_add_wifi(const char *ssid, const char *pass, bool verified)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    wifi_load_locked();
+    wifi_list_add(&s_wifi, ssid, pass, verified);
+    esp_err_t err = wifi_save_locked();
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+esp_err_t settings_wifi_joined(const char *ssid, const char *pass)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    wifi_load_locked();
+    esp_err_t err = wifi_list_joined(&s_wifi, ssid, pass) ? wifi_save_locked() : ESP_OK;
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+esp_err_t settings_forget_wifi(const char *ssid, const char *pass)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    wifi_load_locked();
+    esp_err_t err = wifi_list_remove(&s_wifi, ssid, pass) ? wifi_save_locked() : ESP_OK;
+    xSemaphoreGive(s_lock);
     return err;
 }
 
@@ -555,6 +635,10 @@ esp_err_t settings_factory_reset(void)
         err = nvs_commit(h);
     }
     nvs_close(h);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    memset(&s_wifi, 0, sizeof(s_wifi));
+    s_wifi_loaded = false;
+    xSemaphoreGive(s_lock);
     ESP_LOGW(TAG, "factory reset: namespace '%s' erased (%s)", NVS_NS, esp_err_to_name(err));
     return err;
 }

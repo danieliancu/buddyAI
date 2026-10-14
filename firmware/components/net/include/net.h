@@ -1,7 +1,7 @@
 /*
  * ola - networking
  *
- *  - Wi-Fi station with automatic reconnect and exponential backoff
+ *  - Wi-Fi station with automatic reconnect and exponential backoff; joins the best saved network in range
  *  - SoftAP "ola-XXXX" + captive portal (DNS hijack + HTTP form) for
  *    SSID / password (+ optional server_url in development builds)
  *  - SNTP time sync (system clock; the app mirrors it to the RTC)
@@ -31,7 +31,27 @@ typedef void (*net_event_cb_t)(net_event_t ev, void *ctx);
 esp_err_t net_init(net_event_cb_t cb, void *ctx);
 
 /* ---- station ---- */
+/* One network (Bluetooth setup tries the credentials it received). */
 esp_err_t net_wifi_connect(const char *ssid, const char *pass);
+/* The saved networks (settings_get_wifi_list): joins the best one in range and, whenever the connection is
+ * lost or an attempt fails, scans again and moves to another saved network if that one is gone.
+ * ESP_ERR_NOT_FOUND if none is saved. */
+esp_err_t net_wifi_connect_saved(void);
+
+/* A network chosen on the watch's Wi-Fi screen: leaves the current one and joins it now. It is saved
+ * (first in the list) once it connects; a wrong password, or a network not found, is not saved and the
+ * saved networks take over again. */
+typedef enum {
+    NET_JOIN_IDLE,
+    NET_JOIN_TRYING,
+    NET_JOIN_OK,
+    NET_JOIN_WRONG_PASSWORD,
+    NET_JOIN_NOT_FOUND,
+} net_join_state_t;
+esp_err_t        net_wifi_join(const char *ssid, const char *pass);
+net_join_state_t net_wifi_join_state(void);
+void             net_wifi_join_ack(void);           /* the result was shown: back to IDLE */
+bool             net_wifi_current_ssid(char out[33]);  /* the network the watch is on, false if none */
 bool      net_wifi_connected(void);
 int       net_wifi_rssi(void);              /* dBm, 0 if not connected */
 int       net_wifi_last_disconnect_reason(void);  /* wifi_err_reason_t of the last lost connection, 0 = none */
