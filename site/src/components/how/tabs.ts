@@ -43,8 +43,8 @@ export const tabs = (trialDays: number): Tab[] => [
         hot: "power",
       },
       {
-        title: "Wi-Fi on Android: over Bluetooth",
-        text: "Open your olá account in Chrome and tap “Connect to watch”. Type the 8-character password the watch shows, then choose your home Wi-Fi (2.4 GHz) and enter its password. It is sent to the watch over Bluetooth: no need to join the watch's network, nothing to install. (If Bluetooth doesn't work, the iPhone way below works on Android too.)",
+        title: "Wi-Fi on Android",
+        text: "Open your olá account in Chrome and tap “Connect to watch”. Type the 8-character password the watch shows, then choose the Wi-Fi you prefer, your home network or your phone's hotspot, and enter its password. (If this doesn't work, use the iPhone way below: it works on Android too.)",
         touch: "Android phone, Chrome",
         run: "setup:android",
       },

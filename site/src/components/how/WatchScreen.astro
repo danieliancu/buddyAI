@@ -5,6 +5,7 @@ import { Image } from "astro:assets";
 import photo from "../../assets/how/watch-front.png";
 import wave from "../../assets/how/wave.png";
 import waveWhite from "../../assets/how/wave-white.png";
+import logo from "../../assets/how/watch-logo.png";
 import "@fontsource/noto-sans/500.css";
 import "@fontsource/noto-sans/700.css";
 import "./watch-screen.css";
@@ -173,7 +174,10 @@ const marks = Array.from({ length: 12 }, (_, i) => {
         </div>
       </section>
       <section class="ws-view" data-view="message" aria-label="Message">
-        <div class="ms"><div class="ms-title" data-msg>Turning off…</div></div>
+        <div class="ms">
+          <Image src={logo} alt="" width={242} densities={[1, 2]} class="ws-logo ms-logo" />
+          <div class="ms-title" data-msg>Turning off…</div>
+        </div>
       </section>
 
       <!-- standby clock -->
@@ -184,7 +188,9 @@ const marks = Array.from({ length: 12 }, (_, i) => {
           <line data-hand="m" x1="205" y1="251" x2="205" y2="136" stroke="#9a9a9a" stroke-width="3" stroke-linecap="round" />
         </svg>
       </section>
-      <section class="ws-view" data-view="off" aria-label="Screen off"></section>
+      <section class="ws-view" data-view="off" aria-label="Screen off">
+        <Image src={logo} alt="" width={242} densities={[1, 2]} class="ws-logo ws-off-logo" />
+      </section>
     </div>
   </div>
 

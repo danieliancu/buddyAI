@@ -714,7 +714,10 @@ function setup(root: HTMLElement) {
       ensureOn();
       home();
       await wait(600);
+      const aod = s.aod;
+      s.aod = true;       // the standby clock, as in "Wake and sleep"
       sleep();
+      s.aod = aod;
       await wait(1800);
       s.power = "on";
       s.rem = 2;

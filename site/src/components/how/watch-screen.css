@@ -1065,6 +1065,21 @@
   gap: 14px;
   text-align: center;
 }
+/* the ola logo, as on the watch: alone in the middle of the black screen, and above "Turning off…" */
+.ws-logo {
+  display: block;
+  width: 242px;
+  height: auto;
+}
+.ws-off-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.ms-logo {
+  margin-bottom: 16px;
+}
 .ms-ico {
   font-size: 80px;
   color: var(--a);
