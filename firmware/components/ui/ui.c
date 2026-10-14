@@ -50,6 +50,7 @@ ui_callbacks_t   g_ui_cb;
 #define DATE_Y              120
 #define STATUS_W            300     /* top status row: Wi-Fi | hint | battery */
 #define STATUS_HINT_W       170
+#define STATUS_HINT_X       36      /* the hint starts right of the Wi-Fi icon */
 #define SHORTCUT_W          80      /* notes / reminders / settings icons */
 #define SHORTCUT_H          80
 #define SHORTCUT_GAP        22
@@ -1079,7 +1080,7 @@ static void build_watchface(void)
     lv_obj_add_flag(s_content, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_EVENT_BUBBLE);
 
     /* Status row at the top, fixed slots so nothing moves when one is empty:
-     * Wi-Fi (left) | hint, e.g. "Connecting…" (middle) | battery (right). */
+     * Wi-Fi (left) and right of it the hint, e.g. "Connecting…" | battery (right). */
     lv_obj_t *status = lv_obj_create(s_content);
     lv_obj_remove_style_all(status);
     lv_obj_set_size(status, STATUS_W, 30);
@@ -1094,10 +1095,10 @@ static void build_watchface(void)
     s_lbl_hint = lv_label_create(status);
     lv_obj_set_width(s_lbl_hint, STATUS_HINT_W);
     lv_label_set_long_mode(s_lbl_hint, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_align(s_lbl_hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(s_lbl_hint, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_opa(s_lbl_hint, LV_OPA_70, 0);
     lv_label_set_text(s_lbl_hint, "");
-    lv_obj_align(s_lbl_hint, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(s_lbl_hint, LV_ALIGN_LEFT_MID, STATUS_HINT_X, 0);     /* right of the Wi-Fi icon */
 
     s_lbl_batt = lv_label_create(status);
     lv_label_set_text(s_lbl_batt, "");

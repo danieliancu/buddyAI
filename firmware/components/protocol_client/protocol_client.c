@@ -695,9 +695,19 @@ static void note_open(int number, bool reminder)
     start_turn();
 }
 
+static void start_cycle(void);
+
 static void handle_tap(void)
 {
     s_expect_reply = false;   /* the user takes over: no automatic listening */
+    if (s_conn == CONN_BACKOFF && s_backoff_floor_ms == 0 && net_wifi_connected()) {
+        /* Waiting (up to 2 min) before the next attempt while the screen says "Connecting...": the user
+         * wants to talk now, so try the server now. A deliberate wait (account / protocol) is kept. */
+        ESP_LOGI(TAG, "tap while waiting to reconnect: trying now");
+        s_backoff_ms = BACKOFF_MIN_MS;
+        start_cycle();
+        return;
+    }
     if (s_conn != CONN_SESSION) {
         emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
         return;

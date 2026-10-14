@@ -256,7 +256,8 @@
 }
 .wf-hint {
   width: 170px;
-  text-align: center;
+  margin: 0 auto 0 10px; /* right of the Wi-Fi icon, as on the watch */
+  text-align: left;
   opacity: 0.7;
   overflow: hidden;
   white-space: nowrap;
