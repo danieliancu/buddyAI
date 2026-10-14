@@ -76,6 +76,7 @@ static const uint16_t s_timeouts[] = { 10, 15, 30, 60, 120, 300 };
 
 /* ---- message screen ---- */
 static lv_obj_t   *s_msg_scr;
+static lv_obj_t   *s_msg_logo;         /* the ola logo, only on "Turning off…" */
 static lv_obj_t   *s_msg_icon;
 static lv_obj_t   *s_msg_title;
 static lv_obj_t   *s_msg_body;
@@ -732,6 +733,11 @@ static void build_msg(void)
     lv_obj_set_style_pad_row(s_msg_scr, 14, 0);
     lv_obj_set_style_pad_hor(s_msg_scr, 28, 0);
 
+    s_msg_logo = lv_image_create(s_msg_scr);
+    lv_image_set_src(s_msg_logo, &g_logo_img);
+    lv_obj_set_style_margin_bottom(s_msg_logo, 16, 0);
+    lv_obj_add_flag(s_msg_logo, LV_OBJ_FLAG_HIDDEN);
+
     s_msg_icon = lv_label_create(s_msg_scr);
     lv_obj_set_style_text_font(s_msg_icon, &buddy_font_icon, 0);
 
@@ -778,8 +784,14 @@ void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, con
 {
     /* the action button sits on the accent: readable text on it (dark on a white accent) */
     lv_obj_set_style_text_color(s_msg_btn, ui_on_color(g_ui_theme.accent), 0);
+    lv_obj_add_flag(s_msg_logo, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(s_msg_icon, icon ? icon : "");
     lv_obj_set_style_text_color(s_msg_icon, icon_color, 0);
+    if (icon) {
+        lv_obj_remove_flag(s_msg_icon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_msg_icon, LV_OBJ_FLAG_HIDDEN);    /* no empty line above the title */
+    }
     lv_label_set_text(s_msg_title, title ? title : "");
     lv_label_set_text(s_msg_body, body ? body : "");
     if (code) {
@@ -1008,6 +1020,7 @@ void ui_show_power_off(void)
 {
     LOCK();
     ui_msg_show(NULL, g_ui_theme.accent, ui_str(STR_POWER_OFF), "", NULL, NULL, NULL, false, 0);
+    lv_obj_remove_flag(s_msg_logo, LV_OBJ_FLAG_HIDDEN);    /* the logo above "Turning off…" */
     UNLOCK();
 }
 

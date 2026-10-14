@@ -30,6 +30,8 @@ extern const uint16_t g_wave_img_rgb565[];
 extern const uint8_t  g_wave_img_alpha[];
 extern const uint16_t g_wave_white_rgb565[];   /* the white theme's wave (wave-white.png), same size */
 extern const uint8_t  g_wave_white_alpha[];
+/* The website's logo (ui_logo_img.c, tools/gen_logo.py): wave icon + "ola" in white with the leaf. */
+extern const lv_image_dsc_t g_logo_img;
 extern lv_font_t buddy_font_shortcut; /* FontAwesome 5, 34 px: pen, calendar, gear (watchface shortcuts) */
 extern lv_font_t buddy_font_code;
 extern lv_font_t buddy_font_icon;

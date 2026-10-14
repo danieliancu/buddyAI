@@ -1259,6 +1259,60 @@ static void build_watchface(void)
     lv_obj_move_foreground(s_btn_mic);
 }
 
+/* Start-up splash: the logo fades in on black, stays SPLASH_HOLD_MS, then logo and black fade out together
+ * over the watchface. On the top layer, so it stays above whatever screen the start-up loads meanwhile. */
+#define SPLASH_FADE_MS  700
+#define SPLASH_HOLD_MS  4000
+static lv_obj_t *s_splash;
+static lv_obj_t *s_splash_logo;
+
+static void splash_logo_opa_cb(void *var, int32_t v)
+{
+    lv_obj_set_style_image_opa(s_splash_logo, (lv_opa_t)v, 0);
+}
+
+static void splash_out_cb(void *var, int32_t v)
+{
+    lv_obj_set_style_bg_opa(s_splash, (lv_opa_t)v, 0);
+    lv_obj_set_style_image_opa(s_splash_logo, (lv_opa_t)v, 0);
+}
+
+static void splash_done_cb(lv_anim_t *a)
+{
+    lv_obj_delete(s_splash);
+    s_splash = s_splash_logo = NULL;
+}
+
+static void splash_show(void)
+{
+    s_splash = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_splash);
+    lv_obj_set_size(s_splash, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(s_splash, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_splash, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_splash, LV_OBJ_FLAG_CLICKABLE);     /* taps do not reach the screen under it */
+    s_splash_logo = lv_image_create(s_splash);
+    lv_image_set_src(s_splash_logo, &g_logo_img);
+    lv_obj_center(s_splash_logo);
+    lv_obj_set_style_image_opa(s_splash_logo, LV_OPA_TRANSP, 0);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_splash);
+    lv_anim_set_values(&a, LV_OPA_TRANSP, LV_OPA_COVER);
+    lv_anim_set_duration(&a, SPLASH_FADE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_set_exec_cb(&a, splash_logo_opa_cb);
+    lv_anim_start(&a);
+
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_delay(&a, SPLASH_FADE_MS + SPLASH_HOLD_MS);
+    lv_anim_set_early_apply(&a, false);     /* the logo stays hidden until the fade-in */
+    lv_anim_set_exec_cb(&a, splash_out_cb);
+    lv_anim_set_completed_cb(&a, splash_done_cb);
+    lv_anim_start(&a);
+}
+
 esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
 {
     s_disp = disp;
@@ -1283,6 +1337,7 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     update_clock(true);
     update_status();
     lv_screen_load(s_scr);
+    splash_show();
     s_clock_timer = lv_timer_create(clock_timer_cb, 1000, NULL);
     s_anim_timer = lv_timer_create(anim_timer_cb, 40, NULL);
     lv_timer_pause(s_anim_timer);       /* resumed by apply_conv_visuals() while listening / speaking */
