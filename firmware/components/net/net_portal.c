@@ -350,11 +350,15 @@ esp_err_t net_scan_refresh(void)
     if (s_async_scan) {
         return ESP_OK;
     }
+    if (net_wifi_connecting()) {
+        return ESP_ERR_INVALID_STATE;   /* a scan would cancel the connection attempt; the caller retries */
+    }
     wifi_scan_config_t sc = { .show_hidden = false };
     s_async_scan = true;
     esp_err_t err = esp_wifi_scan_start(&sc, false);
     if (err != ESP_OK) {
         s_async_scan = false;
+        ESP_LOGW(TAG, "scan not started: %s", esp_err_to_name(err));
     }
     return err;
 }

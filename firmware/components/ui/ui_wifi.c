@@ -29,7 +29,7 @@
 #define POLL_MS         500
 #define FORGET_ARM_MS   3000
 #define NEARBY_MAX      16
-#define SCAN_TRIES      20          /* polls waiting for a busy radio before showing "No networks found" */
+#define SCAN_TRIES      40          /* polls (20 s) waiting for a busy radio, e.g. a connection attempt */
 #define AUTH_OPEN       0           /* wifi_auth_mode_t WIFI_AUTH_OPEN */
 
 static lv_obj_t   *s_scr, *s_title, *s_list;
@@ -420,7 +420,9 @@ static void rebuild(void)
 
 static void poll_cb(lv_timer_t *t)
 {
-    lv_obj_t *active = lv_screen_active();
+    /* While a screen slides in, LVGL still reports the old one as active: count the one loading. */
+    lv_obj_t *loading = lv_display_get_screen_loading(NULL);
+    lv_obj_t *active = loading ? loading : lv_screen_active();
     if (active != s_scr && active != s_pw_scr) {
         memset(&s_saved, 0, sizeof(s_saved));
         lv_timer_pause(t);

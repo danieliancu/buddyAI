@@ -56,6 +56,47 @@ static volatile net_join_state_t s_join = NET_JOIN_IDLE;
 static int              s_join_misses;
 static bool             s_leaving;             /* we left the current network to join another one */
 
+/* A connection attempt is running (esp_wifi_connect until the IP or the disconnect event): a scan started
+ * now would cancel it without any event, so the Wi-Fi screen waits (net_wifi_connecting). */
+#define CONNECT_BUSY_MAX_US (15 * 1000000LL)       /* never longer than this, whatever happens */
+#define CONNECT_SILENT_US   (10 * 1000000LL)       /* no IP and no disconnect this long: cancel, retry */
+static volatile int64_t s_connect_since_us;
+static esp_timer_handle_t s_connect_watchdog;
+
+static void schedule_reconnect(void);
+
+/* An attempt the driver never answers (seen at boot with a phone hotspot: no auth step, no disconnect
+ * event for a minute) would wait for good: cancel it and go on as after a failure. */
+static void connect_watchdog_cb(void *arg)
+{
+    if (s_connected || !s_connect_since_us) {
+        return;
+    }
+    ESP_LOGW(TAG, "no answer from '%s': trying again", s_cur.ssid[0] ? s_cur.ssid : "?");
+    s_connect_since_us = 0;
+    esp_wifi_disconnect();
+    schedule_reconnect();
+}
+
+static esp_err_t sta_connect(void)
+{
+    s_connect_since_us = esp_timer_get_time();
+    esp_err_t err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        s_connect_since_us = 0;
+    } else if (s_connect_watchdog) {
+        esp_timer_stop(s_connect_watchdog);
+        esp_timer_start_once(s_connect_watchdog, CONNECT_SILENT_US);
+    }
+    return err;
+}
+
+bool net_wifi_connecting(void)
+{
+    int64_t t = s_connect_since_us;
+    return t && esp_timer_get_time() - t < CONNECT_BUSY_MAX_US;
+}
+
 esp_netif_t *g_net_sta_netif;
 esp_netif_t *g_net_ap_netif;
 bool g_net_wifi_started;
@@ -76,7 +117,7 @@ static void reconnect_cb(void *arg)
         if (s_saved_mode) {
             pick_next();
         } else {
-            esp_wifi_connect();
+            sta_connect();
         }
     }
 }
@@ -141,7 +182,7 @@ static esp_err_t sta_join(bool drop_current)
         if (drop_current) {
             esp_wifi_disconnect();
         }
-        err = esp_wifi_connect();
+        err = sta_connect();
         if (err != ESP_OK && s_saved_mode) {
             schedule_reconnect();
         }
@@ -269,7 +310,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             if (s_saved_mode) {
                 pick_next();
             } else if (s_sta_configured) {
-                esp_wifi_connect();
+                sta_connect();
             }
             break;
         case WIFI_EVENT_STA_DISCONNECTED: {
@@ -277,6 +318,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             ESP_LOGW(TAG, "STA disconnected (reason %d)", d ? d->reason : -1);
             bool was = s_connected;
             s_connected = false;
+            s_connect_since_us = 0;
+            esp_timer_stop(s_connect_watchdog);
             if (s_leaving) {
                 s_leaving = false;      /* left on purpose: now join the network chosen on the watch */
                 net_emit(NET_EVT_STA_DISCONNECTED);
@@ -319,6 +362,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
         s_connected = true;
+        s_connect_since_us = 0;
+        esp_timer_stop(s_connect_watchdog);
         s_backoff_ms = BACKOFF_MIN_MS;
         if (s_join == NET_JOIN_TRYING) {
             s_join = NET_JOIN_OK;
@@ -356,6 +401,11 @@ esp_err_t net_init(net_event_cb_t cb, void *ctx)
         .name = "wifi_retry",
     };
     ESP_RETURN_ON_ERROR(esp_timer_create(&targs, &s_reconnect_timer), TAG, "timer");
+    const esp_timer_create_args_t wargs = {
+        .callback = connect_watchdog_cb,
+        .name = "wifi_watchdog",
+    };
+    ESP_RETURN_ON_ERROR(esp_timer_create(&wargs, &s_connect_watchdog), TAG, "timer");
 
     esp_netif_set_hostname(g_net_sta_netif, "buddyai-watch");
     return ESP_OK;

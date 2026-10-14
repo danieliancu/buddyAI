@@ -10,4 +10,5 @@ extern esp_netif_t *g_net_ap_netif;
 extern bool g_net_wifi_started;
 
 void net_emit(net_event_t ev);
-void net_portal_scan_done(void);  /* WIFI_EVENT_SCAN_DONE of an asynchronous scan */
+void net_portal_scan_done(void);
+bool net_wifi_connecting(void);   /* a connection attempt is running: no scan now */  /* WIFI_EVENT_SCAN_DONE of an asynchronous scan */
