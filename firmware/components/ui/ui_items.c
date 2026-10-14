@@ -66,8 +66,9 @@ static const char *TAG = "ui_items";
 #define CLOSE_Y         10          /* X: px from the top edge of the display */
 #define ROW_LINES       2           /* text lines per list row, then "…" */
 #define DONE_GREEN      0x2fbf71
-/* Reminder state colours, the same on every theme and screen: a calendar (blue), an advance alert
- * (orange), overdue (DANGER, red), completed (DONE_GREEN). */
+/* Reminder state colours, the same on every theme and screen: blue (coming up; a bell marks an advance
+ * alert), orange (the advance alert time has come: starts soon), overdue (DANGER, red), completed
+ * (DONE_GREEN). */
 #define REM_BLUE        0x4f8cff
 #define REM_ORANGE      0xff8a3d
 #define PILL_H          48
@@ -392,6 +393,22 @@ static bool reminder_overdue(const char *due, const char *end, bool done)
     return due_passed(end && end[0] ? end : due);
 }
 
+/* Starts soon: the advance alert time has come and the reminder is not overdue yet (orange). */
+static bool reminder_alerting(const item_row_t *r, bool overdue)
+{
+    int y, mo, d, h, mi;
+    time_t now = time(NULL);
+    struct tm today;
+    localtime_r(&now, &today);
+    if (r->done || overdue || r->notify_before <= 0 || today.tm_year < 124 ||
+        sscanf(r->due, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi) != 5) {
+        return false;
+    }
+    struct tm t = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = h, .tm_min = mi,
+                    .tm_isdst = -1 };
+    return now >= mktime(&t) - (time_t)r->notify_before * 60;
+}
+
 /* Shown on the watch: today and later (everything while the clock is not set). */
 static bool reminder_visible(const item_row_t *r)
 {
@@ -543,9 +560,9 @@ static void fmt_notice(int min, char *out, size_t len)
 }
 
 /* A reminder's state colour and badge icon. */
-static lv_color_t rem_state_color(bool done, bool overdue, int notify_before)
+static lv_color_t rem_state_color(const item_row_t *r, bool overdue)
 {
-    return lv_color_hex(done ? DONE_GREEN : overdue ? DANGER : notify_before > 0 ? REM_ORANGE : REM_BLUE);
+    return lv_color_hex(r->done ? DONE_GREEN : overdue ? DANGER : reminder_alerting(r, overdue) ? REM_ORANGE : REM_BLUE);
 }
 
 static const char *rem_state_icon(bool done, bool overdue, int notify_before)
@@ -594,13 +611,13 @@ static void row_badge(lv_obj_t *row, lv_color_t c, const char *icon, lv_color_t 
 }
 
 /* Reminder row: [state badge] [bar] text / time (+ Overdue / Completed) [>]. Flat fills only.
- * Badge and bar in the state colour: a green check (completed), a red "!" (overdue), an orange bell
- * (advance notice) or a blue calendar. */
+ * Badge and bar in the state colour: a green check (completed), a red "!" (overdue), a bell (advance notice:
+ * blue, orange once its alert time has come) or a blue calendar. */
 static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
     const bool overdue = reminder_overdue(r->due, r->end, r->done);
-    const lv_color_t c = rem_state_color(r->done, overdue, r->notify_before);
+    const lv_color_t c = rem_state_color(r, overdue);
 
     lv_obj_t *b = lv_button_create(parent);
     lv_obj_remove_style_all(b);
@@ -653,12 +670,12 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_label_set_text(chev, ICON_RIGHT);
 }
 
-/* Note row: [pen badge] [bar] first line [pin] [>], like a reminder row; all in the theme colour
- * (blue, or white on the white theme). */
+/* Note row: [badge] [bar] first line [>], like a reminder row: a pen in the theme colour (blue, or white on
+ * the white theme), or a green pin for a pinned note. */
 static void add_note_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
-    const lv_color_t c = g_ui_theme.accent;
+    const lv_color_t c = r->pinned ? lv_color_hex(DONE_GREEN) : g_ui_theme.accent;   /* pinned: green */
     lv_obj_t *b = lv_button_create(parent);
     lv_obj_remove_style_all(b);
     lv_obj_add_style(b, &s_st_rcard, 0);
@@ -671,7 +688,7 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)idx);
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
-    row_badge(b, c, SET_ICON_PEN, c);
+    row_badge(b, c, r->pinned ? SET_ICON_PIN_NOTE : SET_ICON_PEN, c);
 
     lv_obj_t *bar = plain_box(b);
     lv_obj_set_size(bar, 4, 36);
@@ -689,19 +706,13 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
     lv_obj_set_style_max_height(t, ROW_LINES * lv_font_get_line_height(&buddy_font_20), 0);
     lv_label_set_text(t, r->text[0] ? r->text : "…");
-    if (r->location[0] || r->pinned) {
+    if (r->location[0]) {
         lv_obj_t *meta = plain_box(col);
         lv_obj_set_size(meta, LV_PCT(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(meta, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(meta, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(meta, 10, 0);
-        if (r->pinned) {
-            lv_obj_t *pin = lv_label_create(meta);
-            lv_obj_set_style_text_font(pin, &buddy_font_set, 0);
-            lv_obj_set_style_text_color(pin, g_ui_theme.accent, 0);
-            lv_label_set_text(pin, SET_ICON_PIN_NOTE);
-        }
-        if (r->location[0]) {   /* notes: the line under the title */
+        {   /* notes: the line under the title */
             lv_obj_t *sub = lv_label_create(meta);
             lv_obj_set_flex_grow(sub, 1);
             lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
@@ -1220,7 +1231,7 @@ static void rem_render(void)
 
     lv_obj_set_style_bg_color(s_rem_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_rem_card, lv_color_mix(a, bg, 70), 0);
-    const lv_color_t sc = rem_state_color(r->done, reminder_overdue(r->due, r->end, r->done), r->notify_before);
+    const lv_color_t sc = rem_state_color(r, reminder_overdue(r->due, r->end, r->done));
     lv_obj_set_style_bg_color(s_rem_tile, lv_color_mix(sc, bg, 90), 0);
     lv_obj_set_style_text_color(s_rem_cal, sc, 0);
     lv_obj_set_style_border_color(s_rem_tile, sc, 0);
@@ -1949,6 +1960,19 @@ void ui_items_init(void)
 void ui_items_open(bool reminder)
 {
     open_list(reminder, false);
+}
+
+/* Once a minute (ui.c clock): the state colours follow the time (starts soon, overdue). */
+void ui_items_minute(void)
+{
+    if (s_lists[1].scr && lv_screen_active() == s_lists[1].scr) {
+        int32_t y = lv_obj_get_scroll_y(s_lists[1].scr);
+        rebuild_list(&s_lists[1]);
+        lv_obj_scroll_to_y(s_lists[1].scr, y, LV_ANIM_OFF);
+    }
+    if (s_rem_scr && s_rem_row && lv_screen_active() == s_rem_scr) {
+        rem_render();
+    }
 }
 
 void ui_items_refresh_theme(void)

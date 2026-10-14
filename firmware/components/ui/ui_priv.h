@@ -293,5 +293,6 @@ bool ui_items_is_active(void);     /* notes / reminders list or item screen */
 void ui_items_init(void);
 void ui_items_open(bool reminder);
 void ui_items_refresh_theme(void);
+void ui_items_minute(void);        /* time-based colours (starts soon, overdue); caller holds the lock */
 /* Counters on the watchface shortcuts (0 = hidden). Caller holds the lock. */
 void ui_shortcut_counts(int notes, int reminders);

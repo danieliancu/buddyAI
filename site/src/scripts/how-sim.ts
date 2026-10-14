@@ -12,6 +12,8 @@ interface Note { n: number; title: string; lines: string[]; pinned?: boolean }
 interface Rem {
   n: number; day: number; time: string; end?: string; text: string; done?: boolean;
   location?: string; participants?: string; notify?: number;
+  /** The advance alert time has come: starts soon (orange). */
+  alerting?: boolean;
 }
 
 const FA = {
@@ -19,9 +21,9 @@ const FA = {
   place: "", users: "", trash: "", check: "", warn: "",
   pen: "", wifi: "", lock: "", refresh: "",
 };
-/* Reminder state colours, as on the watch (ui_items.c): completed, advance alert, plain calendar. Notes use
- * the theme colour (var(--a)). */
-const remColour = (r: Rem) => (r.done ? "#2fbf71" : r.notify ? "#ff8a3d" : "#4f8cff");
+/* Reminder state colours, as on the watch (ui_items.c): completed green, starts soon (its advance alert time
+ * has come) orange, otherwise blue (a bell marks an advance alert). Notes use the theme colour (var(--a)). */
+const remColour = (r: Rem) => (r.done ? "#2fbf71" : r.alerting ? "#ff8a3d" : "#4f8cff");
 /* Networks the Wi-Fi screen finds nearby (strongest first): signal 1 strong .. 0.4 weak. */
 const NEARBY = [
   { ssid: "Cafe Central", lock: true, sig: 1 },
@@ -269,14 +271,14 @@ function setup(root: HTMLElement) {
     const sorted = [...s.notes].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.n - b.n);
     sorted.forEach((n) => {
       const row = el("div", "ls-row");
+      if (n.pinned) row.style.setProperty("--c", "#2fbf71");   // pinned: a green pin, as on the watch
       row.dataset.act = `note:${n.n}`;
       row.setAttribute("role", "button");
       row.tabIndex = 0;
       const text = el("div", "ls-text");
-      if (n.pinned) text.append(fa(FA.pin, "ls-pin"));
       text.append(n.title);
       text.append(el("span", "ls-meta", n.lines.join(", ")));
-      row.append(badge(FA.pen), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
+      row.append(badge(n.pinned ? FA.pin : FA.pen), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
       body.append(row);
     });
   }
@@ -848,6 +850,7 @@ function setup(root: HTMLElement) {
       s.power = "on";
       s.rem = 2;
       curRem().done = false;
+      curRem().alerting = true;   // its alert time has come: orange until it starts
       show("reminder", "none");
       renderRem({ status: `Starts in ${curRem().notify ?? 15} min` });
     },

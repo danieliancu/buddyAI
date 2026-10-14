@@ -439,6 +439,8 @@ static void update_clock(bool force)
     }
     lv_label_set_text(s_lbl_date, date);
 
+    ui_items_minute();
+
     /* Pixel shift once per minute. */
     s_shift_idx = (s_shift_idx + 1) % (int)(sizeof(s_shift) / sizeof(s_shift[0]));
     apply_shift();
