@@ -53,10 +53,13 @@ CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_HTTPD_MAX_URI_LEN=512
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 # Free internal RAM for the Wi-Fi driver: voice traffic does not need the IRAM
-# throughput optimisations, and 8 static RX buffers are plenty
+# throughput optimisations, and 8 static RX buffers are plenty. 8 static TX buffers (not 16) free ~13 KB of
+# internal RAM - the watch sends little (voice at 3 KB/s); bursts queue in the PSRAM cache TX buffers. Without
+# that margin the TLS hardware AES could not get its internal DMA buffer and sessions dropped after hello_ack.
 # CONFIG_ESP_WIFI_IRAM_OPT is not set
 # CONFIG_ESP_WIFI_RX_IRAM_OPT is not set
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
 
 # ---- Bluetooth LE Wi-Fi setup (components/ble_prov) --------------------------
 # NimBLE host, peripheral only, one connection; it runs only while the watch is in

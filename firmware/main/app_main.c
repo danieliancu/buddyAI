@@ -30,6 +30,9 @@
 #include "esp_secure_boot.h"
 #include "esp_flash_encrypt.h"
 #include "sdkconfig.h"
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+#include "test_question.h"
+#endif
 
 #include "board.h"
 #include "settings.h"
@@ -630,6 +633,7 @@ static void power_log(uint32_t now)
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
 /* Development test commands typed on the USB serial port (one per line), read straight from the port's
  * receive FIFO by the app loop: no driver, no task, no RAM (internal RAM is too tight for either).
+ *   ask       a recorded question (test_question.h) instead of the mic
  *   tap       the mic button
  *   wifi [N]  the Wi-Fi screen (N: the password screen for network N)
  *   drop N    Wi-Fi off for N seconds (a lost link), then it reconnects */
@@ -652,7 +656,12 @@ static void test_console_poll(void)
             line[n] = '\0';
             n = 0;
             int secs = 0;
-            if (strcmp(line, "tap") == 0) {
+            if (strcmp(line, "ask") == 0) {
+                ESP_LOGW(TAG, "test: ask");
+                ui_wake();
+                proto_test_ask(TEST_QUESTION_OPUS, TEST_QUESTION_LENS,
+                               sizeof(TEST_QUESTION_LENS) / sizeof(TEST_QUESTION_LENS[0]));
+            } else if (strcmp(line, "tap") == 0) {
                 ESP_LOGW(TAG, "test: tap");
                 boot_tap();
             } else if (strncmp(line, "wifi", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) {

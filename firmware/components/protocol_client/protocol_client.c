@@ -81,6 +81,7 @@ typedef enum {
     MSG_ITEM_DONE,          /* a = reminder number, b = 1 completed / 0 open again */
     MSG_NOTE_SESSION,       /* a = item number, b = 1 open / 0 close, | 2 = a reminder */
     MSG_ITEM_PIN,           /* a = note number, b = 1 pinned / 0 not */
+    MSG_TEST_ASK,           /* development builds: proto_test_ask() */
 } msg_type_t;
 
 typedef struct {
@@ -325,6 +326,12 @@ static void set_conv(proto_conv_state_t st)
 }
 
 static void local_stop_turn(void);
+
+/* Development builds: proto_test_ask() - a turn fed from a recording instead of the mic. */
+static bool             s_test_no_mic;
+static const uint8_t   *s_test_opus;
+static const uint16_t  *s_test_lens;
+static size_t           s_test_count;
 
 /* End the wait after a drop mid-turn without picking the turn up. `fail`: say "try again" (time up); false: the
  * user moved on. */
@@ -617,7 +624,8 @@ static void up_append(const uint8_t *opus, size_t len)
     s_up_len += 2 + len;
 }
 
-static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, size_t len)
+/* timeout_ms: how long a full TCP send buffer may hold the packet up (the client closes the link on a timeout) */
+static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, size_t len, int timeout_ms)
 {
     uint8_t frame[AUDIO_HDR_LEN + 1500];
     if (len > sizeof(frame) - AUDIO_HDR_LEN) {
@@ -633,7 +641,7 @@ static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, siz
     /* The send lock also keeps the client alive (ws_destroy takes it). */
     xSemaphoreTake(s_send_lock, portMAX_DELAY);
     if (s_ws && esp_websocket_client_is_connected(s_ws)) {
-        esp_websocket_client_send_bin(s_ws, (const char *)frame, AUDIO_HDR_LEN + len, pdMS_TO_TICKS(200));
+        esp_websocket_client_send_bin(s_ws, (const char *)frame, AUDIO_HDR_LEN + len, pdMS_TO_TICKS(timeout_ms));
     }
     xSemaphoreGive(s_send_lock);
 }
@@ -650,7 +658,7 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
     const uint32_t seq = live ? s_up_seq++ : 0;
     xSemaphoreGive(s_turn_lock);
     if (live) {
-        send_uplink(turn, seq, opus, len);  /* fails quietly while the link is down: the buffer keeps it */
+        send_uplink(turn, seq, opus, len, 200);  /* fails quietly while the link is down: the buffer keeps it */
     }
 }
 
@@ -731,7 +739,7 @@ static void start_turn(void)
     uint32_t turn = next_turn_locked_reset();
     s_capture_turn = turn;
     s_resume_pending = false;
-    s_turn_note = s_note_open;
+    s_turn_note = s_note_open && !s_test_no_mic;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
     new_request_id(s_req_id);
@@ -746,7 +754,9 @@ static void start_turn(void)
 
     set_conv(PROTO_CONV_LISTENING);
     s_turn_deadline_ms = now_ms() + (s_turn_note ? NOTE_TURN_LIMIT_MS : (int64_t)(st.max_listen_s + 2) * 1000);
-    audio_capture_start(turn, capture_cb, NULL);
+    if (!s_test_no_mic) {
+        audio_capture_start(turn, capture_cb, NULL);
+    }
 }
 
 /* Close the note session. `keep`: the sentence being heard is still processed (listen_end). */
@@ -875,7 +885,7 @@ static void resume_after_drop(void)
         if (!len) {
             break;
         }
-        send_uplink(turn, seq, opus, len);
+        send_uplink(turn, seq, opus, len, 2000);    /* a burst: TCP paces it */
         packets++;
     }
     ESP_LOGI(TAG, "link back: question sent again as turn %lu (%u packets)%s", (unsigned long)turn,
@@ -978,7 +988,10 @@ static void on_hello_ack(const cJSON *j)
     s_session_start_ms = now_ms();
     settings_set_last_server(s_url);
     ota_mark_app_valid();
-    ESP_LOGI(TAG, "session %s established with %s", s_session_id, s_url);
+    ESP_LOGI(TAG, "session %s established with %s (internal RAM free %u, largest %u, DMA free %u)", s_session_id,
+             s_url, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA));
     emit(PROTO_EVT_SESSION_READY, 0, NULL);
     resume_after_drop();    /* a turn held over a drop goes on */
 
@@ -1236,6 +1249,7 @@ static void handle_text(const char *txt)
     }
 
     if (strcmp(type, "listen_stop") == 0) {
+        ESP_LOGI(TAG, "listen_stop turn %lu: thinking", (unsigned long)turn);
         audio_capture_stop();
         if (s_conv == PROTO_CONV_LISTENING) {
             set_conv(PROTO_CONV_THINKING);
@@ -1862,6 +1876,21 @@ static void handle_msg(msg_t *m)
             send_json(msg, m->type == MSG_ITEM_OPEN ? "item_open" : "item_delete", false, 0);
         }
         break;
+    case MSG_TEST_ASK:
+        if (s_conn != CONN_SESSION || s_conv != PROTO_CONV_IDLE || s_note_open || !s_test_opus) {
+            ESP_LOGW(TAG, "test: ask needs an idle session");
+            break;
+        }
+        s_test_no_mic = true;
+        start_turn();
+        s_test_no_mic = false;
+        for (size_t i = 0, off = 0; i < s_test_count; off += s_test_lens[i], i++) {
+            capture_cb(s_capture_turn, i, s_test_opus + off, s_test_lens[i], NULL);
+            vTaskDelay(pdMS_TO_TICKS(20));  /* not a burst: the live mic sends one packet per 60 ms */
+        }
+        send_turn_msg("listen_end", s_active_turn, NULL);
+        ESP_LOGI(TAG, "test: question sent (%u packets)", (unsigned)s_test_count);
+        break;
     case MSG_ITEM_DONE:
         if (s_conn == CONN_SESSION) {
             cJSON *msg = cJSON_CreateObject();
@@ -2111,6 +2140,15 @@ void proto_item_pin(int number, bool pinned)
 void proto_item_done(int number, bool done)
 {
     msg_t m = { .type = MSG_ITEM_DONE, .a = (uint32_t)number, .b = done ? 1 : 0 };
+    post(&m);
+}
+
+void proto_test_ask(const uint8_t *opus, const uint16_t *lens, size_t count)
+{
+    s_test_opus = opus;
+    s_test_lens = lens;
+    s_test_count = count;
+    msg_t m = { .type = MSG_TEST_ASK };
     post(&m);
 }
 

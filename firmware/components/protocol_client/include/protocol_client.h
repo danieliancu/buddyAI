@@ -122,6 +122,10 @@ void proto_item_pin(int number, bool pinned);
 /* Force a new connection cycle (e.g. after the server URL changed). */
 void proto_reconnect(void);
 
+/* Development builds: a chat turn fed from a recording (`count` Opus packets of `lens` bytes, back to back in
+ * `opus`) instead of the mic, then listen_end. Test command "ask". */
+void proto_test_ask(const uint8_t *opus, const uint16_t *lens, size_t count);
+
 bool proto_session_ready(void);
 
 /* Idle link traffic since boot, for the development power log (firmware/README.md "Measuring power"). */
