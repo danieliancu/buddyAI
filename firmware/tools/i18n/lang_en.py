@@ -57,6 +57,7 @@ LANGS = {
             "OTA_FAIL": "Update failed",
             "LISTENING": "Listening…",
             "THINKING": "Thinking…",
+            "STILL_THINKING": "Still thinking…",
             "TAP_TO_TALK": "Tap to talk",
             "NOTES": "Notes",
             "REMINDERS": "Reminders",

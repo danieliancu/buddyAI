@@ -1052,6 +1052,16 @@ lv_obj_t *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb)
     return x;
 }
 
+lv_obj_t *ui_add_keyboard(lv_obj_t *scr)
+{
+    lv_obj_t *kb = lv_keyboard_create(scr);
+    lv_obj_set_size(kb, BOARD_LCD_H_RES - 24, UI_KB_H);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, -UI_KB_BOTTOM + lv_obj_get_style_pad_bottom(scr, 0));
+    lv_obj_set_style_radius(kb, 18, 0);
+    lv_obj_set_style_text_font(kb, &buddy_font_20, LV_PART_ITEMS);
+    return kb;
+}
+
 /* Shared by the other screens (ui_screens.c) through lv_obj_add_style. */
 lv_style_t *ui_style_screen(void)
 {
@@ -1547,6 +1557,16 @@ void ui_caption_append(const char *delta)
     }
     strlcat(s_caption, delta, sizeof(s_caption));
     show_caption();
+    UNLOCK();
+}
+
+void ui_show_wifi(const char *password_for)
+{
+    LOCK();
+    ui_wifi_open(true);
+    if (password_for) {
+        ui_wifi_password(password_for);
+    }
     UNLOCK();
 }
 

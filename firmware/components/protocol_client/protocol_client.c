@@ -193,6 +193,29 @@ static volatile proto_conv_state_t s_conv = PROTO_CONV_IDLE;
 static bool             s_tts_ended;
 static bool             s_turn_ended;
 static int64_t          s_turn_deadline_ms;
+/* The link dropped while a question was heard or its answer awaited (PROTOCOL.md section 6.1): instead of failing
+ * at once the watch waits up to HOLD_MS for the link and then picks the turn up again:
+ *  - HOLD_ANSWER: the server had the whole question; `resume` asks for its reply ("Still thinking…" meanwhile);
+ *  - HOLD_QUESTION: the question was still being said; the mic goes on into s_up_buf and the whole recording is
+ *    sent again as a new turn (listen_start `replaces`), then the live mic follows if it is still open.
+ * After HOLD_MS without the link: "try again". s_hold_until_ms 0 = no hold. */
+#define HOLD_MS                 25000
+#define RESEND_LISTEN_MS        5000    /* after a resent question: time for the server to find its end */
+typedef enum { HOLD_ANSWER, HOLD_QUESTION } hold_kind_t;
+static int64_t          s_hold_until_ms;
+static hold_kind_t      s_hold_kind;
+static bool             s_resume_pending;   /* a `resume` went out: an older server answers bad_request */
+static char             s_req_id[33];       /* request_id of the active chat turn */
+/* This chat turn's uplink, kept to send again after a drop: [u16 length][Opus packet]... in PSRAM. capture_cb
+ * appends (audio task), the proto task replays; both under s_turn_lock. While s_bursting the replay owns the
+ * uplink and capture_cb only appends - so the live mic follows the replay in order. */
+#define UP_BUF_SIZE             (128 * 1024)    /* 24 kbit/s: ~40 s, more than the longest question */
+static uint8_t         *s_up_buf;
+static size_t           s_up_len;
+static bool             s_up_overflow;
+static bool             s_bursting;
+static uint32_t         s_up_seq;           /* next uplink frame_seq of the active turn */
+static uint32_t         s_capture_turn;     /* the audio module's turn id (packets go out as s_active_turn) */
 
 /* Note edit mode (proto task only) */
 #define NOTE_IDLE_CLOSE_MS  120000      /* mic closes after 2 min without speech */
@@ -298,6 +321,25 @@ static void set_conv(proto_conv_state_t st)
         emit(s_turn_note ? PROTO_EVT_NOTE_STATE : PROTO_EVT_CONV_STATE, st, NULL);
         /* Modem sleep adds latency; keep the radio awake during a turn. */
         net_wifi_set_power_save(st == PROTO_CONV_IDLE);
+    }
+}
+
+static void local_stop_turn(void);
+
+/* End the wait after a drop mid-turn without picking the turn up. `fail`: say "try again" (time up); false: the
+ * user moved on. */
+static void end_hold(bool fail)
+{
+    if (!s_hold_until_ms) {
+        return;
+    }
+    s_hold_until_ms = 0;
+    ESP_LOGI(TAG, "still thinking over: %s", fail ? "\"try again\"" : "given up by the user");
+    local_stop_turn();      /* the mic of a question being held, too */
+    emit(PROTO_EVT_STILL_THINKING, 0, NULL);
+    set_conv(PROTO_CONV_IDLE);
+    if (fail) {
+        emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
     }
 }
 
@@ -559,11 +601,24 @@ static void send_settings_changes(void)
 }
 
 /* Uplink audio (called from the audio capture task). */
-static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
+/* Keep one uplink packet for a resend (chat turns). Caller holds s_turn_lock. */
+static void up_append(const uint8_t *opus, size_t len)
 {
-    if (turn_id != s_active_turn || !s_turn_live || s_conv != PROTO_CONV_LISTENING) {
+    if (!s_up_buf || s_up_overflow || s_turn_note) {
         return;
     }
+    if (s_up_len + 2 + len > UP_BUF_SIZE) {
+        s_up_overflow = true;   /* too long to send again: a drop now can only resume the answer */
+        return;
+    }
+    s_up_buf[s_up_len] = len >> 8;
+    s_up_buf[s_up_len + 1] = len & 0xFF;
+    memcpy(s_up_buf + s_up_len + 2, opus, len);
+    s_up_len += 2 + len;
+}
+
+static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, size_t len)
+{
     uint8_t frame[AUDIO_HDR_LEN + 1500];
     if (len > sizeof(frame) - AUDIO_HDR_LEN) {
         return;
@@ -573,7 +628,7 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
     frame[2] = (AUDIO_CODEC_OPUS >> 8) & 0xFF;
     frame[3] = AUDIO_CODEC_OPUS & 0xFF;
     wr_be32(frame + 4, turn_id);
-    wr_be32(frame + 8, frame_seq);
+    wr_be32(frame + 8, seq);
     memcpy(frame + AUDIO_HDR_LEN, opus, len);
     /* The send lock also keeps the client alive (ws_destroy takes it). */
     xSemaphoreTake(s_send_lock, portMAX_DELAY);
@@ -581,6 +636,22 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
         esp_websocket_client_send_bin(s_ws, (const char *)frame, AUDIO_HDR_LEN + len, pdMS_TO_TICKS(200));
     }
     xSemaphoreGive(s_send_lock);
+}
+
+static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
+{
+    if (turn_id != s_capture_turn || !s_turn_live || s_conv != PROTO_CONV_LISTENING || len > 1500) {
+        return;
+    }
+    xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+    up_append(opus, len);
+    const bool live = !s_bursting;      /* during a replay the packet goes out with it, in order */
+    const uint32_t turn = s_active_turn;
+    const uint32_t seq = live ? s_up_seq++ : 0;
+    xSemaphoreGive(s_turn_lock);
+    if (live) {
+        send_uplink(turn, seq, opus, len);  /* fails quietly while the link is down: the buffer keeps it */
+    }
 }
 
 static void playback_done_cb(uint32_t turn_id, void *ctx)
@@ -619,6 +690,29 @@ static void abort_turn(const char *reason)
     }
 }
 
+/* A fresh random id per new turn: the server admits (and charges) one request id at most once. It is never re-sent
+ * as a new question - a retry by the user is a new turn with a new id (a resume names the old one). */
+static void new_request_id(char out[33])
+{
+    for (int i = 0; i < 4; i++) {
+        snprintf(out + i * 8, 9, "%08lx", (unsigned long)esp_random());
+    }
+}
+
+/* The next turn id, live (frames for it are accepted from here on). */
+static uint32_t next_turn_locked_reset(void)
+{
+    xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+    s_active_turn = ++s_turn_counter;
+    s_turn_live = true;
+    s_first_audio_seen = false;
+    s_up_seq = 0;
+    xSemaphoreGive(s_turn_lock);
+    s_tts_ended = false;
+    s_turn_ended = false;
+    return s_active_turn;
+}
+
 static void start_turn(void)
 {
     buddy_settings_t st;
@@ -626,27 +720,24 @@ static void start_turn(void)
 
     /* Stop and flush first so nothing of the previous reply can play. */
     audio_playback_flush();
+    if (!s_up_buf) {
+        s_up_buf = heap_caps_malloc(UP_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
     xSemaphoreTake(s_turn_lock, portMAX_DELAY);
-    s_active_turn = ++s_turn_counter;
-    s_turn_live = true;
-    s_first_audio_seen = false;
+    s_up_len = 0;
+    s_up_overflow = false;
+    s_bursting = false;
     xSemaphoreGive(s_turn_lock);
-    s_tts_ended = false;
-    s_turn_ended = false;
-
-    uint32_t turn = s_active_turn;
+    uint32_t turn = next_turn_locked_reset();
+    s_capture_turn = turn;
+    s_resume_pending = false;
     s_turn_note = s_note_open;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
-    /* A fresh random id per new turn: the server admits (and charges) one request id at most once. It is
-     * never re-sent automatically - a retry by the user is a new turn with a new id. */
-    char request_id[33];
-    for (int i = 0; i < 4; i++) {
-        snprintf(request_id + i * 8, 9, "%08lx", (unsigned long)esp_random());
-    }
+    new_request_id(s_req_id);
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "language", st.language);
-    cJSON_AddStringToObject(m, "request_id", request_id);
+    cJSON_AddStringToObject(m, "request_id", s_req_id);
     if (s_turn_note) {
         cJSON_AddStringToObject(m, "mode", s_note_reminder ? "reminder" : "note");
         cJSON_AddNumberToObject(m, s_note_reminder ? "reminder" : "note", s_note_number);
@@ -700,6 +791,7 @@ static void start_cycle(void);
 static void handle_tap(void)
 {
     s_expect_reply = false;   /* the user takes over: no automatic listening */
+    end_hold(false);          /* a tap while waiting after a drop: the old question is given up */
     if (s_conn == CONN_BACKOFF && s_backoff_floor_ms == 0 && net_wifi_connected()) {
         /* Waiting (up to 2 min) before the next attempt while the screen says "Connecting...": the user
          * wants to talk now, so try the server now. A deliberate wait (account / protocol) is kept. */
@@ -727,6 +819,72 @@ static void handle_tap(void)
         abort_turn("user_tap");
         start_turn();
         break;
+    }
+}
+
+/* The link is back (hello_ack) after a drop mid-turn: pick the held turn up (PROTOCOL.md section 6.1). */
+static void resume_after_drop(void)
+{
+    if (!s_hold_until_ms) {
+        return;
+    }
+    s_hold_until_ms = 0;
+    emit(PROTO_EVT_STILL_THINKING, 0, NULL);
+    if (s_hold_kind == HOLD_ANSWER) {
+        /* The server heard the whole question and went on with it: ask for that reply. */
+        uint32_t turn = next_turn_locked_reset();
+        ESP_LOGI(TAG, "link back: resume the answer as turn %lu", (unsigned long)turn);
+        cJSON *m = cJSON_CreateObject();
+        cJSON_AddStringToObject(m, "request_id", s_req_id);
+        send_json(m, "resume", true, turn);
+        s_resume_pending = true;
+        set_conv(PROTO_CONV_THINKING);
+        s_turn_deadline_ms = now_ms() + THINKING_TIMEOUT_MS;
+        return;
+    }
+    /* The question was still being said: all of it again, as a new turn that replaces the first attempt. */
+    buddy_settings_t st;
+    settings_get(&st);
+    char old_id[33];
+    strlcpy(old_id, s_req_id, sizeof(old_id));
+    new_request_id(s_req_id);
+    xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+    s_bursting = true;      /* the live mic waits behind the replay */
+    xSemaphoreGive(s_turn_lock);
+    uint32_t turn = next_turn_locked_reset();
+    cJSON *m = cJSON_CreateObject();
+    cJSON_AddStringToObject(m, "language", st.language);
+    cJSON_AddStringToObject(m, "request_id", s_req_id);
+    cJSON_AddStringToObject(m, "replaces", old_id);
+    send_json(m, "listen_start", true, turn);
+    size_t pos = 0, packets = 0;
+    for (;;) {
+        uint8_t opus[1500];
+        size_t len = 0;
+        uint32_t seq = 0;
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        if (pos + 2 <= s_up_len) {
+            len = ((size_t)s_up_buf[pos] << 8) | s_up_buf[pos + 1];
+            memcpy(opus, s_up_buf + pos + 2, len);
+            pos += 2 + len;
+            seq = s_up_seq++;
+        } else {
+            s_bursting = false;     /* caught up: capture_cb sends live again */
+        }
+        xSemaphoreGive(s_turn_lock);
+        if (!len) {
+            break;
+        }
+        send_uplink(turn, seq, opus, len);
+        packets++;
+    }
+    ESP_LOGI(TAG, "link back: question sent again as turn %lu (%u packets)%s", (unsigned long)turn,
+             (unsigned)packets, audio_capture_active() ? ", mic still open" : "");
+    if (!audio_capture_active()) {
+        send_turn_msg("listen_end", turn, NULL);    /* the mic closed while offline: that was all */
+        s_turn_deadline_ms = now_ms() + THINKING_TIMEOUT_MS;
+    } else if (s_turn_deadline_ms < now_ms() + RESEND_LISTEN_MS) {
+        s_turn_deadline_ms = now_ms() + RESEND_LISTEN_MS;   /* the server's end of speech comes from the replay */
     }
 }
 
@@ -822,6 +980,7 @@ static void on_hello_ack(const cJSON *j)
     ota_mark_app_valid();
     ESP_LOGI(TAG, "session %s established with %s", s_session_id, s_url);
     emit(PROTO_EVT_SESSION_READY, 0, NULL);
+    resume_after_drop();    /* a turn held over a drop goes on */
 
     /* Changes made while offline: re-apply on top of the server state, send. */
     if (s_pending_changes) {
@@ -891,7 +1050,13 @@ static void on_error_msg(const cJSON *j, bool has_turn, uint32_t turn)
         new_pairing_code();
         send_hello();
     } else if (strcmp(code, "bad_request") == 0) {
-        /* log only */
+        if (s_resume_pending) {
+            /* a server without `resume` (PROTOCOL.md 6.1): the answer is lost */
+            s_resume_pending = false;
+            local_stop_turn();
+            set_conv(PROTO_CONV_IDLE);
+            emit(PROTO_EVT_ERROR, PROTO_ERR_AI, message);
+        }
     } else if (strcmp(code, "busy") == 0) {
         if (!has_turn || turn == s_active_turn) {
             local_stop_turn();
@@ -1042,6 +1207,14 @@ static void handle_text(const char *txt)
                 finish_turn_idle();
                 listen_again_if_asked();
             }
+        }
+        const char *resume = json_str(j, "resume");
+        if (has_turn && turn == s_active_turn && resume && strcmp(resume, "missing") == 0) {
+            ESP_LOGW(TAG, "resume: the server has no answer for the question");
+            emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* "try again" */
+        }
+        if (has_turn && turn == s_active_turn) {
+            s_resume_pending = false;
         }
         if (has_turn && turn == s_active_turn && s_turn_note) {
             bool error = status && strcmp(status, "error") == 0;
@@ -1461,7 +1634,7 @@ static void start_cycle(void)
 static bool session_lost(const char *why)
 {
     bool had_session = (s_conn == CONN_SESSION);
-    bool mid_turn = (s_conv != PROTO_CONV_IDLE);
+    bool mid_turn = (s_conv != PROTO_CONV_IDLE) && !s_hold_until_ms;     /* a hold is no turn of its own */
     bool recorded = false;
     if (had_session && !s_drop_reason) {
         s_drop_reason = why;
@@ -1482,10 +1655,30 @@ static bool session_lost(const char *why)
         diag_rtc_set_session(&s_rtc, NULL);
         diag_rtc_seal(&s_rtc);
     }
-    local_stop_turn();
-    set_conv(PROTO_CONV_IDLE);
-    if (mid_turn) {
-        emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
+    /* A question being heard or answered (a chat turn, not the note screen, nothing playing yet): hold it over the
+     * drop. Later calls for the same drop leave a running hold alone. */
+    bool hold = mid_turn && !s_turn_note && (s_conv == PROTO_CONV_LISTENING || s_conv == PROTO_CONV_THINKING);
+    bool question = hold && s_conv == PROTO_CONV_LISTENING && s_up_buf && !s_up_overflow;
+    bool keep_mic = question || (s_hold_until_ms && s_hold_kind == HOLD_QUESTION);
+    s_resume_pending = false;
+    if (!keep_mic) {
+        local_stop_turn();
+    }
+    if (hold) {
+        s_hold_until_ms = now_ms() + HOLD_MS;
+        s_hold_kind = question ? HOLD_QUESTION : HOLD_ANSWER;
+        if (question) {
+            ESP_LOGI(TAG, "link lost mid-question: recording on, waiting up to %d s", HOLD_MS / 1000);
+        } else {
+            ESP_LOGI(TAG, "link lost mid-turn: still thinking for up to %d s", HOLD_MS / 1000);
+            set_conv(PROTO_CONV_THINKING);
+            emit(PROTO_EVT_STILL_THINKING, 1, NULL);
+        }
+    } else if (!s_hold_until_ms) {
+        set_conv(PROTO_CONV_IDLE);
+        if (mid_turn) {
+            emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
+        }
     }
     s_session_id[0] = '\0';
     s_seq_out = 0;
@@ -1608,6 +1801,7 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_END_CONVERSATION:
+        end_hold(false);    /* the chat screen was left: no "try again" for a question given up */
         if (s_conv == PROTO_CONV_LISTENING) {
             abort_turn("user_tap");
             set_conv(PROTO_CONV_IDLE);
@@ -1684,6 +1878,17 @@ static void handle_msg(msg_t *m)
 static void handle_timers(void)
 {
     int64_t now = now_ms();
+
+    if (s_hold_until_ms && now >= s_hold_until_ms) {
+        ESP_LOGW(TAG, "link not back in %d s: the turn is given up", HOLD_MS / 1000);
+        end_hold(true);
+    } else if (s_hold_until_ms && s_hold_kind == HOLD_QUESTION && s_conv == PROTO_CONV_LISTENING &&
+               now >= s_turn_deadline_ms) {
+        /* the longest question is over while offline: it is complete, now wait for the link */
+        audio_capture_stop();
+        set_conv(PROTO_CONV_THINKING);
+        emit(PROTO_EVT_STILL_THINKING, 1, NULL);
+    }
 
     switch (s_conn) {
     case CONN_BACKOFF:

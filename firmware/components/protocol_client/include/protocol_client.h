@@ -65,6 +65,7 @@ typedef enum {
     PROTO_EVT_NOTE_SESSION,         /* num = 1 note mic opened, 0 closed */
     PROTO_EVT_NOTE_STATE,           /* num = proto_conv_state_t of a note-mode turn */
     PROTO_EVT_NOTE_TEXT,            /* str = live transcript (num 0) or the assistant's question (num 1) */
+    PROTO_EVT_STILL_THINKING,       /* num = 1: the link dropped mid-turn, the watch waits (THINKING); 0: over */
 } proto_event_type_t;
 
 typedef struct {

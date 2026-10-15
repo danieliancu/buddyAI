@@ -86,12 +86,17 @@ void ui_chat_user(const char *text);
 void ui_chat_reply(const char *delta);
 /* Short answer value ("21°C"): the reply bubble shows only this, in large type. */
 void ui_chat_display(const char *text);
+/* The link dropped while the answer was awaited: "Still thinking…" next to ola's dots (false hides it). */
+void ui_chat_still_thinking(bool on);
 void ui_caption_clear(void);
 void ui_caption_set(const char *text);
 void ui_caption_append(const char *delta);
 /* Detected language of the current reply (stt_result / tts_start "language").
  * With language = "auto" the date follows it when a table exists. */
 void ui_set_reply_language(const char *lang);
+/* The Wi-Fi screen, as from Settings; `password_for`: its password screen for that network (NULL: the list).
+ * Development test command "wifi [network]". */
+void ui_show_wifi(const char *password_for);
 void ui_set_hint(const char *text);        /* small status line, NULL clears */
 void ui_set_status(int battery_pct, bool charging, ui_link_t link);
 

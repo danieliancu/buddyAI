@@ -44,8 +44,9 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Diagnostic reports (token hello only, repeated until a `hello_ack`; admin **ola Diagnostics**, see §3.1.1): `boot: {reset_reason, prev_uptime_s?, …}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?, …}` when the previous session ended or connecting failed (`drop`: `wifi_lost`\|`pong_timeout`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`\|`reboot`\|`connect_failed`\|`hello_timeout`). |
-| `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
-| `listen_end` | `turn_id` | The user stopped listening (note mode's stop button): end the sentence now and process what was said - unlike `abort`, which discards it. |
+| `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `replaces?`: the `request_id` of a question the watch sends again after a dropped connection (§6.1); the server stops that first attempt if it is still running, uncounted. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
+| `listen_end` | `turn_id` | The user stopped listening (note mode's stop button, or the end of a question resent after a dropped connection, §6.1): end the sentence now and process what was said - unlike `abort`, which discards it. |
+| `resume` | `turn_id`, `request_id` | After a dropped connection (§6.1): the reply to the question sent with `request_id` in the previous session, as the new turn `turn_id`. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
 | `playback_started` | `turn_id` | First downlink audio frame of the turn was received and queued (TTFA end point, §6). |
 | `playback_done` | `turn_id` | Device finished playing the reply. |
@@ -93,7 +94,7 @@ reports.
 | `llm_display` | `turn_id`, `text` | Optional, before the first `llm_text`: the answer's key value (≤ 16 chars, e.g. `21°C`, `14:30`, `£3.50`). The watch shows only this, in large type, while the full reply is spoken. |
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
-| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?` | Server finished the turn. `expect_reply: true` (chat mode): the reply asked something the current operation needs ("which one?", "delete it?") - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
+| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?`, `resume?` | Server finished the turn. `resume: "missing"` (with `status: error`): the answer to a `resume` - nothing to resume (unknown or expired request, or the question was not heard in full); the watch shows "try again". `expect_reply: true` (chat mode): the reply asked something the current operation needs ("which one?", "delete it?") - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
 | `ota_available` | `version`, `url`, `sha256`, `size`, `signature?` | Firmware update offer. |
 | `error` | `code`, `message`, `turn_id?` | See §7. |
@@ -205,6 +206,26 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
    drops its queued audio, never sends another frame for it and replies `turn_end {status: "aborted"}`.
 4. Result: audio from a previous reply can never play after a new turn has started.
 
+### 6.1 Dropped connection mid-turn (firmware and server 2026-10)
+
+The server often notices a lost Wi-Fi link only when the watch's next `hello` replaces the old connection.
+The watch holds a chat turn over a drop for up to 25 s and picks it up after the next `hello_ack`:
+
+- **Question heard in full** (the watch was `thinking`): the server's turn goes on without the connection. The watch
+  sends `resume {turn_id: new, request_id: of the question}`; the server replays everything sent for that turn so
+  far (`stt_result`, `llm_text`, `tts_start`, audio frames, `turn_end`…) under the new `turn_id`, then the rest as
+  it comes. The turn is answered and counted once. A reply is kept for 180 s after its end (memory only; up to
+  2 MB of output per turn). Nothing to resume: `turn_end {status: error, resume: "missing"}`. A tap during the
+  resumed turn sends `abort` for the new `turn_id` as usual.
+- **Question still being said** (`listening`): the watch keeps recording into a buffer and, once connected, sends
+  a new `listen_start {request_id: new, replaces: old}`, the whole recording as uplink frames (faster than
+  realtime), then the live mic if it is still open - or `listen_end` if the longest question ended offline. The
+  first attempt stops uncounted (`aborted`, reason `connection_lost`).
+- The server does not end a question when the uplink stalls mid-sentence for 3 s: the watch streams without pause,
+  so that is its link. It waits up to 9 s in all for the rest (a short hiccup goes on where it stopped).
+- Still nothing after 25 s on the watch: "can't answer right now, try again". Speaking (reply playing): not held.
+- Older servers answer `resume` with `error bad_request` (the watch shows "try again") and ignore `replaces`.
+
 ## 7. Error codes
 
 | code | Meaning | Device action |
@@ -213,7 +234,7 @@ Header: 12 bytes, big-endian, followed by one Opus packet.
 | `unauthorized` | Token invalid/revoked | Delete token, go to pairing screen. |
 | `pairing_expired` | Code expired | Generate a new code, send new `hello`. |
 | `bad_request` | Malformed message | Log. |
-| `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn (e.g. no provider credit, timeout) | `message` is a generic "try again later" text; the reason is never shown to the user (server log only). Show "can't answer right now, try again later", go idle. The watch shows the same when a turn times out or the connection drops mid-turn. |
+| `stt_failed` / `llm_failed` / `tts_failed` | Provider error during a turn (e.g. no provider credit, timeout) | `message` is a generic "try again later" text; the reason is never shown to the user (server log only). Show "can't answer right now, try again later", go idle. The watch shows the same when a turn times out, or when the connection stays down mid-turn (§6.1). |
 | `busy` | Server overloaded. Older firmware (no `request_id`) also gets it instead of `busy_concurrent`, `service_unavailable` and `duplicate` | Show "Server busy — try again in a moment", go idle. |
 | `busy_concurrent` | Other conversations of the same account are running and hold the account's last AI interactions (reply to `listen_start`, followed by `turn_end {status: error}`) | Show "Conversations in progress — try again when they finish", go idle. No automatic retry. |
 | `service_unavailable` | The server cannot decide on the admission right now (billing database unreachable, maintenance drain) | Show "Server busy", go idle. |

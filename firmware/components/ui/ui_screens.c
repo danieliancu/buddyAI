@@ -690,7 +690,7 @@ void ui_settings_open(void)
 void ui_settings_return(void)
 {
     ui_settings_refresh();
-    ui_load_screen(s_set_scr, true);
+    ui_load_screen(s_set_scr, false);   /* back to the parent: slides in from the left, as every return */
 }
 
 /* ------------------------------------------------------------------------- */

@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -24,7 +26,7 @@ from app import cost_monitor
 from app.interactions import counts_as_interaction
 from app.items import KINDS, device_full
 from app.voice_context import STORE
-from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message
+from app.gateway.protocol import KIND_UPLINK, AudioFrame, Envelope, ProtocolError, parse_message, valid_request_id
 from app.pipeline.conversation import ConversationPipeline
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnResult
@@ -37,6 +39,7 @@ TRY_LATER = "Ola can't answer right now. Please try again a little later."
 router = APIRouter()
 
 MAX_RECENT_TURNS = 8
+OUT_LOG_MAX_BYTES = 2_000_000  # a turn's replay log (section 6.1); a longer reply cannot be resumed
 ABORT_REASONS = ("user_tap", "timeout", "error")
 ABORT_TEXT = {
     "user_tap": "Stopped on the watch",
@@ -44,6 +47,25 @@ ABORT_TEXT = {
     "error": "Stopped by the watch after an error",
     "connection_lost": "The connection closed during the turn",
 }
+
+
+@dataclass
+class _Follower:
+    """A later connection of the same watch that resumed a turn after a dropped connection (PROTOCOL.md 6.1)."""
+
+    conn: "DeviceConnection"
+    turn_id: int  # the turn id the watch gave the resume
+    pos: int = 0  # next out_log entry to send
+    audio_seq: int = 0
+    live: bool = False  # caught up with the log: new output is sent as it comes
+
+
+def _stop_turn(turn: TurnContext, reason: str) -> None:
+    """Cancel a turn that may belong to another (dropped) connection."""
+    turn.abort_reason = turn.abort_reason or reason
+    turn.cancelled = True
+    if turn.task and not turn.task.done():
+        turn.task.cancel()
 
 
 def abort_text(result: TurnResult, turn: TurnContext) -> str | None:
@@ -78,6 +100,7 @@ class DeviceConnection:
         self._timed_out = False  # the session ended because the watch went silent
         self._close_code: int | None = None  # the watch's websocket close code (1006 = no close frame)
         self._crash: BaseException | None = None  # an unexpected exception ended the session
+        self.following: tuple[TurnContext, _Follower] | None = None  # a resumed turn of a dropped connection
 
     # --- sending (TurnIO + generic) --------------------------------------------------------
 
@@ -92,7 +115,28 @@ class DeviceConnection:
                 return False
 
     def _is_live(self, turn: TurnContext) -> bool:
-        return turn is self.active and not turn.cancelled
+        # detached: the connection dropped after the question was heard - the reply goes on for a resume
+        return (turn is self.active or turn.detached) and not turn.cancelled
+
+    @staticmethod
+    def _log_out(turn: TurnContext, entry: tuple, size: int) -> None:
+        if turn.out_log is None:
+            return
+        turn.out_log_bytes += size
+        if turn.out_log_bytes > OUT_LOG_MAX_BYTES:
+            turn.out_log = None  # too long to keep: this turn cannot be resumed
+        else:
+            turn.out_log.append(entry)
+
+    async def _turn_out(self, turn: TurnContext, type_: str, tagged: bool = True, **fields: Any) -> bool:
+        """A message of `turn` (tagged with its turn_id, or untagged like items_open): to this connection, to the
+        connections that resumed it, and into its replay log."""
+        self._log_out(turn, ("json", type_, tagged, fields), 64 + sum(len(str(v)) for v in fields.values()))
+        ok = await self.send_json(type_, turn.turn_id if tagged else None, **fields)
+        for f in list(turn.followers):
+            if f.live:
+                await f.conn.send_json(type_, f.turn_id if tagged else None, **fields)
+        return ok
 
     @staticmethod
     def _stop_if_cancelled(turn: TurnContext) -> None:
@@ -108,22 +152,34 @@ class DeviceConnection:
         if type_ == "state":
             self.ui_state = fields["state"]
             self.hub.publish({"type": "device_state", "device_id": self.device_id, "state": self.ui_state})
-        return await self.send_json(type_, turn.turn_id, **fields)
+        return await self._turn_out(turn, type_, **fields)
 
     async def send_audio(self, turn: TurnContext, opus_packet: bytes) -> bool:
         self._stop_if_cancelled(turn)
-        if not self._is_live(turn) or self._closed:
+        if not self._is_live(turn):
             return False
-        frame = AudioFrame(kind=0x02, turn_id=turn.turn_id, frame_seq=turn.downlink_seq, payload=opus_packet)
-        async with self._send_lock:
-            try:
-                await self.ws.send_bytes(frame.pack())
-            except Exception:
-                return False
+        self._log_out(turn, ("audio", opus_packet), len(opus_packet) + 16)
+        for f in list(turn.followers):
+            if f.live:
+                await f.conn._send_frame(f.turn_id, f.audio_seq, opus_packet)
+                f.audio_seq += 1
+        if self._closed or not await self._send_frame(turn.turn_id, turn.downlink_seq, opus_packet):
+            return False
         if turn.downlink_seq == 0:
             turn.marks.first_frame_sent = mono_ms()
         turn.downlink_seq += 1
         return True
+
+    async def _send_frame(self, turn_id: int, seq: int, opus_packet: bytes) -> bool:
+        if self._closed or self.ws.client_state != WebSocketState.CONNECTED:
+            return False
+        frame = AudioFrame(kind=0x02, turn_id=turn_id, frame_seq=seq, payload=opus_packet)
+        async with self._send_lock:
+            try:
+                await self.ws.send_bytes(frame.pack())
+                return True
+            except Exception:
+                return False
 
     async def close(self, code: int = 1000, reason: str = "") -> None:
         if not self._closed:
@@ -166,11 +222,34 @@ class DeviceConnection:
         if self.authenticated:
             self._record_session_issues()
             self._touch_last_seen()
-        if self.active:
+        self._unfollow(cancel=False)  # a resumed turn goes on: the watch may come back for it again
+        if self.active and self._resumable(self.active):
+            # The question was heard: the reply goes on without this connection, and the watch's next connection
+            # gets it with `resume` (PROTOCOL.md section 6.1). Charged once, like any turn.
+            self.active.detached = True
+            self.active = None
+        elif self.active:
             self.active.abort_reason = self.active.abort_reason or "connection_lost"
             await self._cancel_active()
         self.hub.unregister(self)
         await self.close()
+
+    @staticmethod
+    def _resumable(turn: TurnContext) -> bool:
+        """A chat turn past listening, from firmware with request ids (the watch resumes it by its id)."""
+        return (turn.mode == "chat" and not turn.listening and not turn.cancelled and turn.out_log is not None
+                and turn.request_key.startswith("r:"))
+
+    def _unfollow(self, cancel: bool) -> None:
+        """Stop mirroring a resumed turn to this connection; cancel: the watch moved on (tap, new turn)."""
+        if self.following is None:
+            return
+        turn, f = self.following
+        self.following = None
+        if f in turn.followers:
+            turn.followers.remove(f)
+        if cancel and turn.final_status is None:
+            _stop_turn(turn, "user_tap")
 
     def _touch_last_seen(self) -> None:
         """`status` comes only every few minutes: the end of the session is the last time the watch was seen."""
@@ -230,6 +309,7 @@ class DeviceConnection:
         handler = {
             "listen_start": self._on_listen_start,
             "listen_end": self._on_listen_end,
+            "resume": self._on_resume,
             "abort": self._on_abort,
             "playback_started": self._on_playback_started,
             "playback_done": self._on_playback_done,
@@ -369,6 +449,13 @@ class DeviceConnection:
                 return
         request_key, request_kind = self._request_key(msg, turn_id)
         legacy = request_kind == "legacy"
+        # The watch heard a question while its connection was down and sends it again as this new turn: the
+        # first attempt (still waiting for the rest of the audio, or answering only half of it) stops, uncounted.
+        replaced = msg.get("replaces")
+        if valid_request_id(replaced) and replaced != msg.get("request_id"):
+            old = self.hub.find_turn(self.device_id, f"r:{replaced}")
+            if old is not None and old.final_status is None:
+                _stop_turn(old, "connection_lost")
         # The same request again (a resend): never a second operation. Checked before the running turn is
         # cancelled, so a resend cannot stop the turn it duplicates.
         same = next((t for t in self.recent.values() if not legacy and t.request_key == request_key), None)
@@ -381,6 +468,7 @@ class DeviceConnection:
             return
         if self.active:
             await self._cancel_active()
+        self._unfollow(cancel=True)
         self.last_turn_id = turn_id
         # The database admits the turn and reserves a little allowance for it (app/usage_ops.py), shared by
         # every server process: several watches of one account cannot start turns past the limit together.
@@ -454,6 +542,8 @@ class DeviceConnection:
         for old in sorted(self.recent)[:-MAX_RECENT_TURNS]:
             del self.recent[old]
         turn.op_id, turn.exec_token, turn.request_key = adm.op_id, adm.exec_token, request_key
+        if turn.mode == "chat" and request_key.startswith("r:"):
+            self.hub.remember_turn(self.device_id, turn)  # resumable after a dropped connection
         turn.task = asyncio.create_task(self._run_turn(turn), name=f"turn-{self.device_id}-{turn_id}")
         turn.lease_task = asyncio.create_task(self._keep_lease(turn, adm.lease_s), name=f"lease-{turn_id}")
 
@@ -482,7 +572,48 @@ class DeviceConnection:
             turn.end_requested = True
             turn.audio_in.put_nowait(None)
 
+    async def _on_resume(self, msg: dict[str, Any]) -> None:
+        """The watch lost its connection after a question was heard and asks for that turn's reply (PROTOCOL.md
+        6.1): replay everything sent for it so far under the new turn_id, then the rest as it comes."""
+        turn_id, rid = msg.get("turn_id"), msg.get("request_id")
+        if not isinstance(turn_id, int) or turn_id <= self.last_turn_id or not valid_request_id(rid):
+            await self.send_json("error", code="bad_request", message="resume needs a new turn_id and request_id",
+                                 turn_id=turn_id)
+            return
+        self.last_turn_id = turn_id
+        if self.active:
+            await self._cancel_active()
+        self._unfollow(cancel=True)
+        old = self.hub.find_turn(self.device_id, f"r:{rid}")
+        if old is None or old.cancelled or old.out_log is None:
+            log.info("resume %s/%s: nothing to resume", self.device_id, turn_id)
+            await self.send_json("turn_end", turn_id, status="error", resume="missing")
+            return
+        log.info("resume %s: turn %s of session %s as %s", self.device_id, old.turn_id, old.session_id, turn_id)
+        f = _Follower(self, turn_id)
+        old.followers.append(f)  # first: whatever the turn sends during the replay lands in its log and is replayed
+        self.following = (old, f)
+        while old.out_log is not None and f.pos < len(old.out_log):
+            entry = old.out_log[f.pos]
+            f.pos += 1
+            if entry[0] == "audio":
+                await self._send_frame(turn_id, f.audio_seq, entry[1])
+                f.audio_seq += 1
+            else:
+                _, type_, tagged, fields = entry
+                await self.send_json(type_, turn_id if tagged else None, **fields)
+        if old.out_log is None:  # the reply outgrew the log during the replay
+            self._unfollow(cancel=False)
+            await self.send_json("turn_end", turn_id, status="error", resume="missing")
+            return
+        f.live = True
+        if old.final_status is not None:
+            self._unfollow(cancel=False)  # replayed to the end
+
     async def _on_abort(self, msg: dict[str, Any]) -> None:
+        if self.following and msg.get("turn_id") == self.following[1].turn_id:
+            self._unfollow(cancel=True)
+            return
         if self.active and msg.get("turn_id") == self.active.turn_id:
             reason = msg.get("reason")
             self.active.abort_reason = reason if reason in ABORT_REASONS else "error"
@@ -592,7 +723,7 @@ class DeviceConnection:
             # their reason: the details stay in the log and the turn record.
             hidden = result.error_code == "internal" or result.error_code.endswith("_failed")
             message = TRY_LATER if hidden else result.error_message or ""
-            await self.send_json("error", turn.turn_id, code=result.error_code, message=message)
+            await self._turn_out(turn, "error", code=result.error_code, message=message)
         if live:
             await self.send(turn, "state", state="idle")
         if turn.items_changed and turn.account_id is not None:  # the fresh list first
@@ -602,21 +733,26 @@ class DeviceConnection:
         # edit mode on it instead of reopening the mic for the next sentence.
         if turn.pending_open is not None and live and result.status == "completed":
             if "list" in turn.pending_open:
-                await self.send_json("items_open", kind=turn.pending_open["list"])
+                await self._turn_out(turn, "items_open", tagged=False, kind=turn.pending_open["list"])
                 if turn.account_id is not None:
                     STORE.clear_open(STORE.get(turn.account_id, self.device_id, turn.session_id))
             else:
                 view = turn.pending_open["item"]
                 if turn.pending_uid and isinstance(view.get("number"), int):
                     self._shown[(view.get("kind"), view["number"])] = turn.pending_uid
-                await self.send_json("item_show", item=view)
+                await self._turn_out(turn, "item_show", tagged=False, item=view)
         # turn_end is bookkeeping: always sent (the watch accepts it even for old turns). After an apology
         # the watch ends the turn like a reply (it would cut the spoken apology on "error"). expect_reply: the
         # reply asked something the operation needs (which one? confirm?) - the watch listens again.
         status = "completed" if result.notified else result.status
         extra = {"expect_reply": True} if turn.expect_reply and turn.mode == "chat" and status == "completed" and live else {}
-        await self.send_json("turn_end", turn.turn_id, status=status, **extra)
+        await self._turn_out(turn, "turn_end", status=status, **extra)
         turn.final_status = status
+        turn.finished_at = time.monotonic()
+        for f in list(turn.followers):  # the resumed reply is complete on the watch's new connection
+            if f.live and f.conn.following and f.conn.following[1] is f:
+                f.conn.following = None
+        turn.followers.clear()
         if result.status == "completed":
             self._diag([], turn_ok=True)  # earlier failed-turn incidents of this watch have recovered
         if status == "completed" and turn.account_id is not None:

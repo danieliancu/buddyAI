@@ -62,6 +62,8 @@ int       net_wifi_attempt_reason(void);
 void      net_wifi_set_power_save(bool enable);
 /* Screen standby: the radio sleeps longer between beacons (CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL). */
 void      net_wifi_set_standby(bool standby);
+/* Development builds only: leave the network and stay off for `seconds` (a lost Wi-Fi), then reconnect. */
+void      net_wifi_test_drop(int seconds);
 
 /* ---- provisioning portal ---- */
 /* The "ola-XXXX" setup network is WPA2-protected with `ap_pass` (the watch's setup password, 8..63

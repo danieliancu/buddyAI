@@ -25,7 +25,6 @@ static const char *TAG = "ui_lang";
 #define SEARCH_Y        90
 #define SEARCH_H        48
 #define LIST_Y          (SEARCH_Y + SEARCH_H + 10)
-#define KEYBOARD_H      210
 #define ROW_BG          0x1a1f28
 #define PILL_BG         0x252b36
 
@@ -70,7 +69,7 @@ static bool contains_ci(const char *hay, const char *needle)
 static void show_keyboard(bool show)
 {
     lv_obj_set_flag(s_kb, LV_OBJ_FLAG_HIDDEN, !show);
-    lv_obj_set_height(s_list, BOARD_LCD_V_RES - LIST_Y - (show ? KEYBOARD_H : 20));
+    lv_obj_set_height(s_list, BOARD_LCD_V_RES - LIST_Y - (show ? UI_KB_H + UI_KB_BOTTOM + 8 : 20));
     if (!show) {
         lv_obj_remove_state(s_search, LV_STATE_FOCUSED);
     }
@@ -207,10 +206,7 @@ void ui_lang_init(void)
     lv_obj_set_style_pad_row(s_list, 8, 0);
     lv_obj_set_style_pad_bottom(s_list, 24, 0);
 
-    s_kb = lv_keyboard_create(s_scr);
-    lv_obj_set_size(s_kb, BOARD_LCD_H_RES, KEYBOARD_H);
-    lv_obj_align(s_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_text_font(s_kb, &buddy_font_20, LV_PART_ITEMS);
+    s_kb = ui_add_keyboard(s_scr);
     lv_obj_add_event_cb(s_kb, kb_cb, LV_EVENT_ALL, NULL);
     show_keyboard(false);
     lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */

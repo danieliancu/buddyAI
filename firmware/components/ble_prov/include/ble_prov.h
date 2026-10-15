@@ -24,6 +24,10 @@ typedef void (*ble_prov_done_cb_t)(void);
 esp_err_t ble_prov_start(const char *device_name, const char *setup_pass, ble_prov_done_cb_t done);
 void      ble_prov_stop(void);
 bool      ble_prov_active(void);
+/* Normal mode (not Wi-Fi setup): give Bluetooth's RAM to the heap for good. Bluetooth cannot start again
+ * until the next restart - fine, since setup always begins with one. Call once, early, before
+ * ble_prov_start() was ever called. */
+void      ble_prov_release_memory(void);
 
 #ifdef __cplusplus
 }

@@ -74,6 +74,10 @@ def result_ok(result: str) -> bool:
 
 UPLINK_RATE = 16000
 UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
+# ... unless it stopped mid-sentence: the watch streams without pause, so that is its link, not the user. Wait this
+# long in all for the rest (a short hiccup goes on where it stopped); a watch that reconnects sends the whole
+# question again as a new turn (listen_start `replaces`), which stops this one uncounted.
+UPLINK_LOST_S = 9.0
 PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
 # The end of speech is detected after END_SILENCE_MS of silence (700 ms by default). The first
 # SILENCE_SEND_MS of a pause still go to the STT (word endings); the rest is held back and only sent
@@ -402,11 +406,16 @@ class ConversationPipeline:
         reason = "vad"
         arrivals: list[tuple[float, float]] = []  # (audio end ms, arrival mono ms)
         stt_billed = False
+        stalled_s = 0.0
         try:
             while True:
                 try:
                     item = await asyncio.wait_for(turn.audio_in.get(), UPLINK_STALL_S)
+                    stalled_s = 0.0
                 except asyncio.TimeoutError:
+                    stalled_s += UPLINK_STALL_S
+                    if detector.speech_started and not turn.cancelled and stalled_s < UPLINK_LOST_S:
+                        continue
                     item = None
                 if turn.cancelled:
                     raise asyncio.CancelledError()

@@ -18,6 +18,7 @@ from app.security import hash_device_token, new_device_token
 
 if TYPE_CHECKING:
     from app.gateway.device_ws import DeviceConnection
+    from app.pipeline.turn import TurnContext
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,32 @@ class DeviceHub:
         # waits with a pairing code, that account's setup page says so ("your watch is online"). Memory only:
         # it is a convenience, never an authorisation (pairing still needs the code shown on the watch).
         self.recently_removed: dict[str, tuple[int, str, float]] = {}
+        # Chat turns a watch may come back for after a dropped connection (`resume`, PROTOCOL.md section 6.1):
+        # (device_id, request key) -> the turn. A turn whose connection dropped once the question was heard keeps
+        # running; its reply is replayed to the watch's next connection. Memory only, RESUME_TTL_S after the end.
+        self.resumable: dict[tuple[str, str], "TurnContext"] = {}
+
+    # --- turns a watch can resume -----------------------------------------------------
+
+    RESUME_TTL_S = 180
+    RESUME_PER_DEVICE = 4
+
+    def remember_turn(self, device_id: str, turn: "TurnContext") -> None:
+        self._expire_turns()
+        self.resumable[(device_id, turn.request_key)] = turn
+        mine = [k for k in self.resumable if k[0] == device_id]
+        for k in mine[:-self.RESUME_PER_DEVICE]:  # oldest first (dict order)
+            del self.resumable[k]
+
+    def find_turn(self, device_id: str, request_key: str) -> "TurnContext | None":
+        self._expire_turns()
+        return self.resumable.get((device_id, request_key))
+
+    def _expire_turns(self) -> None:
+        now = time.monotonic()
+        for k, t in list(self.resumable.items()):
+            if t.finished_at is not None and now - t.finished_at > self.RESUME_TTL_S:
+                del self.resumable[k]
 
     # --- live events (web UI) --------------------------------------------------------
 

@@ -68,6 +68,15 @@ class TurnContext:
     usage_flushed: int = 0  # turn.usage items already written as usage records
     lease_task: asyncio.Task | None = None
     final_status: str | None = None  # the status sent in turn_end (a resend of the request gets it again)
+    # Resume after a dropped connection (PROTOCOL.md section 6.1). out_log: everything sent for the turn, in order -
+    # ("json", type, fields) or ("audio", opus packet) - replayed to the watch's next connection; None once it grew
+    # past OUT_LOG_MAX_BYTES (not resumable). followers: those later connections, which get the rest live.
+    # detached: its connection dropped after the question was heard; the turn runs on without it.
+    out_log: list[tuple] | None = field(default_factory=list)
+    out_log_bytes: int = 0
+    followers: list[Any] = field(default_factory=list)
+    detached: bool = False
+    finished_at: float | None = None  # time.monotonic() at the end (the hub forgets it RESUME_TTL_S later)
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"

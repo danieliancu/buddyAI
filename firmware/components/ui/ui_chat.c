@@ -63,6 +63,7 @@ static lv_obj_t  *s_cur_user;       /* label of this turn's user bubble (NULL un
 static lv_obj_t  *s_typing;         /* bouncing dots: the user's side while listening (before the first
                                      * words), ola's side while the answer is awaited */
 static bool       s_typing_ai;      /* s_typing is on ola's side */
+static bool       s_still;          /* the answer takes longer (link dropped): "Still thinking…" after ola's dots */
 static lv_obj_t  *s_cur_reply;      /* label of this turn's reply bubble */
 static bool       s_cur_display;    /* the reply bubble shows a short value: ignore the text */
 static ui_conv_t  s_state = UI_CONV_IDLE;
@@ -246,6 +247,13 @@ static void show_typing(bool ai)
         lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
         lv_anim_start(&a);
     }
+    if (ai && s_still) {
+        lv_obj_t *l = lv_label_create(s_typing);
+        lv_obj_set_style_text_font(l, &buddy_font_20, 0);
+        lv_obj_set_style_text_opa(l, LV_OPA_70, 0);
+        lv_obj_set_style_pad_left(l, 6, 0);
+        lv_label_set_text(l, ui_str(STR_STILL_THINKING));
+    }
     trim_history();
 }
 
@@ -411,6 +419,9 @@ void ui_chat_set_state(ui_conv_t st)
             lv_timer_pause(s_reveal_timer);
         }
     }
+    if (st != UI_CONV_THINKING) {
+        s_still = false;
+    }
     if (st == UI_CONV_LISTENING) {
         hide_typing();
         s_cur_user = NULL;
@@ -472,6 +483,20 @@ void ui_chat_refresh_theme(void)
             lv_obj_set_style_text_color(l, ui_on_color(g_ui_theme.accent), 0);
         }
     }
+}
+
+void ui_chat_still_thinking(bool on)
+{
+    LOCK();
+    if (s_scr && on != s_still) {
+        s_still = on;
+        if (s_typing && s_typing_ai) {
+            hide_typing();
+            show_typing(true);  /* the dots again, with or without the text */
+            scroll_to_end();
+        }
+    }
+    UNLOCK();
 }
 
 void ui_chat_user(const char *text)

@@ -110,8 +110,19 @@ void net_emit(net_event_t ev)
 
 static void pick_next(void);
 
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+static int64_t s_test_off_until_us;     /* net_wifi_test_drop(): no reconnecting before this */
+#endif
+
 static void reconnect_cb(void *arg)
 {
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+    int64_t left = s_test_off_until_us - esp_timer_get_time();
+    if (left > 0) {
+        esp_timer_start_once(s_reconnect_timer, (uint64_t)left);
+        return;
+    }
+#endif
     if (s_sta_configured && !s_connected) {
         ESP_LOGI(TAG, "reconnecting...");
         if (s_saved_mode) {
@@ -617,3 +628,14 @@ esp_err_t net_mdns_find_server(char *url, size_t len, uint32_t timeout_ms)
     mdns_query_results_free(results);
     return err;
 }
+
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+void net_wifi_test_drop(int seconds)
+{
+    ESP_LOGW(TAG, "test: Wi-Fi off for %d s", seconds);
+    s_test_off_until_us = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    esp_timer_stop(s_reconnect_timer);
+    esp_wifi_disconnect();      /* the disconnect event schedules a retry: reconnect_cb holds it until then */
+    esp_timer_start_once(s_reconnect_timer, (uint64_t)seconds * 1000000);
+}
+#endif

@@ -138,6 +138,7 @@ typedef enum {
     STR_OTA_FAIL,
     STR_LISTENING,
     STR_THINKING,
+    STR_STILL_THINKING,
     STR_TAP_TO_TALK,
     STR_NOTES,
     STR_REMINDERS,
@@ -259,6 +260,11 @@ lv_color_t  ui_on_color(lv_color_t bg);
  * plus a wide touch margin). Floating: outside layouts and scrolling. Bring it to the front once the
  * screen is built (lv_obj_move_foreground), so nothing covers its touch area. */
 lv_obj_t   *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb);
+/* On-screen keyboard (password, language search): lifted off the bottom edge and narrower than the screen, so
+ * no key sits in the panel's rounded corners. */
+#define UI_KB_H         210
+#define UI_KB_BOTTOM    34
+lv_obj_t   *ui_add_keyboard(lv_obj_t *scr);
 lv_style_t *ui_style_accent_border(void);  /* border + arc in the accent color */
 /* Shows / hides a spinner; a hidden one stops its (infinite) animation, which would otherwise keep LVGL's
  * animation timer waking the CPU every frame. */
@@ -277,6 +283,7 @@ void        ui_lang_open(void);
 void        ui_wifi_init(void);
 /* from_settings: the X goes back to settings (else to the watchface). */
 void        ui_wifi_open(bool from_settings);
+void        ui_wifi_password(const char *ssid);   /* the password screen for `ssid` */
 const char *ui_lang_label(const char *code);
 
 /* ---- conversation screen (ui_chat.c); caller holds the lock ---- */

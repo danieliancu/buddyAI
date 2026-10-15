@@ -1,8 +1,9 @@
 /*
  * ola - Wi-Fi screen (Settings › Wi-Fi, and the "No Wi-Fi" message).
  *
- * Full screen in the style of the language picker: title, X in the top-right corner, one scrolling list:
- *  - a status card: the network the watch is on, or what happened to the one just chosen here;
+ * Full screen in the style of the language picker: title, X in the top-right corner, a status card that stays
+ * under the title (the network the watch is on, or what happened to the one just chosen here), and under it
+ * one scrolling list:
  *  - Saved networks (most recent first), without the one the watch is on (it is in the status card):
  *    tap one to join it, the bin forgets it (tap it twice);
  *  - Nearby: a scan, strongest first, without the saved ones; a lock marks a password. Tap an open one
@@ -18,10 +19,11 @@
 #include "ui_priv.h"
 
 #define CONTENT_W       340
-#define LIST_Y          96
+#define LIST_Y          96          /* the status card; the list follows it */
+#define CARD_GAP        8
 #define FIELD_Y         96
 #define FIELD_H         48
-#define KEYBOARD_H      210
+#define SEND_W          56          /* the send button right of the password field */
 #define ROW_BG          0x1a1f28
 #define PILL_BG         0x252b36
 #define DANGER          0xe5534b
@@ -32,8 +34,8 @@
 #define SCAN_TRIES      40          /* polls (20 s) waiting for a busy radio, e.g. a connection attempt */
 #define AUTH_OPEN       0           /* wifi_auth_mode_t WIFI_AUTH_OPEN */
 
-static lv_obj_t   *s_scr, *s_title, *s_list;
-static lv_obj_t   *s_pw_scr, *s_pw_title, *s_pw_field, *s_pw_hint, *s_pw_kb;
+static lv_obj_t   *s_scr, *s_title, *s_top, *s_list;   /* s_top: the status card, fixed above the list */
+static lv_obj_t   *s_pw_scr, *s_pw_title, *s_pw_field, *s_pw_send, *s_pw_hint, *s_pw_kb;
 static lv_timer_t *s_poll;
 
 static wifi_saved_list_t s_saved;       /* a copy while the screen is open (wiped on close) */
@@ -70,8 +72,7 @@ static void join(const char *ssid, const char *pass)
     strlcpy(s_join_ssid, ssid, sizeof(s_join_ssid));
     net_wifi_join(ssid, pass);
     s_join_shown = net_wifi_join_state();
-    lv_obj_scroll_to_y(s_list, 0, LV_ANIM_OFF);     /* the status card shows how it goes */
-    rebuild();
+    rebuild();      /* the status card shows how it goes */
 }
 
 static lv_obj_t *section(const char *text)
@@ -149,26 +150,36 @@ static void pw_close_cb(lv_event_t *e)
     pw_back();
 }
 
+static void pw_submit(void)
+{
+    const char *pw = lv_textarea_get_text(s_pw_field);
+    if (wifi_cred_validate(s_pw_ssid, strlen(s_pw_ssid), pw, strlen(pw)) != WIFI_CRED_OK) {
+        lv_label_set_text(s_pw_hint, ui_str(STR_WIFI_PASS_SHORT));
+        return;
+    }
+    join(s_pw_ssid, pw);
+    pw_back();
+}
+
+static void pw_send_cb(lv_event_t *e)
+{
+    pw_submit();
+}
+
 static void pw_kb_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CANCEL) {
         pw_back();
     } else if (code == LV_EVENT_READY) {
-        const char *pw = lv_textarea_get_text(s_pw_field);
-        if (wifi_cred_validate(s_pw_ssid, strlen(s_pw_ssid), pw, strlen(pw)) != WIFI_CRED_OK) {
-            lv_label_set_text(s_pw_hint, ui_str(STR_WIFI_PASS_SHORT));
-            return;
-        }
-        join(s_pw_ssid, pw);
-        pw_back();
+        pw_submit();
     } else if (code == LV_EVENT_VALUE_CHANGED) {
         lv_label_set_text(s_pw_hint, "");
         ui_note_activity();
     }
 }
 
-static void pw_open(const char *ssid)
+void ui_wifi_password(const char *ssid)
 {
     strlcpy(s_pw_ssid, ssid, sizeof(s_pw_ssid));
     lv_label_set_text(s_pw_title, ssid);
@@ -199,8 +210,8 @@ static void build_password_screen(void)
     /* White box, black text, as the language search. The password stays readable: typed on a small
      * keyboard, it is easier to check. */
     s_pw_field = lv_textarea_create(s_pw_scr);
-    lv_obj_set_size(s_pw_field, CONTENT_W, FIELD_H);
-    lv_obj_align(s_pw_field, LV_ALIGN_TOP_MID, 0, FIELD_Y);
+    lv_obj_set_size(s_pw_field, CONTENT_W - SEND_W - 8, FIELD_H);
+    lv_obj_align(s_pw_field, LV_ALIGN_TOP_MID, -(SEND_W + 8) / 2, FIELD_Y);
     lv_textarea_set_one_line(s_pw_field, true);
     lv_textarea_set_max_length(s_pw_field, WIFI_SAVED_PASS_MAX - 1);
     lv_obj_set_style_bg_color(s_pw_field, lv_color_white(), 0);
@@ -214,15 +225,26 @@ static void build_password_screen(void)
     lv_obj_set_style_border_color(s_pw_field, lv_color_black(), LV_PART_CURSOR);
     lv_obj_add_state(s_pw_field, LV_STATE_FOCUSED);     /* the cursor shows */
 
+    /* Send: the same as the keyboard's check key, easier to find */
+    s_pw_send = lv_button_create(s_pw_scr);
+    lv_obj_remove_style_all(s_pw_send);
+    lv_obj_add_style(s_pw_send, ui_style_accent_bg(), 0);
+    lv_obj_set_size(s_pw_send, SEND_W, FIELD_H);
+    lv_obj_set_style_radius(s_pw_send, FIELD_H / 2, 0);
+    lv_obj_set_style_transform_scale(s_pw_send, 236, LV_STATE_PRESSED);
+    lv_obj_align_to(s_pw_send, s_pw_field, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    lv_obj_set_ext_click_area(s_pw_send, 8);
+    lv_obj_add_event_cb(s_pw_send, pw_send_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *icon = lv_label_create(s_pw_send);
+    lv_label_set_text(icon, ICON_RIGHT);
+    lv_obj_center(icon);
+
     s_pw_hint = lv_label_create(s_pw_scr);
     lv_obj_set_style_text_color(s_pw_hint, lv_color_hex(DANGER), 0);
     lv_obj_align(s_pw_hint, LV_ALIGN_TOP_MID, 0, FIELD_Y + FIELD_H + 12);
     lv_label_set_text(s_pw_hint, "");
 
-    s_pw_kb = lv_keyboard_create(s_pw_scr);
-    lv_obj_set_size(s_pw_kb, BOARD_LCD_H_RES, KEYBOARD_H);
-    lv_obj_align(s_pw_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_text_font(s_pw_kb, &buddy_font_20, LV_PART_ITEMS);
+    s_pw_kb = ui_add_keyboard(s_pw_scr);
     lv_obj_add_event_cb(s_pw_kb, pw_kb_cb, LV_EVENT_ALL, NULL);
     lv_keyboard_set_textarea(s_pw_kb, s_pw_field);
     lv_obj_move_foreground(x);
@@ -270,7 +292,7 @@ static void near_cb(lv_event_t *e)
     if (s_near[i].auth == AUTH_OPEN) {
         join(s_near[i].ssid, "");
     } else {
-        pw_open(s_near[i].ssid);
+        ui_wifi_password(s_near[i].ssid);
     }
 }
 
@@ -318,6 +340,7 @@ static void status_card(void)
     }
     lv_obj_t *card;
     lv_obj_t *col = row(NULL, 0, icon, color, opa, title, &card);
+    lv_obj_set_parent(card, s_top);     /* stays in place while the list scrolls */
     lv_obj_remove_flag(card, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_border_width(card, 2, 0);
     lv_obj_set_style_border_color(card, color, 0);
@@ -334,8 +357,14 @@ static void status_card(void)
 static void rebuild(void)
 {
     int32_t y = lv_obj_get_scroll_y(s_list);
+    lv_obj_clean(s_top);
     lv_obj_clean(s_list);
     status_card();
+    /* the list starts under the card, whose height changes with a second line (the network's name) */
+    lv_obj_update_layout(s_top);
+    const int32_t list_y = LIST_Y + lv_obj_get_height(s_top) + CARD_GAP;
+    lv_obj_set_y(s_list, list_y);
+    lv_obj_set_height(s_list, BOARD_LCD_V_RES - list_y);
 
     bool header = false;
     for (int i = 0; i < s_saved.count; i++) {
@@ -482,6 +511,12 @@ void ui_wifi_init(void)
     lv_obj_align(s_title, LV_ALIGN_TOP_LEFT, 36, 42);
 
     lv_obj_t *x = ui_add_close_x(s_scr, close_cb);
+
+    s_top = lv_obj_create(s_scr);
+    lv_obj_remove_style_all(s_top);
+    lv_obj_set_size(s_top, CONTENT_W, LV_SIZE_CONTENT);
+    lv_obj_align(s_top, LV_ALIGN_TOP_MID, 0, LIST_Y);
+    lv_obj_remove_flag(s_top, LV_OBJ_FLAG_SCROLLABLE);
 
     s_list = lv_obj_create(s_scr);
     lv_obj_remove_style_all(s_list);

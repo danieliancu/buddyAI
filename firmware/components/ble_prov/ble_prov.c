@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
+#include "esp_bt.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "cJSON.h"
@@ -31,6 +32,7 @@
 #include "ble_prov.h"
 
 static const char *TAG = "ble_prov";
+static bool s_mem_released;     /* ble_prov_release_memory(): no Bluetooth until a restart */
 
 #define SRP_USERNAME            "wifiprov"
 #define SRP_SALT_LEN            16
@@ -293,6 +295,9 @@ esp_err_t ble_prov_start(const char *device_name, const char *setup_pass, ble_pr
     if (s_active) {
         return ESP_OK;
     }
+    if (s_mem_released) {
+        return ESP_ERR_INVALID_STATE;   /* Bluetooth's RAM went to the heap: only after a restart */
+    }
     if (!device_name || !setup_pass_valid(setup_pass)) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -388,4 +393,21 @@ void ble_prov_stop(void)
 bool ble_prov_active(void)
 {
     return s_active;
+}
+
+void ble_prov_release_memory(void)
+{
+    if (s_active || s_mem_released) {
+        return;
+    }
+    size_t before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    esp_err_t err = esp_bt_mem_release(ESP_BT_MODE_BLE);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Bluetooth memory not released: %s", esp_err_to_name(err));
+        return;
+    }
+    s_mem_released = true;
+    ESP_LOGI(TAG, "Bluetooth memory released: +%u B internal RAM (largest block now %u B)",
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - before),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 }

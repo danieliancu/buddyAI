@@ -19,6 +19,7 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "driver/usb_serial_jtag.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "esp_system.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -309,6 +310,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         break;
     case PROTO_EVT_REPLY_DISPLAY:
         ui_chat_display(ev->str);
+        break;
+    case PROTO_EVT_STILL_THINKING:
+        ui_chat_still_thinking(ev->num != 0);
         break;
     case PROTO_EVT_REPLY_LANGUAGE:
         ui_set_reply_language(ev->str);
@@ -623,6 +627,45 @@ static void power_log(uint32_t now)
 }
 #endif
 
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+/* Development test commands typed on the USB serial port (one per line), read straight from the port's
+ * receive FIFO by the app loop: no driver, no task, no RAM (internal RAM is too tight for either).
+ *   tap       the mic button
+ *   wifi [N]  the Wi-Fi screen (N: the password screen for network N)
+ *   drop N    Wi-Fi off for N seconds (a lost link), then it reconnects */
+static void test_console_poll(void)
+{
+    static char line[32];
+    static size_t n;
+    uint8_t buf[16];
+    int got;
+    while (usb_serial_jtag_ll_rxfifo_data_available() &&
+           (got = usb_serial_jtag_ll_read_rxfifo(buf, sizeof(buf))) > 0) {
+        for (int i = 0; i < got; i++) {
+            char c = (char)buf[i];
+            if (c != '\r' && c != '\n') {
+                if (n < sizeof(line) - 1) {
+                    line[n++] = c;
+                }
+                continue;
+            }
+            line[n] = '\0';
+            n = 0;
+            int secs = 0;
+            if (strcmp(line, "tap") == 0) {
+                ESP_LOGW(TAG, "test: tap");
+                boot_tap();
+            } else if (strncmp(line, "wifi", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) {
+                ui_wake();
+                ui_show_wifi(line[4] ? line + 5 : NULL);
+            } else if (sscanf(line, "drop %d", &secs) == 1 && secs > 0) {
+                net_wifi_test_drop(secs);
+            }
+        }
+    }
+}
+#endif
+
 static void app_loop(void)
 {
     uint32_t boot_ms = esp_log_timestamp();
@@ -632,6 +675,9 @@ static void app_loop(void)
     for (;;) {
         app_ev_t ev;
         uint32_t poll_ms = ui_is_awake() ? PWR_KEY_POLL_MS : PWR_KEY_POLL_STANDBY_MS;
+#if !CONFIG_BUDDYAI_RELEASE_BUILD
+        test_console_poll();
+#endif
         if (xQueueReceive(s_app_q, &ev, pdMS_TO_TICKS(poll_ms)) == pdTRUE) {
             if (ev.type == APP_EV_NET) {
                 handle_net_event((net_event_t)ev.arg);
@@ -691,6 +737,7 @@ static void app_loop(void)
     }
 }
 
+
 void app_main(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
@@ -727,6 +774,8 @@ void app_main(void)
         }
         memset(setup_pass, 0, sizeof(setup_pass));
         board_display_set_draw_lines(10);
+    } else {
+        ble_prov_release_memory();  /* Bluetooth serves Wi-Fi setup only, which always starts with a restart */
     }
 
     lv_display_t *disp = board_display_init();
