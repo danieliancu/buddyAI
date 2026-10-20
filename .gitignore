@@ -29,3 +29,5 @@ superadmin.txt
 .vscode/
 server start.txt
 web/tsconfig.tsbuildinfo
+# Separate repo (olacare)
+olacare/
