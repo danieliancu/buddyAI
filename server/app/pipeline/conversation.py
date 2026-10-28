@@ -28,6 +28,7 @@ from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_RULE, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
+from app.pipeline.spoken import for_speech
 from app import edit_texts
 from app.confirm_words import classify_answer
 from app.db.models import Item, VoiceOperation, utcnow
@@ -346,7 +347,7 @@ class ConversationPipeline:
             encoder = OpusEncoder(turn.downlink_rate, bitrate=self.downlink_bitrate)
 
             async def one() -> AsyncIterator[str]:
-                yield text
+                yield for_speech(text, language)    # times in words where the voice needs it
 
             started = False
             request = TTSRequest(voice=tts_sel.voice, language=language, speech_rate=s.speech_rate,
@@ -642,7 +643,7 @@ class ConversationPipeline:
 
         async def fragment_iter() -> AsyncIterator[str]:
             while (frag := await fragments.get()) is not None:
-                yield frag
+                yield for_speech(frag, turn.language)   # times in words where the voice needs it (screen keeps digits)
 
         sent_chars = 0  # characters actually sent to the TTS provider (hedged twins included)
 
