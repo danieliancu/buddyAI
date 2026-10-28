@@ -406,8 +406,11 @@ export interface Item {
   text: string;
   /** Reminders: when it is due (UTC ISO). */
   due_at: string | null;
-  /** Reminders, optional: end of a time range such as 09:30–10:00 (UTC ISO). */
+  /** Reminders, optional: end of a time range such as 09:30–10:00 (UTC ISO). All-day: 09:00 local on the
+   * last day of a range of days (null for a single day). */
   end_at: string | null;
+  /** Reminders: for the whole day (no time shown); due_at is 09:00 local on the first day (the alert time). */
+  all_day?: boolean;
   /** Reminders, optional: also alert this many minutes before the start (besides the alert at the start). */
   notify_before_min: number | null;
   /** Reminders, optional: where (taken from the text by the assistant, editable). */
@@ -434,6 +437,8 @@ export interface ItemInput {
   end_at?: string | null;
   /** Reminders, optional: advance notice in minutes. */
   notify_before_min?: number | null;
+  /** Reminders: all day (due_at / end_at at 09:00 local of the first / last day; no advance notice). */
+  all_day?: boolean;
   location?: string | null;
   participants?: string | null;
 }

@@ -739,9 +739,19 @@ int audio_playback_level(void)
     return s_play_level;
 }
 
+static int  s_volume = 70;      /* the volume setting, re-applied when unmuted */
+static bool s_user_muted;
+
 void audio_set_volume(int percent)
 {
-    board_audio_set_volume(percent);
+    s_volume = percent;
+    board_audio_set_volume(s_user_muted ? 0 : percent);
+}
+
+void audio_set_muted(bool muted)
+{
+    s_user_muted = muted;
+    board_audio_set_volume(muted ? 0 : s_volume);
 }
 
 /* ------------------------------------------------------------------------- */

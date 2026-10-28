@@ -28,7 +28,9 @@ from app.db.session import session_scope
 from app.item_search import PREFIX, ItemQuery, SearchResult, best_match, normalize, search, tokens
 from app.tool_outcome import ToolOutcome
 from app.items import (
+    ALL_DAY_REST,
     _names,
+    all_day_at,
     device_full,
     is_done,
     is_overdue,
@@ -86,10 +88,15 @@ def summary(it: Item, tz: str) -> str:
     """One line about an item, for the model (no ids)."""
     if it.kind == "note":
         lines = notes_edit.note_lines(it.text)
-        return f"note «{preview(it.text) or '(empty)'}» ({max(0, len(lines) - 1)} lines, #{it.number} on the watch)"
+        return f"note «{preview(it.text) or '(empty)'}» ({max(0, len(lines) - 1)} lines)"
     zone = ZoneInfo(tz)
     when = ""
-    if it.due_at:
+    if it.due_at and it.all_day:
+        when = f"{it.due_at.astimezone(zone):%a %Y-%m-%d}"
+        if it.end_at:
+            when += f" to {it.end_at.astimezone(zone):%a %Y-%m-%d}"
+        when += ", all day"
+    elif it.due_at:
         start = it.due_at.astimezone(zone)
         when = f"{start:%a %Y-%m-%d %H:%M}"
         if it.end_at:
@@ -98,7 +105,7 @@ def summary(it: Item, tz: str) -> str:
         [f", at {it.location}" if it.location else "", f", with {it.participants}" if it.participants else "",
          ", completed" if is_done(it) else ""]
     )
-    return f"reminder «{it.text}», {when}{extra} (#{it.number} on the watch)"
+    return f"reminder «{it.text}», {when}{extra}"
 
 
 def item_view(it: Item, tz: str, ref: str | None = None, full: bool = False) -> dict[str, Any]:
@@ -119,6 +126,7 @@ def item_view(it: Item, tz: str, ref: str | None = None, full: bool = False) -> 
             due_local=local_time(it.due_at, tz),
             end_local=local_time(it.end_at, tz),
             weekday=it.due_at.astimezone(ZoneInfo(tz)).strftime("%A") if it.due_at else None,
+            all_day=it.all_day,  # due_local / end_local: only the dates count (09:00 is just its alert)
             notify_before_minutes=it.notify_before_min,
             location=it.location,
             participants=it.participants,
@@ -309,9 +317,17 @@ class VoiceItemTools:
         tz = self.call.tz
         due = end = None
         notify = None
-        if kind == "reminder":
+        all_day = kind == "reminder" and a.get("all_day") is True
+        if all_day:
             if not a.get("due_local"):
-                return _err("a reminder needs due_local with a time of day. Ask the user what time; do not create it without one.")
+                return _err("an all-day reminder needs due_local with its (first) day. Ask the user which day.")
+            due = all_day_at(a["due_local"], tz)
+            end = all_day_at(a["end_local"], tz, "end_local") if a.get("end_local") else None
+            end = end if end != due else None   # the same day: not a range
+        elif kind == "reminder":
+            if not a.get("due_local"):
+                return _err("a reminder needs due_local with a time of day, or all_day=true. Ask the user what time "
+                            "(or whether it is all day); do not create it without one.")
             due = parse_local_time(a["due_local"], tz, "due_local")
             end = parse_local_time(a["end_local"], tz, "end_local") if a.get("end_local") else None
             notify = int(a["notify_before_minutes"]) if a.get("notify_before_minutes") else None
@@ -325,6 +341,7 @@ class VoiceItemTools:
                     location=str(a.get("location") or "") if kind == "reminder" else None,
                     participants=_names(a.get("participants")) if kind == "reminder" else None,
                     op=self._prepare(op, "created", a),
+                    all_day=all_day,
                 )
             except IntegrityError:
                 db.rollback()
@@ -482,12 +499,16 @@ class VoiceItemTools:
                     due = copy_due(src, changes, tz)
                 except AskUser as exc:
                     return ToolOutcome(_json({"ok": False, "status": "ask", "hint": str(exc)}), awaits_answer=True)
-                if due <= datetime.now(timezone.utc):
+                if src.all_day and changes.get("time_local"):
+                    overrides["all_day"] = False    # the copy gets a time of day
+                whole_day = src.all_day and "all_day" not in overrides
+                if (due + ALL_DAY_REST if whole_day else due) <= datetime.now(timezone.utc):
                     return ToolOutcome(_json({"ok": False, "status": "ask", "hint": "That date and time is in the "
                                               "past. Nothing was copied: ask which day."}), awaits_answer=True)
                 overrides["due_at"] = due
-                overrides["end_at"] = src.end_at + (due - src.due_at) if src.end_at and src.due_at else None
-                if not (changes.get("due_local") or changes.get("time_local")):
+                overrides["end_at"] = (src.end_at + (due - src.due_at) if src.end_at and src.due_at
+                                       and "all_day" not in overrides else None)
+                if not (changes.get("due_local") or changes.get("time_local")) and not whole_day:
                     extra_body["kept_time"] = due.astimezone(ZoneInfo(tz)).strftime("%H:%M")
                 if changes.get("text"):
                     overrides["text"] = str(changes["text"])
@@ -733,7 +754,27 @@ def reminder_changes(it: Item, ch: dict[str, Any], tz: str) -> tuple[dict[str, A
         kw["text"] = str(ch["text"])
     elif "text" in ch:
         raise ValueError("a reminder needs a text")
-    if ch.get("due_local"):
+    want = ch.get("all_day") if isinstance(ch.get("all_day"), bool) else None
+    if want is None and it.all_day and ch.get("time_local"):
+        want = False    # a time of day: no longer all day
+    all_day = it.all_day if want is None else want
+    if want is not None and want != it.all_day:
+        kw["all_day"] = want
+    if all_day and ch.get("notify_before_minutes"):
+        raise ValueError("an all-day reminder alerts at 09:00 on its day and has no advance alert")
+    if want is False and it.all_day and not (ch.get("due_local") or ch.get("time_local")):
+        raise ValueError("it is all day now: ask the user what time it should be")
+    if all_day:
+        # whole days: only the dates count (09:00 is the alert); a time range does not carry over
+        if ch.get("due_local") or ch.get("date_local") or want:
+            day = ch.get("due_local") or ch.get("date_local") or local_time(it.due_at, tz) or ""
+            kw["due_at"] = all_day_at(day, tz)
+        if ch.get("end_local"):
+            end = all_day_at(ch["end_local"], tz, "end_local")
+            kw["end_at"] = end if end != kw.get("due_at", it.due_at) else None
+        elif want and it.end_at:
+            kw["end_at"] = None
+    elif ch.get("due_local"):
         kw["due_at"] = parse_local_time(ch["due_local"], tz, "due_local")
     elif ch.get("date_local") or ch.get("time_local"):
         if it.due_at is None:
@@ -746,8 +787,10 @@ def reminder_changes(it: Item, ch: dict[str, Any], tz: str) -> tuple[dict[str, A
         kw["due_at"] = due
     if isinstance(ch.get("done"), bool):
         kw["done"] = ch["done"]
-    if ch.get("end_local"):
+    if ch.get("end_local") and not all_day:
         kw["end_at"] = parse_local_time(ch["end_local"], tz, "end_local")
+    elif want is False and it.end_at:
+        kw["end_at"] = None     # a range of days does not carry over to a time
     if ch.get("notify_before_minutes"):
         kw["notify_before_min"] = int(ch["notify_before_minutes"])
     if ch.get("location"):
@@ -909,6 +952,8 @@ def describe_deleted_lines(lines: list[str], ops: list[dict[str, Any]]) -> str:
 
 def copy_due(src: Item, ch: dict[str, Any], tz: str) -> datetime:
     """When the copy of a reminder starts. A date alone keeps the original time of day."""
+    if src.all_day and not ch.get("time_local") and (ch.get("due_local") or ch.get("date_local")):
+        return all_day_at(ch.get("due_local") or ch.get("date_local"), tz)
     if ch.get("due_local"):
         return parse_local_time(ch["due_local"], tz, "due_local")
     if not ch.get("date_local") and not ch.get("time_local"):

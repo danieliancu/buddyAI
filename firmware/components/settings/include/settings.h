@@ -113,6 +113,11 @@ esp_err_t settings_erase_token(void);
 bool      settings_get_setup_pass(char out[SETTINGS_SETUP_PASS_MAX]);
 esp_err_t settings_rotate_setup_pass(void);
 
+/* Larger text on the conversation, notes and reminders screens (the "Aa" toggle). Watch only, kept in NVS;
+ * default off. */
+bool      settings_get_large_text(void);
+esp_err_t settings_set_large_text(bool on);
+
 /* Factory reset: erase Wi-Fi credentials, server URLs, device token and the
  * device-facing settings (the whole "buddyai" NVS namespace). The caller
  * restarts the device afterwards; it then boots into the setup portal. */

@@ -433,6 +433,9 @@ class Item(SQLModel, table=True):
     text: str = Field(default="", max_length=10000)
     due_at: Optional[datetime] = Field(default=None, index=True)  # reminders only (UTC)
     end_at: Optional[datetime] = None  # reminders only, optional: end of a time range (UTC, after due_at)
+    # Reminders: a whole day (or days) without a time. due_at is then 09:00 local on the first day (when it
+    # alerts) and end_at, for a range of days, 09:00 local on the last day; clients show no time.
+    all_day: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
     notify_before_min: Optional[int] = None  # reminders only, optional: also alert this many minutes before
     early_fired_at: Optional[datetime] = None  # set once a watch received that advance alert
     location: Optional[str] = Field(default=None, max_length=120)  # reminders, optional: where

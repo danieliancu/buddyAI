@@ -2,7 +2,7 @@
  * ola - conversation screen (chat bubbles).
  *
  * Opens full screen as soon as a turn starts (mic tap on the watchface). Same
- * visual system as the notes / reminders screens: title top-left, X top-right.
+ * visual system as the notes / reminders screens: Aa (text size) and a speaker (mute) top-left, X top-right.
  * The dialog shows as bubbles - the user's words on the right (accent), Ola's
  * replies on the left - in a scrollable area that always follows the newest
  * text. A small mic button stays at the bottom (tap = talk / interrupt) and
@@ -32,8 +32,6 @@
 #define MIC_BOTTOM          24
 #define MIC_TOUCH_PAD       40          /* invisible touch margin: a tap near the small mic still hits it */
 #define MIC_TOUCH_TOP       20          /* ... less above it: stays in the 26 px gap under the list */
-#define TITLE_W             260         /* left of the close X */
-#define CHAT_GREETING       "Olá!"      /* title for the default persona */
 #define RING_BASE           (MIC_SIZE + 14)
 #define SPINNER_SIZE        (MIC_SIZE + 16)
 #define PILL_BG             0x252b36
@@ -53,7 +51,6 @@
 #define REVEAL_DELAY_MS     300
 
 static lv_obj_t  *s_scr;
-static lv_obj_t  *s_title;
 static lv_obj_t  *s_list;
 static lv_obj_t  *s_mic;
 static lv_obj_t  *s_mic_lbl;
@@ -130,6 +127,7 @@ static lv_obj_t *add_bubble(bool user, const char *text)
     lv_obj_set_style_radius(l, 18, 0);
     lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
     lv_obj_set_style_text_line_space(l, 1, 0);
+    lv_obj_set_style_text_font(l, ui_text_font(), 0);
     if (user) {
         lv_obj_set_style_bg_color(l, g_ui_theme.accent, 0);
         lv_obj_set_style_text_color(l, ui_on_color(g_ui_theme.accent), 0);
@@ -330,17 +328,9 @@ void ui_chat_init(void)
     lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_scr, gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    s_title = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(s_title, &buddy_font_28, 0);
-    lv_obj_set_width(s_title, TITLE_W);
-    lv_label_set_long_mode(s_title, LV_LABEL_LONG_DOT);
-    ui_chat_refresh_title();
-
-    /* X: same as the notes / reminders screens */
+    /* Aa (text size) and speaker (mute) top left, X top right: same as the notes / reminders screens */
+    lv_obj_t *aa = ui_add_text_size(s_scr);
     lv_obj_t *x = ui_add_close_x(s_scr, close_cb);
-    /* The title on the X's centre line, 36 px from the left edge. */
-    lv_obj_align_to(s_title, x, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_x(s_title, 36);
 
     s_list = lv_obj_create(s_scr);
     lv_obj_remove_style_all(s_list);
@@ -393,7 +383,8 @@ void ui_chat_init(void)
     lv_obj_set_style_text_font(s_mic_lbl, &buddy_font_28, 0);    /* colour: from the accent style */
     lv_obj_center(s_mic_lbl);
 
-    lv_obj_move_foreground(x);      /* nothing built after it may cover its touch area */
+    lv_obj_move_foreground(aa);     /* nothing built after them may cover their touch areas */
+    lv_obj_move_foreground(x);
     apply_state_visuals();
 
     s_pend = heap_caps_malloc(PEND_MAX + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -461,12 +452,27 @@ void ui_chat_anim(int level, uint32_t phase)
     lv_obj_set_style_border_opa(s_ring, (lv_opa_t)(120 + level * 135 / 100), 0);
 }
 
-/* The active persona's name, or the greeting for the default persona. */
-void ui_chat_refresh_title(void)
+/* The Aa toggle changed: every bubble in the new font (a short value keeps its own big font). */
+void ui_chat_refresh_text_size(void)
 {
-    if (s_title) {
-        lv_label_set_text(s_title, g_ui_settings.chat_title[0] ? g_ui_settings.chat_title : CHAT_GREETING);
+    if (!s_list) {
+        return;
     }
+    uint32_t n = lv_obj_get_child_count(s_list);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *row = lv_obj_get_child(s_list, i);
+        lv_obj_t *l = lv_obj_get_child(row, 0);
+        if (row == s_typing || !l || !lv_obj_check_type(l, &lv_label_class) ||
+            lv_obj_get_style_bg_opa(l, 0) == LV_OPA_TRANSP) {
+            continue;
+        }
+        lv_obj_set_style_text_font(l, ui_text_font(), 0);
+        fit_width(l);
+    }
+    /* Smaller text: the old position may be past the new end (an empty screen); start over from the top. */
+    lv_obj_update_layout(s_list);
+    lv_obj_scroll_to_y(s_list, 0, LV_ANIM_OFF);
+    scroll_to_end();
 }
 
 void ui_chat_refresh_theme(void)

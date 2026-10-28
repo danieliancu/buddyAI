@@ -56,6 +56,8 @@ bool      audio_playback_active(void);
 int       audio_playback_level(void);
 
 void      audio_set_volume(int percent);
+/* User mute (speaker icon): output volume 0 while on; the volume setting is kept and comes back. */
+void      audio_set_muted(bool muted);
 
 /* Short two-tone alert (reminders). Skipped while a reply plays or the mic is
  * open. Uses the playback path, so volume and speaker muting behave as usual. */

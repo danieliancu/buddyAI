@@ -636,7 +636,7 @@ class ItemConflictError(Exception):
 _KEEP: Any = object()  # ItemRepo.update: leave the end time as it is
 
 # Columns written by a content change (everything a user can edit, plus the state reset by a reschedule).
-_CONTENT_COLS = ("text", "due_at", "end_at", "notify_before_min", "early_fired_at", "location", "participants",
+_CONTENT_COLS = ("text", "due_at", "end_at", "all_day", "notify_before_min", "early_fired_at", "location", "participants",
                  "pinned", "fired_at", "done_at", "updated_at")
 
 
@@ -728,11 +728,14 @@ class ItemRepo:
         location: str | None = None,
         participants: str | None = None,
         op: VoiceOperation | None = None,
+        all_day: bool = False,
     ) -> Item:
-        """`op`: the voice operation record, committed together with the new item."""
+        """`op`: the voice operation record, committed together with the new item. `all_day`: see Item.all_day
+        (an all-day reminder has no advance notice)."""
         text = self.check_text(kind, text)
+        all_day = all_day and kind == "reminder"
         end_at = self.check_end(due_at, end_at) if kind == "reminder" else None
-        notify_before_min = self.check_notify(notify_before_min) if kind == "reminder" else None
+        notify_before_min = self.check_notify(notify_before_min) if kind == "reminder" and not all_day else None
         location = self.check_extra("location", location) if kind == "reminder" else None
         participants = self.check_extra("participants", participants) if kind == "reminder" else None
         for attempt in range(2):
@@ -743,6 +746,7 @@ class ItemRepo:
                 text=text,
                 due_at=due_at if kind == "reminder" else None,
                 end_at=end_at,
+                all_day=all_day,
                 notify_before_min=notify_before_min,
                 location=location,
                 participants=participants,
@@ -775,6 +779,7 @@ class ItemRepo:
         pinned: bool | None = None,
         expected_version: int | None = None,
         op: VoiceOperation | None = None,
+        all_day: bool | None = None,
     ) -> Item:
         """`end_at`: a new end time, None to remove it, or leave it out to keep the range's length when
         only the start moves. `expected_version`: write only if the item is still at that version
@@ -784,6 +789,12 @@ class ItemRepo:
                 self.s.expunge(it)  # computed on a detached copy, written by one conditional UPDATE
         if text is not None:
             it.text = self.check_text(it.kind, text)
+        if it.kind == "reminder" and all_day is not None and all_day != it.all_day:
+            it.all_day = all_day
+            it.fired_at = None  # its alert moves (all day: 09:00)
+            it.early_fired_at = None
+        if it.kind == "reminder" and it.all_day:
+            notify_before_min = None  # an all-day reminder has no advance notice
         if it.kind == "reminder":
             new_due = due_at if due_at is not None else it.due_at
             if end_at is _KEEP:
@@ -849,11 +860,12 @@ class ItemRepo:
 
     def duplicate(self, src: Item, op: VoiceOperation | None = None, **overrides: Any) -> Item:
         """A new item copied from `src` (own uid and number, not pinned, not completed, never fired).
-        `overrides`: text, due_at, end_at, notify_before_min, location, participants."""
+        `overrides`: text, due_at, end_at, all_day, notify_before_min, location, participants."""
         fields: dict[str, Any] = {
             "text": src.text,
             "due_at": src.due_at,
             "end_at": src.end_at,
+            "all_day": src.all_day,
             "notify_before_min": src.notify_before_min,
             "location": src.location,
             "participants": src.participants,

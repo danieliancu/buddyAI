@@ -781,7 +781,7 @@ class ConversationPipeline:
             await io.send(turn, "llm_display", text="?")
             return
         version, lines = it.version, notes_edit.note_lines(it.text)
-        call, reply = await self._edit_llm(turn, notes_edit.NOTE_SYSTEM, f"Note #{it.number}:\n{notes_edit.numbered(lines)}",
+        call, reply = await self._edit_llm(turn, notes_edit.NOTE_SYSTEM, f"Note:\n{notes_edit.numbered(lines)}",
                                            notes_edit.NOTE_EDIT_TOOL)
         if call is None:
             await self._edit_no_call(turn, io, reply)

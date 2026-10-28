@@ -100,9 +100,9 @@ reports.
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
-| `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
+| `items` | `notes: [{number, preview, subtitle, pinned}]` (pinned first; `preview` = first line = title, `subtitle` = the next line), `reminders: [{number, text, due_local, end_local, all_day, notify_before, location, participants, overdue, done}]` | Notes/reminders snapshot (§3.3). Sent after `hello_ack` and whenever the account's items change. |
 | `items_open` | `kind` | Open the notes or reminders list (the user asked to see them, or deleted the item from its own screen). After a voice request it is sent **before** `turn_end` (after the fresh `items`); a watch in note / reminder edit mode closes the edit mode on it. |
-| `item_show` | `item: {kind, number, text, due_local?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent before `turn_end` (after the fresh `items`). `changed_line` (note mode): the 1-based line just added or changed, to highlight. `listen: true` + `question` (from the chat): the user's words fit several places inside this item; once the chat reply has been played the watch starts this item's edit mode and shows `question` - the item's screen continues from there (older firmware: the item opens, the user taps its mic). |
+| `item_show` | `item: {kind, number, text, due_local?, end_local?, all_day?, overdue?, done?, pinned?, changed_line?}` | Open this item full-screen (also right after a voice create or change of that item). After a voice request it is sent before `turn_end` (after the fresh `items`). `changed_line` (note mode): the 1-based line just added or changed, to highlight. `listen: true` + `question` (from the chat): the user's words fit several places inside this item; once the chat reply has been played the watch starts this item's edit mode and shows `question` - the item's screen continues from there (older firmware: the item opens, the user taps its mic). |
 | `reminder_fire` | `item: {…as item_show}` | A reminder is due: wake the screen, beep, show it full-screen. |
 | `notice` | `level` (`info`\|`warning`\|`limit`), `text` | Short account notice, e.g. "You've used 80% of your monthly AI interactions." or, at 100 %, "Monthly AI interactions used up. Renews on 8 Nov." (usage thresholds, once per threshold and billing period). `turn_id: null`; sent after `turn_end`. The watch keeps it until no conversation is running (including playback), then shows it for a few seconds; it never interrupts a conversation. Older firmware ignores it. |
 
@@ -114,7 +114,10 @@ the same lists. A note is text only (up to 10000 characters); a reminder has a d
 rescheduled. A completed reminder (`done: true`) is listed after the open ones, never fires and is not
 `overdue`; rescheduling it opens it again. Numbers are per kind (note #1 and reminder #1 can both exist); a new item
 takes the lowest free number, so after deleting #1 from #1, #2, #3 the next item is #1 again.
-`due_local` is `"YYYY-MM-DD HH:MM"` in the watch's time zone. Note rows carry only a `preview` (first
+`due_local` is `"YYYY-MM-DD HH:MM"` in the watch's time zone. An all-day reminder (`all_day: true`) has no time of day: `due_local` is 09:00 on its
+(first) day - only the alert time, never shown - and `end_local`, for a range of days, 09:00 on its last day
+(inclusive), otherwise null. It is listed under every day it covers, has no advance notice (`notify_before`
+null), alerts once at 09:00 on its first day and is `overdue` only after its last day. Note rows carry only a `preview` (first
 line); the full text arrives with `item_show`. A reminder is delivered once: if no watch is online
 when it comes due, it is sent on the next `hello` (up to 24 h late). These messages have `turn_id: null`
 and are additive to protocol v1 (older firmware ignores them).

@@ -15,12 +15,13 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.db.models import Item
+from app.items import is_overdue
 from app.notes_edit import note_lines
 
 EXACT, PREFIX, FUZZY = 3, 2, 1
@@ -192,7 +193,8 @@ def _in_scope(it: Item, q: ItemQuery, zone: ZoneInfo, now: datetime) -> bool:
     if done and q.status != "any" and not q.include_past:
         return False
     today = now.astimezone(zone).date()
-    due_day = it.due_at.astimezone(zone).date() if it.due_at else today
+    last = it.end_at if it.all_day and it.end_at else it.due_at  # a range of days: until its last day
+    due_day = last.astimezone(zone).date() if last else today
     if due_day >= today or q.include_past or q.names_a_past_day(today):
         return True
     return q.purpose != "read" and not done
@@ -221,7 +223,21 @@ def search(items: list[Item], q: ItemQuery, tz: str, now: datetime | None = None
         if it.kind == "reminder":
             local = it.due_at.astimezone(zone) if it.due_at else None
             end = it.end_at.astimezone(zone) if it.end_at else None
-            if want_date or d_from or d_to or q.weekday or want_time:
+            if it.all_day and local is not None and (want_date or d_from or d_to or q.weekday or want_time):
+                # a whole day, or days: any day of it matches; it has no time of day
+                first, last = local.date(), (end or local).date()
+                if want_time:
+                    continue
+                if want_date and not first <= want_date <= last:
+                    continue
+                if d_from and last < d_from or d_to and first > d_to:
+                    continue
+                span = [first + timedelta(days=i) for i in range(min((last - first).days, 6) + 1)]
+                if q.weekday and all(WEEKDAYS[d.weekday()] != q.weekday for d in span):
+                    continue
+                reasons.append(f"all day {first:%Y-%m-%d}" + (f" to {last:%Y-%m-%d}" if last != first else ""))
+                score += 2
+            elif want_date or d_from or d_to or q.weekday or want_time:
                 if local is None:
                     continue
                 day = local.date()
@@ -238,7 +254,7 @@ def search(items: list[Item], q: ItemQuery, tz: str, now: datetime | None = None
                         continue
                 reasons.append(f"{WEEKDAYS[day.weekday()]} {local:%Y-%m-%d %H:%M}")
                 score += 2
-            if q.status == "overdue" and not (it.done_at is None and it.due_at and it.due_at <= now):
+            if q.status == "overdue" and not is_overdue(it, now):
                 continue
             if q.status == "open" and it.done_at is not None:
                 continue

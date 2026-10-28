@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Bell, CalendarClock, Check, ChevronDown, ChevronRight, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, CalendarClock, CalendarDays, Check, ChevronDown, ChevronRight, CircleAlert, MapPin, Pin, Users, CircleCheck, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { api, type Item, type ItemKind } from "../../api";
 import {
   Badge,
@@ -88,7 +88,7 @@ export function MyNotesPage() {
                   onClick={() => togglePin(n)}
                   disabled={pinning === n.number}
                   aria-pressed={!!n.pinned}
-                  aria-label={n.pinned ? `Unpin note #${n.number}` : `Pin note #${n.number}`}
+                  aria-label={n.pinned ? "Unpin note" : "Pin note"}
                   title={n.pinned ? "Unpin" : "Pin to the top"}
                   className={cx(
                     "grid size-6 cursor-pointer place-items-center rounded-full border-2 border-surface transition disabled:opacity-60",
@@ -124,7 +124,7 @@ function noteLines(text: string): string[] {
     .filter((l) => l.trim());
 }
 
-/** A note laid out like on the watch: the first line is the title (beside the number)… */
+/** A note laid out like on the watch: the first line is the title (beside the icon)… */
 function NoteTitle({ text }: { text: string }) {
   const [title] = noteLines(text);
   if (!title) return <p className="text-muted italic">Empty note</p>;
@@ -178,7 +178,7 @@ function NoteDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: 
       open={!!editing}
       onClose={onClose}
       wide
-      title={editing === "new" ? "New note" : `Note #${editing ? editing.number : ""}`}
+      title={editing === "new" ? "New note" : "Edit note"}
       footer={<DialogButtons onClose={onClose} busy={form.busy} formId="note-form" />}
     >
       <form id="note-form" className="space-y-4" onSubmit={(e) => form.submit(e, payload())}>
@@ -219,6 +219,23 @@ const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-d
 function dayKey(d: Date | null): string {
   if (!d) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** The day after a "YYYY-MM-DD" key. */
+function nextDay(key: string): string {
+  const d = new Date(`${key}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return dayKey(d);
+}
+
+/** The days a reminder is on: its day, or every day of an all-day range (first to last, at most a year). */
+function daysOf(r: Item): string[] {
+  const first = dayKey(parseDate(r.due_at));
+  if (!first) return [];
+  const last = r.all_day && r.end_at ? dayKey(parseDate(r.end_at)) : first;
+  const out = [first];
+  while (out.length < 366 && out[out.length - 1] < last) out.push(nextDay(out[out.length - 1]));
+  return out;
 }
 
 /** "Tomorrow · Sun 5 Oct", "Mon 6 Oct". */
@@ -267,31 +284,44 @@ export function MyRemindersPage() {
     }
   };
 
-  // By time, completed ones last in their day (like the watch).
+  // By time, all-day ones first and completed ones last in their day (like the watch).
   const sorted = [...q.items].sort(
     (a, b) =>
       dayKey(parseDate(a.due_at)).localeCompare(dayKey(parseDate(b.due_at))) ||
       Number(a.done) - Number(b.done) ||
+      Number(!!b.all_day) - Number(!!a.all_day) ||
       (a.due_at ?? "").localeCompare(b.due_at ?? "") ||
       a.number - b.number,
   );
   const today = dayKey(new Date(now));
   const tomorrow = dayKey(new Date(now + 86400000));
   const keyOf = (r: Item) => dayKey(parseDate(r.due_at)) || today;
-  // 1. what is next: the first open reminder from now on (today, or the next day with one)
-  const upNext = sorted.find((r) => !r.done && keyOf(r) >= today && (parseDate(r.due_at)?.getTime() ?? now) >= now);
-  const todays = sorted.filter((r) => keyOf(r) === today && r !== upNext);
-  // 2. the next days, grouped by day
+  // An all-day range is on each of its days; its last day decides when it is past.
+  const daysFor = (r: Item) => {
+    const days = daysOf(r);
+    return days.length ? days : [today];
+  };
+  const lastKey = (r: Item) => daysFor(r)[daysFor(r).length - 1];
+  // 1. what is next: the first open timed reminder from now on (today, or the next day with one)
+  const upNext = sorted.find(
+    (r) => !r.done && !r.all_day && keyOf(r) >= today && (parseDate(r.due_at)?.getTime() ?? now) >= now,
+  );
+  const todays = sorted.filter((r) => daysFor(r).includes(today) && r !== upNext);
+  // 2. the next days, grouped by day (all-day ones first in each day, as sorted)
   const coming = new Map<string, Item[]>();
   for (const r of sorted) {
-    if (keyOf(r) > today && r !== upNext) coming.set(keyOf(r), [...(coming.get(keyOf(r)) ?? []), r]);
+    if (r === upNext) continue;
+    for (const key of daysFor(r)) {
+      if (key > today) coming.set(key, [...(coming.get(key) ?? []), r]);
+    }
   }
+  const comingDays = [...coming.entries()].sort(([a], [b]) => a.localeCompare(b));
   // 3. the past (newest first; not shown on the watch)
-  const past = sorted.filter((r) => keyOf(r) < today).reverse();
+  const past = sorted.filter((r) => lastKey(r) < today).reverse();
 
-  const row = (r: Item, muted = false) => (
+  const row = (r: Item, muted = false, day = "") => (
     <ReminderRow
-      key={r.number}
+      key={`${r.number}-${day}`}
       r={r}
       muted={muted}
       busy={toggling === r.number}
@@ -304,7 +334,7 @@ export function MyRemindersPage() {
   return (
     <ItemsLayout
       title="Reminders"
-      intro="A time and a short text. Ask your watch to create, show, move or delete reminders."
+      intro="A time (or the whole day) and a short text. Ask your watch to create, show, move or delete reminders."
       onNew={() => setEditing("new")}
       error={q.error}
       onRetry={q.reload}
@@ -332,7 +362,7 @@ export function MyRemindersPage() {
               />
             )}
             {todays.length > 0 ? (
-              <ul className={upNext ? "mt-3 space-y-3" : "space-y-3"}>{todays.map((r) => row(r))}</ul>
+              <ul className={upNext ? "mt-3 space-y-3" : "space-y-3"}>{todays.map((r) => row(r, false, today))}</ul>
             ) : (
               !upNext && <p className="text-sm text-muted">Nothing planned for today.</p>
             )}
@@ -347,10 +377,10 @@ export function MyRemindersPage() {
                 Coming up
               </h2>
               <div className="space-y-5">
-                {[...coming.entries()].map(([key, items]) => (
+                {comingDays.map(([key, items]) => (
                   <div key={key}>
                     <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">{dayLabel(key, today, tomorrow)}</h3>
-                    <ul className="space-y-3">{items.map((r) => row(r))}</ul>
+                    <ul className="space-y-3">{items.map((r) => row(r, false, key))}</ul>
                   </div>
                 ))}
               </div>
@@ -390,7 +420,7 @@ function DoneButton({ r, busy, onToggle }: Pick<RowProps, "r" | "busy" | "onTogg
       onClick={onToggle}
       disabled={busy}
       aria-pressed={r.done}
-      aria-label={r.done ? `Reopen reminder #${r.number}` : `Complete reminder #${r.number}`}
+      aria-label={r.done ? "Reopen reminder" : "Complete reminder"}
       title={r.done ? "Reopen" : "Complete"}
       className={
         r.done
@@ -444,7 +474,25 @@ function ReminderPlace({ r }: { r: Item }) {
   );
 }
 
+const shortDayFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+
+/** All-day: "All day", or "3 Nov – 7 Nov · All day" for a range of days. */
+function allDayText(r: Item): string {
+  const days = daysOf(r);
+  if (days.length < 2) return "All day";
+  const fmt = (key: string) => shortDayFmt.format(new Date(`${key}T12:00:00`));
+  return `${fmt(days[0])} – ${fmt(days[days.length - 1])} · All day`;
+}
+
+/** Past reminders show their date too: "Mon 6 Oct · All day" for a single all-day one. */
+function pastWhen(r: Item): string {
+  if (!r.all_day) return fmtDateTime(r.due_at);
+  const start = parseDate(r.due_at);
+  return daysOf(r).length < 2 && start ? `${dayFmt.format(start)} · All day` : allDayText(r);
+}
+
 function timeRange(r: Item): string {
+  if (r.all_day) return allDayText(r);
   const start = parseDate(r.due_at);
   return `${start ? timeFmt.format(start) : "—"}${r.end_at ? ` – ${toLocalInput(r.end_at).slice(11)}` : ""}`;
 }
@@ -453,7 +501,7 @@ function ReminderWhen({ r, muted, className }: { r: Item; muted: boolean; classN
   return (
     <div className={cx("flex-wrap items-center gap-x-2 gap-y-1", className)}>
       <CalendarClock className="size-4 text-muted" />
-      <span className={cx("text-lg font-bold tabular-nums", r.done && "text-muted")}>{muted ? fmtDateTime(r.due_at) : timeRange(r)}</span>
+      <span className={cx("text-lg font-bold tabular-nums", r.done && "text-muted")}>{muted ? pastWhen(r) : timeRange(r)}</span>
     </div>
   );
 }
@@ -495,15 +543,14 @@ function UpNextCard({ r, until, busy, onToggle, onEdit, onDelete }: RowProps & {
           <p className="mt-1 text-base">{r.text}</p>
           <ReminderPlace r={r} />
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-mono text-xs font-semibold text-accent">#{r.number}</span>
             <ReminderMeta r={r} />
           </div>
         </div>
         <div className="flex gap-2">
-          <IconButton label={`Edit #${r.number}`} onClick={onEdit}>
+          <IconButton label="Edit reminder" onClick={onEdit}>
             <Pencil className="size-4" />
           </IconButton>
-          <IconButton label={`Delete #${r.number}`} danger onClick={onDelete}>
+          <IconButton label="Delete reminder" danger onClick={onDelete}>
             <Trash2 className="size-4" />
           </IconButton>
         </div>
@@ -534,6 +581,9 @@ function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClo
   const [due, setDue] = useState("");
   const [end, setEnd] = useState(""); // "HH:MM" on the same day, optional
   const [notice, setNotice] = useState(0); // minutes before; 0 = none
+  const [allDay, setAllDay] = useState(false);
+  const [firstDay, setFirstDay] = useState(""); // all day: "YYYY-MM-DD"
+  const [lastDay, setLastDay] = useState(""); // all day, optional: the last day of a range
   const [location, setLocation] = useState("");
   const [participants, setParticipants] = useState("");
   const form = useSave(editing, onClose, onSaved);
@@ -544,11 +594,31 @@ function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClo
     setDue(editing === "new" ? "" : toLocalInput(editing.due_at));
     setEnd(editing === "new" ? "" : toLocalInput(editing.end_at).slice(11));
     setNotice(editing === "new" ? 0 : editing.notify_before_min ?? 0);
+    const wasAllDay = editing !== "new" && !!editing.all_day;
+    setAllDay(wasAllDay);
+    setFirstDay(editing === "new" ? "" : toLocalInput(editing.due_at).slice(0, 10));
+    setLastDay(editing !== "new" && editing.all_day && editing.end_at ? toLocalInput(editing.end_at).slice(0, 10) : "");
     setLocation(editing === "new" ? "" : editing.location ?? "");
     setParticipants(editing === "new" ? "" : editing.participants ?? "");
   }, [editing]);
 
   const body = () => {
+    if (allDay) {
+      if (!firstDay) return "Choose the day.";
+      if (!text.trim()) return "Write what to be reminded of.";
+      if (lastDay && lastDay < firstDay) return "The last day must be on or after the first day.";
+      // The alert comes at 09:00 local on the first day; a range ends at 09:00 on its last day.
+      return {
+        kind: "reminder" as const,
+        text: text.trim(),
+        all_day: true,
+        due_at: new Date(`${firstDay}T09:00`).toISOString(),
+        end_at: lastDay && lastDay > firstDay ? new Date(`${lastDay}T09:00`).toISOString() : null,
+        notify_before_min: null,
+        location: location.trim() || null,
+        participants: participants.trim() || null,
+      };
+    }
     if (!due) return "Choose when to be reminded.";
     if (!text.trim()) return "Write what to be reminded of.";
     // datetime-local is the browser's local time; new Date() reads it as local, toISOString gives UTC.
@@ -557,6 +627,7 @@ function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClo
     return {
       kind: "reminder" as const,
       text: text.trim(),
+      all_day: false,
       due_at: new Date(due).toISOString(),
       end_at: endAt ? new Date(endAt).toISOString() : null,
       notify_before_min: notice || null,
@@ -569,34 +640,63 @@ function ReminderDialog({ editing, onClose, onSaved }: { editing: Editing; onClo
     <Dialog
       open={!!editing}
       onClose={onClose}
-      title={editing === "new" ? "New reminder" : `Reminder #${editing ? editing.number : ""}`}
+      title={editing === "new" ? "New reminder" : "Edit reminder"}
       footer={<DialogButtons onClose={onClose} busy={form.busy} formId="reminder-form" />}
     >
       <form id="reminder-form" className="space-y-4" onSubmit={(e) => form.submit(e, body())}>
-        <Field label="When" htmlFor="rdue">
-          <Input id="rdue" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
-        </Field>
-        <Field label="Until (optional)" htmlFor="rend" hint="For a time range, e.g. 09:30 – 10:00">
-          <Input id="rend" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
-        </Field>
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            className="size-4"
+            checked={allDay}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setAllDay(on);
+              if (on && !firstDay && due) setFirstDay(due.slice(0, 10));
+              if (!on && !due && firstDay) setDue(`${firstDay}T09:00`);
+            }}
+          />
+          All day
+        </label>
+        {allDay ? (
+          <>
+            <Field label="Day" htmlFor="rday" hint="The watch alerts at 09:00 that day.">
+              <Input id="rday" type="date" value={firstDay} onChange={(e) => setFirstDay(e.target.value)} />
+            </Field>
+            <Field label="Until (optional)" htmlFor="rlast" hint="The last day, for several days (e.g. a holiday)">
+              <Input id="rlast" type="date" min={firstDay || undefined} value={lastDay} onChange={(e) => setLastDay(e.target.value)} />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="When" htmlFor="rdue">
+              <Input id="rdue" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+            </Field>
+            <Field label="Until (optional)" htmlFor="rend" hint="For a time range, e.g. 09:30 – 10:00">
+              <Input id="rend" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </Field>
+          </>
+        )}
         <Field label="Location (optional)" htmlFor="rloc">
           <Input id="rloc" maxLength={120} value={location} onChange={(e) => setLocation(e.target.value)} />
         </Field>
         <Field label="Participants (optional)" htmlFor="rpeople" hint="Names, separated by commas">
           <Input id="rpeople" maxLength={200} value={participants} onChange={(e) => setParticipants(e.target.value)} />
         </Field>
-        <Field label="Notify in advance" htmlFor="rnotice" hint="An extra alert before the start; the watch also alerts at the start.">
-          <Select id="rnotice" value={notice} onChange={(e) => setNotice(Number(e.target.value))}>
-            <option value={0}>No</option>
-            {[...new Set([...NOTICE_CHOICES, notice].filter(Boolean))]
-              .sort((a, b) => a - b)
-              .map((m) => (
-                <option key={m} value={m}>
-                  {fmtNotice(m)} before
-                </option>
-              ))}
-          </Select>
-        </Field>
+        {!allDay && (
+          <Field label="Notify in advance" htmlFor="rnotice" hint="An extra alert before the start; the watch also alerts at the start.">
+            <Select id="rnotice" value={notice} onChange={(e) => setNotice(Number(e.target.value))}>
+              <option value={0}>No</option>
+              {[...new Set([...NOTICE_CHOICES, notice].filter(Boolean))]
+                .sort((a, b) => a - b)
+                .map((m) => (
+                  <option key={m} value={m}>
+                    {fmtNotice(m)} before
+                  </option>
+                ))}
+            </Select>
+          </Field>
+        )}
         <Field label="Text" htmlFor="rtext" hint={`${text.length}/${REMINDER_MAX}`}>
           <Textarea id="rtext" rows={3} className="min-h-0!" maxLength={REMINDER_MAX} value={text} onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, " "))} />
         </Field>
@@ -642,6 +742,26 @@ function ItemsLayout({
   );
 }
 
+/** The item's state in place of its number (as on the watch): a note, or a reminder that is completed,
+ * overdue, with an advance notice, or plain. The number stays internal (the voice still accepts it). */
+function ItemIcon({ item }: { item: Item }) {
+  const [Icon, tone, label] =
+    item.kind === "note"
+      ? [NotebookPen, "bg-accent-bg text-accent", "Note"]
+      : item.done
+        ? [Check, "bg-ok-bg text-ok", "Completed"]
+        : item.overdue
+          ? [CircleAlert, "bg-danger-bg text-danger", "Overdue"]
+          : item.notify_before_min
+            ? [Bell, "bg-accent-bg text-accent", "With an advance notice"]
+            : [CalendarDays, "bg-accent-bg text-accent", "Reminder"];
+  return (
+    <span className={cx("grid size-12 place-items-center rounded-2xl", tone)} title={label}>
+      <Icon className="size-5" strokeWidth={item.kind === "reminder" && item.done ? 3 : 2} aria-label={label} />
+    </span>
+  );
+}
+
 function ItemCard({
   item,
   onEdit,
@@ -655,11 +775,11 @@ function ItemCard({
   item: Item;
   onEdit: () => void;
   onDelete: () => void;
-  /** Before the number, e.g. the reminder's complete button. */
+  /** Before the icon, e.g. the reminder's complete button. */
   leading?: ReactNode;
-  /** On the number's top-left corner, e.g. the note's pin. */
+  /** On the icon's top-left corner, e.g. the note's pin. */
   corner?: ReactNode;
-  /** Beside the number (the title). */
+  /** Beside the icon (the title). */
   head: ReactNode;
   /** Keep the title row visible (under the page header) while scrolling through the card. */
   sticky?: boolean;
@@ -678,17 +798,15 @@ function ItemCard({
       >
         {leading}
         <span className="relative shrink-0">
-          <span className="grid h-12 min-w-14 place-items-center rounded-2xl bg-accent-bg px-2 text-lg font-bold text-accent tabular-nums">
-            #{item.number}
-          </span>
+          <ItemIcon item={item} />
           {corner && <span className="absolute -top-2 -left-2">{corner}</span>}
         </span>
         <div className="min-w-0 flex-1">{head}</div>
         <div className="flex shrink-0 gap-2 self-start">
-          <IconButton label={`Edit #${item.number}`} onClick={onEdit}>
+          <IconButton label={`Edit ${item.kind}`} onClick={onEdit}>
             <Pencil className="size-4" />
           </IconButton>
-          <IconButton label={`Delete #${item.number}`} danger onClick={onDelete}>
+          <IconButton label={`Delete ${item.kind}`} danger onClick={onDelete}>
             <Trash2 className="size-4" />
           </IconButton>
         </div>
@@ -717,6 +835,7 @@ type ItemBody = {
   due_at: string | null;
   end_at?: string | null;
   notify_before_min?: number | null;
+  all_day?: boolean;
   location?: string | null;
   participants?: string | null;
 };

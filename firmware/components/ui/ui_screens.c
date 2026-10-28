@@ -46,6 +46,7 @@ static lv_obj_t *s_lbl_bri;
 static lv_obj_t *s_val_vol;
 static lv_obj_t *s_val_bri;
 static lv_obj_t *s_sld_vol;
+static lv_obj_t *s_vol_slash;     /* across the volume icon while muted (the speaker on the text screens) */
 static lv_obj_t *s_sld_bri;
 static lv_obj_t *s_seg_vol[LEVEL_SEGMENTS];
 static lv_obj_t *s_seg_bri[LEVEL_SEGMENTS];
@@ -107,9 +108,10 @@ static void send_change_int(const char *key, int value)
  * aimed at nearby buttons or at scrolling the screen); those are undone. */
 static bool s_slider_dragged;
 
+/* Volume shows 0 while muted from the speaker on the text screens. */
 static int slider_setting(lv_obj_t *sld)
 {
-    return sld == s_sld_vol ? g_ui_settings.volume : g_ui_settings.brightness;
+    return sld == s_sld_vol ? (ui_is_muted() ? 0 : g_ui_settings.volume) : g_ui_settings.brightness;
 }
 
 /* Value label + blocks: one filled block per started 10 % (5 % brightness = one block, 0 % volume = none). */
@@ -147,7 +149,12 @@ static void slider_cb(lv_event_t *e)
         break;
     case LV_EVENT_RELEASED:
     case LV_EVENT_PRESS_LOST:
-        if (code == LV_EVENT_RELEASED && s_slider_dragged && v != slider_setting(sld)) {
+        if (code == LV_EVENT_RELEASED && s_slider_dragged && sld == s_sld_vol && ui_is_muted()) {
+            ui_set_muted(false);    /* dragging the volume while muted turns the sound back on */
+            if (v != g_ui_settings.volume) {
+                send_change_int("volume", v);
+            }
+        } else if (code == LV_EVENT_RELEASED && s_slider_dragged && v != slider_setting(sld)) {
             send_change_int(sld == s_sld_vol ? "volume" : "brightness", v);
         } else {
             lv_slider_set_value(sld, slider_setting(sld), LV_ANIM_OFF);
@@ -364,7 +371,7 @@ static lv_obj_t *make_tap_row(lv_obj_t *parent, const char *icon, lv_obj_t **nam
 /* Brightness / volume: [icon] [name ... value] over a full-width row of flat blocks filled up to the
  * value. An invisible slider on top of the blocks takes the drag; the blocks only show the value. */
 static lv_obj_t *make_level_card(lv_obj_t *parent, const char *icon, lv_obj_t **name_out, lv_obj_t **value_out,
-                                 lv_obj_t **seg_out, int min, int max)
+                                 lv_obj_t **seg_out, int min, int max, lv_obj_t **icon_out)
 {
     lv_obj_t *c = make_card(parent);
     lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
@@ -380,6 +387,9 @@ static lv_obj_t *make_level_card(lv_obj_t *parent, const char *icon, lv_obj_t **
     lv_obj_set_width(i, ICON_COL_W);
     lv_obj_set_style_text_align(i, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(i, icon);
+    if (icon_out) {
+        *icon_out = i;
+    }
     lv_obj_t *n = lv_label_create(top);
     lv_obj_set_flex_grow(n, 1);
     lv_label_set_long_mode(n, LV_LABEL_LONG_DOT);
@@ -541,8 +551,17 @@ static void build_settings(void)
     lv_obj_add_event_cb(s_theme_sw, theme_cb, LV_EVENT_VALUE_CHANGED, NULL);
     add_theme_dot(trow, white.accent);
 
-    s_sld_bri = make_level_card(p1, SET_ICON_SUN, &s_lbl_bri, &s_val_bri, s_seg_bri, 5, 100);
-    s_sld_vol = make_level_card(p1, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, s_seg_vol, 0, 100);
+    s_sld_bri = make_level_card(p1, SET_ICON_SUN, &s_lbl_bri, &s_val_bri, s_seg_bri, 5, 100, NULL);
+    lv_obj_t *vol_icon;
+    s_sld_vol = make_level_card(p1, SET_ICON_VOLUME, &s_lbl_vol, &s_val_vol, s_seg_vol, 0, 100, &vol_icon);
+    static const lv_point_precise_t slash[2] = { { 0, 0 }, { 18, 18 } };
+    lv_obj_add_flag(vol_icon, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    s_vol_slash = lv_line_create(vol_icon);
+    lv_line_set_points(s_vol_slash, slash, 2);
+    lv_obj_set_style_line_width(s_vol_slash, 3, 0);
+    lv_obj_set_style_line_rounded(s_vol_slash, true, 0);
+    lv_obj_align(s_vol_slash, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(s_vol_slash, LV_OBJ_FLAG_HIDDEN);
     make_tap_row(p1, SET_ICON_POWER, &s_lbl_timeout, &s_val_timeout, timeout_cb);
 
     /* ---- page 2 ---- */
@@ -654,9 +673,11 @@ void ui_settings_refresh(void)
     lv_label_set_text(s_lbl_wifi_btn, ui_str(STR_WIFI_SETUP));
 
 
-    lv_slider_set_value(s_sld_vol, g_ui_settings.volume, LV_ANIM_OFF);
+    lv_slider_set_value(s_sld_vol, slider_setting(s_sld_vol), LV_ANIM_OFF);
     lv_slider_set_value(s_sld_bri, g_ui_settings.brightness, LV_ANIM_OFF);
-    show_slider_value(s_sld_vol, g_ui_settings.volume);
+    show_slider_value(s_sld_vol, slider_setting(s_sld_vol));
+    lv_obj_set_style_line_color(s_vol_slash, lv_obj_get_style_text_color(lv_obj_get_parent(s_vol_slash), 0), 0);
+    lv_obj_set_flag(s_vol_slash, LV_OBJ_FLAG_HIDDEN, !ui_is_muted());
     show_slider_value(s_sld_bri, g_ui_settings.brightness);
 
     int t = g_ui_settings.screen_timeout_s;

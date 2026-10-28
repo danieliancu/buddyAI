@@ -512,6 +512,7 @@ async def create_item(
             body.notify_before_min,
             location=body.location,
             participants=body.participants,
+            all_day=body.all_day,
         )
     except ItemTimeError as exc:
         raise _time_error(exc) from None
@@ -544,6 +545,7 @@ async def update_item(
             notify_before_min=body.notify_before_min,
             location=body.location,
             participants=body.participants,
+            all_day=body.all_day,
         )
     except ItemTimeError as exc:
         raise _time_error(exc) from None

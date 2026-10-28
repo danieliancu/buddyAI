@@ -232,6 +232,8 @@ class ItemBody(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
     due_at: datetime | None = None
     end_at: datetime | None = None  # reminders, optional: end of a time range
+    # reminders: a whole day / days; due_at (and end_at for a range) is then 09:00 local on the first (last) day
+    all_day: bool = False
     notify_before_min: int | None = None  # reminders, optional: extra alert this many minutes before
     location: str | None = None  # reminders, optional
     participants: str | None = None  # reminders, optional: "Ana, Mihai"

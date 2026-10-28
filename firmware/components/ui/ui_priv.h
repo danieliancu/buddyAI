@@ -158,6 +158,7 @@ typedef enum {
     STR_COMPLETE,
     STR_CARE,
     STR_COMPLETED,
+    STR_ALL_DAY,            /* reminders without a time of day */
     STR_REOPEN,
     STR_SCREEN_TIMEOUT,
     STR_NOTICE_FMT,     /* "%s before": %s = "15 min" */
@@ -260,6 +261,15 @@ lv_color_t  ui_on_color(lv_color_t bg);
  * plus a wide touch margin). Floating: outside layouts and scrolling. Bring it to the front once the
  * screen is built (lv_obj_move_foreground), so nothing covers its touch area. */
 lv_obj_t   *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb);
+/* "Aa" in the top left of the text screens (conversation, notes, reminders): toggles larger text everywhere
+ * (kept in NVS), with a speaker next to it that mutes / unmutes (on_mute). Aa blue while large; a slash across the speaker while muted. Bring it to the front
+ * like the X. */
+lv_obj_t   *ui_add_text_size(lv_obj_t *scr);
+/* The speaker's mute (not kept across restarts). The settings volume shows 0 while muted. */
+bool        ui_is_muted(void);
+void        ui_set_muted(bool muted);
+/* The reading text's font: 20 px, or 28 px with the Aa toggle on. */
+const lv_font_t *ui_text_font(void);
 /* On-screen keyboard (password, language search): lifted off the bottom edge and narrower than the screen, so
  * no key sits in the panel's rounded corners. */
 #define UI_KB_H         210
@@ -292,7 +302,7 @@ void ui_chat_set_state(ui_conv_t st);
 void ui_chat_anim(int level, uint32_t phase);
 
 void ui_chat_refresh_theme(void);
-void ui_chat_refresh_title(void);
+void ui_chat_refresh_text_size(void);
 bool ui_chat_is_active(void);
 bool ui_items_is_active(void);     /* notes / reminders list or item screen */
 
@@ -300,6 +310,7 @@ bool ui_items_is_active(void);     /* notes / reminders list or item screen */
 void ui_items_init(void);
 void ui_items_open(bool reminder);
 void ui_items_refresh_theme(void);
+void ui_items_refresh_text_size(void);
 void ui_items_minute(void);        /* time-based colours (starts soon, overdue); caller holds the lock */
 /* Counters on the watchface shortcuts (0 = hidden). Caller holds the lock. */
 void ui_shortcut_counts(int notes, int reminders);

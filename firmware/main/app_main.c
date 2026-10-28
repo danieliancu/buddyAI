@@ -420,6 +420,14 @@ static void ui_retry(void)
     proto_reconnect();
 }
 
+/* The speaker icon on the text screens: mute / unmute (the volume setting stays as it is). */
+static void ui_mute(bool muted)
+{
+    if (s_audio_ready) {
+        audio_set_muted(muted);
+    }
+}
+
 static void ui_chat_closed(void)
 {
     proto_end_conversation();
@@ -806,6 +814,7 @@ void app_main(void)
             .on_reminder_session = ui_reminder_session_cb,
             .on_item_pin = ui_item_pin,
             .on_standby = ui_standby,
+            .on_mute = ui_mute,
         };
         ESP_ERROR_CHECK(ui_init(disp, &ui_cb));
         board_set_wake_cb(wake_isr);

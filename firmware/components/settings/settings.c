@@ -27,6 +27,7 @@ static const char *TAG = "settings";
 #define KEY_SETTINGS_JSON   "settings"
 #define KEY_SETTINGS_VER    "settings_ver"
 #define KEY_SETUP_PASS      "setup_pass"
+#define KEY_LARGE_TEXT      "large_text"    /* watch only: the Aa toggle (not part of the server settings) */
 
 #define MAX_LISTENERS       6
 
@@ -616,6 +617,32 @@ bool settings_get_setup_pass(char out[SETTINGS_SETUP_PASS_MAX])
         return false;
     }
     return nvs_get_string(KEY_SETUP_PASS, out, SETTINGS_SETUP_PASS_MAX) && setup_pass_valid(out);
+}
+
+bool settings_get_large_text(void)
+{
+    nvs_handle_t h;
+    uint8_t on = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, KEY_LARGE_TEXT, &on);
+        nvs_close(h);
+    }
+    return on != 0;
+}
+
+esp_err_t settings_set_large_text(bool on)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_u8(h, KEY_LARGE_TEXT, on ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
 }
 
 esp_err_t settings_factory_reset(void)

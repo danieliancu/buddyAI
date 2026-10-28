@@ -73,6 +73,7 @@ static const char *TAG = "ui_items";
 #define REM_ORANGE      0xff8a3d
 #define PILL_H          48
 #define LIST_W          370         /* reminders list: day headers and rows */
+#define LIST_TOP        84          /* lists: rows scroll below this (the Aa / X band), like the conversation */
 #define BADGE_SIZE      46
 #define LOC_MAX         256         /* location: 120 chars, UTF-8 */
 #define PEOPLE_MAX      400         /* participants: 200 chars, UTF-8 */
@@ -81,7 +82,9 @@ static const char *TAG = "ui_items";
 #define REM_HDR_Y       12
 #define REM_HDR_H       48
 #define REM_BODY_Y      70
-#define REM_TITLE_MAX_W 170         /* wider titles use the smaller font */
+#define REM_TITLE_MAX_W 150         /* wider titles use the smaller font (and end in "…") */
+/* The title sits between the Aa / speaker (top left) and the X: centred in that gap, not on the screen. */
+#define HDR_TITLE_SHIFT 32
 
 typedef struct {
     bool reminder;
@@ -94,6 +97,7 @@ typedef struct {
     char location[LOC_MAX];     /* reminders, "" = none */
     char participants[PEOPLE_MAX];  /* reminders: "Ana, Mihai", "" = none */
     bool pinned;                /* notes: kept at the top */
+    bool all_day;               /* reminders: no time of day (due / end at 09:00 = the alert); end = the last day */
 } item_row_t;
 
 typedef struct {
@@ -113,7 +117,13 @@ static list_screen_t s_lists[2];    /* [0] notes, [1] reminders */
 static bool          s_row_swallow;
 static lv_style_t    s_st_rcard;            /* reminder row, theme tinted */
 static lv_style_t    s_st_rcard_pressed;
-static int           s_order[MAX_ROWS];     /* reminders shown, in display order */
+/* Reminders shown, in display order: a row and the day it is listed under (an all-day range is listed under
+ * each of its days from today on). */
+typedef struct {
+    int16_t idx;
+    int     day;    /* YYYYMMDD */
+} list_entry_t;
+static list_entry_t  s_order[MAX_ROWS];
 
 /* ---- detail ---- */
 static lv_obj_t   *s_det_scr;
@@ -140,6 +150,7 @@ static int         s_det_number;
 static char        s_det_due_str[DUE_MAX];
 static char        s_det_end_str[DUE_MAX];
 static int         s_det_notify;
+static bool        s_det_all_day;   /* the fallback detail screen's reminder has no time of day */
 static bool        s_det_from_list;
 static bool        s_det_alert;
 static bool        s_del_armed;
@@ -295,6 +306,26 @@ static void fmt_range(const char *due, const char *end, char *out, size_t len)
     }
 }
 
+/* A reminder's time on its list row: "09:30" / "09:30 – 10:00", or "All day" (the 09:00 of an all-day one is
+ * only its alert time). */
+static void fmt_row_time(const item_row_t *r, char *out, size_t len)
+{
+    if (r->all_day) {
+        copy_str(out, len, ui_str(STR_ALL_DAY));
+    } else {
+        fmt_range(r->due, r->end, out, len);
+    }
+}
+
+/* The day after YYYYMMDD. */
+static int next_day_key(int key)
+{
+    struct tm t = { .tm_year = key / 10000 - 1900, .tm_mon = key / 100 % 100 - 1, .tm_mday = key % 100 + 1,
+                    .tm_hour = 12, .tm_isdst = -1 };
+    mktime(&t);
+    return (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
+}
+
 /* "YYYY-MM-DD HH:MM" (+ end) -> "Today 15:30" / "Tomorrow 09:00 – 10:00" / "3 Oct 18:00". */
 static void fmt_due(const char *due, const char *end, char *out, size_t len)
 {
@@ -400,7 +431,7 @@ static bool reminder_alerting(const item_row_t *r, bool overdue)
     time_t now = time(NULL);
     struct tm today;
     localtime_r(&now, &today);
-    if (r->done || overdue || r->notify_before <= 0 || today.tm_year < 124 ||
+    if (r->done || overdue || r->all_day || r->notify_before <= 0 || today.tm_year < 124 ||
         sscanf(r->due, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi) != 5) {
         return false;
     }
@@ -409,11 +440,25 @@ static bool reminder_alerting(const item_row_t *r, bool overdue)
     return now >= mktime(&t) - (time_t)r->notify_before * 60;
 }
 
-/* Shown on the watch: today and later (everything while the clock is not set). */
+/* Last day of a reminder: an all-day range's end day, else its start day. YYYYMMDD, 0 if it does not parse. */
+static int last_day_key(const item_row_t *r)
+{
+    int end = r->all_day ? day_key(r->end) : 0;
+    return end ? end : day_key(r->due);
+}
+
+/* Shown on the watch: today and later - for an all-day range, until its last day (everything while the clock
+ * is not set). */
 static bool reminder_visible(const item_row_t *r)
 {
-    int today = today_key(), day = day_key(r->due);
+    int today = today_key(), day = last_day_key(r);
     return !today || !day || day >= today;
+}
+
+/* Overdue on the watch: never for all-day ones (they are only listed until their last day). */
+static bool row_overdue(const item_row_t *r)
+{
+    return !r->all_day && reminder_overdue(r->due, r->end, r->done);
 }
 
 /* A full-width rounded action button with a centred label. */
@@ -446,8 +491,7 @@ static void update_counts(void)
     for (int i = 0; i < s_row_count; i++) {
         if (!s_rows[i].reminder) {
             notes++;
-        } else if (reminder_visible(&s_rows[i]) && !s_rows[i].done &&
-                   !reminder_overdue(s_rows[i].due, s_rows[i].end, false)) {
+        } else if (reminder_visible(&s_rows[i]) && !s_rows[i].done && !row_overdue(&s_rows[i])) {
             reminders++;
         }
     }
@@ -512,15 +556,15 @@ static lv_obj_t *plain_box(lv_obj_t *parent)
 }
 
 /* Day header: "Today" / "Tomorrow" / weekday on the left, the date on the right. */
-static void add_day_header(lv_obj_t *parent, const char *due, bool first)
+static void add_day_header(lv_obj_t *parent, int key, bool first)
 {
-    int y, mo, d, h, mi;
-    if (!parse_local(due, &y, &mo, &d, &h, &mi)) {
+    if (!key) {
         return;
     }
-    struct tm t = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = 12, .tm_isdst = -1 };
+    struct tm t = { .tm_year = key / 10000 - 1900, .tm_mon = key / 100 % 100 - 1, .tm_mday = key % 100,
+                    .tm_hour = 12, .tm_isdst = -1 };
     mktime(&t);                                 /* fills tm_wday */
-    int key = day_key(due), today = today_key();
+    int today = today_key();
     time_t next = time(NULL) + 24 * 3600;
     struct tm tm_tomorrow;
     localtime_r(&next, &tm_tomorrow);
@@ -616,7 +660,7 @@ static void row_badge(lv_obj_t *row, lv_color_t c, const char *icon, lv_color_t 
 static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
-    const bool overdue = reminder_overdue(r->due, r->end, r->done);
+    const bool overdue = row_overdue(r);
     const lv_color_t c = rem_state_color(r, overdue);
 
     lv_obj_t *b = lv_button_create(parent);
@@ -647,15 +691,17 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_t *t = lv_label_create(col);
     lv_obj_set_width(t, LV_PCT(100));
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_max_height(t, ROW_LINES * lv_font_get_line_height(&buddy_font_20), 0);
+    lv_obj_set_style_text_font(t, ui_text_font(), 0);
+    lv_obj_set_style_max_height(t, ROW_LINES * lv_font_get_line_height(ui_text_font()), 0);
     lv_obj_set_style_text_opa(t, r->done ? LV_OPA_60 : LV_OPA_COVER, 0);
     lv_label_set_text(t, r->text[0] ? r->text : "…");
     lv_obj_t *meta = plain_box(col);
     lv_obj_set_size(meta, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_text_font(meta, ui_text_font(), 0);    /* inherited by the time and the tag */
     lv_obj_set_flex_flow(meta, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_style_pad_column(meta, 10, 0);
-    char range[24];
-    fmt_range(r->due, r->end, range, sizeof(range));
+    char range[48];
+    fmt_row_time(r, range, sizeof(range));
     lv_obj_t *d = lv_label_create(meta);
     lv_obj_set_style_text_opa(d, LV_OPA_60, 0);
     lv_label_set_text(d, range);
@@ -704,11 +750,13 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_t *t = lv_label_create(col);
     lv_obj_set_width(t, LV_PCT(100));
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_max_height(t, ROW_LINES * lv_font_get_line_height(&buddy_font_20), 0);
+    lv_obj_set_style_text_font(t, ui_text_font(), 0);
+    lv_obj_set_style_max_height(t, ROW_LINES * lv_font_get_line_height(ui_text_font()), 0);
     lv_label_set_text(t, r->text[0] ? r->text : "…");
     if (r->location[0]) {
         lv_obj_t *meta = plain_box(col);
         lv_obj_set_size(meta, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_text_font(meta, ui_text_font(), 0);
         lv_obj_set_flex_flow(meta, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(meta, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(meta, 10, 0);
@@ -725,19 +773,24 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_label_set_text(chev, ICON_RIGHT);
 }
 
-/* Reminders by day, then completed last, then time, then number. */
-static bool reminder_before(const item_row_t *a, const item_row_t *b)
+/* Reminders by day, then completed last, then all-day ones first, then time, then number. */
+static bool entry_before(const list_entry_t *ea, const list_entry_t *eb)
 {
-    int da = day_key(a->due), db = day_key(b->due);
-    if (da != db) {
-        return da < db;
+    const item_row_t *a = &s_rows[ea->idx], *b = &s_rows[eb->idx];
+    if (ea->day != eb->day) {
+        return ea->day < eb->day;
     }
     if (a->done != b->done) {
         return !a->done;
     }
+    if (a->all_day != b->all_day) {
+        return a->all_day;
+    }
     int c = strcmp(a->due, b->due);
     return c ? c < 0 : a->number < b->number;
 }
+
+#define RANGE_DAYS_MAX  31      /* an all-day range is listed under at most this many days */
 
 /* Row card colours from the theme: shared by the notes and reminders lists. */
 static void row_card_colors(void)
@@ -754,23 +807,35 @@ static int build_reminder_rows(lv_obj_t *body)
     const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
     row_card_colors();
 
-    int n = 0;
+    int n = 0, today = today_key();
     for (int i = 0; s_have_snapshot && i < s_row_count; i++) {
-        if (!s_rows[i].reminder || !reminder_visible(&s_rows[i])) {
+        const item_row_t *r = &s_rows[i];
+        if (!r->reminder || !reminder_visible(r)) {
             continue;
         }
-        int j = n++;
-        while (j > 0 && reminder_before(&s_rows[i], &s_rows[s_order[j - 1]])) {
-            s_order[j] = s_order[j - 1];
-            j--;
+        /* One entry per day listed: an all-day range from max(first day, today) to its last day. */
+        int day = day_key(r->due), last = r->all_day && today ? last_day_key(r) : day;
+        if (r->all_day && today && day < today) {
+            day = today;
         }
-        s_order[j] = i;
+        for (int d = 0; d < RANGE_DAYS_MAX && n < MAX_ROWS; d++) {
+            list_entry_t e = { .idx = (int16_t)i, .day = day };
+            int j = n++;
+            while (j > 0 && entry_before(&e, &s_order[j - 1])) {
+                s_order[j] = s_order[j - 1];
+                j--;
+            }
+            s_order[j] = e;
+            if (!day || day >= last) {
+                break;
+            }
+            day = next_day_key(day);
+        }
     }
-    int last_day = -1, today = today_key();
+    int last_day = -1;
     lv_obj_t *parent = body;
     for (int k = 0; k < n; k++) {
-        const item_row_t *r = &s_rows[s_order[k]];
-        int day = day_key(r->due);
+        int day = s_order[k].day;
         if (day != last_day && today) {
             /* Today's reminders always sit together in their own accent frame. */
             parent = body;
@@ -786,10 +851,10 @@ static int build_reminder_rows(lv_obj_t *body)
                 lv_obj_set_style_border_width(parent, 2, 0);
                 lv_obj_set_style_border_color(parent, a, 0);
             }
-            add_day_header(parent, r->due, k == 0 || parent != body);
+            add_day_header(parent, day, k == 0 || parent != body);
         }
         last_day = day;
-        add_reminder_row(parent, s_order[k], k);
+        add_reminder_row(parent, s_order[k].idx, k);
     }
     return n;
 }
@@ -822,23 +887,26 @@ static void rebuild_list(list_screen_t *ls)
 static void build_list(list_screen_t *ls, bool reminder)
 {
     ls->reminder = reminder;
-    ls->scr = column_screen(list_gesture_cb, ls);
+    ls->scr = lv_obj_create(NULL);
+    lv_obj_add_style(ls->scr, ui_style_screen(), 0);
+    lv_obj_remove_flag(ls->scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(ls->scr, list_gesture_cb, LV_EVENT_GESTURE, ls);
     lv_obj_t *x = add_close_button(ls->scr, list_close_cb);
 
+    /* No big title (the rows say what they are). */
     ls->title = lv_label_create(ls->scr);
-    lv_obj_set_width(ls->title, CONTENT_W);
-    lv_obj_set_style_text_font(ls->title, &buddy_font_28, 0);
-    lv_obj_set_style_pad_top(ls->title, 8, 0);
-    lv_obj_set_style_pad_bottom(ls->title, 6, 0);
-    lv_obj_add_flag(ls->title, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_flag(ls->title, LV_OBJ_FLAG_HIDDEN);
 
+    /* The rows scroll in a box below the Aa and the X, as in the conversation: the band with them stays
+     * clear. Clickable so a drag between rows scrolls it (see s_rem_body). */
     ls->body = lv_obj_create(ls->scr);
     lv_obj_remove_style_all(ls->body);
-    lv_obj_remove_flag(ls->body, LV_OBJ_FLAG_CLICKABLE);   /* only its rows take taps */
-    lv_obj_set_size(ls->body, LIST_W, LV_SIZE_CONTENT);
-    /* No big title (the rows say what they are); start below the X. */
-    lv_obj_add_flag(ls->title, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_pad_top(ls->body, 30, 0);
+    lv_obj_set_size(ls->body, LIST_W, BOARD_LCD_V_RES - LIST_TOP);
+    lv_obj_align(ls->body, LV_ALIGN_TOP_MID, 0, LIST_TOP);
+    lv_obj_set_scroll_dir(ls->body, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(ls->body, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(ls->body, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_set_style_pad_bottom(ls->body, 48, 0);
     if (!s_st_rcard.prop_cnt) {     /* once, for both lists */
         lv_style_init(&s_st_rcard);
         lv_style_set_radius(&s_st_rcard, 18);
@@ -851,10 +919,11 @@ static void build_list(list_screen_t *ls, bool reminder)
         lv_style_set_pad_column(&s_st_rcard, 12);
         lv_style_init(&s_st_rcard_pressed);
     }
-    lv_obj_remove_flag(ls->body, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(ls->body, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_set_flex_flow(ls->body, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(ls->body, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(ls->body, 10, 0);
+    lv_obj_move_foreground(ui_add_text_size(ls->scr));
     lv_obj_move_foreground(x);
 }
 
@@ -862,7 +931,7 @@ static void open_list(bool reminder, bool slide_from_left)
 {
     list_screen_t *ls = &s_lists[reminder ? 1 : 0];
     rebuild_list(ls);
-    lv_obj_scroll_to_y(ls->scr, 0, LV_ANIM_OFF);
+    lv_obj_scroll_to_y(ls->body, 0, LV_ANIM_OFF);
     ui_note_activity();
     ui_load_screen(ls->scr, !slide_from_left);
 }
@@ -1023,7 +1092,14 @@ static void detail_apply_done(bool overdue)
     lv_obj_clean(s_det_due);
     if (s_det_reminder && s_det_due_str[0]) {
         char buf[48];
-        fmt_due(s_det_due_str, s_det_end_str, buf, sizeof(buf));
+        if (s_det_all_day) {
+            ui_format_date(buf, sizeof(buf), -1, day_key(s_det_due_str) % 100, day_key(s_det_due_str) / 100 % 100 - 1,
+                           false);
+            strlcat(buf, " ", sizeof(buf));
+            strlcat(buf, ui_str(STR_ALL_DAY), sizeof(buf));
+        } else {
+            fmt_due(s_det_due_str, s_det_end_str, buf, sizeof(buf));
+        }
         lv_obj_t *d = lv_label_create(s_det_due);
         lv_label_set_recolor(d, true);
         lv_label_set_text_fmt(d, "#4f8cff " ICON_CALENDAR "# %s", buf);
@@ -1045,7 +1121,7 @@ static void detail_apply_done(bool overdue)
 static void show_detail(bool reminder, int number, const char *text, const char *due, const char *end,
                         int notify, bool done, bool from_list, bool alert)
 {
-    const bool overdue = reminder && reminder_overdue(due, end, done);
+    const bool overdue = reminder && !s_det_all_day && reminder_overdue(due, end, done);
     disarm_delete();
     s_del_btn = s_det_del;
     s_del_btn_lbl = s_det_del_lbl;
@@ -1090,6 +1166,7 @@ static void parse_reminder(const cJSON *it, item_row_t *r)
     copy_str(r->text, sizeof(r->text), jstr(it, "text"));
     copy_str(r->due, sizeof(r->due), jstr(it, "due_local"));
     copy_str(r->end, sizeof(r->end), jstr(it, "end_local"));
+    r->all_day = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "all_day"));
     r->notify_before = jint(it, "notify_before");
     copy_str(r->location, sizeof(r->location), jstr(it, "location"));
     copy_str(r->participants, sizeof(r->participants), jstr(it, "participants"));
@@ -1121,6 +1198,7 @@ static void show_item_json(const cJSON *item, bool alert, bool early)
     /* Opened from the list and still waiting for this note: keep "back" going to the list. */
     bool from_list = !alert && lv_screen_active() == s_det_scr && s_det_from_list &&
                      s_det_reminder == reminder && s_det_number == number;
+    s_det_all_day = reminder && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "all_day"));
     show_detail(reminder, number, text ? text : "", jstr(item, "due_local"), jstr(item, "end_local"),
                 jint(item, "notify_before"), done, from_list, alert);
 }
@@ -1128,9 +1206,9 @@ static void show_item_json(const cJSON *item, bool alert, bool early)
 static void rebuild_reminders_async(void *arg)
 {
     if (lv_screen_active() == s_lists[1].scr) {
-        int32_t y = lv_obj_get_scroll_y(s_lists[1].scr);
+        int32_t y = lv_obj_get_scroll_y(s_lists[1].body);
         rebuild_list(&s_lists[1]);
-        lv_obj_scroll_to_y(s_lists[1].scr, y, LV_ANIM_OFF);
+        lv_obj_scroll_to_y(s_lists[1].body, y, LV_ANIM_OFF);
     }
 }
 
@@ -1203,6 +1281,7 @@ static void add_info_row(const char *icon, ui_str_t label, const char *value)
     lv_obj_set_style_text_color(l, lv_color_mix(lv_color_white(), a, 110), 0);
     lv_label_set_text(l, ui_str(label));
     lv_obj_t *v = lv_label_create(col);
+    lv_obj_set_style_text_font(v, ui_text_font(), 0);
     lv_obj_set_width(v, LV_PCT(100));
     lv_label_set_long_mode(v, LV_LABEL_LONG_WRAP);
     lv_label_set_text(v, value);
@@ -1231,14 +1310,27 @@ static void rem_render(void)
 
     lv_obj_set_style_bg_color(s_rem_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_rem_card, lv_color_mix(a, bg, 70), 0);
-    const lv_color_t sc = rem_state_color(r, reminder_overdue(r->due, r->end, r->done));
+    lv_obj_set_style_text_font(s_rem_date, ui_text_font(), 0);
+    lv_obj_set_style_text_font(s_rem_status, ui_text_font(), 0);
+    lv_obj_set_style_text_font(s_rem_live, ui_text_font(), 0);
+    const lv_color_t sc = rem_state_color(r, row_overdue(r));
     lv_obj_set_style_bg_color(s_rem_tile, lv_color_mix(sc, bg, 90), 0);
     lv_obj_set_style_text_color(s_rem_cal, sc, 0);
     lv_obj_set_style_border_color(s_rem_tile, sc, 0);
 
     /* date + time */
-    int y, mo, d, h, mi;
-    if (parse_local(r->due, &y, &mo, &d, &h, &mi)) {
+    int y, mo, d, h, mi, y2, mo2, d2;
+    if (r->all_day && parse_local(r->due, &y, &mo, &d, &h, &mi) && parse_local(r->end, &y2, &mo2, &d2, &h, &mi) &&
+        day_key(r->end) != day_key(r->due)) {
+        /* a range of days: "3 November – 7 November" */
+        char first[48], last[48];
+        ui_format_date(first, sizeof(first), -1, d, mo - 1, false);
+        ui_format_date(last, sizeof(last), -1, d2, mo2 - 1, false);
+        copy_str(buf, sizeof(buf), first);
+        strlcat(buf, " – ", sizeof(buf));
+        strlcat(buf, last, sizeof(buf));
+        lv_label_set_text(s_rem_date, buf);
+    } else if (parse_local(r->due, &y, &mo, &d, &h, &mi)) {
         struct tm t = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = 12, .tm_isdst = -1 };
         mktime(&t);
         ui_format_date(buf, sizeof(buf), t.tm_wday, d, mo - 1, true);
@@ -1246,16 +1338,16 @@ static void rem_render(void)
     } else {
         lv_label_set_text(s_rem_date, "");
     }
-    fmt_range(r->due, r->end, buf, sizeof(buf));
+    fmt_row_time(r, buf, sizeof(buf));     /* "09:30 – 10:15" or "All day" */
     lv_label_set_text(s_rem_time, buf);
 
     /* status: Completed / Overdue / "Starts in 10 min" (advance alert) */
     lv_obj_remove_flag(s_rem_status, LV_OBJ_FLAG_HIDDEN);
     if (r->done) {
         done_tag(s_rem_status);
-    } else if (reminder_overdue(r->due, r->end, false)) {
+    } else if (!r->all_day && reminder_overdue(r->due, r->end, false)) {
         overdue_tag(s_rem_status);
-    } else if (s_rem_early && parse_local(r->due, &y, &mo, &d, &h, &mi)) {
+    } else if (s_rem_early && !r->all_day && parse_local(r->due, &y, &mo, &d, &h, &mi)) {
         struct tm t = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = h, .tm_min = mi,
                         .tm_isdst = -1 };
         int mins = (int)((mktime(&t) - time(NULL) + 59) / 60);
@@ -1319,7 +1411,10 @@ static void build_reminder_screen(void)
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, REM_HDR_Y);
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     s_rem_title = lv_label_create(hdr);
-    lv_obj_center(s_rem_title);
+    lv_obj_set_width(s_rem_title, REM_TITLE_MAX_W);
+    lv_label_set_long_mode(s_rem_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_rem_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_rem_title, LV_ALIGN_CENTER, HDR_TITLE_SHIFT, 0);
 
     /* body: one card reaching the buttons; scrolls when taller */
     s_rem_body = lv_obj_create(s_rem_scr);
@@ -1370,6 +1465,8 @@ static void build_reminder_screen(void)
     lv_label_set_long_mode(s_rem_date, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_opa(s_rem_date, LV_OPA_80, 0);
     s_rem_time = lv_label_create(col);
+    lv_obj_set_width(s_rem_time, LV_PCT(100));
+    lv_label_set_long_mode(s_rem_time, LV_LABEL_LONG_WRAP);     /* "Toute la journée" */
     lv_obj_set_style_text_font(s_rem_time, &buddy_font_28, 0);
     s_rem_status = lv_label_create(col);
 
@@ -1390,6 +1487,7 @@ static void build_reminder_screen(void)
              &s_rem_check, &s_rem_check_icon);
 
     lv_obj_move_foreground(hdr);
+    lv_obj_move_foreground(ui_add_text_size(s_rem_scr));
     lv_obj_move_foreground(ui_add_close_x(s_rem_scr, det_close_cb));
 }
 
@@ -1524,8 +1622,9 @@ static lv_obj_t *note_add_line(int n, const char *text, size_t len)
         lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(row, lv_color_mix(a, bg, 90), 0);
     }
+    lv_obj_set_style_text_font(row, ui_text_font(), 0);     /* inherited by the number and the text */
     lv_obj_t *num = lv_label_create(row);
-    lv_obj_set_width(num, 38);
+    lv_obj_set_width(num, ui_text_font() == &buddy_font_20 ? 38 : 50);     /* room for "10." */
     lv_obj_set_style_text_color(num, a, 0);
     lv_label_set_text_fmt(num, "%d.", n);
     lv_obj_t *t = lv_label_create(row);
@@ -1576,6 +1675,7 @@ static void note_render(void)
     const lv_color_t a = g_ui_theme.accent, bg = g_ui_theme.background;
     lv_label_set_text(s_note_title, ui_str(STR_NOTE));
     lv_obj_set_style_text_color(s_note_title, a, 0);
+    lv_obj_set_style_text_font(s_note_live, ui_text_font(), 0);
     lv_obj_set_style_bg_color(s_note_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_note_card, lv_color_mix(a, bg, 70), 0);
     const lv_color_t rim = lv_color_mix(lv_color_white(), a, 90);
@@ -1775,7 +1875,10 @@ static void build_note_screen(void)
     lv_obj_add_flag(hdr, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     s_note_title = lv_label_create(hdr);
     lv_obj_set_style_text_font(s_note_title, &buddy_font_28, 0);
-    lv_obj_center(s_note_title);
+    lv_obj_set_width(s_note_title, REM_TITLE_MAX_W);
+    lv_label_set_long_mode(s_note_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_note_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_note_title, LV_ALIGN_CENTER, HDR_TITLE_SHIFT, 0);
 
     /* body: one card reaching the buttons, scrolling when taller */
     s_note_body = lv_obj_create(s_note_scr);
@@ -1835,6 +1938,7 @@ static void build_note_screen(void)
              &s_note_pin, &s_note_pin_icon);
 
     lv_obj_move_foreground(hdr);
+    lv_obj_move_foreground(ui_add_text_size(s_note_scr));
     lv_obj_move_foreground(ui_add_close_x(s_note_scr, det_close_cb));
 }
 
@@ -1966,9 +2070,9 @@ void ui_items_open(bool reminder)
 void ui_items_minute(void)
 {
     if (s_lists[1].scr && lv_screen_active() == s_lists[1].scr) {
-        int32_t y = lv_obj_get_scroll_y(s_lists[1].scr);
+        int32_t y = lv_obj_get_scroll_y(s_lists[1].body);
         rebuild_list(&s_lists[1]);
-        lv_obj_scroll_to_y(s_lists[1].scr, y, LV_ANIM_OFF);
+        lv_obj_scroll_to_y(s_lists[1].body, y, LV_ANIM_OFF);
     }
     if (s_rem_scr && s_rem_row && lv_screen_active() == s_rem_scr) {
         rem_render();
@@ -1983,6 +2087,24 @@ void ui_items_refresh_theme(void)
         }
     }
     if (s_rem_scr && lv_screen_active() == s_rem_scr) {
+        rem_render();
+    }
+    if (s_note_scr && lv_screen_active() == s_note_scr) {
+        note_render();
+    }
+}
+
+/* The Aa toggle changed: rebuild the screen shown in the new text size (lists keep their scroll). */
+void ui_items_refresh_text_size(void)
+{
+    for (int i = 0; i < 2; i++) {
+        if (s_lists[i].scr && lv_screen_active() == s_lists[i].scr) {
+            int32_t y = lv_obj_get_scroll_y(s_lists[i].body);
+            rebuild_list(&s_lists[i]);
+            lv_obj_scroll_to_y(s_lists[i].body, y, LV_ANIM_OFF);
+        }
+    }
+    if (s_rem_scr && s_rem_row && lv_screen_active() == s_rem_scr) {
         rem_render();
     }
     if (s_note_scr && lv_screen_active() == s_note_scr) {

@@ -1009,6 +1009,8 @@ static void shortcuts_render(void)
     }
 }
 
+static void text_size_render(void);
+
 static void theme_styles_apply(void)
 {
     lv_style_set_bg_color(&s_st_screen, g_ui_theme.background);
@@ -1024,6 +1026,7 @@ static void theme_styles_apply(void)
 
     mic_render();
     shortcuts_render();
+    text_size_render();
     lv_obj_report_style_change(NULL);
 }
 
@@ -1050,6 +1053,134 @@ lv_obj_t *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb)
     lv_label_set_text(l, ICON_CLOSE);
     lv_obj_center(l);
     return x;
+}
+
+/* ---- Aa (larger text) and the speaker (mute), top left of the text screens ---- */
+#define TEXT_SIZE_MAX   6           /* conversation, notes and reminders lists, note, reminder */
+#define TOOL_AA_W       72
+#define TOOL_SPK_W      64
+#define TOOL_H          72
+#define TOOL_ON_BLUE    0x4f8cff    /* Aa while large: the same blue on every theme */
+static lv_obj_t *s_text_size[TEXT_SIZE_MAX];    /* each: [0] Aa, [1] speaker */
+static int       s_text_size_count;
+static bool      s_large_text;
+static bool      s_muted;           /* not kept: the speaker is on again after a restart */
+static bool      s_tool_swallow;
+/* The mute slash across the speaker, in the speaker button's coordinates. */
+static const lv_point_precise_t s_mute_slash[2] = { { 22, 26 }, { 42, 46 } };
+
+const lv_font_t *ui_text_font(void)
+{
+    return s_large_text ? &buddy_font_28 : &buddy_font_20;
+}
+
+/* Aa: white (normal) or blue (large). Speaker: white, with a slash across it while muted (a background-coloured
+ * edge keeps the slash apart from the icon). */
+static void text_size_render(void)
+{
+    for (int i = 0; i < s_text_size_count; i++) {
+        lv_obj_t *aa = lv_obj_get_child(s_text_size[i], 0), *spk = lv_obj_get_child(s_text_size[i], 1);
+        lv_obj_set_style_text_color(lv_obj_get_child(aa, 0), s_large_text ? lv_color_hex(TOOL_ON_BLUE)
+                                                                          : lv_color_white(), 0);
+        lv_obj_t *edge = lv_obj_get_child(spk, 1), *slash = lv_obj_get_child(spk, 2);
+        lv_obj_set_style_line_color(edge, g_ui_theme.background, 0);
+        lv_obj_set_flag(edge, LV_OBJ_FLAG_HIDDEN, !s_muted);
+        lv_obj_set_flag(slash, LV_OBJ_FLAG_HIDDEN, !s_muted);
+    }
+}
+
+/* Outside the click event: the screens rebuild their rows. */
+static void text_size_apply_async(void *arg)
+{
+    ui_chat_refresh_text_size();
+    ui_items_refresh_text_size();
+}
+
+static void tool_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        s_tool_swallow = !ui_screen_awake();    /* a tap on a dim screen only wakes it */
+        return;
+    }
+    if (code != LV_EVENT_CLICKED || s_tool_swallow) {
+        return;
+    }
+    if (lv_event_get_user_data(e)) {            /* the speaker */
+        ui_set_muted(!s_muted);
+    } else {
+        s_large_text = !s_large_text;
+        settings_set_large_text(s_large_text);
+        lv_async_call(text_size_apply_async, NULL);
+    }
+    text_size_render();
+    ui_note_activity();
+}
+
+bool ui_is_muted(void)
+{
+    return s_muted;
+}
+
+/* Caller holds the lock. */
+void ui_set_muted(bool muted)
+{
+    s_muted = muted;
+    if (g_ui_cb.on_mute) {
+        g_ui_cb.on_mute(muted);
+    }
+    text_size_render();
+    ui_settings_refresh();      /* the volume card shows 0 while muted */
+}
+
+static lv_obj_t *tool_button(lv_obj_t *parent, int32_t w, bool speaker, const char *text)
+{
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_size(b, w, TOOL_H);
+    lv_obj_set_ext_click_area(b, speaker ? 20 : 16);   /* the speaker is created last: it wins the overlap */
+    lv_obj_add_event_cb(b, tool_cb, LV_EVENT_PRESSED, (void *)(intptr_t)speaker);
+    lv_obj_add_event_cb(b, tool_cb, LV_EVENT_CLICKED, (void *)(intptr_t)speaker);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &buddy_font_28, 0);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_label_set_text(l, text);
+    lv_obj_center(l);
+    return b;
+}
+
+static lv_obj_t *slash_line(lv_obj_t *parent, int32_t width, lv_color_t color)
+{
+    lv_obj_t *line = lv_line_create(parent);
+    lv_line_set_points(line, s_mute_slash, 2);
+    lv_obj_set_style_line_width(line, width, 0);
+    lv_obj_set_style_line_rounded(line, true, 0);
+    lv_obj_set_style_line_color(line, color, 0);
+    lv_obj_remove_flag(line, LV_OBJ_FLAG_CLICKABLE);
+    return line;
+}
+
+lv_obj_t *ui_add_text_size(lv_obj_t *scr)
+{
+    lv_obj_t *box = lv_obj_create(scr);
+    lv_obj_remove_style_all(box);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_FLOATING);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_size(box, TOOL_AA_W + TOOL_SPK_W, TOOL_H);
+    /* The X's mirror: 22 px from the left edge, 2 px from the top (undoing the parent's padding). */
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 22 - lv_obj_get_style_pad_left(scr, 0), 2 - lv_obj_get_style_pad_top(scr, 0));
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+    tool_button(box, TOOL_AA_W, false, "Aa");
+    lv_obj_t *spk = tool_button(box, TOOL_SPK_W, true, ICON_VOLUME);
+    lv_obj_add_flag(spk, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    slash_line(spk, 10, g_ui_theme.background);    /* child 1: edge */
+    slash_line(spk, 4, lv_color_white());          /* child 2: slash */
+    if (s_text_size_count < TEXT_SIZE_MAX) {
+        s_text_size[s_text_size_count++] = box;
+    }
+    text_size_render();
+    return box;
 }
 
 lv_obj_t *ui_add_keyboard(lv_obj_t *scr)
@@ -1344,6 +1475,7 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb)
     theme_styles_apply();
     build_watchface();
     ui_screens_init();
+    s_large_text = settings_get_large_text();
     ui_items_init();
     ui_chat_init();
     ui_lang_init();
@@ -1395,7 +1527,6 @@ void ui_apply_settings(const buddy_settings_t *s)
         ui_items_refresh_theme();
         ui_chat_refresh_theme();
     }
-    ui_chat_refresh_title();
     ui_settings_refresh();
     if (s_power == POWER_ON) {
         board_display_set_brightness(s->brightness);
