@@ -88,8 +88,18 @@ void ui_chat_user(const char *text);
 void ui_chat_reply(const char *delta);
 /* Short answer value ("21°C"): the reply bubble shows only this, in large type. */
 void ui_chat_display(const char *text);
-/* The link dropped while the answer was awaited: "Still thinking…" next to ola's dots (false hides it). */
+/* The link dropped while the answer was awaited: "Still thinking…" next to ola's dots at once (false: only after
+ * the usual 2 s of thinking). */
 void ui_chat_still_thinking(bool on);
+/* The answer shown so far is dropped (after a drop it comes again whole): ola's dots instead. */
+void ui_chat_reply_reset(void);
+/* No answer came: a line in the conversation if it is on display (true), else nothing (false). */
+bool ui_chat_no_answer(void);
+/* A conversation or a notes / reminders screen is on display: connection events do not replace it. */
+bool ui_in_conversation(void);
+/* The link is back: a message screen gives way (to the conversation it covered, or the watchface); a
+ * conversation or a notes screen stays; anything else goes to the watchface. */
+void ui_show_connected(void);
 void ui_caption_clear(void);
 void ui_caption_set(const char *text);
 void ui_caption_append(const char *delta);

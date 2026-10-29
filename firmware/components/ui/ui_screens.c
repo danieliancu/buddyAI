@@ -718,19 +718,50 @@ void ui_settings_return(void)
 /* Message screen                                                             */
 /* ------------------------------------------------------------------------- */
 
+/* The conversation (or notes screen) a message covered: closing the message returns there, not to the watchface. */
+static lv_obj_t *s_msg_back;
+
+static void msg_close(void)
+{
+    if (s_msg_back) {
+        ui_load_screen(s_msg_back, false);
+    } else {
+        ui_go_watchface();
+    }
+}
+
 static void msg_timer_cb(lv_timer_t *t)
 {
     s_msg_timer = NULL;
     if (lv_screen_active() == s_msg_scr) {
-        ui_go_watchface();
+        msg_close();
     }
 }
 
 static void msg_click_cb(lv_event_t *e)
 {
     if (s_msg_dismissable) {
+        msg_close();
+    }
+}
+
+bool ui_in_conversation(void)
+{
+    LOCK();
+    bool on = ui_chat_is_active() || ui_items_is_active();
+    UNLOCK();
+    return on;
+}
+
+void ui_show_connected(void)
+{
+    LOCK();
+    if (lv_screen_active() == s_msg_scr) {
+        msg_close();
+    } else if (!ui_chat_is_active() && !ui_items_is_active()) {
         ui_go_watchface();
     }
+    UNLOCK();
 }
 
 static void msg_btn_cb(lv_event_t *e)
@@ -838,6 +869,7 @@ void ui_msg_show(const char *icon, lv_color_t icon_color, const char *title, con
     }
     ui_note_activity();
     if (lv_screen_active() != s_msg_scr) {
+        s_msg_back = ui_chat_is_active() || ui_items_is_active() ? lv_screen_active() : NULL;
         ui_load_screen(s_msg_scr, true);
     }
 }

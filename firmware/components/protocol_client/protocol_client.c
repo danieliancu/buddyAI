@@ -42,7 +42,8 @@ static const char *TAG = "proto";
 #define TCP_KEEPALIVE_IDLE_S    120     /* the library default (5 s) would probe after every quiet 5 s */
 #define CONNECT_TIMEOUT_MS      10000
 #define HELLO_TIMEOUT_MS        15000
-#define THINKING_TIMEOUT_MS     30000
+#define PATIENCE_MS             45000   /* the longest wait for an answer (or the link) inside the conversation */
+#define THINKING_TIMEOUT_MS     PATIENCE_MS
 #define SPEAKING_IDLE_MS        20000
 #define BACKOFF_MIN_MS          2000
 #define BACKOFF_MAX_MS          120000
@@ -195,12 +196,15 @@ static bool             s_tts_ended;
 static bool             s_turn_ended;
 static int64_t          s_turn_deadline_ms;
 /* The link dropped while a question was heard or its answer awaited (PROTOCOL.md section 6.1): instead of failing
- * at once the watch waits up to HOLD_MS for the link and then picks the turn up again:
- *  - HOLD_ANSWER: the server had the whole question; `resume` asks for its reply ("Still thinking…" meanwhile);
- *  - HOLD_QUESTION: the question was still being said; the mic goes on into s_up_buf and the whole recording is
- *    sent again as a new turn (listen_start `replaces`), then the live mic follows if it is still open.
- * After HOLD_MS without the link: "try again". s_hold_until_ms 0 = no hold. */
-#define HOLD_MS                 25000
+ * at once the watch stays in the conversation ("Still thinking…") and waits up to HOLD_MS for the link, then picks
+ * the turn up again:
+ *  - HOLD_ANSWER: the server had the whole question (or was saying the answer); `resume` asks for its reply, which
+ *    comes again whole;
+ *  - HOLD_QUESTION: the question was still being said (or the mic was tapped while offline); the mic goes on into
+ *    s_up_buf and the whole recording is sent again as a new turn (listen_start `replaces`), then the live mic
+ *    follows if it is still open. A tap ends such a question (no server to hear its end).
+ * The wait counts from the end of the question. After HOLD_MS without the link: the reconnect screen. */
+#define HOLD_MS                 PATIENCE_MS
 #define RESEND_LISTEN_MS        5000    /* after a resent question: time for the server to find its end */
 typedef enum { HOLD_ANSWER, HOLD_QUESTION } hold_kind_t;
 static int64_t          s_hold_until_ms;
@@ -333,21 +337,31 @@ static const uint8_t   *s_test_opus;
 static const uint16_t  *s_test_lens;
 static size_t           s_test_count;
 
-/* End the wait after a drop mid-turn without picking the turn up. `fail`: say "try again" (time up); false: the
- * user moved on. */
+/* End the wait after a drop mid-turn without picking the turn up. `fail`: the link did not come back in time (the
+ * reconnect screen); false: the user moved on. */
 static void end_hold(bool fail)
 {
     if (!s_hold_until_ms) {
         return;
     }
     s_hold_until_ms = 0;
-    ESP_LOGI(TAG, "still thinking over: %s", fail ? "\"try again\"" : "given up by the user");
+    ESP_LOGI(TAG, "still thinking over: %s", fail ? "link not back" : "given up by the user");
     local_stop_turn();      /* the mic of a question being held, too */
     emit(PROTO_EVT_STILL_THINKING, 0, NULL);
     set_conv(PROTO_CONV_IDLE);
     if (fail) {
-        emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
+        emit(PROTO_EVT_ERROR, PROTO_ERR_NOT_CONNECTED, NULL);
     }
+}
+
+/* The question being held is complete (a tap, or its longest length): now only the link is awaited, for up to
+ * HOLD_MS from here. */
+static void hold_question_done(void)
+{
+    audio_capture_stop();
+    set_conv(PROTO_CONV_THINKING);
+    s_hold_until_ms = now_ms() + HOLD_MS;
+    emit(PROTO_EVT_STILL_THINKING, 1, NULL);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -526,6 +540,12 @@ static void add_issue_reports(cJSON *m)
         add_ws_details(link, "ws", &s_fail_ws);
         add_report_id(link, s_fail_report_id);
     }
+}
+
+static bool have_token(void)
+{
+    char token[SETTINGS_TOKEN_MAX];
+    return settings_get_token(token, sizeof(token));
 }
 
 static void send_hello(void)
@@ -801,6 +821,10 @@ static void start_cycle(void);
 static void handle_tap(void)
 {
     s_expect_reply = false;   /* the user takes over: no automatic listening */
+    if (s_hold_until_ms && s_hold_kind == HOLD_QUESTION && s_conv == PROTO_CONV_LISTENING) {
+        hold_question_done(); /* a question said while offline: the tap ends it, it goes out with the link */
+        return;
+    }
     end_hold(false);          /* a tap while waiting after a drop: the old question is given up */
     if (s_conn == CONN_BACKOFF && s_backoff_floor_ms == 0 && net_wifi_connected()) {
         /* Waiting (up to 2 min) before the next attempt while the screen says "Connecting...": the user
@@ -808,9 +832,17 @@ static void handle_tap(void)
         ESP_LOGI(TAG, "tap while waiting to reconnect: trying now");
         s_backoff_ms = BACKOFF_MIN_MS;
         start_cycle();
-        return;
     }
     if (s_conn != CONN_SESSION) {
+        if (have_token() && !s_account_inactive && !s_note_open && s_backoff_floor_ms == 0) {
+            /* Offline but paired: the question is recorded now and sent when the link is back (a held
+             * question), instead of an error screen. */
+            ESP_LOGI(TAG, "tap while offline: recording, the question goes out with the link");
+            start_turn();       /* its listen_start cannot go out: resume_after_drop sends the whole question */
+            s_hold_until_ms = now_ms() + HOLD_MS;
+            s_hold_kind = HOLD_QUESTION;
+            return;
+        }
         emit(PROTO_EVT_ERROR, s_account_inactive ? PROTO_ERR_ACCOUNT_INACTIVE : PROTO_ERR_NOT_CONNECTED, NULL);
         return;
     }
@@ -1224,7 +1256,7 @@ static void handle_text(const char *txt)
         const char *resume = json_str(j, "resume");
         if (has_turn && turn == s_active_turn && resume && strcmp(resume, "missing") == 0) {
             ESP_LOGW(TAG, "resume: the server has no answer for the question");
-            emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* "try again" */
+            emit(PROTO_EVT_ERROR, PROTO_ERR_NO_ANSWER, NULL);  /* "try again", in the conversation */
         }
         if (has_turn && turn == s_active_turn) {
             s_resume_pending = false;
@@ -1669,13 +1701,15 @@ static bool session_lost(const char *why)
         diag_rtc_set_session(&s_rtc, NULL);
         diag_rtc_seal(&s_rtc);
     }
-    /* A question being heard or answered (a chat turn, not the note screen, nothing playing yet): hold it over the
-     * drop. Later calls for the same drop leave a running hold alone. */
-    bool hold = mid_turn && !s_turn_note && (s_conv == PROTO_CONV_LISTENING || s_conv == PROTO_CONV_THINKING);
+    /* The whole spoken answer is already here: it plays to its end, nothing is lost. */
+    bool playing_out = mid_turn && s_conv == PROTO_CONV_SPEAKING && s_tts_ended;
+    /* A question being heard or answered (a chat turn, not the note screen): hold it over the drop. Later calls
+     * for the same drop leave a running hold alone. */
+    bool hold = mid_turn && !s_turn_note && !playing_out;
     bool question = hold && s_conv == PROTO_CONV_LISTENING && s_up_buf && !s_up_overflow;
     bool keep_mic = question || (s_hold_until_ms && s_hold_kind == HOLD_QUESTION);
     s_resume_pending = false;
-    if (!keep_mic) {
+    if (!keep_mic && !playing_out) {
         local_stop_turn();
     }
     if (hold) {
@@ -1685,13 +1719,16 @@ static bool session_lost(const char *why)
             ESP_LOGI(TAG, "link lost mid-question: recording on, waiting up to %d s", HOLD_MS / 1000);
         } else {
             ESP_LOGI(TAG, "link lost mid-turn: still thinking for up to %d s", HOLD_MS / 1000);
+            emit(PROTO_EVT_REPLY_RESET, 0, NULL);   /* the resumed answer comes again whole */
             set_conv(PROTO_CONV_THINKING);
             emit(PROTO_EVT_STILL_THINKING, 1, NULL);
         }
+    } else if (playing_out) {
+        ESP_LOGI(TAG, "link lost while the last of the answer plays: it plays on");
     } else if (!s_hold_until_ms) {
         set_conv(PROTO_CONV_IDLE);
         if (mid_turn) {
-            emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* the answer is lost: "try again later" */
+            emit(PROTO_EVT_ERROR, PROTO_ERR_NO_ANSWER, NULL);  /* the answer is lost (the note screen) */
         }
     }
     s_session_id[0] = '\0';
@@ -1913,10 +1950,7 @@ static void handle_timers(void)
         end_hold(true);
     } else if (s_hold_until_ms && s_hold_kind == HOLD_QUESTION && s_conv == PROTO_CONV_LISTENING &&
                now >= s_turn_deadline_ms) {
-        /* the longest question is over while offline: it is complete, now wait for the link */
-        audio_capture_stop();
-        set_conv(PROTO_CONV_THINKING);
-        emit(PROTO_EVT_STILL_THINKING, 1, NULL);
+        hold_question_done();   /* the longest question is over while offline: it is complete, now wait for the link */
     }
 
     switch (s_conn) {
@@ -1992,7 +2026,7 @@ static void handle_timers(void)
                 ESP_LOGW(TAG, "turn %lu timed out in state %d", (unsigned long)s_active_turn, s_conv);
                 abort_turn("timeout");
                 set_conv(PROTO_CONV_IDLE);
-                emit(PROTO_EVT_ERROR, PROTO_ERR_AI, NULL);  /* no answer in time: "try again later" */
+                emit(PROTO_EVT_ERROR, PROTO_ERR_NO_ANSWER, NULL);  /* no answer in time (the link is up) */
             }
         }
         break;

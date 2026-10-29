@@ -39,6 +39,7 @@ typedef enum {
     PROTO_ERR_LIMIT_REACHED,        /* listen_start refused: monthly allowance used up */
     PROTO_ERR_ACCOUNT_INACTIVE,     /* hello refused: owner account suspended/closed (slow retry) */
     PROTO_ERR_CONCURRENT,           /* listen_start refused: other turns of the account use the rest */
+    PROTO_ERR_NO_ANSWER,            /* the link is up but no answer came in time (or it was lost): "try again" */
 } proto_error_t;
 
 typedef enum {
@@ -66,6 +67,7 @@ typedef enum {
     PROTO_EVT_NOTE_STATE,           /* num = proto_conv_state_t of a note-mode turn */
     PROTO_EVT_NOTE_TEXT,            /* str = live transcript (num 0) or the assistant's question (num 1) */
     PROTO_EVT_STILL_THINKING,       /* num = 1: the link dropped mid-turn, the watch waits (THINKING); 0: over */
+    PROTO_EVT_REPLY_RESET,          /* the answer shown so far is dropped: after the drop it comes again whole */
 } proto_event_type_t;
 
 typedef struct {

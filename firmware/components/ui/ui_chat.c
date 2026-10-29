@@ -12,6 +12,7 @@
  * The last CHAT_MAX_BUBBLES bubbles are kept while the watch runs, so tapping
  * the mic again continues the same dialog on screen.
  */
+#include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -49,6 +50,7 @@
 #define CHAT_SPINNER_MS     1000    /* LVGL's default spinner */
 #define CHAT_SPINNER_ARC    200
 #define REVEAL_DELAY_MS     300
+#define STILL_AFTER_MS      2000    /* "Still thinking…" when the answer takes longer than this */
 
 static lv_obj_t  *s_scr;
 static lv_obj_t  *s_list;
@@ -60,7 +62,9 @@ static lv_obj_t  *s_cur_user;       /* label of this turn's user bubble (NULL un
 static lv_obj_t  *s_typing;         /* bouncing dots: the user's side while listening (before the first
                                      * words), ola's side while the answer is awaited */
 static bool       s_typing_ai;      /* s_typing is on ola's side */
-static bool       s_still;          /* the answer takes longer (link dropped): "Still thinking…" after ola's dots */
+static bool       s_still;          /* the link dropped: "Still thinking…" after ola's dots at once */
+static bool       s_still_slow;     /* thinking for STILL_AFTER_MS: the same text */
+static lv_timer_t *s_still_timer;
 static lv_obj_t  *s_cur_reply;      /* label of this turn's reply bubble */
 static bool       s_cur_display;    /* the reply bubble shows a short value: ignore the text */
 static ui_conv_t  s_state = UI_CONV_IDLE;
@@ -245,7 +249,7 @@ static void show_typing(bool ai)
         lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
         lv_anim_start(&a);
     }
-    if (ai && s_still) {
+    if (ai && (s_still || s_still_slow)) {
         lv_obj_t *l = lv_label_create(s_typing);
         lv_obj_set_style_text_font(l, &buddy_font_20, 0);
         lv_obj_set_style_text_opa(l, LV_OPA_70, 0);
@@ -321,6 +325,25 @@ static void gesture_cb(lv_event_t *e)
     }
 }
 
+/* ola's dots again, with or without "Still thinking…" */
+static void redraw_ai_typing(void)
+{
+    if (s_typing && s_typing_ai) {
+        hide_typing();
+        show_typing(true);
+        scroll_to_end();
+    }
+}
+
+static void still_cb(lv_timer_t *t)
+{
+    lv_timer_pause(t);
+    if (s_state == UI_CONV_THINKING && !s_still_slow) {
+        s_still_slow = true;
+        redraw_ai_typing();
+    }
+}
+
 void ui_chat_init(void)
 {
     s_scr = lv_obj_create(NULL);
@@ -390,6 +413,8 @@ void ui_chat_init(void)
     s_pend = heap_caps_malloc(PEND_MAX + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_reveal_timer = lv_timer_create(reveal_cb, REVEAL_TICK_MS, NULL);
     lv_timer_pause(s_reveal_timer);     /* runs only while speaking: no 60 ms wakeups when idle */
+    s_still_timer = lv_timer_create(still_cb, STILL_AFTER_MS, NULL);
+    lv_timer_pause(s_still_timer);      /* armed by each thinking phase */
 }
 
 /* Caller holds the lock. */
@@ -411,7 +436,13 @@ void ui_chat_set_state(ui_conv_t st)
         }
     }
     if (st != UI_CONV_THINKING) {
-        s_still = false;
+        s_still = s_still_slow = false;
+        if (s_still_timer) {
+            lv_timer_pause(s_still_timer);
+        }
+    } else if (s_still_timer) {
+        lv_timer_reset(s_still_timer);      /* from now: STILL_AFTER_MS of thinking */
+        lv_timer_resume(s_still_timer);
     }
     if (st == UI_CONV_LISTENING) {
         hide_typing();
@@ -495,14 +526,57 @@ void ui_chat_still_thinking(bool on)
 {
     LOCK();
     if (s_scr && on != s_still) {
+        bool was = s_still || s_still_slow;
         s_still = on;
-        if (s_typing && s_typing_ai) {
-            hide_typing();
-            show_typing(true);  /* the dots again, with or without the text */
+        if (was != (s_still || s_still_slow)) {
+            redraw_ai_typing();
+        }
+    }
+    UNLOCK();
+}
+
+void ui_chat_reply_reset(void)
+{
+    LOCK();
+    if (s_scr) {
+        s_pend_pos = s_pend_len = 0;
+        s_reveal_on = false;
+        if (s_cur_reply) {
+            lv_obj_delete(lv_obj_get_parent(s_cur_reply));     /* its row */
+            s_cur_reply = NULL;
+        }
+        s_cur_display = false;
+        if (s_state == UI_CONV_THINKING && !s_typing) {
+            show_typing(true);
             scroll_to_end();
         }
     }
     UNLOCK();
+}
+
+bool ui_chat_no_answer(void)
+{
+    LOCK();
+    bool shown = ui_chat_is_active();
+    if (shown) {
+        hide_typing();
+        /* "Can't answer right now. Please try again a little later." - dimmed, on ola's side */
+        char text[160];
+        snprintf(text, sizeof(text), "%s. %s", ui_str(STR_ERR_AI_T), ui_str(STR_ERR_AI_B));
+        for (char *c = text; *c; c++) {
+            if (*c == '\n') {
+                *c = ' ';
+            }
+        }
+        lv_obj_t *l = add_bubble(false, text);
+        lv_obj_set_style_text_opa(l, LV_OPA_70, 0);
+        s_cur_user = NULL;
+        s_cur_reply = NULL;
+        s_cur_display = false;
+        scroll_to_end();
+    }
+    UNLOCK();
+    return shown;
 }
 
 void ui_chat_user(const char *text)

@@ -1072,8 +1072,7 @@ lv_obj_t *ui_add_close_x(lv_obj_t *scr, lv_event_cb_t cb)
 #define TOOL_AA_W       72
 #define TOOL_SPK_W      64
 #define TOOL_H          72
-#define TOOL_ON_BLUE    0x4f8cff    /* Aa while large: the same blue on every theme */
-static lv_obj_t *s_text_size[TEXT_SIZE_MAX];    /* each: [0] Aa, [1] speaker */
+static lv_obj_t *s_text_size[TEXT_SIZE_MAX];    /* each: [0] Aa (its label, then the +/- sign), [1] speaker */
 static int       s_text_size_count;
 static bool      s_large_text;
 static bool      s_muted;           /* not kept: the speaker is on again after a restart */
@@ -1086,14 +1085,13 @@ const lv_font_t *ui_text_font(void)
     return s_large_text ? &buddy_font_28 : &buddy_font_20;
 }
 
-/* Aa: white (normal) or blue (large). Speaker: white, with a slash across it while muted (a background-coloured
- * edge keeps the slash apart from the icon). */
+/* Aa with "+" on its right while the text can grow, "-" while it is large. Speaker: white, with a slash across it
+ * while muted (a background-coloured edge keeps the slash apart from the icon). */
 static void text_size_render(void)
 {
     for (int i = 0; i < s_text_size_count; i++) {
         lv_obj_t *aa = lv_obj_get_child(s_text_size[i], 0), *spk = lv_obj_get_child(s_text_size[i], 1);
-        lv_obj_set_style_text_color(lv_obj_get_child(aa, 0), s_large_text ? lv_color_hex(TOOL_ON_BLUE)
-                                                                          : lv_color_white(), 0);
+        lv_label_set_text(lv_obj_get_child(aa, 1), s_large_text ? "-" : "+");
         lv_obj_t *edge = lv_obj_get_child(spk, 1), *slash = lv_obj_get_child(spk, 2);
         lv_obj_set_style_line_color(edge, g_ui_theme.background, 0);
         lv_obj_set_flag(edge, LV_OBJ_FLAG_HIDDEN, !s_muted);
@@ -1183,7 +1181,12 @@ lv_obj_t *ui_add_text_size(lv_obj_t *scr)
     /* The X's mirror: 22 px from the left edge, 2 px from the top (undoing the parent's padding). */
     lv_obj_align(box, LV_ALIGN_TOP_LEFT, 22 - lv_obj_get_style_pad_left(scr, 0), 2 - lv_obj_get_style_pad_top(scr, 0));
     lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
-    tool_button(box, TOOL_AA_W, false, "Aa");
+    lv_obj_t *aa = tool_button(box, TOOL_AA_W, false, "Aa");
+    lv_obj_align(lv_obj_get_child(aa, 0), LV_ALIGN_CENTER, -8, 0);     /* room for the sign on its right */
+    lv_obj_t *sign = lv_label_create(aa);                              /* child 1: + or - */
+    lv_obj_set_style_text_font(sign, &buddy_font_28, 0);
+    lv_obj_set_style_text_color(sign, lv_color_white(), 0);
+    lv_obj_align(sign, LV_ALIGN_CENTER, 22, -1);
     lv_obj_t *spk = tool_button(box, TOOL_SPK_W, true, ICON_VOLUME);
     lv_obj_add_flag(spk, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     slash_line(spk, 10, g_ui_theme.background);    /* child 1: edge */

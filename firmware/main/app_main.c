@@ -259,7 +259,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         break;
     case PROTO_EVT_SERVER_UNREACHABLE:
         ui_set_status(s_batt_pct, s_charging, current_link());
-        if (!s_server_error_shown) {
+        /* Not over a conversation: it waits for the link ("Still thinking…") and shows the reconnect screen
+         * itself if the link does not come back in time. */
+        if (!s_server_error_shown && !ui_in_conversation()) {
             s_server_error_shown = true;
             ui_show_error(ev->num ? UI_ERR_NO_SERVER : UI_ERR_SERVER_UNREACHABLE, NULL);
         }
@@ -278,7 +280,7 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
         s_server_error_shown = false;
         ui_set_hint(NULL);
         ui_set_status(s_batt_pct, s_charging, UI_LINK_ONLINE);
-        ui_show_watchface();
+        ui_show_connected();    /* a conversation or a notes screen stays where it is */
         break;
     case PROTO_EVT_CONV_STATE:
         if ((proto_conv_state_t)ev->num == PROTO_CONV_THINKING) {
@@ -317,6 +319,10 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_STILL_THINKING:
         ui_chat_still_thinking(ev->num != 0);
         break;
+    case PROTO_EVT_REPLY_RESET:
+        s_reply_started = false;
+        ui_chat_reply_reset();
+        break;
     case PROTO_EVT_REPLY_LANGUAGE:
         ui_set_reply_language(ev->str);
         break;
@@ -352,8 +358,11 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
             ui_show_error(UI_ERR_ACCOUNT_INACTIVE, NULL);
             break;
         case PROTO_ERR_AI:
+        case PROTO_ERR_NO_ANSWER:
         default:
-            ui_show_error(UI_ERR_AI, ev->str);
+            if (!ui_chat_no_answer()) {     /* in the conversation: a line there; elsewhere the screen */
+                ui_show_error(UI_ERR_AI, ev->str);
+            }
             break;
         }
         break;
@@ -742,7 +751,7 @@ static void app_loop(void)
         }
         /* Wi-Fi configured but never connected: show the error once. */
         if (s_wifi_configured && !no_wifi_shown && !net_wifi_connected() && !net_portal_active() &&
-            now - boot_ms > WIFI_CONNECT_GRACE_MS) {
+            now - boot_ms > WIFI_CONNECT_GRACE_MS && !ui_in_conversation()) {
             no_wifi_shown = true;
             ui_set_hint(ui_text_connecting());
             ui_show_error(UI_ERR_NO_WIFI, NULL);
