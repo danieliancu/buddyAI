@@ -658,52 +658,34 @@ static void row_badge(lv_obj_t *row, lv_color_t c, const char *icon, lv_color_t 
     lv_obj_center(ic);
 }
 
-/* ---- Send by email: a drawn envelope with speed lines (the icon font has none) ---- */
-#define MAIL_W          34
-#define MAIL_H          20
-#define MAIL_ENV_W      22
-static const lv_point_precise_t s_mail_speed[3][2] = { { { 0, 5 }, { 8, 5 } }, { { 3, 10 }, { 8, 10 } },
-                                                       { { 0, 15 }, { 8, 15 } } };
-static const lv_point_precise_t s_mail_flap[3] = { { 0, 0 }, { 9, 7 }, { 18, 0 } };    /* inside the border */
+/* ---- Send by email: a drawn envelope (the icon font's is too small next to the other badges) ---- */
+#define MAIL_W          32
+#define MAIL_H          24
+static const lv_point_precise_t s_mail_flap[3] = { { 0, 0 }, { 14, 10 }, { 28, 0 } };  /* inside the border */
 static int     s_email_number = -1;     /* the note whose send button was tapped last (its answer is awaited) */
 static lv_obj_t *s_toast;
 static lv_timer_t *s_toast_timer;
 
-/* Children: [0..2] speed lines, [3] envelope (its child: the flap). Colour: mail_icon_color(). */
+/* The envelope (its child: the flap). Colour: mail_icon_color(). */
 static lv_obj_t *mail_icon(lv_obj_t *parent)
 {
-    lv_obj_t *box = plain_box(parent);
-    lv_obj_set_size(box, MAIL_W, MAIL_H);
-    lv_obj_add_flag(box, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-    for (int i = 0; i < 3; i++) {
-        lv_obj_t *l = lv_line_create(box);
-        lv_line_set_points(l, s_mail_speed[i], 2);
-        lv_obj_set_style_line_width(l, 2, 0);
-        lv_obj_set_style_line_rounded(l, true, 0);
-        lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
-    }
-    lv_obj_t *env = plain_box(box);
-    lv_obj_set_size(env, MAIL_ENV_W, MAIL_H);
-    lv_obj_align(env, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_t *env = plain_box(parent);
+    lv_obj_set_size(env, MAIL_W, MAIL_H);
     lv_obj_set_style_border_width(env, 2, 0);
-    lv_obj_set_style_radius(env, 3, 0);
+    lv_obj_set_style_radius(env, 4, 0);
     lv_obj_add_flag(env, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_t *flap = lv_line_create(env);
     lv_line_set_points(flap, s_mail_flap, 3);
     lv_obj_set_style_line_width(flap, 2, 0);
     lv_obj_set_style_line_rounded(flap, true, 0);
     lv_obj_remove_flag(flap, LV_OBJ_FLAG_CLICKABLE);
-    return box;
+    return env;
 }
 
 static void mail_icon_color(lv_obj_t *icon, lv_color_t c)
 {
-    for (int i = 0; i < 3; i++) {
-        lv_obj_set_style_line_color(lv_obj_get_child(icon, i), c, 0);
-    }
-    lv_obj_t *env = lv_obj_get_child(icon, 3);
-    lv_obj_set_style_border_color(env, c, 0);
-    lv_obj_set_style_line_color(lv_obj_get_child(env, 0), c, 0);
+    lv_obj_set_style_border_color(icon, c, 0);
+    lv_obj_set_style_line_color(lv_obj_get_child(icon, 0), c, 0);
 }
 
 static void toast_timer_cb(lv_timer_t *t)
