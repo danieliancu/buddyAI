@@ -152,7 +152,7 @@ export const tabs = (trialDays: number): Tab[] => [
     id: "notes",
     label: "Notes",
     title: "Notes you can say",
-    lead: "Dictate a note, read it on your wrist, change it line by line with your voice.",
+    lead: "Dictate a note, read it on your wrist, change it line by line with your voice, and send it to your email with a word or a tap.",
     steps: [
       {
         title: "Dictate a note",
@@ -185,6 +185,13 @@ export const tabs = (trialDays: number): Tab[] => [
         say: ["Delete the shopping list"],
         touch: "Pin and trash buttons under the note",
         run: "notes:pin",
+      },
+      {
+        title: "Send it to your email",
+        text: "Ask, or tap the envelope next to a note. olá sends it to the email address of your olá account.",
+        say: ["Send my shopping list to my email"],
+        touch: "Tap the envelope on a note",
+        run: "notes:email",
       },
       {
         title: "In your account too",

@@ -60,7 +60,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What can I do with notes and reminders by voice?",
-        a: "Create them, find them by what they say (or by a person, a place or a day), change them, copy them and delete them. Reminders can have a time, an end time, an early alert, a place and people. Notes can be edited line by line: add, change, move or remove lines. Everything you create is also in your olá account, where you can view and edit it in a browser.",
+        a: "Create them, find them by what they say (or by a person, a place or a day), change them, copy them and delete them. Reminders can have a time, an end time, an early alert, a place and people. Notes can be edited line by line: add, change, move or remove lines, and any note can be sent to the email address of your olá account. Everything you create is also in your olá account, where you can view and edit it in a browser.",
       },
       {
         q: "What if more than one note or reminder matches?",
@@ -72,7 +72,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can you give some examples?",
-        a: "Example commands (not recordings): “Remind me tomorrow at 9:30 to call the dentist.” · “Add oat milk to my shopping list.” · “Move my meeting with Anna to Friday at 3.” · “What reminders do I have on Monday?” · “Copy my packing list.” · “Delete the gym reminder.” — olá then asks you to confirm.",
+        a: "Example commands (not recordings): “Remind me tomorrow at 9:30 to call the dentist.” · “Add oat milk to my shopping list.” · “Move my meeting with Anna to Friday at 3.” · “What reminders do I have on Monday?” · “Copy my packing list.” · “Send my shopping list to my email.” · “Delete the gym reminder.” — olá then asks you to confirm.",
       },
       {
         q: "How many notes and reminders can I keep?",

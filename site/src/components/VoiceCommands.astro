@@ -21,7 +21,8 @@ type Screen =
   | { kind: "note"; title: string; lines: string[]; flash?: number }
   | { kind: "day"; day: string; rows: { text: string; time: string; bell?: boolean }[] }
   | { kind: "notes"; rows: { title: string; meta: string; flash?: boolean }[] }
-  | { kind: "ask"; ola: string };
+  | { kind: "ask"; ola: string }
+  | { kind: "reply"; ola: string };
 
 interface Example {
   /** The command as the page shows it (verbatim content). */
@@ -58,6 +59,12 @@ const examples: Example[] = [
     said: "Add apples to my shopping list.",
     alt: "The shopping list with a new line 4: Apples.",
     screen: { kind: "note", title: "Shopping list", lines: ["Eggs", "Bread", "Oat milk", "Apples"], flash: 3 },
+  },
+  {
+    text: "“Send my shopping list to my email.”",
+    said: "Send my shopping list to my email.",
+    alt: "olá answers: Done, your shopping list is in your email.",
+    screen: { kind: "reply", ola: "Done, your shopping list is in your email." },
   },
   {
     text: "“Move my meeting with Anna to 3 pm.”",
@@ -218,6 +225,17 @@ const examples: Example[] = [
                           <div class="ch-b ola">{s.ola}</div>
                         </div>
                         <div class="ch-ring vx-listen"></div>
+                        <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
+                      </>
+                    )}
+                    {s.kind === "reply" && (
+                      <>
+                        <div class="ch-title">Olá!</div>
+                        <div class="ws-x fa">{FA.close}</div>
+                        <div class="ch-list">
+                          <div class="ch-b me">{ex.said}</div>
+                          <div class="ch-b ola">{s.ola}</div>
+                        </div>
                         <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
                       </>
                     )}

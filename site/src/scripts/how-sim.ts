@@ -763,6 +763,11 @@ function setup(root: HTMLElement) {
       await wait(3000);
       renderNote();
     },
+    "notes:email": async () => {
+      ensureOn();
+      chat.replaceChildren();
+      await turn("Send my shopping list to my email", "Done, your shopping list is in your email.");
+    },
     "rem:dictate": async () => {
       ensureOn();
       chat.replaceChildren();

@@ -2,7 +2,7 @@ import { languageCount, languageCountLabel } from "../lib/languages";
 
 export type IconName =
   | "mic" | "tap" | "globe" | "persona" | "palette" | "history" | "display" | "speaker" | "wifi" | "update"
-  | "bell" | "note" | "search" | "lock";
+  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays";
 
 export interface Feature {
   icon: IconName;
@@ -35,7 +35,7 @@ export const features: Feature[] = [
     icon: "note",
     title: "Notes",
     short: "Create and edit notes just by talking.",
-    long: "Dictate a note, then add, change, move or delete lines by voice. Find, copy or delete notes and reminders just by asking; if several match, olá asks which one. Your notes and reminders are also in your olá account, where you can view and edit them.",
+    long: "Dictate a note, then add, change, move or delete lines by voice. Send any note to your email, by voice or with a tap on the watch. Find, copy or delete notes and reminders just by asking; if several match, olá asks which one. Your notes and reminders are also in your olá account, where you can view and edit them.",
   },
   {
     icon: "search",
@@ -81,9 +81,9 @@ export const privacyLine =
 
 // The six cards under the home page hero.
 export const highlights: { icon: IconName; tint?: "blue" | "green" | "teal"; title: string; text: string }[] = [
+  { icon: "mail", tint: "green", title: "Notes to Your Inbox", text: "Dictate notes, then send any of them to your email." },
   { icon: "mic", title: "Voice Assistant", text: "Natural conversations, just tap and talk." },
   { icon: "bell", tint: "blue", title: "Smart Reminders", text: "Time, place, people and early alerts." },
-  { icon: "note", tint: "green", title: "Notes by Voice", text: "Create and edit notes without typing." },
   { icon: "search", tint: "blue", title: "Live Answers", text: "Weather, news, opening hours and more." },
   { icon: "tapRays", tint: "blue", title: "No App to Install", text: "Just connect it to Wi-Fi. No phone app needed." },
   { icon: "globe", tint: "teal", title: `${languageCount} Languages`, text: "Or Auto: it answers in the language you speak." },
