@@ -19,7 +19,7 @@ const path = Astro.url.pathname === "/" ? "/" : Astro.url.pathname.replace(/\/?$
 const canonical = new URL(path, site).href;
 const fullTitle = path === "/" ? `${config.siteName} — ${title}` : `${title} | ${config.siteName}`;
 const ogImage = new URL("/og-image.png", site).href;
-const ogAlt = "olácompanion — the AI smartwatch with a voice assistant (illustration)";
+const ogAlt = "olácompanion — the wearable AI companion with a voice assistant (illustration)";
 
 // Structured data on every page: the organisation, the website, and breadcrumbs on inner pages.
 const orgId = new URL("/#organization", site).href;
@@ -132,7 +132,7 @@ const allData = [...siteData, ...pageData];
       <p class="container-x flex min-h-8 items-center justify-center gap-2 py-1.5 text-xs font-semibold leading-none">
         <span class="leading-none">
           Free {prices.trialDays}-day subscription<span class="mx-2 opacity-70" aria-hidden="true">·</span>AI voice assistant
-          smartwatch<span class="mx-2 opacity-70" aria-hidden="true">·</span>No phone app needed
+          companion<span class="mx-2 opacity-70" aria-hidden="true">·</span>No phone app needed
         </span>
       </p>
     </div>

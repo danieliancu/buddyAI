@@ -7,6 +7,7 @@ import Designed from "../components/Designed.astro";
 import SectionHeading from "../components/SectionHeading.astro";
 import Icon from "../components/Icon.astro";
 import VoiceCommands from "../components/VoiceCommands.astro";
+import WifiNeeds from "../components/WifiNeeds.astro";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "../data/features";
 import { prices } from "../config";
@@ -22,18 +23,6 @@ const specs: [string, string][] = [
   ["What you need", `2.4 GHz Wi-Fi with internet access, a web browser for setup (no app to install), an olá account and an olácare subscription (free ${prices.trialDays}-day subscription included)`],
 ];
 
-const offline = {
-  works: [
-    "The clock",
-    "Notes and reminders the watch has already loaded stay on screen",
-  ],
-  needs: [
-    "Talking to the assistant and live answers",
-    "Reminder alerts — our servers send them to the watch when they're due (missed ones from the last 24 hours arrive when it reconnects)",
-    "Opening a note's full text, marking a reminder done, deleting or pinning",
-    "Changes you make in your olá account reaching the watch",
-  ],
-};
 const wifi = {
   how: [
     "It keeps up to 5 Wi-Fi networks, for example home, office and your phone's hotspot",
@@ -51,7 +40,7 @@ const wifi = {
 <Base
   title="Features: AI voice assistant, reminders, notes & live answers"
   crumb="Features"
-  description={`What the olácompanion AI smartwatch does: natural voice conversation, reminders and notes by voice, live answers from the web, ${languageCountLabel} languages, personas and a blue or white theme.`}
+  description={`What olácompanion, the AI companion on your wrist, does: natural voice conversation, reminders and notes by voice, live answers from the web, ${languageCountLabel} languages, personas and a blue or white theme.`}
 >
   <PageHero
     eyebrow="Features"
@@ -86,20 +75,7 @@ const wifi = {
         <Brand name="watch" /> connects over 2.4 GHz Wi-Fi (home, office or a phone hotspot). It has no mobile connection,
         and there is no phone app: setup and your account are in a web browser.
       </p>
-      <div class="grid gap-x-8 md:grid-cols-2">
-        <div>
-          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Works without a connection</h3>
-          <ul class="mt-2 space-y-1.5 text-sm text-muted">
-            {offline.works.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
-          </ul>
-        </div>
-        <div>
-          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Needs a connection</h3>
-          <ul class="mt-2 space-y-1.5 text-sm text-muted">
-            {offline.needs.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
-          </ul>
-        </div>
-      </div>
+      <div class="mt-2"><WifiNeeds /></div>
     </div>
   </section>
 

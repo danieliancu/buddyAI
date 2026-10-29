@@ -1,0 +1,237 @@
+---
+/* A selectable list next to the watch: choosing an item shows its screen on the watch (the same photo and
+ * HTML copy of the firmware UI as the "See it in action" simulator, components/how/watch-screen.css).
+ * Used by "Notes & reminders, by voice" (VoiceCommands.astro) and "What needs Wi-Fi" (WifiNeeds.astro).
+ *
+ * The screens come in the default slot: one `<section class="ws-view" data-view="r{i}">` per item, in item
+ * order across the groups, the first one with `is-on` (without JavaScript it stays on screen). An optional
+ * `data-view="chat"` view with a `[data-vx-said]` bubble plays the spoken sentence (an item's `said`) before
+ * its result. Driven by src/scripts/watch-demo.ts. */
+import type { ComponentProps } from "astro/types";
+import { Image } from "astro:assets";
+import photo from "../assets/how/watch-front.png";
+import Icon from "./Icon.astro";
+import "@fontsource/noto-sans/500.css";
+import "@fontsource/noto-sans/700.css";
+import "./how/watch-screen.css";
+
+type IconName = ComponentProps<typeof Icon>["name"];
+
+export interface DemoItem {
+  /** The item as the page shows it (verbatim content). */
+  text: string;
+  /** What the watch screen shows, for screen readers. */
+  alt: string;
+  /** What the user says (played as a chat bubble before the result), if anything. */
+  said?: string;
+}
+
+export interface DemoGroup {
+  /** A heading over the group's items (none: a single list labelled by `listLabel`). */
+  title?: string;
+  /** The small marker before the heading. */
+  marker?: { icon: IconName; tone: "ok" | "accent" };
+  /** The icon at the start of each item. */
+  icon: IconName;
+  iconClass: string;
+  items: DemoItem[];
+}
+
+interface Props {
+  /** Unique on the page (heading ids). */
+  id: string;
+  /** A small heading above the whole demo. */
+  heading?: string;
+  /** The list's accessible name when its group has no title. */
+  listLabel?: string;
+  groups: DemoGroup[];
+}
+
+const { id, heading, listLabel, groups } = Astro.props;
+const first = groups[0].items[0];
+let n = 0;
+const numbered = groups.map((g) => ({ ...g, items: g.items.map((it) => ({ ...it, i: n++ })) }));
+---
+<div class="vx" data-vx-root>
+  {heading && <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">{heading}</h3>}
+  <div class="vx-demo mt-3">
+    <div class="vx-stage">
+      <div class="vx-device">
+        <div class="ws" role="img" aria-label={`On the watch: ${first.alt}`} data-vx-watch>
+          <Image src={photo} alt="" widths={[300, 460, 700]} sizes="(min-width: 1024px) 340px, (min-width: 640px) 240px, 60vw" class="ws-photo" loading="lazy" />
+          <div class="ws-glass">
+            <div class="ws-screen" data-screen data-theme="midnight" data-conv="idle">
+              <slot />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vx-side">
+      {numbered.map((g, gi) => (
+        <div class:list={["vx-group", g.title && "has-title"]}>
+          {g.title && (
+            <h3 id={`${id}-g${gi}`} class="vx-group-title text-sm font-semibold uppercase tracking-wide text-muted">
+              {g.marker && (
+                <span class:list={["vx-mark", `vx-mark-${g.marker.tone}`]}>
+                  <Icon name={g.marker.icon} size={14} />
+                </span>
+              )}
+              {g.title}
+            </h3>
+          )}
+          <ul
+            class="vx-list"
+            aria-label={g.title ? undefined : listLabel}
+            aria-labelledby={g.title ? `${id}-g${gi}` : undefined}
+          >
+            {g.items.map((it) => (
+              <li>
+                <button
+                  type="button"
+                  class:list={["vx-cmd", it.i === 0 && "is-active"]}
+                  aria-pressed={it.i === 0 ? "true" : "false"}
+                  data-vx={it.i}
+                  data-said={it.said}
+                  data-alt={it.alt}
+                >
+                  <Icon name={g.icon} size={16} class={`mt-0.5 shrink-0 ${g.iconClass}`} />
+                  <span>{it.text}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Phones: the watch on top (it stays in view while the list scrolls under it), the list below.
+     From 640px: the list on the left, the watch beside it. */
+  .vx-demo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .vx-stage {
+    position: sticky;
+    top: 4.5rem;
+    z-index: 5;
+    padding: 0.5rem;
+    border-radius: 1rem;
+    background: #000;
+  }
+  .vx-device {
+    width: min(58vw, 30vh, 250px);
+    margin-inline: auto;
+  }
+  @media (min-width: 640px) {
+    .vx-demo {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+      align-items: start;
+      gap: 1.25rem;
+    }
+    .vx-stage {
+      order: 2;
+      top: 5.5rem;
+      padding: 0.75rem;
+      border-radius: 1.25rem;
+    }
+    .vx-device {
+      width: 100%;
+    }
+  }
+  @media (min-width: 1024px) {
+    .vx-demo {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 21rem);
+      gap: 2rem;
+    }
+    .vx-stage {
+      padding: 1rem;
+      border-radius: 1.5rem;
+    }
+  }
+
+  /* groups with a heading (e.g. offline / online), each with a small marker */
+  .vx-group.has-title + .vx-group.has-title {
+    margin-top: 1.25rem;
+  }
+  .vx-group-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .vx-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .vx-mark-ok {
+    color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+  .vx-mark-accent {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .vx-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .vx-cmd {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    color: var(--fg);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+  }
+  .vx-cmd:hover {
+    border-color: var(--border-strong);
+  }
+  .vx-cmd:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .vx-cmd.is-active {
+    border-color: var(--accent);
+    background: var(--bg-2);
+    box-shadow: 0 6px 18px rgba(91, 76, 240, 0.12);
+  }
+
+  /* a screen shown without the spoken sentence before it fades in */
+  :global(.ws-view.vx-fade) {
+    animation: vx-fade 0.3s ease-out;
+  }
+  @keyframes vx-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.ws-view.vx-fade) {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import "../scripts/watch-demo";
+</script>

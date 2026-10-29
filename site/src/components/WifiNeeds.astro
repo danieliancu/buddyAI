@@ -1,0 +1,219 @@
+---
+/* "What needs Wi-Fi": what works without a connection and what needs one, as a list next to the watch
+ * (WatchDemo.astro, like "Notes & reminders, by voice"). Each item shows a watch screen for it; the Wi-Fi
+ * icon is red (as on the watch with no Wi-Fi) on the offline screens and in the theme colour when connected.
+ * Example screens only. Without JavaScript the first screen stays on. */
+import WatchDemo, { type DemoGroup } from "./WatchDemo.astro";
+import { FA } from "./how/fa";
+import wave from "../assets/how/wave.png";
+
+const groups: DemoGroup[] = [
+  {
+    title: "Works without a connection",
+    marker: { icon: "check", tone: "ok" },
+    icon: "check",
+    iconClass: "text-ok",
+    items: [
+      {
+        text: "The clock",
+        alt: "The watchface with no Wi-Fi: the clock still shows 09:41, Monday, 12 October; the Wi-Fi icon in the corner is red.",
+      },
+      {
+        text: "Notes and reminders the watch has already loaded stay on screen",
+        alt: "The notes list with no Wi-Fi (red Wi-Fi icon): Packing for Lisbon (pinned), Shopping list and Gift ideas are still there.",
+      },
+    ],
+  },
+  {
+    title: "Needs a connection",
+    marker: { icon: "wifi", tone: "accent" },
+    icon: "wifi",
+    iconClass: "text-accent",
+    items: [
+      {
+        text: "Talking to the assistant and live answers",
+        alt: "Connected: you ask “Will it rain in London this afternoon?” and olá answers: Showers until about 3 pm, then dry, around 14 degrees.",
+      },
+      {
+        text: "Reminder alerts — our servers send them to the watch when they're due (missed ones from the last 24 hours arrive when it reconnects)",
+        alt: "Connected: a reminder alert, Pick up Sam, today at 15:00, starts in 15 minutes.",
+      },
+      {
+        text: "Opening a note's full text, marking a reminder done, deleting or pinning",
+        alt: "Connected: the note Shopping list opened in full: 1. Eggs, 2. Bread, 3. Oat milk, 4. Apples.",
+      },
+      {
+        text: "Changes you make in your olá account reaching the watch",
+        alt: "Connected: the notes list with Gift ideas for Mum, a note just added in the olá account, now on the watch.",
+      },
+    ],
+  },
+];
+
+const notes = [
+  { title: "Packing for Lisbon", meta: "Passport, Phone charger, Sunglasses", pinned: true },
+  { title: "Shopping list", meta: "Eggs, Bread, Oat milk, Apples" },
+  { title: "Gift ideas", meta: "Book for Anna, Scarf" },
+];
+---
+<WatchDemo id="vx-wifi" groups={groups}>
+  <!-- 0. offline: the watchface, the clock keeps going -->
+  <section class="ws-view is-on" data-view="r0">
+    <div class="wf-status">
+      <span class="fa wf-wifi wd-off">{FA.wifi}</span>
+      <span class="wf-hint"></span>
+      <span class="wf-batt"><span>82%</span><span class="fa">{FA.batt}</span></span>
+    </div>
+    <div class="wf-time">09:41</div>
+    <div class="wf-date">Monday, 12 October</div>
+    <div class="wf-halo h1"></div>
+    <div class="wf-halo h2"></div>
+    <img class="wf-wave" src={wave.src} alt="" width="410" height="130" loading="lazy" />
+    <div class="wf-mic fa">{FA.mic}</div>
+    <div class="wf-greet">
+      <b>Hi there!</b>
+      <span>How can I help you today?</span>
+    </div>
+    <div class="wf-short s1 fa">{FA.pen}<span class="wf-badge">3</span></div>
+    <div class="wf-short s2 fa">{FA.cal}<span class="wf-badge">2</span></div>
+    <div class="wf-short s3 fa">{FA.gear}</div>
+  </section>
+
+  <!-- 1. offline: the notes already on the watch -->
+  <section class="ws-view" data-view="r1">
+    <span class="fa wd-net wd-off">{FA.wifi}</span>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="ls-body">
+      {notes.map((r) => (
+        <div class="ls-row" style={r.pinned ? "--c:#2fbf71" : undefined}>
+          <div class="ls-badge"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+          <div class="ls-bar"></div>
+          <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
+          <span class="fa ls-chev">{FA.right}</span>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- 2. online: a conversation with a live answer -->
+  <section class="ws-view" data-view="r2">
+    <span class="fa wd-net">{FA.wifi}</span>
+    <div class="ch-title wd-title">Olá!</div>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="ch-list">
+      <div class="ch-b me">Will it rain in London this afternoon?</div>
+      <div class="ch-b ola">Showers until about 3 pm, then dry, around 14 degrees.</div>
+    </div>
+    <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
+  </section>
+
+  <!-- 3. online: a reminder alert, sent by the server -->
+  <section class="ws-view" data-view="r3">
+    <span class="fa wd-net">{FA.wifi}</span>
+    <div class="dt-head">Reminder</div>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="dt-body">
+      <div class="dt-card rm-card">
+        <div class="dt-top">
+          <div class="dt-tile rm-tile fa" style="--c:#ff8a3d">{FA.cal}</div>
+          <div>
+            <div class="rm-date">Today</div>
+            <div class="rm-time">15:00</div>
+            <div class="wd-status">Starts in 15 min</div>
+          </div>
+        </div>
+        <div class="rm-info">
+          <div class="ico fa">{FA.file}</div>
+          <div><small>Description</small><span>Pick up Sam</span></div>
+        </div>
+        <div class="rm-info">
+          <div class="ico fa">{FA.bell}</div>
+          <div><small>Reminder</small><span>15 min before</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="dt-bar">
+      <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
+      <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
+      <div class="dt-btn"><span class="fa">{FA.check}</span></div>
+    </div>
+  </section>
+
+  <!-- 4. online: a note opened in full -->
+  <section class="ws-view" data-view="r4">
+    <span class="fa wd-net">{FA.wifi}</span>
+    <div class="dt-head">Note</div>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="dt-body">
+      <div class="dt-card">
+        <div class="dt-top">
+          <div class="dt-tile fa">{FA.file}</div>
+          <div class="dt-title">Shopping list</div>
+        </div>
+        <div class="dt-div"></div>
+        {["Eggs", "Bread", "Oat milk", "Apples"].map((l, n) => (
+          <div class="dt-line"><b>{n + 1}.</b><span>{l}</span></div>
+        ))}
+      </div>
+    </div>
+    <div class="dt-bar">
+      <div class="dt-btn"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+      <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
+      <div class="dt-btn"><span class="fa">{FA.pin}</span></div>
+    </div>
+  </section>
+
+  <!-- 5. online: a note added in the olá account arrives on the watch -->
+  <section class="ws-view" data-view="r5">
+    <span class="fa wd-net">{FA.wifi}</span>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="ls-body">
+      {[...notes, { title: "Gift ideas for Mum", meta: "Garden gloves, Tea set", isNew: true }].map((r) => (
+        <div class:list={["ls-row", "isNew" in r && "wd-new"]} style={"pinned" in r ? "--c:#2fbf71" : undefined}>
+          <div class="ls-badge"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+          <div class="ls-bar"></div>
+          <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
+          <span class="fa ls-chev">{FA.right}</span>
+        </div>
+      ))}
+    </div>
+  </section>
+</WatchDemo>
+
+<style>
+  /* the Wi-Fi icon: theme colour when connected, red and dimmed with no Wi-Fi (firmware ui.c) */
+  .wd-net {
+    position: absolute;
+    left: 36px;
+    top: 24px;
+    font-size: 22px;
+    color: var(--a);
+    z-index: 5;
+  }
+  .wf-wifi.wd-off,
+  .wd-net.wd-off {
+    color: #f44336;
+    opacity: 0.7;
+  }
+  .ch-title.wd-title {
+    left: 72px;
+  }
+  /* the Send by email envelope (note rows and the note's bar) */
+  .wd-mail {
+    width: 30px;
+    height: 23px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* the reminder's advance alert ("Starts in …"), in the theme colour */
+  .wd-status {
+    color: var(--a);
+  }
+  /* the note that just arrived from the account */
+  .ls-row.wd-new {
+    background: color-mix(in srgb, var(--a) 35%, #000);
+  }
+</style>

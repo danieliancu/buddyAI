@@ -1,20 +1,9 @@
 ---
-/* "Notes & reminders, by voice": the example commands as buttons next to the watch (the same photo and HTML
- * copy of the firmware UI as the "See it in action" simulator, components/how/watch-screen.css). Choosing a
- * command shows what the watch shows for it: the spoken sentence as a chat bubble, then the result.
- * Driven by src/scripts/voice-demo.ts; without JavaScript the first result stays on screen. */
-import { Image } from "astro:assets";
-import photo from "../assets/how/watch-front.png";
-import Icon from "./Icon.astro";
-import "@fontsource/noto-sans/500.css";
-import "@fontsource/noto-sans/700.css";
-import "./how/watch-screen.css";
-
-const g = (cp: number) => String.fromCodePoint(cp);
-const FA = {
-  mic: g(0xf130), right: g(0xf054), pin: g(0xf08d), file: g(0xf15c), cal: g(0xf073), bell: g(0xf0f3),
-  trash: g(0xf1f8), check: g(0xf00c), pen: g(0xf304), close: g(0xf00d),
-};
+/* "Notes & reminders, by voice": the example commands as buttons next to the watch (WatchDemo.astro).
+ * Choosing a command shows what the watch shows for it: the spoken sentence as a chat bubble, then the
+ * result. Without JavaScript the first result stays on screen. */
+import WatchDemo from "./WatchDemo.astro";
+import { FA } from "./how/fa";
 
 type Screen =
   | { kind: "rem"; date: string; time: string; text: string; notify?: number; flash?: "time" }
@@ -107,248 +96,141 @@ const examples: Example[] = [
   },
 ];
 ---
-<div class="vx" data-vx-root>
-  <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Example commands</h3>
-  <div class="vx-demo mt-3">
-    <div class="vx-stage">
-      <div class="vx-device">
-        <div class="ws" role="img" aria-label={`On the watch: ${examples[0].alt}`} data-vx-watch>
-          <Image src={photo} alt="" widths={[300, 460, 700]} sizes="(min-width: 1024px) 340px, (min-width: 640px) 240px, 60vw" class="ws-photo" loading="lazy" />
-          <div class="ws-glass">
-            <div class="ws-screen" data-screen data-theme="midnight" data-conv="idle">
-              <!-- the conversation: what the user says, before the result -->
-              <section class="ws-view" data-view="chat">
-                <div class="ch-title">Olá!</div>
-                <div class="ws-x fa">{FA.close}</div>
-                <div class="ch-list"><div class="ch-b me vx-said" data-vx-said>{examples[0].said}</div></div>
-                <div class="ch-ring"></div>
-                <div class="ch-spin"></div>
-                <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
-              </section>
+<WatchDemo
+  id="vx-voice"
+  heading="Example commands"
+  listLabel="Example commands: choose one to see it on the watch"
+  groups={[{ icon: "mic", iconClass: "text-accent", items: examples }]}
+>
+  <!-- the conversation: what the user says, before the result -->
+  <section class="ws-view" data-view="chat">
+    <div class="ch-title">Olá!</div>
+    <div class="ws-x fa">{FA.close}</div>
+    <div class="ch-list"><div class="ch-b me vx-said" data-vx-said>{examples[0].said}</div></div>
+    <div class="ch-ring"></div>
+    <div class="ch-spin"></div>
+    <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
+  </section>
 
-              {examples.map((ex, i) => {
-                const s = ex.screen;
-                return (
-                  <section class:list={["ws-view", i === 0 && "is-on"]} data-view={`r${i}`}>
-                    {s.kind === "rem" && (
-                      <>
-                        <div class="dt-head">Reminder</div>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="dt-body">
-                          <div class="dt-card rm-card">
-                            <div class="dt-top">
-                              <div class="dt-tile rm-tile fa" style="--c:#4f8cff">{FA.cal}</div>
-                              <div>
-                                <div class="rm-date">{s.date}</div>
-                                <div class:list={["rm-time", s.flash === "time" && "dt-line flash"]}>{s.time}</div>
-                              </div>
-                            </div>
-                            <div class="rm-info">
-                              <div class="ico fa">{FA.file}</div>
-                              <div><small>Description</small><span>{s.text}</span></div>
-                            </div>
-                            {s.notify && (
-                              <div class="rm-info">
-                                <div class="ico fa">{FA.bell}</div>
-                                <div><small>Reminder</small><span>{s.notify} min before</span></div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div class="dt-bar">
-                          <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
-                          <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
-                          <div class="dt-btn"><span class="fa">{FA.check}</span></div>
-                        </div>
-                      </>
-                    )}
-                    {s.kind === "note" && (
-                      <>
-                        <div class="dt-head">Note</div>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="dt-body">
-                          <div class="dt-card">
-                            <div class="dt-top">
-                              <div class="dt-tile fa">{FA.file}</div>
-                              <div class="dt-title">{s.title}</div>
-                            </div>
-                            <div class="dt-div"></div>
-                            {s.lines.map((l, n) => (
-                              <div class:list={["dt-line", n === s.flash && "flash"]}><b>{n + 1}.</b><span>{l}</span></div>
-                            ))}
-                          </div>
-                        </div>
-                        <div class="dt-bar">
-                          <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
-                          <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
-                          <div class="dt-btn"><span class="fa">{FA.pin}</span></div>
-                        </div>
-                      </>
-                    )}
-                    {s.kind === "day" && (
-                      <>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="ls-body">
-                          <div class="ls-day"><b>{s.day}</b></div>
-                          {s.rows.map((r) => (
-                            <div class="ls-row" style="--c:#4f8cff">
-                              <div class="ls-badge"><span class="fa">{r.bell ? FA.bell : FA.cal}</span></div>
-                              <div class="ls-bar"></div>
-                              <div class="ls-text">{r.text}<span class="ls-meta">{r.time}</span></div>
-                              <span class="fa ls-chev">{FA.right}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {s.kind === "notes" && (
-                      <>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="ls-body">
-                          {s.rows.map((r) => (
-                            <div class:list={["ls-row", r.flash && "vx-new"]}>
-                              <div class="ls-badge"><span class="fa">{FA.pen}</span></div>
-                              <div class="ls-bar"></div>
-                              <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
-                              <span class="fa ls-chev">{FA.right}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {s.kind === "ask" && (
-                      <>
-                        <div class="ch-title">Olá!</div>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="ch-list">
-                          <div class="ch-b me">{ex.said}</div>
-                          <div class="ch-b ola">{s.ola}</div>
-                        </div>
-                        <div class="ch-ring vx-listen"></div>
-                        <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
-                      </>
-                    )}
-                    {s.kind === "reply" && (
-                      <>
-                        <div class="ch-title">Olá!</div>
-                        <div class="ws-x fa">{FA.close}</div>
-                        <div class="ch-list">
-                          <div class="ch-b me">{ex.said}</div>
-                          <div class="ch-b ola">{s.ola}</div>
-                        </div>
-                        <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
-                      </>
-                    )}
-                  </section>
-                );
-              })}
+  {examples.map((ex, i) => {
+    const s = ex.screen;
+    return (
+      <section class:list={["ws-view", i === 0 && "is-on"]} data-view={`r${i}`}>
+        {s.kind === "rem" && (
+          <>
+            <div class="dt-head">Reminder</div>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="dt-body">
+              <div class="dt-card rm-card">
+                <div class="dt-top">
+                  <div class="dt-tile rm-tile fa" style="--c:#4f8cff">{FA.cal}</div>
+                  <div>
+                    <div class="rm-date">{s.date}</div>
+                    <div class:list={["rm-time", s.flash === "time" && "dt-line flash"]}>{s.time}</div>
+                  </div>
+                </div>
+                <div class="rm-info">
+                  <div class="ico fa">{FA.file}</div>
+                  <div><small>Description</small><span>{s.text}</span></div>
+                </div>
+                {s.notify && (
+                  <div class="rm-info">
+                    <div class="ico fa">{FA.bell}</div>
+                    <div><small>Reminder</small><span>{s.notify} min before</span></div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <ul class="vx-list" aria-label="Example commands: choose one to see it on the watch">
-      {examples.map((ex, i) => (
-        <li>
-          <button
-            type="button"
-            class:list={["vx-cmd", i === 0 && "is-active"]}
-            aria-pressed={i === 0 ? "true" : "false"}
-            data-vx={i}
-            data-said={ex.said}
-            data-alt={ex.alt}
-          >
-            <Icon name="mic" size={16} class="mt-0.5 shrink-0 text-accent" />
-            <span>{ex.text}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  </div>
-</div>
+            <div class="dt-bar">
+              <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
+              <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
+              <div class="dt-btn"><span class="fa">{FA.check}</span></div>
+            </div>
+          </>
+        )}
+        {s.kind === "note" && (
+          <>
+            <div class="dt-head">Note</div>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="dt-body">
+              <div class="dt-card">
+                <div class="dt-top">
+                  <div class="dt-tile fa">{FA.file}</div>
+                  <div class="dt-title">{s.title}</div>
+                </div>
+                <div class="dt-div"></div>
+                {s.lines.map((l, n) => (
+                  <div class:list={["dt-line", n === s.flash && "flash"]}><b>{n + 1}.</b><span>{l}</span></div>
+                ))}
+              </div>
+            </div>
+            <div class="dt-bar">
+              <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
+              <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
+              <div class="dt-btn"><span class="fa">{FA.pin}</span></div>
+            </div>
+          </>
+        )}
+        {s.kind === "day" && (
+          <>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="ls-body">
+              <div class="ls-day"><b>{s.day}</b></div>
+              {s.rows.map((r) => (
+                <div class="ls-row" style="--c:#4f8cff">
+                  <div class="ls-badge"><span class="fa">{r.bell ? FA.bell : FA.cal}</span></div>
+                  <div class="ls-bar"></div>
+                  <div class="ls-text">{r.text}<span class="ls-meta">{r.time}</span></div>
+                  <span class="fa ls-chev">{FA.right}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {s.kind === "notes" && (
+          <>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="ls-body">
+              {s.rows.map((r) => (
+                <div class:list={["ls-row", r.flash && "vx-new"]}>
+                  <div class="ls-badge"><span class="fa">{FA.pen}</span></div>
+                  <div class="ls-bar"></div>
+                  <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
+                  <span class="fa ls-chev">{FA.right}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {s.kind === "ask" && (
+          <>
+            <div class="ch-title">Olá!</div>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="ch-list">
+              <div class="ch-b me">{ex.said}</div>
+              <div class="ch-b ola">{s.ola}</div>
+            </div>
+            <div class="ch-ring vx-listen"></div>
+            <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
+          </>
+        )}
+        {s.kind === "reply" && (
+          <>
+            <div class="ch-title">Olá!</div>
+            <div class="ws-x fa">{FA.close}</div>
+            <div class="ch-list">
+              <div class="ch-b me">{ex.said}</div>
+              <div class="ch-b ola">{s.ola}</div>
+            </div>
+            <div class="ch-mic"><span class="fa">{FA.mic}</span></div>
+          </>
+        )}
+      </section>
+    );
+  })}
+</WatchDemo>
 
 <style>
-  /* Phones: the watch on top (it stays in view while the commands scroll under it), the commands below.
-     From 640px: the commands on the left, the watch beside them. */
-  .vx-demo {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .vx-stage {
-    position: sticky;
-    top: 4.5rem;
-    z-index: 5;
-    padding: 0.5rem;
-    border-radius: 1rem;
-    background: #000;
-  }
-  .vx-device {
-    width: min(58vw, 30vh, 250px);
-    margin-inline: auto;
-  }
-  @media (min-width: 640px) {
-    .vx-demo {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
-      align-items: start;
-      gap: 1.25rem;
-    }
-    .vx-stage {
-      order: 2;
-      top: 5.5rem;
-      padding: 0.75rem;
-      border-radius: 1.25rem;
-    }
-    .vx-device {
-      width: 100%;
-    }
-  }
-  @media (min-width: 1024px) {
-    .vx-demo {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 21rem);
-      gap: 2rem;
-    }
-    .vx-stage {
-      padding: 1rem;
-      border-radius: 1.5rem;
-    }
-  }
-
-  .vx-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .vx-cmd {
-    display: flex;
-    gap: 0.5rem;
-    width: 100%;
-    text-align: left;
-    padding: 0.6rem 0.8rem;
-    border-radius: 0.75rem;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    font-size: 0.875rem;
-    line-height: 1.4;
-    color: var(--fg);
-    cursor: pointer;
-    transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
-  }
-  .vx-cmd:hover {
-    border-color: var(--border-strong);
-  }
-  .vx-cmd:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .vx-cmd.is-active {
-    border-color: var(--accent);
-    background: var(--bg-2);
-    box-shadow: 0 6px 18px rgba(91, 76, 240, 0.12);
-  }
-
   /* on the watch: the new copy in the notes list, the bubble appearing, olá listening for the answer */
   .vx-new {
     background: color-mix(in srgb, var(--a) 35%, #000);
@@ -372,7 +254,3 @@ const examples: Example[] = [
     }
   }
 </style>
-
-<script>
-  import "../scripts/voice-demo";
-</script>

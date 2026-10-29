@@ -7,7 +7,7 @@ export const GET: APIRoute = ({ site }) => {
   const u = (p: string) => new URL(p, site).href;
   const body = `# ${config.siteName}
 
-> olácompanion is an AI smartwatch with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
+> olácompanion is a wearable AI companion with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
 
 ## What it does
 - Natural voice conversation with an AI assistant; tap to talk, tap again to interrupt.

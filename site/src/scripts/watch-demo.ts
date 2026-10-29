@@ -1,19 +1,21 @@
-/* "Notes & reminders, by voice" (components/VoiceCommands.astro): choosing an example command shows it on the
- * watch, first as the user's chat bubble, then the result. Goes through the commands by itself while the
- * section is in view, until the visitor uses the list. Reduced motion: no auto-advance and no animation. */
+/* The list-next-to-the-watch demos (components/WatchDemo.astro: "Notes & reminders, by voice", "What needs
+ * Wi-Fi"): choosing an item shows its screen on the watch. An item with a spoken sentence (data-said) plays it
+ * first as the user's chat bubble, then the result; others fade straight to their screen. Goes through the
+ * items by itself while the section is in view, until the visitor uses the list. Reduced motion: no
+ * auto-advance and no animation. */
 
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** How long the spoken sentence shows (listening, then thinking) before the result. */
 const LISTEN_MS = 700;
 const THINK_MS = 900;
-/** How long each result stays before the next command (auto-advance only). */
+/** How long each result stays before the next item (auto-advance only). */
 const RESULT_MS = 3800;
 
 function setup(root: HTMLElement) {
   const glass = root.querySelector<HTMLElement>(".ws-glass")!;
   const screen = root.querySelector<HTMLElement>("[data-screen]")!;
   const watch = root.querySelector<HTMLElement>("[data-vx-watch]")!;
-  const said = root.querySelector<HTMLElement>("[data-vx-said]")!;
+  const said = root.querySelector<HTMLElement>("[data-vx-said]");
   const views = [...root.querySelectorAll<HTMLElement>(".ws-view")];
   const btns = [...root.querySelectorAll<HTMLButtonElement>("[data-vx]")];
 
@@ -32,14 +34,14 @@ function setup(root: HTMLElement) {
   let step: number | undefined;
   let next: number | undefined;
 
-  function show(name: string, slide: boolean) {
+  function show(name: string, anim: "" | "slide-in" | "vx-fade") {
     for (const v of views) {
       const on = v.dataset.view === name;
-      v.classList.remove("slide-in");
+      v.classList.remove("slide-in", "vx-fade");
       v.classList.toggle("is-on", on);
-      if (on && slide) {
+      if (on && anim) {
         void v.offsetWidth; // restart the animation
-        v.classList.add("slide-in");
+        v.classList.add(anim);
       }
     }
   }
@@ -61,15 +63,16 @@ function setup(root: HTMLElement) {
     const b = btns[i];
     watch.setAttribute("aria-label", `On the watch: ${b.dataset.alt ?? ""}`);
     const isAsk = !!root.querySelector(`[data-view="r${i}"] .vx-listen`);
-    const result = (slide: boolean) => {
+    const result = (anim: "" | "slide-in" | "vx-fade") => {
       if (t !== token) return;
       screen.dataset.conv = isAsk ? "listening" : "idle";
-      show(`r${i}`, slide);
+      show(`r${i}`, anim);
       schedule();
     };
-    if (!animate || reduced) return result(false);
+    if (!animate || reduced) return result("");
+    if (!said || !b.dataset.said) return result("vx-fade");
     // the user's sentence as a chat bubble: listening, then thinking, then the result
-    said.textContent = b.dataset.said ?? "";
+    said.textContent = b.dataset.said;
     said.classList.remove("vx-pop");
     void said.offsetWidth;
     said.classList.add("vx-pop");
@@ -78,7 +81,7 @@ function setup(root: HTMLElement) {
     step = window.setTimeout(() => {
       if (t !== token) return;
       screen.dataset.conv = "thinking";
-      step = window.setTimeout(() => result(!isAsk), THINK_MS);
+      step = window.setTimeout(() => result(isAsk ? "" : "slide-in"), THINK_MS);
     }, LISTEN_MS);
   }
 
@@ -101,7 +104,7 @@ function setup(root: HTMLElement) {
       if (i !== cur) hover = window.setTimeout(() => select(i, true), 150);
     });
     b.addEventListener("mouseleave", () => clearTimeout(hover));
-    // keyboard: moving through the list shows each command (a click also focuses, so only :focus-visible)
+    // keyboard: moving through the list shows each item (a click also focuses, so only :focus-visible)
     b.addEventListener("focus", () => {
       stopAuto();
       if (i !== cur && b.matches(":focus-visible")) select(i, true);

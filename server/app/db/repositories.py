@@ -185,7 +185,7 @@ class PersonaRepo:
     DEFAULTS = [
         (
             "Ola",
-            "You are Ola, a warm, concise and helpful voice assistant living in a smartwatch.",
+            "You are Ola, a warm, concise and helpful voice assistant living in a wearable companion.",
         ),
         (
             "Coach",

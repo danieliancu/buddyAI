@@ -1,7 +1,7 @@
 {
   "name": "olácompanion",
   "short_name": "olácompanion",
-  "description": "The AI smartwatch with a built-in voice assistant.",
+  "description": "The wearable AI companion with a built-in voice assistant.",
   "start_url": "/",
   "display": "browser",
   "background_color": "#ffffff",
