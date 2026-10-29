@@ -71,6 +71,8 @@ typedef struct {
     /* reminder screen: open / close the reminder's edit mic */
     void (*on_reminder_session)(bool open, int number);
     void (*on_item_pin)(int number, bool pinned);
+    /* a note's send button: email it to the account's own address */
+    void (*on_item_email)(int number);
     /* The screen went to standby (true) or woke (false); runs in the LVGL task, keep it short. */
     void (*on_standby)(bool standby);
     /* The speaker icon on the text screens was toggled: silence the speaker (true) or restore it. */
@@ -135,6 +137,8 @@ void ui_reminder_alert(const char *json);
 void ui_show_notice(const char *json);
 /* Open the notes (false) or reminders (true) list (`items_open`). */
 void ui_items_show_list(bool reminder);
+/* The answer to a note's send button: "Sent to your email" (ok) or "Not sent" on the screen it was pressed on. */
+void ui_item_emailed(int number, bool ok);
 /* Note edit mode (protocol events). state: ui_conv_t of the current sentence; text: the live
  * transcript (question = false) or the assistant's short question (question = true). */
 void ui_note_session(bool open);

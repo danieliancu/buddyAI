@@ -68,6 +68,7 @@ typedef enum {
     PROTO_EVT_NOTE_TEXT,            /* str = live transcript (num 0) or the assistant's question (num 1) */
     PROTO_EVT_STILL_THINKING,       /* num = 1: the link dropped mid-turn, the watch waits (THINKING); 0: over */
     PROTO_EVT_REPLY_RESET,          /* the answer shown so far is dropped: after the drop it comes again whole */
+    PROTO_EVT_ITEM_EMAILED,         /* num = note number, str = sent | unverified | limit | failed | missing | offline */
 } proto_event_type_t;
 
 typedef struct {
@@ -120,6 +121,8 @@ void proto_note_session(bool open, int number);
  * events are the note-mode ones (PROTO_EVT_NOTE_SESSION / _STATE / _TEXT). */
 void proto_reminder_session(bool open, int number);
 void proto_item_pin(int number, bool pinned);
+/* The note's send button: note `number` goes to the account's own email (answer: PROTO_EVT_ITEM_EMAILED). */
+void proto_item_email(int number);
 
 /* Force a new connection cycle (e.g. after the server URL changed). */
 void proto_reconnect(void);

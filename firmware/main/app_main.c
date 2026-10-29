@@ -319,6 +319,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_STILL_THINKING:
         ui_chat_still_thinking(ev->num != 0);
         break;
+    case PROTO_EVT_ITEM_EMAILED:
+        ui_item_emailed(ev->num, ev->str && strcmp(ev->str, "sent") == 0);
+        break;
     case PROTO_EVT_REPLY_RESET:
         s_reply_started = false;
         ui_chat_reply_reset();
@@ -465,6 +468,11 @@ static void ui_note_session_cb(bool open, int number)
 static void ui_reminder_session_cb(bool open, int number)
 {
     proto_reminder_session(open, number);
+}
+
+static void ui_item_email(int number)
+{
+    proto_item_email(number);
 }
 
 static void ui_item_pin(int number, bool pinned)
@@ -822,6 +830,7 @@ void app_main(void)
             .on_note_session = ui_note_session_cb,
             .on_reminder_session = ui_reminder_session_cb,
             .on_item_pin = ui_item_pin,
+            .on_item_email = ui_item_email,
             .on_standby = ui_standby,
             .on_mute = ui_mute,
         };

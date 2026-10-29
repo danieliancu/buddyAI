@@ -82,6 +82,7 @@ typedef enum {
     MSG_ITEM_DONE,          /* a = reminder number, b = 1 completed / 0 open again */
     MSG_NOTE_SESSION,       /* a = item number, b = 1 open / 0 close, | 2 = a reminder */
     MSG_ITEM_PIN,           /* a = note number, b = 1 pinned / 0 not */
+    MSG_ITEM_EMAIL,         /* a = note number: send it to the account's email */
     MSG_TEST_ASK,           /* development builds: proto_test_ask() */
 } msg_type_t;
 
@@ -1204,6 +1205,14 @@ static void handle_text(const char *txt)
         emit(PROTO_EVT_LANGUAGES, 0, txt);
         goto out;
     }
+    if (strcmp(type, "item_emailed") == 0) {
+        uint32_t number = 0;
+        const char *status = json_str(j, "status");
+        if (json_uint32(j, "number", &number)) {
+            emit(PROTO_EVT_ITEM_EMAILED, (int)number, status ? status : "failed");
+        }
+        goto out;
+    }
     if (strcmp(type, "items_open") == 0) {
         const char *kind = json_str(j, "kind");
         /* The edited item was deleted (the server sends this before turn_end): close the edit mode
@@ -1877,6 +1886,15 @@ static void handle_msg(msg_t *m)
             send_json(msg, "item_pin", false, 0);
         }
         break;
+    case MSG_ITEM_EMAIL:
+        if (s_conn == CONN_SESSION) {
+            cJSON *msg = cJSON_CreateObject();
+            cJSON_AddNumberToObject(msg, "number", (double)m->a);
+            send_json(msg, "item_email", false, 0);
+        } else {
+            emit(PROTO_EVT_ITEM_EMAILED, (int)m->a, "offline");     /* nothing goes out: say so at once */
+        }
+        break;
     case MSG_SETTINGS_CHANGED: {
         cJSON *changes = cJSON_Parse(m->str);
         if (changes) {
@@ -2168,6 +2186,12 @@ void proto_reminder_session(bool open, int number)
 void proto_item_pin(int number, bool pinned)
 {
     msg_t m = { .type = MSG_ITEM_PIN, .a = (uint32_t)number, .b = pinned ? 1 : 0 };
+    post(&m);
+}
+
+void proto_item_email(int number)
+{
+    msg_t m = { .type = MSG_ITEM_EMAIL, .a = (uint32_t)number };
     post(&m);
 }
 

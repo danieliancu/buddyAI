@@ -75,6 +75,7 @@ static const char *TAG = "ui_items";
 #define LIST_W          370         /* reminders list: day headers and rows */
 #define LIST_TOP        84          /* lists: rows scroll below this (the Aa / X band), like the conversation */
 #define BADGE_SIZE      46
+#define TOAST_MS        2500        /* "Sent to your email" */
 #define LOC_MAX         256         /* location: 120 chars, UTF-8 */
 #define PEOPLE_MAX      400         /* participants: 200 chars, UTF-8 */
 /* Reminder screen geometry (410 x 502) */
@@ -197,12 +198,12 @@ static lv_obj_t   *s_note_body;
 static lv_obj_t   *s_note_card;
 static lv_obj_t   *s_note_tile;
 static lv_obj_t   *s_note_doc;
-static lv_obj_t   *s_note_del_icon;
+static lv_obj_t   *s_note_send_icon;   /* the drawn envelope (mail_icon) */
 static lv_obj_t   *s_note_head;      /* the note's title (its first line) */
 static lv_obj_t   *s_note_divider;
 static lv_obj_t   *s_note_lines;
 static lv_obj_t   *s_note_live;      /* transcript / question / help, under the lines */
-static lv_obj_t   *s_note_del;
+static lv_obj_t   *s_note_send;        /* Send by email (where reminders have Delete) */
 static lv_obj_t   *s_note_mic;
 static lv_obj_t   *s_note_mic_icon;
 static lv_obj_t   *s_note_stop;      /* white square on the red mic while open */
@@ -227,10 +228,13 @@ static bool        s_mic_reminder;   /* the open session's item */
 static int         s_mic_number;
 static void note_mic_visuals(void);
 static void rem_mic_cb(lv_event_t *e);
-static void item_bar(lv_obj_t *scr, lv_event_cb_t mic_cb, lv_event_cb_t right_cb, const char *right_icon,
+static void item_bar(lv_obj_t *scr, lv_event_cb_t left_cb, const char *left_icon, lv_event_cb_t mic_cb,
+                     lv_event_cb_t right_cb, const char *right_icon,
                      const lv_font_t *right_font, lv_obj_t **del, lv_obj_t **del_icon, lv_obj_t **mic,
                      lv_obj_t **mic_icon, lv_obj_t **stop, lv_obj_t **ring, lv_obj_t **right,
                      lv_obj_t **right_icon_out);
+static lv_obj_t *mail_icon(lv_obj_t *parent);
+static void mail_icon_color(lv_obj_t *icon, lv_color_t c);
 static void note_live_reset(void);
 static void note_live_set(const char *text, lv_color_t color);
 static void note_render(void);
@@ -654,6 +658,142 @@ static void row_badge(lv_obj_t *row, lv_color_t c, const char *icon, lv_color_t 
     lv_obj_center(ic);
 }
 
+/* ---- Send by email: a drawn envelope with speed lines (the icon font has none) ---- */
+#define MAIL_W          34
+#define MAIL_H          20
+#define MAIL_ENV_W      22
+static const lv_point_precise_t s_mail_speed[3][2] = { { { 0, 5 }, { 8, 5 } }, { { 3, 10 }, { 8, 10 } },
+                                                       { { 0, 15 }, { 8, 15 } } };
+static const lv_point_precise_t s_mail_flap[3] = { { 0, 0 }, { 9, 7 }, { 18, 0 } };    /* inside the border */
+static int     s_email_number = -1;     /* the note whose send button was tapped last (its answer is awaited) */
+static lv_obj_t *s_toast;
+static lv_timer_t *s_toast_timer;
+
+/* Children: [0..2] speed lines, [3] envelope (its child: the flap). Colour: mail_icon_color(). */
+static lv_obj_t *mail_icon(lv_obj_t *parent)
+{
+    lv_obj_t *box = plain_box(parent);
+    lv_obj_set_size(box, MAIL_W, MAIL_H);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *l = lv_line_create(box);
+        lv_line_set_points(l, s_mail_speed[i], 2);
+        lv_obj_set_style_line_width(l, 2, 0);
+        lv_obj_set_style_line_rounded(l, true, 0);
+        lv_obj_remove_flag(l, LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_obj_t *env = plain_box(box);
+    lv_obj_set_size(env, MAIL_ENV_W, MAIL_H);
+    lv_obj_align(env, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_border_width(env, 2, 0);
+    lv_obj_set_style_radius(env, 3, 0);
+    lv_obj_add_flag(env, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    lv_obj_t *flap = lv_line_create(env);
+    lv_line_set_points(flap, s_mail_flap, 3);
+    lv_obj_set_style_line_width(flap, 2, 0);
+    lv_obj_set_style_line_rounded(flap, true, 0);
+    lv_obj_remove_flag(flap, LV_OBJ_FLAG_CLICKABLE);
+    return box;
+}
+
+static void mail_icon_color(lv_obj_t *icon, lv_color_t c)
+{
+    for (int i = 0; i < 3; i++) {
+        lv_obj_set_style_line_color(lv_obj_get_child(icon, i), c, 0);
+    }
+    lv_obj_t *env = lv_obj_get_child(icon, 3);
+    lv_obj_set_style_border_color(env, c, 0);
+    lv_obj_set_style_line_color(lv_obj_get_child(env, 0), c, 0);
+}
+
+static void toast_timer_cb(lv_timer_t *t)
+{
+    s_toast_timer = NULL;
+    if (s_toast) {
+        lv_obj_delete(s_toast);
+        s_toast = NULL;
+    }
+}
+
+/* A short line over whatever screen is on (the top layer), gone after a few seconds. */
+static void toast(const char *text, lv_color_t bg)
+{
+    if (!s_toast) {
+        s_toast = lv_label_create(lv_layer_top());
+        lv_obj_set_style_text_font(s_toast, &buddy_font_20, 0);
+        lv_obj_set_style_text_color(s_toast, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(s_toast, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_pad_hor(s_toast, 18, 0);
+        lv_obj_set_style_pad_ver(s_toast, 10, 0);
+        lv_obj_set_style_max_width(s_toast, 340, 0);
+        lv_obj_set_style_text_align(s_toast, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_remove_flag(s_toast, LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_obj_set_style_bg_color(s_toast, bg, 0);
+    lv_label_set_text(s_toast, text);
+    lv_obj_align(s_toast, LV_ALIGN_TOP_MID, 0, 78);     /* under the header, above the content */
+    if (s_toast_timer) {
+        lv_timer_reset(s_toast_timer);
+    } else {
+        s_toast_timer = lv_timer_create(toast_timer_cb, TOAST_MS, NULL);
+        lv_timer_set_repeat_count(s_toast_timer, 1);
+    }
+}
+
+static void request_email(int number)
+{
+    s_email_number = number;
+    if (g_ui_cb.on_item_email) {
+        g_ui_cb.on_item_email(number);
+    }
+}
+
+void ui_item_emailed(int number, bool ok)
+{
+    LOCK();
+    if (number == s_email_number) {
+        s_email_number = -1;
+        ui_note_activity();
+        toast(ui_str(ok ? STR_EMAIL_SENT : STR_EMAIL_FAILED), lv_color_hex(ok ? DONE_GREEN : DANGER));
+    }
+    UNLOCK();
+}
+
+static void send_badge_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_PRESSED) {
+        s_row_swallow = !ui_screen_awake();     /* a tap on a dim screen only wakes it */
+    } else if (code == LV_EVENT_CLICKED && !s_row_swallow) {
+        request_email((int)(intptr_t)lv_event_get_user_data(e));
+    }
+}
+
+/* The badge of a note row is its Send by email button (a tap on the rest of the row opens the note). */
+static void send_badge(lv_obj_t *row, lv_color_t c, int number)
+{
+    lv_obj_t *badge = lv_button_create(row);
+    lv_obj_remove_style_all(badge);
+    lv_obj_set_size(badge, BADGE_SIZE, BADGE_SIZE);
+    lv_obj_set_style_radius(badge, 12, 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(badge, lv_color_mix(c, g_ui_theme.background, 90), 0);
+    lv_obj_set_style_border_width(badge, 2, 0);
+    lv_obj_set_style_border_color(badge, c, 0);
+    lv_obj_set_style_transform_scale(badge, 230, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_pivot_x(badge, BADGE_SIZE / 2, 0);
+    lv_obj_set_style_transform_pivot_y(badge, BADGE_SIZE / 2, 0);
+    lv_obj_set_ext_click_area(badge, 12);
+    lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(badge, send_badge_cb, LV_EVENT_PRESSED, (void *)(intptr_t)number);
+    lv_obj_add_event_cb(badge, send_badge_cb, LV_EVENT_CLICKED, (void *)(intptr_t)number);
+    lv_obj_t *ic = mail_icon(badge);
+    mail_icon_color(ic, c);
+    lv_obj_center(ic);
+}
+
 /* Reminder row: [state badge] [bar] text / time (+ Overdue / Completed) [>]. Flat fills only.
  * Badge and bar in the state colour: a green check (completed), a red "!" (overdue), a bell (advance notice:
  * blue, orange once its alert time has come) or a blue calendar. */
@@ -716,8 +856,8 @@ static void add_reminder_row(lv_obj_t *parent, int idx, int pos)
     lv_label_set_text(chev, ICON_RIGHT);
 }
 
-/* Note row: [badge] [bar] first line [>], like a reminder row: a pen in the theme colour (blue, or white on
- * the white theme), or a green pin for a pinned note. */
+/* Note row: [send badge] [bar] first line [>], like a reminder row. The badge is the Send by email button,
+ * in the theme colour (blue, or white on the white theme), green for a pinned note. */
 static void add_note_row(lv_obj_t *parent, int idx, int pos)
 {
     const item_row_t *r = &s_rows[idx];
@@ -734,7 +874,7 @@ static void add_note_row(lv_obj_t *parent, int idx, int pos)
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_PRESSED, (void *)(intptr_t)idx);
     lv_obj_add_event_cb(b, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
-    row_badge(b, c, r->pinned ? SET_ICON_PIN_NOTE : SET_ICON_PEN, c);
+    send_badge(b, c, r->number);
 
     lv_obj_t *bar = plain_box(b);
     lv_obj_set_size(bar, 4, 36);
@@ -1482,7 +1622,7 @@ static void build_reminder_screen(void)
     lv_obj_add_flag(s_rem_live, LV_OBJ_FLAG_HIDDEN);
 
     /* bar: Delete | Mic | Completed - as on the note screen */
-    item_bar(s_rem_scr, rem_mic_cb, rem_btn_done_cb, ICON_OK, &buddy_font_28,
+    item_bar(s_rem_scr, del_cb, SET_ICON_TRASH, rem_mic_cb, rem_btn_done_cb, ICON_OK, &buddy_font_28,
              &s_rem_del, &s_rem_del_icon, &s_rem_mic, &s_rem_mic_icon, &s_rem_stop, &s_rem_ring,
              &s_rem_check, &s_rem_check_icon);
 
@@ -1679,14 +1819,12 @@ static void note_render(void)
     lv_obj_set_style_bg_color(s_note_card, lv_color_mix(a, bg, 22), 0);
     lv_obj_set_style_border_color(s_note_card, lv_color_mix(a, bg, 70), 0);
     const lv_color_t rim = lv_color_mix(lv_color_white(), a, 90);
-    lv_obj_set_style_border_color(s_note_del, rim, 0);
+    lv_obj_set_style_border_color(s_note_send, rim, 0);
     lv_obj_set_style_border_color(s_note_pin, rim, 0);
     lv_obj_set_style_border_color(s_note_mic, rim, 0);
-    if (!s_del_armed) {
-        lv_obj_set_style_bg_color(s_note_del, a, 0);
-    }
+    lv_obj_set_style_bg_color(s_note_send, a, 0);
     const lv_color_t on_a = ui_on_color(a);   /* dark on a white ("mono") accent */
-    lv_obj_set_style_text_color(s_note_del_icon, s_del_armed ? lv_color_white() : on_a, 0);
+    mail_icon_color(s_note_send_icon, on_a);
     lv_obj_set_style_bg_color(s_note_pin, s_note_pinned ? on_a : a, 0);
     lv_obj_set_style_text_color(s_note_pin_icon, s_note_pinned ? a : on_a, 0);
     lv_obj_set_style_border_color(s_note_ring, lv_color_hex(DANGER), 0);
@@ -1769,6 +1907,13 @@ static void rem_mic_cb(lv_event_t *e)
     g_ui_cb.on_reminder_session(!s_note_mic_open, s_det_number);  /* ui_note_session() follows */
 }
 
+static void note_send_cb(lv_event_t *e)
+{
+    if (!s_note_loading) {
+        request_email(s_note_number);
+    }
+}
+
 static void note_pin_cb(lv_event_t *e)
 {
     if (s_note_loading) {
@@ -1826,9 +1971,11 @@ static lv_obj_t *note_round_button(lv_obj_t *parent, int32_t size, lv_event_cb_t
     return b;
 }
 
-/* The bottom bar of the note and reminder screens: Delete | Mic (red with a white square and a
- * pulsing ring while open) | a screen-specific button on the right. */
-static void item_bar(lv_obj_t *scr, lv_event_cb_t mic_cb, lv_event_cb_t right_cb, const char *right_icon,
+/* The bottom bar of the note and reminder screens: a screen-specific button on the left (Send by email on a
+ * note, Delete on a reminder) | Mic (red with a white square and a pulsing ring while open) | a screen-specific
+ * button on the right. */
+static void item_bar(lv_obj_t *scr, lv_event_cb_t left_cb, const char *left_icon, lv_event_cb_t mic_cb,
+                     lv_event_cb_t right_cb, const char *right_icon,
                      const lv_font_t *right_font, lv_obj_t **del, lv_obj_t **del_icon, lv_obj_t **mic,
                      lv_obj_t **mic_icon, lv_obj_t **stop, lv_obj_t **ring, lv_obj_t **right,
                      lv_obj_t **right_icon_out)
@@ -1839,7 +1986,7 @@ static void item_bar(lv_obj_t *scr, lv_event_cb_t mic_cb, lv_event_cb_t right_cb
     lv_obj_add_flag(bar, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    *del = note_round_button(bar, NOTE_BTN, del_cb, SET_ICON_TRASH, &buddy_font_set, del_icon);
+    *del = note_round_button(bar, NOTE_BTN, left_cb, left_icon, &buddy_font_set, del_icon);
     *ring = plain_box(bar);     /* behind the mic, outside the layout */
     lv_obj_add_flag(*ring, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_radius(*ring, LV_RADIUS_CIRCLE, 0);
@@ -1932,10 +2079,12 @@ static void build_note_screen(void)
     lv_obj_set_style_pad_hor(s_note_live, 6, 0);
     lv_obj_add_flag(s_note_live, LV_OBJ_FLAG_HIDDEN);
 
-    /* bar: Delete | Mic | Pin */
-    item_bar(s_note_scr, note_mic_cb, note_pin_cb, SET_ICON_PIN_NOTE, &buddy_font_set,
-             &s_note_del, &s_note_del_icon, &s_note_mic, &s_note_mic_icon, &s_note_stop, &s_note_ring,
+    /* bar: Send by email | Mic | Pin (a note is deleted by voice) */
+    item_bar(s_note_scr, note_send_cb, "", note_mic_cb, note_pin_cb, SET_ICON_PIN_NOTE, &buddy_font_set,
+             &s_note_send, &s_note_send_icon, &s_note_mic, &s_note_mic_icon, &s_note_stop, &s_note_ring,
              &s_note_pin, &s_note_pin_icon);
+    s_note_send_icon = mail_icon(s_note_send);
+    lv_obj_center(s_note_send_icon);
 
     lv_obj_move_foreground(hdr);
     lv_obj_move_foreground(ui_add_text_size(s_note_scr));
@@ -1949,10 +2098,10 @@ static void show_note(int number, bool from_list)
         return;
     }
     disarm_delete();
-    s_del_btn = s_note_del;
+    s_del_btn = NULL;           /* no Delete button on a note: Send by email instead */
     s_del_btn_lbl = NULL;
     s_del_outlined = false;
-    s_del_icon = true;
+    s_del_icon = false;
     s_mic = s_note_mic;
     s_mic_icon = s_note_mic_icon;
     s_mic_stop = s_note_stop;

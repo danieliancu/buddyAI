@@ -56,6 +56,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | `item_open` | `kind` (`note`\|`reminder`), `number` | User tapped an item in the list; server replies `item_show` (or a fresh `items` if it no longer exists). |
 | `item_delete` | `kind`, `number` | User deleted an item on the watch; server replies with a fresh `items` to every watch of the account. |
 | `item_pin` | `number`, `pinned` | Pin / unpin a note (pinned notes are listed first); server replies with a fresh `items` to every watch of the account. |
+| `item_email` | `number` | Send note `number` to the account's own (confirmed) email address; at most 10 an hour per account. Server replies `item_emailed`. |
 | `item_done` | `kind` (`reminder`), `number`, `done` | User completed (`true`) or reopened (`false`) a reminder; server replies with a fresh `items` to every watch of the account. |
 
 #### 3.1.1 Diagnostic reports (firmware 0.1.1+)
@@ -95,6 +96,7 @@ reports.
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
 | `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?`, `resume?` | Server finished the turn. `resume: "missing"` (with `status: error`): the answer to a `resume` - nothing to resume (unknown or expired request, or the question was not heard in full); the watch shows "try again". `expect_reply: true` (chat mode): the reply asked something and waits for the answer ("which one?", "delete it?", "what time?", a yes / no to an offer) - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
+| `item_emailed` | `number`, `status` (`sent`\|`unverified`\|`limit`\|`failed`\|`missing`) | Answer to `item_email`: the watch shows "Sent" or why not. |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
 | `ota_available` | `version`, `url`, `sha256`, `size`, `signature?` | Firmware update offer. |
 | `error` | `code`, `message`, `turn_id?` | See §7. |

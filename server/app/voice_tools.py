@@ -164,6 +164,7 @@ class VoiceItemTools:
             "item_duplicate": self.duplicate,
             "item_delete": self.delete,
             "item_choose": self.choose,
+            "item_email": self.email,
         }.get(name)
         if handler is None:
             return _err(f"unknown tool {name}")
@@ -231,6 +232,29 @@ class VoiceItemTools:
                 out.open, out.open_uid = {"item": device_full(it, self.call.tz)}, it.uid
                 STORE.set_open(self.ctx, it, summary(it, self.call.tz), self.call.turn_id)
             return out
+
+    def email(self, a: dict[str, Any]) -> ToolOutcome:
+        """Send a note to the account's own email address (nothing changes in the note)."""
+        from app.note_email import NOTE_EMAILS_PER_HOUR, send_note
+
+        with session_scope() as db:
+            got = self._target(db, a, "read", op="email")
+            if isinstance(got, ToolOutcome):
+                return got
+            it, _ref = got
+        if it.kind != "note":
+            return _err("only notes can be sent by email; tell the user")
+        status = send_note(self.call.account_id, it)
+        hint = {
+            "sent": "Tell the user in one short sentence that the note is in their email.",
+            "unverified": "Nothing was sent: the account's email address is not confirmed yet. Tell the user to "
+            "confirm it from the email we sent them (or in their ola account).",
+            "limit": f"Nothing was sent: at most {NOTE_EMAILS_PER_HOUR} notes an hour can be emailed. Tell the user "
+            "to try again later.",
+            "failed": "Nothing was sent (the email could not go out). Tell the user to try again later.",
+        }[status]
+        return ToolOutcome(_json({"ok": status == "sent", "status": status, "note": summary(it, self.call.tz),
+                                  "hint": hint}))
 
     def _target(self, db, a: dict[str, Any], purpose: str, op: str) -> tuple[Item, str] | ToolOutcome:
         """The item a call is about: a ref the server issued, or a query that must find exactly one."""
@@ -440,7 +464,7 @@ class VoiceItemTools:
         if extra:
             args["changes"] = extra
         handler = {"update": self.update, "note_edit": self.note_edit, "duplicate": self.duplicate,
-                   "delete": self.delete, "show": self.show}[pc.op]
+                   "delete": self.delete, "show": self.show, "email": self.email}[pc.op]
         return handler(args)
 
     # --- note edit ----------------------------------------------------------------------------------

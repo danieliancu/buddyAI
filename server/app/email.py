@@ -173,6 +173,22 @@ def watch_paired(to: str, watch_name: str, paired_at=None) -> Email:
     )
 
 
+def note_sent(to: str, title: str, lines: list[str], sent_at: datetime | None = None) -> Email:
+    """A note the user sent to themselves (by voice or the watch's send button): its title is the subject."""
+    when = (sent_at or datetime.now(timezone.utc)).strftime("%d %B %Y, %H:%M UTC")
+    title = title or "Note"
+    link = _app_link("/my/notes")
+    body = "\n".join(lines) if lines else "(no lines yet)"
+    return Email(
+        to, title,
+        f"{title}\n\n{body}\n\nSent from your ola watch ({when}).\nAll your notes: {link}" + _footer(),
+        html=designed(
+            title, f"Sent from your ola watch on {when}.", "Open my notes", link,
+            "You sent this note to yourself from your ola watch.", lines=lines or ["(no lines yet)"],
+        ),
+    )
+
+
 def _money(minor: int, currency: str) -> str:
     symbol = {"gbp": "£", "eur": "€"}.get(currency.lower(), currency.upper() + " ")
     return f"{symbol}{minor / 100:,.2f}"
@@ -336,11 +352,29 @@ def _details_html(details: list[tuple[str, str]] | None, font: str) -> str:
     )
 
 
-def designed(title: str, intro: str, button: str, link: str, note: str, details: list[tuple[str, str]] | None = None) -> str:
-    """One centred card: logo, title, text, optional summary box, button, small print, footer."""
+def _lines_html(lines: list[str] | None, font: str) -> str:
+    """A note's lines, one under the other, in a box like the summary box."""
+    if not lines:
+        return ""
+    rows = "".join(
+        f'<tr><td style="font-family:{font};font-size:15px;line-height:23px;color:#0f1533;padding:5px 0;'
+        f'word-break:break-word{";border-top:1px solid #eceef6" if k else ""}">{escape(line)}</td></tr>'
+        for k, line in enumerate(lines)
+    )
+    return (
+        '<tr><td style="padding:0 0 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'border="0" style="background:#f6f7fd;border:1px solid #eceef6;border-radius:14px">'
+        f'<tr><td style="padding:12px 18px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0">{rows}</table></td></tr></table></td></tr>'
+    )
+
+
+def designed(title: str, intro: str, button: str, link: str, note: str, details: list[tuple[str, str]] | None = None,
+             lines: list[str] | None = None) -> str:
+    """One centred card: logo, title, text, optional summary box (or a note's lines), button, small print, footer."""
     t, i, b, n, url = escape(title), escape(intro), escape(button), escape(note), escape(link, quote=True)
     font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-    box = _details_html(details, font)
+    box = _details_html(details, font) + _lines_html(lines, font)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>{t}</title></head>

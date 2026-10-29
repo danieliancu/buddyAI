@@ -319,6 +319,7 @@ class DeviceConnection:
             "item_delete": self._on_item_delete,
             "item_done": self._on_item_done,
             "item_pin": self._on_item_pin,
+            "item_email": self._on_item_email,
         }.get(kind)
         if handler is None:
             await self.send_json("error", code="bad_request", message=f"unknown type {kind!r}")
@@ -923,6 +924,19 @@ class DeviceConnection:
                 repo.update(it, pinned=pinned)
         await self.hub.push_items(self.account_id)
         self.hub.items_changed(self.account_id)
+
+    async def _on_item_email(self, msg: dict[str, Any]) -> None:
+        """The watch's send button: the note goes to the account's own email; `item_emailed` says how it went."""
+        from app.note_email import send_note
+
+        number = msg.get("number")
+        if self.account_id is None or not isinstance(number, int):
+            await self.send_json("error", code="bad_request", message="item_email needs number")
+            return
+        with session_scope() as db:
+            it = ItemRepo(db).get(self.account_id, "note", number)
+        status = await asyncio.to_thread(send_note, self.account_id, it) if it is not None else "missing"
+        await self.send_json("item_emailed", number=number, status=status)
 
     async def _on_item_done(self, msg: dict[str, Any]) -> None:
         ref = self._item_ref(msg)

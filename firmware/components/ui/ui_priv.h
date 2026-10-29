@@ -139,6 +139,8 @@ typedef enum {
     STR_LISTENING,
     STR_THINKING,
     STR_STILL_THINKING,
+    STR_EMAIL_SENT,     /* a note's send button: the note is in the account's email */
+    STR_EMAIL_FAILED,   /* ... it could not be sent (offline, limit, unconfirmed address) */
     STR_TAP_TO_TALK,
     STR_NOTES,
     STR_REMINDERS,

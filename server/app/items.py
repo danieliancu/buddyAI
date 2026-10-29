@@ -404,6 +404,12 @@ TOOL_DEFS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "item_email",
+        "description": "Send a note to the user's own email address (the one of their ola account; never anyone "
+        "else's). The note stays as it is. Only notes, not reminders.",
+        "parameters": {"type": "object", "properties": {"target": _TARGET}, "required": ["target"]},
+    },
+    {
         "name": "item_choose",
         "description": "The user chose one of the candidates you asked about: pass its ref. The change they asked "
         "for before the question is kept; extra_changes adds anything new they said.",
@@ -440,7 +446,8 @@ TOOLS_RULE = (
     "time or whether it is all day - never pick a time yourself. If a "
     "time does not exist or happens twice because the clocks change, ask which. Copy with item_duplicate: for a "
     "reminder with only a new day the time stays - say which time. When the user says a reminder is done, set "
-    "done=true (do not delete it)."
+    "done=true (do not delete it). When the user wants a note in their email ('send my shopping list to my email'), "
+    "use item_email: it goes to their own account address, right away, no confirmation."
 )
 
 
