@@ -231,6 +231,7 @@ static void update_clock(bool force);
 #define AOD_MIN_LEN         115     /* just longer than the hour hand */
 #define AOD_MARK_COLOR      0x5A5A5A
 #define AOD_HAND_COLOR      0x9A9A9A
+#define AOD_CAP_D           14      /* centre cap over the hands */
 
 static lv_obj_t          *s_aod_scr;
 static lv_obj_t          *s_aod_face;
@@ -277,6 +278,17 @@ static void build_aod(void)
     s_aod_hour_pts[0].y = s_aod_min_pts[0].y = AOD_CY;
     s_aod_hour = aod_line(s_aod_hour_pts, 4, AOD_HAND_COLOR);
     s_aod_min = aod_line(s_aod_min_pts, 3, AOD_HAND_COLOR);
+    /* Centre cap over the hands: a small black disc with a thin white ring. */
+    lv_obj_t *cap = lv_obj_create(s_aod_face);
+    lv_obj_remove_style_all(cap);
+    lv_obj_set_size(cap, AOD_CAP_D, AOD_CAP_D);
+    lv_obj_set_pos(cap, AOD_CX - AOD_CAP_D / 2, AOD_CY - AOD_CAP_D / 2);
+    lv_obj_set_style_radius(cap, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(cap, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(cap, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(cap, lv_color_white(), 0);
+    lv_obj_set_style_border_width(cap, 2, 0);
+    lv_obj_remove_flag(cap, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 }
 
 /* Caller holds the lock. */

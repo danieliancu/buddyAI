@@ -65,7 +65,10 @@ export default function MyWatchesPage() {
             <MessageCircleQuestion className="size-6" />
           </IconTile>
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm text-muted">AI interactions this month · renews {fmtDayMonth(usage.data.reset_at)}</p>
+              <p className="tabular shrink-0 text-sm font-semibold">{Math.floor(usagePct(usage.data))}% used</p>
+            </div>
             <UsageBar pct={usagePct(usage.data)} />
           </div>
         </div>
