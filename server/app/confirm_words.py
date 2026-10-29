@@ -10,9 +10,11 @@ languages; any language falls back to English, which is always accepted too.
 
 While a deletion waits, an answer that starts with a clear yes ("da, ...", "yes, ...") is never handed to the
 model as a new request: either every other word is a known companion of a yes (an affirmation, a delete verb, a
-filler, or a word naming the item asked about) and it is a yes, or it is "unclear" and the server asks again,
-saying why. (Handed to the model, a yes made it call the delete tool again, which asked a second time.) A contrast
-or question word ("da, dar mută-l", "ok, ce vreme e") still makes it a new request.
+filler, or a word naming the item asked about) and it is a yes, or it is a yes followed by something more
+("yes_more": "da, și adaugă pâine") - the deletion runs and only the rest (`rest_after_yes`) goes to the model.
+(Handed to the model whole, a yes made it call the delete tool again, which asked a second time.) A contrast or
+question word ("da, dar mută-l", "ok, ce vreme e") still makes it a new request; a yes that names another kind of
+item ("da, șterge lista" while a meeting waits) or comes with a no ("yes, but not now") is "unclear".
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from typing import Literal
 
 from app.item_search import normalize
 
-Answer = Literal["yes", "no", "unclear", "other"]
+Answer = Literal["yes", "yes_more", "no", "unclear", "other"]
 
 _YES: dict[str, set[str]] = {
     "en": {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "correct", "right", "absolutely", "definitely", "please"},
@@ -137,6 +139,31 @@ _WEAK_YES = {"please", "ok", "okay", "bine", "normal", "exact", "right", "correc
              "goed", "prima", "dobre", "dobro", "hea", "jo", "pode", "certo", "fine", "volontiers", "olur"}
 
 
+# A reason given with a yes, not a no: "da, nu mai am nevoie de ea", "yes, I don't need it anymore". Only after a
+# leading yes - "nu, mai am nevoie" (no, I still need it) reads the same once the comma is gone.
+_NO_LONGER = sorted((normalize(p).split() for p in (
+    "nu mai am nevoie", "nu mai e nevoie", "nu mai este nevoie", "nu-mi mai trebuie", "nu mai trebuie",
+    "nu mai e necesar", "nu mai e necesară", "nu mai e valabil", "nu mai e valabilă", "nu mai e actual",
+    "nu mai e actuală", "nu mai folosesc", "nu mai contează",
+    "don't need it anymore", "don't need it any more", "don't need it", "do not need it", "no longer need it",
+    "no longer needed", "not needed anymore", "not needed any more", "not needed", "doesn't matter anymore",
+)), key=len, reverse=True)
+
+
+def _no_longer_mask(words: list[str]) -> list[bool]:
+    """True for the words that are part of a "no longer needed" phrase."""
+    mask = [False] * len(words)
+    i = 0
+    while i < len(words):
+        ph = next((ph for ph in _NO_LONGER if words[i : i + len(ph)] == ph), None)
+        if ph:
+            mask[i : i + len(ph)] = [True] * len(ph)
+            i += len(ph)
+        else:
+            i += 1
+    return mask
+
+
 def _squash(w: str) -> str:
     """'daaa' -> 'da', 'yesss' -> 'yes' (stretched words in transcripts)."""
     return re.sub(r"(.)\1+", r"\1", w)
@@ -160,6 +187,9 @@ def classify_answer(text: str, languages: list[str], strict: bool = False, targe
     yes, no, verbs = _union(_YES, languages), _union(_NO, languages), _union(_CONFIRM_VERBS, languages)
     known = yes | no | verbs
     words = [_squash(w) if w not in known and _squash(w) in known else w for w in words]  # "daaa" -> "da" only
+    strong_yes = words[0] in yes and words[0] not in _WEAK_YES
+    if strong_yes:
+        words = [w for w, reason in zip(words, _no_longer_mask(words)) if not reason]
     has_yes = any(w in yes for w in words)
     has_verb = any(w in verbs for w in words)
     has_no = any(w in no for w in words)
@@ -180,6 +210,25 @@ def classify_answer(text: str, languages: list[str], strict: bool = False, targe
         return "yes"
     if all(w in _HESITATION | _FILLER for w in words):
         return "unclear"
-    if words[0] in yes and words[0] not in _WEAK_YES and not has_no and not any(w in _CONTRAST for w in words):
-        return "unclear"  # "da, ..." with words we cannot place: ask again (and say why), never a second question
+    if strong_yes and not has_no and not any(w in _CONTRAST for w in words):
+        other_kinds = set().union(*(v for k, v in _KIND_WORDS.items() if kind and k != kind))
+        first_more = next((w for w in words if w not in allowed_yes), None)
+        if strict or first_more in other_kinds:
+            return "unclear"  # "da, șterge lista" while a meeting waits: not this deletion
+        return "yes_more"  # "da, și adaugă pâine": the deletion, then the rest as a new request
     return "other"
+
+
+def rest_after_yes(text: str, languages: list[str], target_words: str = "", kind: str | None = None) -> str:
+    """For a "yes_more" answer: the user's words after the yes ("Da, și adaugă pâine" -> "adaugă pâine"), as said."""
+    yes, verbs = _union(_YES, languages), _union(_CONFIRM_VERBS, languages)
+    kind_words = _KIND_WORDS.get(kind or "") if kind else set().union(*_KIND_WORDS.values())
+    allowed = (yes | verbs | _FILLER | _union(_AFFIRM_EXTRA, languages) | set(normalize(target_words).split())
+               | (kind_words or set()) | _GENERIC_ITEM_WORDS)
+    tokens = list(re.finditer(r"\S+", text))
+    words = [(t, w) for t in tokens for w in normalize(t.group()).split()]
+    reason = _no_longer_mask([_squash(w) if _squash(w) in yes else w for _t, w in words])
+    for (t, w), r in zip(words, reason):
+        if not r and w not in allowed and _squash(w) not in allowed:
+            return text[t.start() :].strip(" ,.;:!")
+    return ""

@@ -364,7 +364,7 @@ def test_expired_confirmation_is_refused(monkeypatch) -> None:
     chat = Chat(acc)
     chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
     t0 = voice_context.now()
-    monkeypatch.setattr(voice_context, "now", lambda: t0 + 121)
+    monkeypatch.setattr(voice_context, "now", lambda: t0 + voice_context.CONFIRM_TTL_S + 1)
     chat.say("Da.", ["?"])
     assert _get(acc, mon) is not None
 
@@ -379,14 +379,14 @@ def test_new_request_cancels_pending() -> None:
     assert _get(acc, mon) is not None
 
 
-def test_unclear_answer_reasks_then_cancels() -> None:
+def test_unclear_answer_cancels_without_asking_again() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)
     chat = Chat(acc)
     chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
-    turn, _, _ = chat.say("hmm", ["Da sau nu?"])
-    assert turn.expect_reply and _get(acc, mon) is not None
-    chat.say("hmm", ["Am anulat."])
+    turn, _, llm = chat.say("hmm", ["Am lăsat-o cum era."])
+    assert not turn.expect_reply and _get(acc, mon) is not None
+    assert "Do not ask a question" in llm.requests[0].messages[-2]["content"]
     chat.say("Da.", ["?"])
     assert _get(acc, mon) is not None
 
@@ -460,17 +460,16 @@ def test_note_deleted_once_after_a_yes(answer: str) -> None:
     assert len({o.op_key for o in ops}) == 1
 
 
-def test_unclear_yes_is_asked_again_with_the_reason() -> None:
+def test_a_yes_with_more_deletes_and_hands_the_rest_to_the_model() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)
     chat = Chat(acc)
     chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
-    turn, _, llm = chat.say("Da, și adaugă pâine pe listă", ["Nu am înțeles clar, șterg ședința?"])
-    assert _get(acc, mon) is not None and turn.expect_reply
-    facts = llm.requests[0].messages[-2]["content"]
-    assert "not a clear yes or no" in facts and "did not catch" in facts and llm.requests[0].tools is None
-    chat.say("Da.", ["Am șters."])  # the same, single question: a clear yes now deletes
-    assert _get(acc, mon) is None
+    turn, _, llm = chat.say("Da, și adaugă pâine pe listă", ["Am șters ședința și am adăugat pâine."])
+    assert _get(acc, mon) is None  # deleted once, without a second question
+    note = llm.requests[0].messages[-2]["content"]
+    assert "'adaugă pâine pe listă'" in note and "Never delete or ask about the confirmed item again" in note
+    assert llm.requests[0].tools  # the rest is a request like any other
 
 
 def test_a_new_request_after_the_question_is_still_a_new_request() -> None:
@@ -513,9 +512,9 @@ def test_a_yes_about_another_kind_of_item_never_deletes_the_pending_one() -> Non
     mon, _ = _two_stefans(acc)
     chat = Chat(acc)
     chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Șterg ședința de luni?"])
-    turn, _, llm = chat.say("Da, șterge lista", ["Nu am înțeles clar. Șterg ședința?"])
+    turn, _, llm = chat.say("Da, șterge lista", ["Am lăsat ședința cum era."])
     assert _get(acc, mon) is not None  # "the list" is not the meeting: never a yes to it
-    assert turn.expect_reply and "not a clear yes or no" in llm.requests[0].messages[-2]["content"]
+    assert not turn.expect_reply and "not a clear yes" in llm.requests[0].messages[-2]["content"]
 
 
 def test_revoked_or_operator_disconnected_watch_carries_nothing() -> None:
@@ -551,7 +550,7 @@ def test_reconnect_does_not_carry_after_expiry_owner_change_or_revoke(monkeypatc
     chat.say("Șterge ședința", [_delete_call({"text": "sedinta"}), "Sigur?"])
     STORE.drop_session("s-exp-1", carry=True)
     t0 = voice_context.now()
-    monkeypatch.setattr(voice_context, "now", lambda: t0 + 121)
+    monkeypatch.setattr(voice_context, "now", lambda: t0 + voice_context.CONFIRM_TTL_S + 1)
     Chat(acc, session="s-exp-2", device="dev-exp").say("Da.", ["?"])
     assert _get(acc, mon) is not None
     monkeypatch.setattr(voice_context, "now", lambda: t0)
@@ -571,7 +570,7 @@ def test_reconnect_does_not_carry_after_expiry_owner_change_or_revoke(monkeypatc
     assert _get(acc, mon) is not None
 
 
-def test_changed_item_asks_again() -> None:
+def test_item_edited_meanwhile_is_still_deleted_once() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)
     chat = Chat(acc)
@@ -579,11 +578,51 @@ def test_changed_item_asks_again() -> None:
     with session_scope() as db:  # edited on the web between the question and the yes
         r = ItemRepo(db)
         r.update(r.get_by_uid(acc, mon), text="Ședință mutată")
-    turn, _, llm = chat.say("Da.", ["S-a schimbat, confirmi din nou?"])
-    assert _get(acc, mon) is not None and turn.expect_reply
-    assert "changed meanwhile" in llm.requests[0].messages[-2]["content"]
-    chat.say("Da.", ["Am șters."])  # the new question about the current state can be confirmed
-    assert _get(acc, mon) is None
+    turn, _, llm = chat.say("Da.", ["Am șters-o, deși fusese modificată."])
+    assert _get(acc, mon) is None and not turn.expect_reply  # the same item (uid): no second question
+    assert "edited meanwhile" in llm.requests[0].messages[-2]["content"]
+
+
+def test_note_edited_meanwhile_loses_the_same_lines() -> None:
+    acc = _account()
+    with session_scope() as db:
+        note = ItemRepo(db).create(acc, "note", "Cumpărături\nlapte\nouă\npâine")
+    chat = Chat(acc)
+    chat.say("Șterge ouăle din lista de cumpărături",
+             [_note_edit_call({"text": "cumparaturi"}, [{"op": "delete", "match": "ouă"}]), "Sigur?"])
+    with session_scope() as db:  # a line added at the top on the web: the numbers move
+        r = ItemRepo(db)
+        it = r.get_by_uid(acc, note.uid)
+        r.set_note_text(it, "Cumpărături\nunt\nlapte\nouă\npâine")
+    turn, _, _ = chat.say("Da.", ["Gata."])
+    assert _get(acc, note.uid).text == "Cumpărături\nunt\nlapte\npâine" and not turn.expect_reply
+
+
+def test_note_line_gone_meanwhile_is_reported_not_asked() -> None:
+    acc = _account()
+    with session_scope() as db:
+        note = ItemRepo(db).create(acc, "note", "Cumpărături\nlapte\nouă")
+    chat = Chat(acc)
+    chat.say("Șterge ouăle", [_note_edit_call({"text": "cumparaturi"}, [{"op": "delete", "match": "ouă"}]), "Sigur?"])
+    with session_scope() as db:
+        r = ItemRepo(db)
+        r.set_note_text(r.get_by_uid(acc, note.uid), "Cumpărături\nlapte")
+    turn, _, llm = chat.say("Da.", ["Nu mai era acolo."])
+    assert _get(acc, note.uid).text == "Cumpărături\nlapte" and not turn.expect_reply
+    assert "no longer in the note" in llm.requests[0].messages[-2]["content"]
+
+
+def test_reminder_detail_removed_from_the_current_version() -> None:
+    acc = _account()
+    mon, _ = _two_stefans(acc)
+    chat = Chat(acc)
+    chat.say("Scoate locația de la ședința de luni", [_update_call({"text": "sedinta"}, {"location": ""}), "Sigur?"])
+    with session_scope() as db:  # renamed on the web meanwhile
+        r = ItemRepo(db)
+        r.update(r.get_by_uid(acc, mon), text="Ședință mutată")
+    turn, _, _ = chat.say("Da.", ["Gata."])
+    it = _get(acc, mon)
+    assert it.text == "Ședință mutată" and not it.location and not turn.expect_reply
 
 
 def test_deleted_item_is_explained_and_reused_number_untouched() -> None:
@@ -737,6 +776,16 @@ def test_dst_gap_and_overlap_ask() -> None:
     acc = _account()
     body = Voice(acc, TZ).body("item_create", {"kind": "reminder", "text": "x", "due_local": "2027-03-28 03:30"})
     assert body["ok"] is False and "ask" in body["error"]
+    assert Voice(acc, TZ).run("item_create", {"kind": "reminder", "text": "x", "due_local": "2027-03-28 03:30"}).awaits_answer
+
+
+def test_questions_from_the_tools_listen_for_the_answer() -> None:
+    acc = _account()
+    v = Voice(acc, TZ)
+    assert v.run("item_create", {"kind": "reminder", "text": "Sună-o pe mama"}).awaits_answer  # what time?
+    assert v.run("item_create", {"kind": "reminder", "text": "x", "due_local": "2030-05-01"}).awaits_answer
+    assert v.run("item_create", {"kind": "reminder", "text": "x", "all_day": True}).awaits_answer  # which day?
+    assert not v.run("item_create", {"kind": "note", "text": "Cumpărături"}).awaits_answer
 
 
 # --- after a confirmed deletion in the dialog: open the item only when something was added or changed ------

@@ -29,6 +29,7 @@ from app.item_search import PREFIX, ItemQuery, SearchResult, best_match, normali
 from app.tool_outcome import ToolOutcome
 from app.items import (
     ALL_DAY_REST,
+    ItemTimeAsk,
     _names,
     all_day_at,
     device_full,
@@ -79,6 +80,11 @@ def _json(body: dict[str, Any]) -> str:
 
 def _err(msg: str, **extra: Any) -> ToolOutcome:
     return ToolOutcome(_json({"ok": False, "error": msg, **extra}))
+
+
+def _ask(msg: str) -> ToolOutcome:
+    """Nothing done: the reply asks the user something the operation needs (the watch listens for the answer)."""
+    return ToolOutcome(_json({"ok": False, "error": msg}), awaits_answer=True)
 
 
 # --- descriptions ------------------------------------------------------------------------------------
@@ -320,13 +326,13 @@ class VoiceItemTools:
         all_day = kind == "reminder" and a.get("all_day") is True
         if all_day:
             if not a.get("due_local"):
-                return _err("an all-day reminder needs due_local with its (first) day. Ask the user which day.")
+                return _ask("an all-day reminder needs due_local with its (first) day. Ask the user which day.")
             due = all_day_at(a["due_local"], tz)
             end = all_day_at(a["end_local"], tz, "end_local") if a.get("end_local") else None
             end = end if end != due else None   # the same day: not a range
         elif kind == "reminder":
             if not a.get("due_local"):
-                return _err("a reminder needs due_local with a time of day, or all_day=true. Ask the user what time "
+                return _ask("a reminder needs due_local with a time of day, or all_day=true. Ask the user what time "
                             "(or whether it is all day); do not create it without one.")
             due = parse_local_time(a["due_local"], tz, "due_local")
             end = parse_local_time(a["end_local"], tz, "end_local") if a.get("end_local") else None
@@ -391,7 +397,7 @@ class VoiceItemTools:
                 return _err("no change given")
             if removed:
                 return self._ask_confirmation(
-                    "reminder_change", [(it.uid, it.version)], {"changes": _serial(kw),
+                    "reminder_change", [(it.uid, it.version)], {"changes": _serial(kw), "request": changes,
                                                                 "opens": reminder_add_or_change(it, kw)},
                     f"remove {', '.join(removed)} from {summary(it, self.call.tz)}", it.kind,
                 )
@@ -401,7 +407,7 @@ class VoiceItemTools:
             try:
                 it2 = ItemRepo(db).update(it, **kw, expected_version=it.version, op=self._prepare(op, "changed", changes))
             except ItemConflictError:
-                return _err("the item changed meanwhile (edited elsewhere): nothing was changed; tell the user and ask again")
+                return _ask("the item changed meanwhile (edited elsewhere): nothing was changed; tell the user and ask again")
             return self._finish(db, op, it2, "changed")
 
     def _merge_clarification(self, op_name: str, a: dict[str, Any]) -> dict[str, Any]:
@@ -468,7 +474,8 @@ class VoiceItemTools:
             if destructive:
                 return self._ask_confirmation(
                     "note_ops", [(it.uid, it.version)], {"text": "\n".join(new_lines), "highlight": highlight,
-                                                         "opens": note_ops_add_or_change(ops)},
+                                                         "opens": note_ops_add_or_change(ops), "ops": ops,
+                                                         "lines": lines},
                     f"delete {describe_deleted_lines(lines, ops)} from {summary(it, self.call.tz)}", it.kind,
                 )
             key, op = self._op("item_note_edit", {"uid": it.uid, "ops": ops})
@@ -478,7 +485,7 @@ class VoiceItemTools:
                 it2 = ItemRepo(db).set_note_text(it, "\n".join(new_lines), expected_version=it.version,
                                                 op=self._prepare(op, "note changed", {"ops": ops}))
             except ItemConflictError:
-                return _err("the note changed meanwhile (edited elsewhere): nothing was changed; ask the user again")
+                return _ask("the note changed meanwhile (edited elsewhere): nothing was changed; ask the user again")
             return self._finish(db, op, it2, "changed", extra_open={"changed_line": highlight})
 
     # --- duplicate ----------------------------------------------------------------------------------
@@ -565,9 +572,9 @@ class VoiceItemTools:
                 if not exact:
                     return ToolOutcome(_json({"ok": False, "status": "not_found", "hint": "Nothing matches exactly; nothing will be deleted."}), awaits_answer=True)
                 if full.total_exact > MAX_BULK_DELETE:
-                    return _err(f"more than {MAX_BULK_DELETE} items match; ask the user to narrow it down")
+                    return _ask(f"more than {MAX_BULK_DELETE} items match; ask the user to narrow it down")
                 if full.total > full.total_exact:
-                    return _err("some items match only approximately; ask the user to name them more precisely")
+                    return _ask("some items match only approximately; ask the user to name them more precisely")
                 items = exact
             else:
                 got = self._target(db, a, "delete", op="delete")
@@ -626,21 +633,21 @@ class VoiceItemTools:
 
 @dataclass
 class ConfirmResult:
-    status: str  # done | changed | missing | error
+    status: str  # done | missing | error
     facts: str
     open: dict[str, Any] | None = None
     open_uid: str | None = None
-    new_pending: bool = False
 
 
 def execute_confirmation(call: ToolCallCtx, pc: PendingConfirmation) -> ConfirmResult:
-    """Run a consumed confirmation: revalidated by uid + version inside the write (all or nothing),
-    recorded in voice_operations in the same transaction."""
+    """Run a consumed confirmation, recorded in voice_operations in the same transaction. The user's yes is
+    final: when the item was edited meanwhile (on the web, another watch), the confirmed deletion is applied to
+    its current version instead of asking a second time - the same items by uid, the same lines by their text,
+    the same details of the reminder. Only what has disappeared is left out (and reported)."""
     key = op_key(call.account_id, call.device_id, call.session_id, call.turn_id, "confirm", {"id": pc.id})
     op = VoiceOperation(op_key=key, account_id=call.account_id, device_id=call.device_id,
                         session_id=call.session_id, turn_id=call.turn_id, tool="confirm",
                         summary=pc.facts[:300], result="{}")
-    ctx = STORE.get(call.account_id, call.device_id, call.session_id)
     if pc.op == "forget_memories":
         from app.memory.repo import MemoryRepo
 
@@ -659,62 +666,120 @@ def execute_confirmation(call: ToolCallCtx, pc: PendingConfirmation) -> ConfirmR
         if VoiceOpRepo(db).get(key) is not None:
             return ConfirmResult("done", "already done")
         try:
-            if pc.op == "delete_items":
-                repo.delete_exact(call.account_id, pc.targets, op=op)
-                STORE.clear_open(ctx)
-                # Nothing to show after a deletion (showing what is missing makes no sense): stay on the dialog.
-                return ConfirmResult("done", f"deleted: {pc.facts[len('delete '):]}")
-            uid, version = pc.targets[0]
-            it = repo.get_by_uid(call.account_id, uid)
-            if it is None:
-                raise ItemConflictError(missing=[uid])
-            if pc.op == "note_ops":
-                it2 = repo.set_note_text(it, pc.payload["text"], expected_version=version, op=op)
-                view = device_full(it2, call.tz)
-                view["changed_line"] = pc.payload.get("highlight")
-                STORE.refresh_version(ctx, it2.uid, it2.version)
-                if not pc.payload.get("opens", True):  # only lines deleted: stay on the dialog
-                    return ConfirmResult("done", f"done: {pc.facts}")
-                return ConfirmResult("done", f"done: {pc.facts}", open={"item": view}, open_uid=it2.uid)
-            if pc.op == "reminder_change":
-                it2 = repo.update(it, **_unserial(pc.payload["changes"]), expected_version=version, op=op)
-                STORE.refresh_version(ctx, it2.uid, it2.version)
-                if not pc.payload.get("opens", True):  # only details removed: stay on the dialog
-                    return ConfirmResult("done", f"done: {pc.facts}")
-                return ConfirmResult("done", f"done: {pc.facts}", open={"item": device_full(it2, call.tz)}, open_uid=it2.uid)
-        except ItemConflictError as exc:
-            if exc.missing:
-                return ConfirmResult("missing", "it no longer exists (deleted meanwhile); nothing else was deleted")
-            return ConfirmResult("changed", "it changed meanwhile; nothing was deleted")
+            try:
+                return _apply_confirmed(repo, call, pc, op, ctx, pc.targets, pc.payload, "")
+            except ItemConflictError:
+                rebased = _rebase_confirmed(repo, call, pc)
+                if isinstance(rebased, ConfirmResult):
+                    return rebased
+                return _apply_confirmed(repo, call, pc, op, ctx, *rebased)
+        except ItemConflictError:  # changed again in the same instant
+            return ConfirmResult("error", "it was being changed at that very moment; nothing was changed")
         except (ValueError, KeyError) as exc:
             log.warning("confirmed action failed: %s", exc)
             return ConfirmResult("error", "it could not be done; nothing was changed")
+
+
+def _apply_confirmed(repo: ItemRepo, call: ToolCallCtx, pc: PendingConfirmation, op: VoiceOperation, ctx: Any,
+                     targets: list[tuple[str, int]], payload: dict[str, Any], note: str) -> ConfirmResult:
+    """The confirmed write at these (uid, version) targets; ItemConflictError if any changed or is gone."""
+    if pc.op == "delete_items":
+        repo.delete_exact(call.account_id, targets, op=op)
+        STORE.clear_open(ctx)
+        # Nothing to show after a deletion (showing what is missing makes no sense): stay on the dialog.
+        return ConfirmResult("done", f"deleted: {pc.facts[len('delete '):]}{note}")
+    uid, version = targets[0]
+    it = repo.get_by_uid(call.account_id, uid)
+    if it is None:
+        raise ItemConflictError(missing=[uid])
+    if pc.op == "note_ops":
+        it2 = repo.set_note_text(it, payload["text"], expected_version=version, op=op)
+        view = device_full(it2, call.tz)
+        view["changed_line"] = payload.get("highlight")
+        STORE.refresh_version(ctx, it2.uid, it2.version)
+        if not payload.get("opens", True):  # only lines deleted: stay on the dialog
+            return ConfirmResult("done", f"done: {pc.facts}{note}")
+        return ConfirmResult("done", f"done: {pc.facts}{note}", open={"item": view}, open_uid=it2.uid)
+    if pc.op == "reminder_change":
+        it2 = repo.update(it, **_unserial(payload["changes"]), expected_version=version, op=op)
+        STORE.refresh_version(ctx, it2.uid, it2.version)
+        if not payload.get("opens", True):  # only details removed: stay on the dialog
+            return ConfirmResult("done", f"done: {pc.facts}{note}")
+        return ConfirmResult("done", f"done: {pc.facts}{note}", open={"item": device_full(it2, call.tz)}, open_uid=it2.uid)
     return ConfirmResult("error", "unknown action; nothing was changed")
 
 
-def reask_after_change(call: ToolCallCtx, pc: PendingConfirmation) -> PendingConfirmation | None:
-    """The data changed between the question and the yes: a new confirmation about the current state
-    (deletions of whole items only; line / detail changes are asked again from scratch)."""
-    if pc.op != "delete_items":
-        return None
-    with session_scope() as db:
-        repo = ItemRepo(db)
-        items = [it for uid, _v in pc.targets if (it := repo.get_by_uid(call.account_id, uid)) is not None]
-        if not items:
-            return None
-        facts = "delete " + "; ".join(summary(it, call.tz) for it in items)
-        new = PendingConfirmation(op="delete_items", targets=[(it.uid, it.version) for it in items],
-                                  payload=dict(pc.payload), facts=facts, mode=pc.mode, edit_uid=pc.edit_uid,
-                                  created_turn=call.turn_id, expires_at=mono_now() + CONFIRM_TTL_S)
-    STORE.put_confirmation(STORE.get(call.account_id, call.device_id, call.session_id), new)
-    return new
+_EDITED = " (it had been edited meanwhile; done anyway, as the user confirmed)"
+
+
+def _rebase_confirmed(repo: ItemRepo, call: ToolCallCtx,
+                      pc: PendingConfirmation) -> tuple[list[tuple[str, int]], dict[str, Any], str] | ConfirmResult:
+    """The confirmed operation on the items' current versions: (targets, payload, note for the reply), or the
+    result when nothing of it is left to do."""
+    repo.s.rollback()
+    asked = dict(pc.targets)
+    current = [it for uid, _v in pc.targets if (it := repo.get_by_uid(call.account_id, uid)) is not None]
+    if not current:
+        return ConfirmResult("missing", "it no longer exists (deleted meanwhile); nothing else was changed")
+    if pc.op == "delete_items":
+        note = _EDITED if any(it.version != asked[it.uid] for it in current) else ""
+        if len(current) < len(pc.targets):
+            note += " (some of them had already been deleted)"
+        return [(it.uid, it.version) for it in current], pc.payload, note
+    it = current[0]
+    if pc.op == "note_ops":
+        if "ops" not in pc.payload:  # asked before this server version
+            return ConfirmResult("missing", "the note changed meanwhile; nothing was changed")
+        lines = notes_edit.note_lines(it.text)
+        ops = _rebase_note_ops(pc.payload["lines"], pc.payload["ops"], lines)
+        if ops is None:
+            return ConfirmResult("missing", "those lines are no longer in the note (it was edited meanwhile); "
+                                 "nothing was changed")
+        new_lines, highlight = notes_edit.apply_note_ops(lines, ops, None)
+        return [(it.uid, it.version)], {**pc.payload, "text": "\n".join(new_lines), "highlight": highlight}, _EDITED
+    if pc.op == "reminder_change":
+        if "request" not in pc.payload:  # asked before this server version
+            return ConfirmResult("missing", "the reminder changed meanwhile; nothing was changed")
+        try:
+            kw, _removed = reminder_changes(it, pc.payload["request"], call.tz)
+        except ValueError:  # AmbiguousPerson included: what was to be removed is no longer there as it was
+            kw = {}
+        if not kw:
+            return ConfirmResult("missing", "what was to be removed is no longer in the reminder (it was edited "
+                                 "meanwhile); nothing was changed")
+        return [(it.uid, it.version)], {**pc.payload, "changes": _serial(kw)}, _EDITED
+    return ConfirmResult("error", "unknown action; nothing was changed")
+
+
+def _rebase_note_ops(old: list[str], ops: list[dict[str, Any]], cur: list[str]) -> list[dict[str, Any]] | None:
+    """Line numbers of `ops` (numbered lines of `old`) -> the same lines, by their text, in `cur`. None when a
+    line is gone or its text now appears on several lines."""
+    def where(n: int) -> int | None:
+        if n >= len(old):  # after the last line (insert at the end)
+            return len(cur)
+        hits = [j for j in range(1, len(cur)) if cur[j] == old[n]]
+        if len(hits) == 1:
+            return hits[0]
+        return n if n in hits else None
+
+    out = []
+    for o in ops:
+        o = dict(o)
+        for k in ("line", "to"):
+            if isinstance(o.get(k), int):
+                j = where(o[k])
+                if j is None:
+                    return None
+                o[k] = j
+        out.append(o)
+    return out
 
 
 # --- helpers ---------------------------------------------------------------------------------------
 
 
-class AskUser(ValueError):
-    """Something the user has to answer before the operation can run."""
+class AskUser(ItemTimeAsk):
+    """Something the user has to answer before the operation can run (the watch listens for the answer)."""
 
 
 class AmbiguousLine(ValueError):
@@ -763,7 +828,7 @@ def reminder_changes(it: Item, ch: dict[str, Any], tz: str) -> tuple[dict[str, A
     if all_day and ch.get("notify_before_minutes"):
         raise ValueError("an all-day reminder alerts at 09:00 on its day and has no advance alert")
     if want is False and it.all_day and not (ch.get("due_local") or ch.get("time_local")):
-        raise ValueError("it is all day now: ask the user what time it should be")
+        raise AskUser("it is all day now: ask the user what time it should be")
     if all_day:
         # whole days: only the dates count (09:00 is the alert); a time range does not carry over
         if ch.get("due_local") or ch.get("date_local") or want:
@@ -778,7 +843,7 @@ def reminder_changes(it: Item, ch: dict[str, Any], tz: str) -> tuple[dict[str, A
         kw["due_at"] = parse_local_time(ch["due_local"], tz, "due_local")
     elif ch.get("date_local") or ch.get("time_local"):
         if it.due_at is None:
-            raise ValueError("this reminder has no time yet: ask for date and time")
+            raise AskUser("this reminder has no time yet: ask for date and time")
         due = it.due_at
         if ch.get("date_local"):
             due = keep_time_on_date(due, str(ch["date_local"]), tz)

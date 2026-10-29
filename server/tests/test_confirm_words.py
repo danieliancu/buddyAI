@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.confirm_words import classify_answer
+from app.confirm_words import classify_answer, rest_after_yes
 
 
 @pytest.mark.parametrize(
@@ -55,15 +55,17 @@ def test_the_item_named_in_the_question_may_be_repeated() -> None:
     facts = "delete Lista de cumpărături (note)"
     assert classify_answer("Da, șterge lista de cumpărături", ["ro"], target_words=facts) == "yes"
     assert classify_answer("Yes, delete the shopping list", ["en"], target_words="delete Shopping list") == "yes"
-    # words that are neither a yes nor the item: never a yes
-    assert classify_answer("Da, șterge lista de cumpărături și pâinea", ["ro"], target_words=facts) == "unclear"
+    # more words after the yes: the deletion, then the rest as a new request
+    assert classify_answer("Da, șterge lista de cumpărături și pâinea", ["ro"], target_words=facts) == "yes_more"
+    assert rest_after_yes("Da, șterge lista de cumpărături și pâinea", ["ro"], facts) == "pâinea"
 
 
 @pytest.mark.parametrize("text, expected", [
     ("Yes, but not now", "unclear"),  # a yes with a no: never a yes, never a new request
     ("I'm not sure", "unclear"),
-    ("Da, și adaugă pâine pe listă", "unclear"),  # a clear "da" with something we cannot place: ask again
-    ("Yes and add bread", "unclear"),
+    ("Da, și adaugă pâine pe listă", "yes_more"),  # a clear "da", then a new request
+    ("Yes and add bread", "yes_more"),
+    ("Da, dar nu acum", "unclear"),  # a yes with a no: nothing is deleted
     ("please add milk to my list", "other"),  # a weak "please" starts new requests
     ("șterge și nota de ieri", "other"),  # another deletion, not an answer
     ("Ce vreme e mâine?", "other"),
@@ -77,3 +79,22 @@ def test_other_languages_and_english_fallback() -> None:
     assert classify_answer("ja, löschen", ["de"], strict=True) == "yes"
     assert classify_answer("oui", ["fr"]) == "yes"
     assert classify_answer("yes", ["xx"]) == "yes"  # unknown language: English always works
+
+
+@pytest.mark.parametrize("text, rest", [
+    ("Da, și adaugă pâine pe listă", "adaugă pâine pe listă"),
+    ("Yes and add bread", "add bread"),
+    ("Da, șterge-o, și pune-mi un memento la 5", "pune-mi un memento la 5"),
+])
+def test_the_rest_after_a_yes_is_kept_as_said(text: str, rest: str) -> None:
+    assert classify_answer(text, ["ro"]) == "yes_more" and rest_after_yes(text, ["ro"]) == rest
+
+
+@pytest.mark.parametrize("text", ["Da, nu mai am nevoie de ea", "Da, nu-mi mai trebuie", "Yes, I don't need it anymore",
+                                  "Da, nu mai e valabilă"])
+def test_no_longer_needed_after_a_yes_is_a_yes(text: str) -> None:
+    assert classify_answer(text, ["ro"]) == "yes"
+
+
+def test_no_longer_needed_without_a_yes_is_not_a_yes() -> None:
+    assert classify_answer("Nu, mai am nevoie de ea", ["ro"]) != "yes"  # "no, I still need it"

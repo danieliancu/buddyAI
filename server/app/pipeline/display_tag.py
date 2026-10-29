@@ -25,6 +25,14 @@ DISPLAY_RULE = (
     "products (M25, X30), anything the user already said, or numbers that are just part of the text."
 )
 
+ASK_TAG = "?"  # [[?]]: the reply waits for the user's answer
+ASK_RULE = (
+    "Answer rule: the watch's microphone opens again after your reply only when you end it with [[?]]. Add it when "
+    "you ask the user something and wait for their answer: a detail you need for what they asked (what time, which "
+    "day, which one), a yes or no to something you offered, or a choice. Not for rhetorical questions or a question "
+    "you answer yourself. Do not end replies with a generic 'anything else?'."
+)
+
 # Questions that ask for a value: digits / arithmetic, or "how many / what time / cât costă ..." (no diacritics).
 _VALUE_QUESTION = re.compile(
     r"\d\s*[-+*/x×÷]\s*\d|\b(plus|minus|times|divided|ori|impartit|"
@@ -136,7 +144,8 @@ class DisplayTagFilter:
     """Streaming filter: strips a leading [[value]] from the reply deltas and captures the value.
 
     A tag later in the reply ("high tide is at [[17:39]] today") keeps its value in the text without
-    the brackets; the first value found this way is still shown large if the reply had none."""
+    the brackets; the first value found this way is still shown large if the reply had none.
+    [[?]] anywhere (ASK_RULE) is removed and sets `asks`."""
 
     def __init__(self) -> None:
         self._buf = ""
@@ -144,6 +153,7 @@ class DisplayTagFilter:
         self._done = False
         self._trim = False
         self.value: str | None = None
+        self.asks = False
 
     def feed(self, delta: str) -> str:
         """Text to pass on (possibly empty while the start of the reply is still undecided)."""
@@ -182,6 +192,9 @@ class DisplayTagFilter:
         return self._inline(out)
 
     def _capture(self, inner: str) -> None:
+        if inner.strip() == ASK_TAG:
+            self.asks = True
+            return
         if self.value is None:
             value = to_display(inner.strip())
             if value and len(value) <= MAX_VALUE:
@@ -208,6 +221,9 @@ class DisplayTagFilter:
                 break
             inner = text[start + 2 : end]
             self._capture(inner)
-            out.append(inner.strip())
+            if inner.strip() == ASK_TAG:
+                out[-1] = out[-1].rstrip()  # "What time? [[?]]": no space left behind
+            else:
+                out.append(inner.strip())
             text = text[end + 2 :]
         return "".join(out)

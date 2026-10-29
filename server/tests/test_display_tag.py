@@ -238,3 +238,36 @@ def test_leading_tag_wins_and_later_tags_lose_brackets(size: int) -> None:
 @pytest.mark.parametrize("size", [1, 100])
 def test_single_brackets_inside_the_reply_stay(size: int) -> None:
     assert run("Say [yes] or [no] [", size) == ("Say [yes] or [no] [", None)
+
+
+@pytest.mark.parametrize("size", [1, 2, 3, 100])
+def test_ask_tag_is_removed_and_flagged(size: int) -> None:
+    f = DisplayTagFilter()
+    text = "La ce oră să-ți amintesc? [[?]]"
+    out = "".join(f.feed(text[i : i + size]) for i in range(0, len(text), size)) + f.flush()
+    assert out.rstrip() == "La ce oră să-ți amintesc?" and f.asks and f.value is None
+
+
+def test_ask_tag_with_a_value_and_without_one() -> None:
+    f = DisplayTagFilter()
+    out = f.feed("[[14:30]] It is at 14:30. Shall I move it? [[?]]") + f.flush()
+    assert out == "It is at 14:30. Shall I move it?" and f.value == "14:30" and f.asks
+    g = DisplayTagFilter()
+    g.feed("Interesting, isn't it?")
+    g.flush()
+    assert not g.asks
+
+
+def test_a_reply_ending_with_the_ask_tag_listens_again() -> None:
+    class Asks(LLMProvider):
+        name = "asks"
+
+        async def stream(self, request: LLMRequest):
+            yield LLMChunk(delta="What time should I set it for? [[?]]")
+            yield LLMChunk(input_tokens=1, output_tokens=1)
+
+    pipeline = ConversationPipeline(FakeRouter(Asks()), ChunkerConfig(), messages_builder=lambda t, x: [{"role": "user", "content": x}])
+    turn = TurnContext(1, "s", "dev", "en", DeviceSettings(), 16000)
+    turn.user_text = "remind me to call mum"
+    asyncio.run(pipeline._reply(turn, FakeIO()))
+    assert turn.expect_reply and turn.assistant_text == "What time should I set it for?"

@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-CONFIRM_TTL_S = 120
+CONFIRM_TTL_S = 600  # a late "yes" still runs it: expired, it would reach the model, which asks a second time
 CLARIFY_TTL_S = 120
 OPEN_TTL_S = 300
 CONTEXT_IDLE_S = 1800

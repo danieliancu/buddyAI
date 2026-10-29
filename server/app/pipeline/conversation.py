@@ -30,7 +30,7 @@ from app.search import SEARCH_RULE, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.spoken import for_speech
 from app import edit_texts
-from app.confirm_words import classify_answer
+from app.confirm_words import classify_answer, rest_after_yes
 from app.db.models import Item, VoiceOperation, utcnow
 from app.db.repositories import ItemConflictError, VoiceOpRepo
 from sqlalchemy.exc import IntegrityError
@@ -42,10 +42,9 @@ from app.voice_tools import (
     check_line_ambiguity,
     ToolCallCtx,
     execute_confirmation,
-    reask_after_change,
     resolve_line_matches,
 )
-from app.pipeline.display_tag import DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
+from app.pipeline.display_tag import ASK_RULE, DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
 from app.pipeline.turn_end import looks_unfinished
@@ -141,6 +140,7 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 "£3.50, 21°C, 10%) - the voice reads them in the reply's language - but keep words like 'one of them' "
                 "as words.",
                 DISPLAY_RULE,
+                ASK_RULE,
                 s.custom_instructions.strip(),
             ],
         )
@@ -249,34 +249,30 @@ class ConversationPipeline:
         answer = classify_answer(turn.user_text, self._answer_languages(turn), strict=strict, target_words=pc.facts,
                                  kind=(pc.payload or {}).get("kind"))
         lang = turn.language if turn.language != languages.AUTO else (turn.fallback_language or turn.settings.preferred_language or "en")
-        if answer == "yes":
+        if answer in ("yes", "yes_more"):
             taken = STORE.take_confirmation(ctx, pc.id, turn.turn_id, turn.mode, turn.edit_uid)
             if taken is None:
                 return None
-            call = self._call_ctx(turn)
-            res = await asyncio.to_thread(execute_confirmation, call, taken)
+            res = await asyncio.to_thread(execute_confirmation, self._call_ctx(turn), taken)
             turn.assistant_text = f"(confirmed: {res.status}) {res.facts}"
             if res.status == "done":
                 turn.items_changed = True
                 turn.pending_open, turn.pending_uid = res.open, res.open_uid
-                if turn.mode == "chat":
-                    await self._reply(turn, io, facts=f"Server result: {res.facts}. Tell the user in one short sentence that it is done.")
+            if turn.mode != "chat":
+                key = "gone" if res.status == "missing" else "error"
+                if res.status != "done":
+                    await io.send(turn, "llm_display", text=edit_texts.text(lang, key))
                 return "handled"
-            if res.status == "changed":
-                new = await asyncio.to_thread(reask_after_change, call, taken)
-                if turn.mode == "chat":
-                    facts = (f"Server result: nothing was deleted because it changed meanwhile; it is now: {new.facts}. Ask the user to confirm again."
-                             if new else "Server result: nothing was deleted because it changed meanwhile. Tell the user and ask what they want.")
-                    turn.expect_reply = new is not None
-                    await self._reply(turn, io, facts=facts)
-                else:
-                    await io.send(turn, "llm_display", text=edit_texts.text(lang, "changed"))
-                return "handled"
-            key = "gone" if res.status == "missing" else "error"
-            if turn.mode == "chat":
-                await self._reply(turn, io, facts=f"Server result: {res.facts}. Tell the user briefly.")
+            told = (f"Server result: {res.facts}. " + ("Tell the user in one short sentence that it is done."
+                                                       if res.status == "done" else "Tell the user briefly."))
+            rest = rest_after_yes(turn.user_text, self._answer_languages(turn), pc.facts, (pc.payload or {}).get("kind"))
+            if answer == "yes_more" and rest:
+                # "Da, și adaugă pâine": the yes is answered above; the rest is a new request (tools available).
+                await self._reply(turn, io, server_note=(
+                    f"{told} The user's sentence confirmed that and also said more: do now only the rest of it "
+                    f"({rest!r}), in the same reply. Never delete or ask about the confirmed item again."))
             else:
-                await io.send(turn, "llm_display", text=edit_texts.text(lang, key))
+                await self._reply(turn, io, facts=told)
             return "handled"
         if answer == "no":
             STORE.cancel_confirmation(ctx)
@@ -287,23 +283,17 @@ class ConversationPipeline:
                 await io.send(turn, "llm_display", text=edit_texts.text(lang, "cancelled"))
             return "handled"
         if answer == "unclear":
-            pc.unclear_count += 1
-            if pc.unclear_count >= 2:
-                STORE.cancel_confirmation(ctx)
-                turn.assistant_text = "(confirmation unclear twice: cancelled)"
-                if turn.mode == "chat":
-                    await self._reply(turn, io, facts="Server result: the answer was not clear, so nothing was deleted. Say so briefly.")
-                else:
-                    await io.send(turn, "llm_display", text=edit_texts.text(lang, "cancelled"))
-                return "handled"
-            turn.assistant_text = "(confirmation unclear: asked again)"
-            turn.expect_reply = True
-            if turn.mode == "chat":
-                await self._reply(turn, io, facts=(
-                    "Server: the user's answer was not a clear yes or no, so nothing was deleted yet. Tell them in a few "
-                    f"words that you did not catch a clear yes or no, then ask once more whether to {pc.facts}."))
-            else:
+            if turn.mode != "chat":
+                turn.assistant_text = "(confirmation unclear: asked again)"
                 await io.send(turn, "llm_display", text=edit_texts.text(lang, "say_confirm"))
+                return "handled"
+            # A confirmation is asked once: an answer that is neither yes nor no ("yes, but not now") leaves
+            # everything as it is - the user can ask again whenever they want.
+            STORE.cancel_confirmation(ctx)
+            turn.assistant_text = "(confirmation unclear: nothing deleted)"
+            await self._reply(turn, io, facts=(
+                f"Server result: the answer was not a clear yes, so nothing was changed ({pc.facts} was not done). "
+                "Say in a few words that you left it as it is and they can ask again any time. Do not ask a question."))
             return "handled"
         # another request
         if turn.mode == "chat":
@@ -490,9 +480,10 @@ class ConversationPipeline:
 
     # --- reply: LLM -> chunker -> TTS -> Opus ----------------------------------------------
 
-    async def _reply(self, turn: TurnContext, io: TurnIO, facts: str | None = None) -> None:
+    async def _reply(self, turn: TurnContext, io: TurnIO, facts: str | None = None, server_note: str | None = None) -> None:
         """The spoken reply. `facts`: a server result to put into words (no tools: the model can only report
-        what the server did)."""
+        what the server did). `server_note`: what the server did before this reply, with the tools kept for the
+        rest of the user's sentence."""
         s = turn.settings
         llm, model = self.router.llm(s)
         tts_sel = self.router.tts(turn.language, s)
@@ -515,6 +506,8 @@ class ConversationPipeline:
         tool_defs = tool_defs or None
         # server state goes right before the user's sentence (the cached system prompt stays identical)
         extra_msgs = [{"role": "system", "content": facts}] if facts else self._context_messages(turn)
+        if server_note:
+            extra_msgs = [*extra_msgs, {"role": "system", "content": server_note}]
         if not facts and turn.account_id is not None and memory_prefs(turn.account_id).use:
             recalled = (await recall(self.router, turn.account_id, turn.device_id, turn.user_text, turn.usage)).message()
             if recalled:
@@ -683,6 +676,7 @@ class ConversationPipeline:
             turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", billed))
         if not reply_parts:
             raise ProviderError("llm", "empty reply")
+        turn.expect_reply |= display.asks  # the reply ended with [[?]]: the watch listens for the answer
         if display.value is None and not tools_used and asks_for_value(turn.user_text):
             value = guess_value(turn.assistant_text)  # the model forgot the [[value]] tag
             if value and not echoes_question(value, turn.user_text):
