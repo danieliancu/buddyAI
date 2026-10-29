@@ -6,6 +6,7 @@ import FeatureGrid from "../components/FeatureGrid.astro";
 import Designed from "../components/Designed.astro";
 import SectionHeading from "../components/SectionHeading.astro";
 import Icon from "../components/Icon.astro";
+import VoiceCommands from "../components/VoiceCommands.astro";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "../data/features";
 import { prices } from "../config";
@@ -21,17 +22,6 @@ const specs: [string, string][] = [
   ["What you need", `2.4 GHz Wi-Fi with internet access, a web browser for setup (no app to install), an olá account and an olácare subscription (free ${prices.trialDays}-day subscription included)`],
 ];
 
-// Example commands only (not recordings of real conversations); every one maps to something the assistant can do.
-const examples = [
-  "“Remind me tomorrow at 9:30 to call the dentist.”",
-  "“Remind me on Friday at 6 to pick up Sam, and alert me 15 minutes before.”",
-  "“Make a shopping list: eggs, bread, oat milk.”",
-  "“Add apples to my shopping list.”",
-  "“Move my meeting with Anna to 3 pm.”",
-  "“What reminders do I have on Monday?”",
-  "“Copy my packing list.”",
-  "“Delete the gym reminder.” — olá asks you to confirm first.",
-];
 const offline = {
   works: [
     "The clock",
@@ -80,33 +70,36 @@ const wifi = {
     <FeatureGrid detailed />
   </section>
 
-  <section class="container-x mt-20 grid gap-8 lg:grid-cols-2" aria-label="Notes, reminders and connectivity">
+  <section class="container-x mt-20 grid gap-8" aria-label="Notes, reminders and connectivity">
     <div class="glass p-6 sm:p-8">
       <h2 id="voice-title" class="text-xl font-semibold text-fg">Notes &amp; reminders, by voice</h2>
-      <p class="mt-2 text-muted">
+      <p class="mt-2 max-w-3xl text-muted">
         Create, find, change, copy and delete notes and reminders just by asking. If more than one matches, olá asks which
         one you mean. In a conversation, it asks you to confirm before deleting anything. Up to 100 notes and 100
         reminders per account, also editable in your olá account.
       </p>
-      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Example commands</h3>
-      <ul class="mt-2 space-y-1.5 text-sm text-fg">
-        {examples.map((e) => <li class="flex gap-2"><Icon name="mic" size={16} class="mt-0.5 shrink-0 text-accent" />{e}</li>)}
-      </ul>
+      <VoiceCommands />
     </div>
     <div class="glass p-6 sm:p-8">
       <h2 id="wifi-title" class="text-xl font-semibold text-fg">What needs Wi-Fi</h2>
-      <p class="mt-2 text-muted">
+      <p class="mt-2 max-w-3xl text-muted">
         <Brand name="watch" /> connects over 2.4 GHz Wi-Fi (home, office or a phone hotspot). It has no mobile connection,
         and there is no phone app: setup and your account are in a web browser.
       </p>
-      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Works without a connection</h3>
-      <ul class="mt-2 space-y-1.5 text-sm text-muted">
-        {offline.works.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
-      </ul>
-      <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Needs a connection</h3>
-      <ul class="mt-2 space-y-1.5 text-sm text-muted">
-        {offline.needs.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
-      </ul>
+      <div class="grid gap-x-8 md:grid-cols-2">
+        <div>
+          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Works without a connection</h3>
+          <ul class="mt-2 space-y-1.5 text-sm text-muted">
+            {offline.works.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
+          </ul>
+        </div>
+        <div>
+          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-muted">Needs a connection</h3>
+          <ul class="mt-2 space-y-1.5 text-sm text-muted">
+            {offline.needs.map((t) => <li class="flex gap-2"><Icon name="wifi" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 
