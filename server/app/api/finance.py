@@ -35,6 +35,14 @@ def _group(u: UsageRecord) -> str:
     return u.kind  # stt | tts | search
 
 
+def _brave_month() -> dict[str, Any]:
+    from app.config import get_settings
+    from app.websearch import budget
+
+    s = get_settings()
+    return {"used": budget.used("brave"), "cap": budget.monthly_cap(s.brave_monthly_budget_usd, s.brave_price_per_request_usd)}
+
+
 def _mask(email: str) -> str:
     name, _, domain = email.partition("@")
     return f"{name[:3]}***@{domain}"
@@ -56,12 +64,16 @@ def finance(days: int = Query(30, ge=1, le=366), db: Session = Depends(get_sessi
     unpriced: dict[tuple[str, str, str], dict[str, float]] = {}
     searches = cache_hits = 0
     search_cost = 0
+    own: dict[str, float] = defaultdict(float)  # ddgs_brave backend: "provider:unit" -> quantity
+    own_cost = 0  # ddgs_brave backend: Brave requests + the answering model's tokens
     non_billable = 0
     for u in rows:
         if u.unit == "web_search_call":
             searches += int(u.quantity)
         elif u.unit == "cache_hit":
             cache_hits += int(u.quantity)
+        elif u.kind == "search":
+            own[f"{u.provider}:{u.unit}"] += u.quantity
         if u.cost_micro_gbp is None:
             key = (u.provider, u.model, u.unit)
             entry = unpriced.setdefault(key, {"rows": 0, "quantity": 0.0})
@@ -77,6 +89,8 @@ def finance(days: int = Query(30, ge=1, le=366), db: Session = Depends(get_sessi
         by_device[u.device_id] += c
         if u.unit == "web_search_call":
             search_cost += c
+        elif u.kind == "search" and u.unit != "cache_hit":
+            own_cost += c
         if not u.billable:
             non_billable += c
         if u.turn_uid:
@@ -104,6 +118,8 @@ def finance(days: int = Query(30, ge=1, le=366), db: Session = Depends(get_sessi
         }
 
     avg_search = search_cost // searches if searches else 0
+    runs = int(own["buddyai:search_run"])
+    ddgs_n, brave_n = int(own["ddgs:search_request"]), int(own["brave:search_request"])
 
     # Revenue (Stripe), GBP only in the totals; other currencies listed apart.
     revenue = db.exec(select(RevenueEvent).where(RevenueEvent.created_at >= since)).all()
@@ -147,9 +163,26 @@ def finance(days: int = Query(30, ge=1, le=366), db: Session = Depends(get_sessi
             "searches": searches,
             "cost": micro_to_float(search_cost),
             "cache_hits": cache_hits,
-            "hit_rate": round(cache_hits / (cache_hits + searches), 3) if (cache_hits + searches) else None,
+            "hit_rate": round(cache_hits / (cache_hits + searches + runs), 3) if (cache_hits + searches + runs) else None,
             # Search-call fees avoided by the cache (the search request's own tokens come on top).
             "avoided_at_least": micro_to_float(cache_hits * avg_search),
+            # ddgs_brave backend (never counted as OpenAI hosted search calls above)
+            "own": {
+                "searches": runs,
+                "answered_rate": round(own["buddyai:search_answered"] / runs, 3) if runs else None,
+                "avg_ms": int(own["buddyai:duration_ms"] / runs) if runs else None,
+                "ddgs_requests": ddgs_n,
+                "ddgs_failures": int(own["ddgs:failed_request"]),
+                "ddgs_irrelevant_rounds": int(own["ddgs:irrelevant_result"]),
+                "brave_requests": brave_n,
+                "brave_failures": int(own["brave:failed_request"]),
+                "brave_fallback_pct": round(100 * brave_n / (ddgs_n + brave_n), 1) if (ddgs_n + brave_n) else None,
+                "brave_this_month": _brave_month(),
+                "pages_read": int(own["trafilatura:page"]),
+                "answer_tokens": int(sum(v for k, v in own.items() if k.endswith(("input_token", "output_token")))),
+                "cost": micro_to_float(own_cost),
+                "cost_per_search": micro_to_float(own_cost // runs, 5) if runs else None,
+            },
         },
         "unpriced": [
             {"provider": p, "model": m, "unit": un, "rows": v["rows"], "quantity": round(v["quantity"], 3)}

@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     azure_speech_key: str = ""
     azure_speech_region: str = "westeurope"
 
+    # Web search backend (app/search.py): legacy_openai = OpenAI hosted web search (the rollback);
+    # ddgs_brave = DDGS, then the Brave Search API as fallback, Trafilatura for page text (app/websearch).
+    search_backend: str = "legacy_openai"
+    brave_api_key: str = ""  # server side only: never sent to the watch, the web app or a log line
+    brave_monthly_budget_usd: float = 5.0  # Brave is skipped for the rest of the month once this is used
+    brave_price_per_request_usd: float = 0.005  # Brave "Search" plan, $5 / 1,000 requests (verify)
+    brave_max_requests_per_search: int = 2  # the paid fallback, per web_search call
+    search_total_deadline_s: float = 12.0  # all searching of one turn (searches, pages, the answering call)
+    ddgs_request_timeout_s: float = 4.0
+    brave_request_timeout_s: float = 4.0
+    search_max_results_per_request: int = 8
+    search_max_extracted_sources: int = 3  # pages read per search round
+    search_context_token_budget: int = 1800  # evidence sent to the answering model per call (approx. tokens)
+    extraction_max_bytes: int = 1_500_000
+    extraction_timeout_s: float = 3.0
+    ddgs_circuit_breaker_threshold: int = 3  # technical failures in a row before DDGS is switched off...
+    ddgs_circuit_breaker_cooldown_s: float = 120.0  # ...for this long, then one trial request
+    search_max_concurrency: int = 4  # DDGS searches / page downloads at once (per process)
+    ddgs_region: str = ""  # e.g. "uk-en"; "" = from the watch's time zone
+
     # Cost display: stored costs are USD; shown as display_currency (editable in the web app)
     display_currency: str = "GBP"
     usd_to_display_rate: float = 0.75  # approximate USD->GBP; update it in the web app (Usage > Currency)
@@ -181,7 +201,7 @@ class Settings(BaseSettings):
         return {}
 
     def provider_key(self, name: str) -> str:
-        """name: openai_api_key | dashscope_api_key | azure_speech_key | azure_speech_region"""
+        """name: openai_api_key | dashscope_api_key | azure_speech_key | azure_speech_region | brave_api_key"""
         env_value = getattr(self, name, "")
         return env_value or self._stored_keys().get(name, "")
 

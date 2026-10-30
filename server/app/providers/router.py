@@ -145,7 +145,12 @@ class ProviderRouter:
         """Web search tool config for this turn, or None (off for the watch, not in the profile,
         or the provider has no web search)."""
         cfg = self.config["llm"].get("web_search")
-        if not settings.web_search or not cfg or provider.name not in WEB_SEARCH_PROVIDERS:
+        if not settings.web_search or not cfg:
+            return None
+        # legacy_openai needs the provider's hosted search; ddgs_brave searches itself (any chat model)
+        # (mock providers never get a real web search)
+        ours = self.settings.search_backend == "ddgs_brave" and not self.settings.mock_providers
+        if not ours and provider.name not in WEB_SEARCH_PROVIDERS:
             return None
         # Approximate location from the watch's timezone, so "the weather now" is local.
         city = settings.timezone.rsplit("/", 1)[-1].replace("_", " ")

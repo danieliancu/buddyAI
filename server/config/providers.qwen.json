@@ -136,6 +136,69 @@
       "unit": "character",
       "price_usd": 1.5e-05,
       "note": "Azure Neural TTS pay-as-you-go ($15/1M chars); first 0.5M chars/month free on F0."
+    },
+    {
+      "provider": "ddgs",
+      "model": "web",
+      "unit": "search_request",
+      "price_usd": 0.0,
+      "note": "DDGS metasearch: no per-request charge (hosting and the answering model's tokens are counted apart)."
+    },
+    {
+      "provider": "ddgs",
+      "model": "web",
+      "unit": "failed_request",
+      "price_usd": 0.0,
+      "note": "DDGS request that failed (timeout, block, rate limit): counted, no charge."
+    },
+    {
+      "provider": "ddgs",
+      "model": "web",
+      "unit": "irrelevant_result",
+      "price_usd": 0.0,
+      "note": "DDGS round with no relevant result: counted, no charge."
+    },
+    {
+      "provider": "brave",
+      "model": "web",
+      "unit": "search_request",
+      "price_usd": 0.005,
+      "note": "Brave Search API, $5 / 1k requests (Search plan, 2026). Verify against the Brave dashboard."
+    },
+    {
+      "provider": "brave",
+      "model": "web",
+      "unit": "failed_request",
+      "price_usd": 0.0,
+      "note": "Brave request that failed (error / rate limit): counted; assumed not billed. Verify."
+    },
+    {
+      "provider": "trafilatura",
+      "model": "extract",
+      "unit": "page",
+      "price_usd": 0.0,
+      "note": "Web page read for a search (download + Trafilatura on our server): no provider charge."
+    },
+    {
+      "provider": "buddyai",
+      "model": "websearch",
+      "unit": "search_run",
+      "price_usd": 0.0,
+      "note": "A web_search call that missed the cache (ddgs_brave backend): counted, no charge."
+    },
+    {
+      "provider": "buddyai",
+      "model": "websearch",
+      "unit": "search_answered",
+      "price_usd": 0.0,
+      "note": "ddgs_brave search that found an answer: counted, no charge."
+    },
+    {
+      "provider": "buddyai",
+      "model": "websearch",
+      "unit": "duration_ms",
+      "price_usd": 0.0,
+      "note": "Wall-clock time of ddgs_brave searches (for latency figures): no charge."
     }
   ]
 }

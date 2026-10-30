@@ -279,6 +279,18 @@ class SearchCache(SQLModel, table=True):
     hits: int = 0
 
 
+class SearchProviderUsage(SQLModel, table=True):
+    """Requests per paid search provider and calendar month (UTC), counted before each request so a monthly
+    budget holds under concurrent load (app/websearch/budget.py)."""
+
+    __tablename__ = "search_provider_usage"
+    __table_args__ = (UniqueConstraint("month", "provider", name="uq_search_provider_month"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    month: str = Field(max_length=7)  # YYYY-MM
+    provider: str = Field(max_length=16)
+    requests: int = 0
+
+
 class StripeEvent(SQLModel, table=True):
     """Processed webhook event ids (Stripe may deliver an event more than once)."""
 

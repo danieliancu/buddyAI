@@ -26,7 +26,7 @@ from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
-from app.search import SEARCH_RULE, SEARCH_TOOL, WebSearch, search_instructions
+from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.spoken import for_speech
 from app import edit_texts
@@ -95,6 +95,16 @@ NOTE_SENTENCE_S = 30  # note mode: the longest sentence
 NOTE_MAX_TOKENS = 300
 
 MessagesBuilder = Callable[[TurnContext, str], list[dict[str, Any]]]
+
+
+def router_settings(router):
+    from app.config import get_settings
+
+    return getattr(router, "settings", None) or get_settings()
+
+
+def search_backend(router) -> str:
+    return getattr(router_settings(router), "search_backend", "legacy_openai")
 
 
 def search_note(arguments: str, result: str) -> str:
@@ -489,7 +499,21 @@ class ConversationPipeline:
         tts_sel = self.router.tts(turn.language, s)
         web_search = self.router.web_search(s, llm)
         searcher = None
-        if web_search is not None and hasattr(llm, "web_search"):
+        backend = search_backend(self.router)
+        if web_search is not None and backend == "ddgs_brave":
+            # our own search (app/websearch); the answering call uses the profile's cheapest chat model
+            from app.websearch.service import answer_fn, get_orchestrator
+
+            city = (self.router.hosted_search_tool(web_search).get("user_location") or {}).get("city", "")
+            search_llm, search_model = self.router.llm_default()
+            run = get_orchestrator(router_settings(self.router)).turn(
+                answer_fn(search_llm, search_model, self.router.llm_params()), tz=s.timezone,
+                llm_provider=search_llm.name, llm_model=search_model,
+            )
+            searcher = WebSearch(run.search, web_search.get("cache_ttl_s"), provider=search_llm.name,
+                                 model=search_model, max_attempts=None, pass_category=True)
+            turn.searcher, turn.search_city = searcher, city
+        elif web_search is not None and hasattr(llm, "web_search"):
             hosted = self.router.hosted_search_tool(web_search)
             city = (hosted.get("user_location") or {}).get("city", "")
 
@@ -516,7 +540,7 @@ class ConversationPipeline:
             tool_defs = None
         if extra_msgs and messages:
             messages = [*messages[:-1], *extra_msgs, messages[-1]]
-        extra_rules = [SEARCH_RULE] if searcher else []
+        extra_rules = [SEARCH_RULE_SERVER if backend == "ddgs_brave" else SEARCH_RULE] if searcher else []
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
         if extra_rules and messages and messages[0]["role"] == "system":

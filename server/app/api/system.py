@@ -18,7 +18,7 @@ from app.security import require_admin, require_admin_role
 
 router = APIRouter(prefix="/api/system", tags=["system"], dependencies=[Depends(require_admin)])
 
-KEY_NAMES = ("openai_api_key", "dashscope_api_key", "azure_speech_key", "azure_speech_region")
+KEY_NAMES = ("openai_api_key", "dashscope_api_key", "azure_speech_key", "azure_speech_region", "brave_api_key")
 
 
 def lan_ip() -> str:
@@ -58,6 +58,7 @@ class KeysBody(BaseModel):
     dashscope_api_key: str | None = None
     azure_speech_key: str | None = None
     azure_speech_region: str | None = None
+    brave_api_key: str | None = None
 
 
 @router.put("/keys")

@@ -25,6 +25,8 @@ dependencies = [
     "tzdata>=2024.1",
     "pyotp>=2.9",
     "cryptography>=42",
+    "ddgs>=9.16",
+    "trafilatura>=2.3",
 ]
 
 [project.optional-dependencies]
