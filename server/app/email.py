@@ -326,9 +326,9 @@ def trial_ending(to: str, trial_end) -> Email:
 def _logo_html() -> str:
     site = get_settings().site_url.rstrip("/")
     if site:
-        return (f'<img src="{escape(site)}/email/logo.png" width="200" alt="olacompanion" '
+        return (f'<img src="{escape(site)}/email/logo.png" width="226" alt="olacompanion" '
                 'style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;'
-                'width:200px;height:auto;max-width:200px">')
+                'width:226px;height:auto;max-width:226px">')
     return ('<span style="font-size:26px;font-weight:700;letter-spacing:-0.5px;color:#0f1533">ola'
             '<span style="color:#5b4cf0">companion</span></span>')
 
