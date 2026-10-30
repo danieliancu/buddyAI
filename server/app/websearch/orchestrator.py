@@ -69,12 +69,12 @@ AnswerFn = Callable[[str, str], Awaitable[tuple[str, int, int, int]]]  # (system
 @dataclass
 class SearchConfig:
     total_deadline_s: float = 12.0
-    ddgs_timeout_s: float = 4.0
+    ddgs_timeout_s: float = 3.0
     brave_timeout_s: float = 4.0
     max_results: int = 8
     max_sources: int = 3
     context_chars: int = 7200  # ~1800 tokens of evidence per answering call
-    extraction_timeout_s: float = 3.0
+    extraction_timeout_s: float = 2.5
     brave_cap: int = 1000  # requests per month (budget / price)
     brave_per_search: int = 2  # Brave requests at most per search (it is the paid fallback)
 
@@ -190,7 +190,7 @@ class TurnSearch:
             UsageItem("search", "buddyai", "websearch", "duration_ms", elapsed_ms),
             UsageItem("search", "ddgs", "web", "search_request", n["ddgs_requests"]),
             UsageItem("search", "ddgs", "web", "failed_request", n["ddgs_failures"]),
-            UsageItem("search", "ddgs", "web", "irrelevant_result", n["irrelevant_rounds"]),
+            UsageItem("search", "ddgs", "web", "irrelevant_result", n["irrelevant_rounds"] + n["ddgs_empty"]),
             UsageItem("search", "brave", "web", "search_request", n["brave_requests"]),
             UsageItem("search", "brave", "web", "failed_request", n["brave_failures"]),
             UsageItem("search", "trafilatura", "extract", "page", n["pages_ok"]),
@@ -216,6 +216,7 @@ class TurnSearch:
         brave_dead = not getattr(o.brave, "configured", False)
         ddgs_dry = 0  # DDGS rounds in a row without new relevant results
         ddgs_rounds = 0
+        empty_retried: set[str] = set()  # wordings DDGS answered with no results at all (asked once more)
 
         def next_query(provider: str) -> str | None:
             q = pending[provider]
@@ -232,8 +233,9 @@ class TurnSearch:
             if left < ANSWER_RESERVE_S + MIN_ROUND_S:
                 break
             # time getting short with nothing found yet: the fallback gets its turn before the deadline
-            if (not use_brave and not brave_dead and ddgs_rounds
-                    and left < 0.45 * cfg.total_deadline_s and not pool):
+            # (snippets that did not answer are not progress: only page text is)
+            if (not use_brave and not brave_dead and ddgs_rounds and left < 0.45 * cfg.total_deadline_s
+                    and not any(r.extraction == "full" for r in pool.values())):
                 use_brave = True
             provider = None
             if use_brave and not brave_dead:
@@ -290,6 +292,14 @@ class TurnSearch:
                 o.breaker.success()
             else:
                 n["brave_requests"] += 1
+            if not results and provider is o.ddgs and normalise(q) not in empty_retried:
+                # No results at all for a plain query is usually DDGS having a moment (its first request after
+                # a pause often comes back empty), not a sign the wording is wrong: the same wording once more.
+                empty_retried.add(normalise(q))
+                tried["ddgs"].discard(normalise(q))
+                pending["ddgs"].appendleft(q)
+                n["ddgs_empty"] += 1
+                continue
             ranked = [r for r in evidence.rank(relevance_query, results, category, today) if evidence.norm_url(r.url) not in pool]
             if not ranked:
                 n["irrelevant_rounds"] += 1

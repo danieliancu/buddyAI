@@ -59,17 +59,27 @@ def select_passages(text: str, query: str, max_chars: int) -> str:
     return "\n".join(p for _, p in sorted(picked))
 
 
+# Scripts, styles, inline SVG and comments carry no readable text but are most of a modern page's weight
+# (and of the parse time): dropped before parsing.
+_NOISE = re.compile(rb"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<svg\b.*?</svg\s*>|<!--.*?-->|<noscript\b.*?</noscript\s*>")
+
+PARSE_MAX_BYTES = 400_000  # parse time grows with the page; an article's text sits well within this
+
+
 def _trafilatura(html: bytes, url: str) -> tuple[str, str | None]:
     import trafilatura
+    from htmldate import find_date
 
-    doc = trafilatura.bare_extraction(
-        html, url=url, include_comments=False, include_tables=True, favor_precision=True, with_metadata=True,
-        date_extraction_params={"extensive_search": False, "original_date": True},
-    )
-    if not doc:
-        return "", None
-    d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
-    return str(d.get("text") or ""), (str(d["date"])[:10] if d.get("date") else None)
+    page = _NOISE.sub(b" ", html)[:PARSE_MAX_BYTES]
+    # fast: the main extractor only (no fallback extractors), and no metadata pass (author, site name, tags:
+    # seconds on a large page) - only the page's own publication date, from htmldate directly
+    text = trafilatura.extract(page, url=url, fast=True, include_comments=False, include_tables=True,
+                               favor_precision=True, output_format="txt") or ""
+    try:
+        date = find_date(page, url=url, extensive_search=False, original_date=True)
+    except Exception:  # noqa: BLE001 - no date is fine
+        date = None
+    return text, (str(date)[:10] if date else None)
 
 
 class ContentExtractor:

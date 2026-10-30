@@ -53,6 +53,32 @@ Requires Python ≥ 3.11. Database: SQLite in `data/`, migrations applied automa
 Switching providers or models means changing `BUDDYAI_AI_PROFILE` or editing the profile file. The pipeline only sees the
 `STTProvider` / `LLMProvider` / `TTSProvider` interfaces (`app/providers/*/base.py`).
 
+## Web search backends
+
+The conversation model has one `web_search` tool (`app/search.py`: cache, scope, freshness). Who answers it
+is chosen by `BUDDYAI_SEARCH_BACKEND`:
+
+| Value | What runs |
+|---|---|
+| `legacy_openai` (default) | OpenAI hosted web search (billed per search call). One search per turn, one retry after "not found". |
+| `ddgs_brave` | `app/websearch`: DDGS first (no per-request charge), Brave Search API as fallback, Trafilatura reads the best pages, one small call on the profile's default chat model answers from that evidence. No fixed number of searches: it keeps reformulating until the evidence answers or `BUDDYAI_SEARCH_TOTAL_DEADLINE_S` (12 s, shared by the turn) runs out. |
+
+To try `ddgs_brave` (test environment only):
+
+```
+BUDDYAI_SEARCH_BACKEND=ddgs_brave
+BUDDYAI_BRAVE_API_KEY=...                # optional: without it DDGS is used alone
+BUDDYAI_BRAVE_MONTHLY_BUDGET_USD=5       # Brave is skipped for the rest of the month once used up
+```
+
+Other knobs (`app/config.py`): request / page timeouts, results per request, pages read, evidence size, the DDGS
+circuit breaker (threshold, cooldown), concurrency, `BUDDYAI_DDGS_REGION`. Costs are recorded per provider
+(usage kind `search`) and shown in Finance > search > own. Real-search benchmark: `python tools/search_bench.py
+[--legacy] [--brave-only N]` (throwaway database, writes `out/search_bench_*.json`).
+
+Rollback: `BUDDYAI_SEARCH_BACKEND=legacy_openai` (or remove the line) and restart. The cache table is shared,
+nothing to migrate back; migration 0032 only adds the Brave counter table.
+
 ## Watch simulator (`tools/fake_watch.py`)
 
 Runs the real protocol (hello, pairing, Opus streaming, abort, reconnect) and measures TTFA.

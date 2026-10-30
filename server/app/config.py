@@ -55,13 +55,13 @@ class Settings(BaseSettings):
     brave_price_per_request_usd: float = 0.005  # Brave "Search" plan, $5 / 1,000 requests (verify)
     brave_max_requests_per_search: int = 2  # the paid fallback, per web_search call
     search_total_deadline_s: float = 12.0  # all searching of one turn (searches, pages, the answering call)
-    ddgs_request_timeout_s: float = 4.0
+    ddgs_request_timeout_s: float = 3.0
     brave_request_timeout_s: float = 4.0
     search_max_results_per_request: int = 8
     search_max_extracted_sources: int = 3  # pages read per search round
     search_context_token_budget: int = 1800  # evidence sent to the answering model per call (approx. tokens)
     extraction_max_bytes: int = 1_500_000
-    extraction_timeout_s: float = 3.0
+    extraction_timeout_s: float = 2.5  # download + Trafilatura of one page
     ddgs_circuit_breaker_threshold: int = 3  # technical failures in a row before DDGS is switched off...
     ddgs_circuit_breaker_cooldown_s: float = 120.0  # ...for this long, then one trial request
     search_max_concurrency: int = 4  # DDGS searches / page downloads at once (per process)
