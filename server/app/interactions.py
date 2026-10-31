@@ -1,4 +1,4 @@
-"""What counts as one of the customer's AI interactions (ola Care: 1,000 per billing period).
+"""What counts as one of the customer's AI interactions (ola Care: counted per billing period, unlimited).
 
 One valid user request = one interaction, however many AI calls, tools or web searches it used internally.
 The decision is made once, when the operation is settled (usage_operations.interaction):

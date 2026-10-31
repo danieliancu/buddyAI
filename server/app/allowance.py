@@ -1,4 +1,5 @@
-"""The account's allowance for the current period: a number of AI interactions (ola Care: 1,000).
+"""The account's AI interactions in the current period. ola Care has no limit (owner decision, 31 Oct 2026):
+they are counted for the customer's history and the operator, never to refuse a request.
 
 Period: the subscription's billing period (Stripe current_period_start..end); a Stripe period longer than a
 month - a long free trial, whose Stripe period is the whole trial - is split into monthly cycles from its start,
@@ -6,8 +7,7 @@ so the interactions renew every month during the trial too. A complimentary gran
 calendar month when there is neither. All watches of the account
 share it; nothing rolls over (counts are per period key).
 Used = operations of the period settled as an interaction (usage_operations.interaction, decided once by
-app/interactions.py). Limit = the plan's interaction_limit (or the account's authorised override) + the
-interactions of the period's paid top-ups.
+app/interactions.py). Top-ups (extra interactions bought before the limit was removed) stay as history.
 
 What the AI providers cost is recorded separately (usage_records, micro-GBP) and monitored by
 app/cost_monitor.py: costs never limit the customer. The money functions below (used_final, active_exposure,
@@ -30,7 +30,7 @@ from sqlmodel import Session, select
 from app.db.models import Account, Subscription, TopUp, UsageOperation, UsageRecord
 from app.interactions import INTERACTION_KINDS
 from app.money import pence_to_micro, pounds_to_micro
-from app.plan import Plan, get_plan
+from app.plan import Plan
 
 COMP_CYCLE = timedelta(days=30)
 
@@ -44,29 +44,12 @@ class Period:
 
 @dataclass
 class Allowance:
-    """AI interactions of one account in one period (what the customer sees, and what admission enforces)."""
+    """AI interactions of one account in one period (unlimited: counted, never enforced)."""
 
     period: Period
     used: int  # interactions counted in the period
-    included: int  # the plan's limit, or the account's override
-    extra: int = 0  # interactions added by the period's paid top-ups
     active: int = 0  # admitted requests still running (not counted yet)
     period_key: str = ""
-
-    @property
-    def limit(self) -> int:
-        return self.included + self.extra
-
-    @property
-    def remaining(self) -> int:
-        return max(0, self.limit - self.used)
-
-    @property
-    def used_pct(self) -> int:
-        """What the customer sees: whole percent, 0..100 (floor, so 100 means really used up)."""
-        if self.limit <= 0:
-            return 100
-        return min(100, self.used * 100 // self.limit)
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -175,23 +158,6 @@ def period_for(sub: Subscription | None, now: datetime | None = None) -> Period:
                 c_end = end
             return Period(add_months(start, n), c_end, "stripe")
     return calendar_month(now)
-
-
-def interaction_limit(acc: Account, plan: Plan) -> int:
-    """The account's interactions per period: its authorised override, else the plan's."""
-    return acc.interaction_limit_override if acc.interaction_limit_override is not None else plan.interaction_limit
-
-
-def topup_interactions(db: Session, account_id: int, now: datetime, period_key: str | None, plan: Plan) -> int:
-    """Interactions added by paid top-ups of the period. A top-up bought before 0027 (interactions NULL)
-    counts as the plan's current top-up size, so nothing already bought is lost."""
-    rows = db.exec(select(TopUp).where(TopUp.account_id == account_id, TopUp.status == "paid")).all()
-    return sum(
-        (t.interactions if t.interactions is not None else plan.topup_interactions)
-        for t in rows
-        if (t.period_key is not None and t.period_key == period_key)
-        or (t.period_key is None and _aware(t.period_start) <= now < _aware(t.period_end))  # type: ignore[operator]
-    )
 
 
 def interactions_used(db: Session, account_id: int, period_key: str) -> int:
@@ -318,14 +284,11 @@ def compute(
     """The interactions shown to the customer and the operator: used = settled interactions of the period
     (never a running request); active = requests still running."""
     now = now or datetime.now(timezone.utc)
-    plan = plan or get_plan(db)
     pid = period_identity(sub, now)
     assert acc.id is not None
     return Allowance(
         period=pid.period,
         used=interactions_used(db, acc.id, pid.key),
-        included=interaction_limit(acc, plan),
-        extra=topup_interactions(db, acc.id, now, pid.key, plan),
         active=interactions_active(db, acc.id, pid.key),
         period_key=pid.key,
     )

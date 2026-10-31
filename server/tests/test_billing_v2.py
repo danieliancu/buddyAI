@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app import allowance as allowance_mod
-from app import billing, entitlements, plan as plan_mod, usage_notices, usage_ops
+from app import billing, entitlements, plan as plan_mod, usage_ops
 from app.db.models import (Account, AuditLog, RevenueEvent, StripeEvent, Subscription, TopUp, UsageNotice,
                            UsageOperation, UsageRecord)
 from app.db.session import session_scope
@@ -60,23 +60,13 @@ def _use(account_id: int, n: int, kind: str = "chat") -> None:
         db.commit()
 
 
-def _limit(account_id: int, n: int | None) -> None:
-    """The account's interaction override (an authorised exception; small numbers keep tests fast)."""
-    with session_scope() as db:
-        acc = db.get(Account, account_id)
-        acc.interaction_limit_override = n
-        db.add(acc)
-        db.commit()
-
-
 @pytest.fixture
 def enforce():
     with session_scope() as db:
         plan_mod.update(db, {"enforce": True}, "test")
     yield
     with session_scope() as db:
-        plan_mod.update(db, {"enforce": False, "interaction_limit": 1000, "topup_interactions": 250,
-                             "thresholds": "80,95,100"}, "test")
+        plan_mod.update(db, {"enforce": False}, "test")
 
 
 def _grant(account_id: int, days: int = 30, allowance_pence: int | None = None):
@@ -118,28 +108,15 @@ def test_periods():
     assert (cal.start.month, cal.end.year, cal.end.month) == (12, 2027, 1)
 
 
-def test_allowance_counts_interactions_not_money_and_counts_topups():
+def test_interactions_are_counted_not_limited():
     acc_id = _account()
     _grant(acc_id)
     _use(acc_id, 400)
     _use(acc_id, 5, kind="memory")  # background work: never an interaction
-    _spend(acc_id, 50.00)  # provider cost, however high, is not the customer's allowance
+    _spend(acc_id, 50.00)  # provider cost, however high, is not the customer's concern
     with session_scope() as db:
-        acc = db.get(Account, acc_id)
-        a = entitlements.allowance(db, acc)
-        assert (a.used, a.limit, a.remaining, a.used_pct) == (400, 1000, 600, 40)
-        sub = billing.active_subscription(db, acc_id)
-        pid = allowance_mod.period_identity(sub)
-        db.add(TopUp(account_id=acc_id, amount_pence=199, allowance_pence=0, interactions=250, status="paid",
-                     period_start=pid.period.start, period_end=pid.period.end, period_key=pid.key))
-        # bought before 0027 (money allowance, no interactions): honoured as the plan's top-up size
-        db.add(TopUp(account_id=acc_id, amount_pence=199, allowance_pence=65, status="paid",
-                     period_start=pid.period.start, period_end=pid.period.end))
-        db.add(TopUp(account_id=acc_id, amount_pence=199, allowance_pence=0, interactions=250, status="pending",
-                     period_start=pid.period.start, period_end=pid.period.end, period_key=pid.key))
-        db.commit()
-        a = entitlements.allowance(db, acc)
-        assert (a.limit, a.extra, a.used_pct) == (1500, 500, 26)
+        a = entitlements.allowance(db, db.get(Account, acc_id))
+        assert a.used == 400 and not hasattr(a, "limit")
 
 
 # --- entitlement ------------------------------------------------------------------------------------------
@@ -193,62 +170,24 @@ def _end(a) -> None:
     usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True)
 
 
-async def test_limit_and_concurrent_watches(enforce):
+async def test_interactions_are_unlimited_and_watches_run_together(enforce):
     acc_id = _account()
     _grant(acc_id)
-    _use(acc_id, 998)
-    first = _admit(acc_id, "watch-a:1")
-    assert first.allowed  # the 999th
-    second = _admit(acc_id, "watch-b:1")
-    assert second.allowed  # the 1,000th: both fit while running
-    third = _admit(acc_id, "watch-c:1")
-    assert not third.allowed and third.code == "busy_concurrent"  # the running ones hold the last two
-    usage_ops.settle(first.op_id, first.exec_token, status="completed", billable=True, interaction=True)
-    usage_ops.settle(second.op_id, second.exec_token, status="completed", billable=True, interaction=True)
-    d = await entitlements.check(acc_id)
-    assert not d.allowed and d.code == "limit_reached"  # the 1,001st
-
-
-async def test_parallel_begin_turns_do_not_overshoot(enforce):
-    acc_id = _account()
-    _grant(acc_id)
-    _use(acc_id, 999)  # room for exactly one more
-    results = await asyncio.gather(*(asyncio.to_thread(_admit, acc_id, f"w{i}:1") for i in range(4)))
-    assert sum(r.allowed for r in results) == 1
+    _use(acc_id, 5000)  # far past the old 1,000 a month
+    running = [_admit(acc_id, f"watch-{w}:1") for w in "abc"]
+    assert all(r.allowed for r in running)  # several watches at once: nothing refused
+    for r in running:
+        usage_ops.settle(r.op_id, r.exec_token, status="completed", billable=True, interaction=True)
+    assert (await entitlements.check(acc_id)).allowed
+    results = await asyncio.gather(*(asyncio.to_thread(_admit, acc_id, f"w{i}:2") for i in range(4)))
+    assert all(r.allowed for r in results)
     for r in results:
-        if r.allowed:
-            _end(r)
-
-
-# --- usage notices ----------------------------------------------------------------------------------------
-
-
-async def test_thresholds_once_per_period_and_dismiss(enforce):
-    acc_id = _account()
-    _grant(acc_id)
-    _use(acc_id, 840)  # 84 %
-    assert await usage_notices.evaluate(acc_id) == [80]
-    assert await usage_notices.evaluate(acc_id) == []  # once
-    _use(acc_id, 120)  # 96 %
-    assert await usage_notices.evaluate(acc_id) == [95]
+        _end(r)
     with session_scope() as db:
-        acc = db.get(Account, acc_id)
-        assert usage_notices.pending_web(db, acc).threshold == 95
-        usage_notices.dismiss_web(db, acc, 95)
-        assert usage_notices.pending_web(db, acc) is None
-    first = usage_notices.take_watch_notice(acc_id)
-    assert first["threshold"] == 95 and first["level"] == "warning"
-    assert usage_notices.take_watch_notice(acc_id) is None  # shown once on the watch
-    _use(acc_id, 40)
-    assert await usage_notices.evaluate(acc_id) == [100]
-    limit = usage_notices.take_watch_notice(acc_id)
-    assert limit["level"] == "limit" and limit["text"].startswith("Monthly AI interactions used up.")
-    emails = [m for m in ConsoleEmailSender.sent if "AI interactions" in m.subject and m.to.startswith("b2-")]
-    assert emails and "80% of your monthly AI interactions" in emails[-1].text
-    assert "Your allowance renews on" in emails[-1].text and "1st of next month" not in emails[-1].text
+        assert entitlements.allowance(db, db.get(Account, acc_id)).used == 5003  # still counted
 
 
-# --- top-ups (fake Stripe) ---------------------------------------------------------------------------------
+# --- top-ups bought before interactions became unlimited (webhooks still settle them) ----------------------
 
 
 def _topup_session_event(topup: TopUp, paid: bool = True, account_id: int | None = None, amount: int | None = None,
@@ -281,38 +220,33 @@ def fake_checkout(monkeypatch):
 
 
 def _new_topup(acc_id: int) -> TopUp:
+    """A top-up checkout started before extra usage stopped being sold (pending until its webhook)."""
     with session_scope() as db:
-        topup, _url = billing.create_topup_checkout(db, db.get(Account, acc_id))
+        pid = allowance_mod.period_identity(billing.active_subscription(db, acc_id))
+        topup = TopUp(account_id=acc_id, amount_pence=199, allowance_pence=0, interactions=250,
+                      period_start=pid.period.start, period_end=pid.period.end, period_key=pid.key,
+                      stripe_session_id=f"cs_test_{secrets.token_hex(6)}")
+        db.add(topup)
+        db.commit()
+        db.refresh(topup)
         return topup
 
 
-async def test_topup_checkout_is_one_time_and_grants_once(billing_on, fake_checkout, enforce):
+async def test_late_topup_webhook_settles_once(billing_on, enforce):
     acc_id = _account()
     _grant(acc_id)
     topup = _new_topup(acc_id)
-    params = fake_checkout[-1]
-    assert params["mode"] == "payment" and "subscription_data" not in params
-    li = params["line_items"][0]["price_data"]
-    assert li["unit_amount"] == 199 and li["currency"] == "gbp" and "recurring" not in li
-    assert params["metadata"] == {"kind": "topup", "topup_id": str(topup.id), "account_id": str(acc_id)}
-    assert "250 AI interactions" in params["line_items"][0]["price_data"]["product_data"]["name"]
-    with session_scope() as db:
-        assert entitlements.allowance(db, db.get(Account, acc_id)).limit == 1000  # nothing yet
-        assert db.get(TopUp, topup.id).interactions == 250
-
     event = _topup_session_event(topup)
     with session_scope() as db:
         assert await billing.handle_event(db, event) is True
         assert await billing.handle_event(db, event) is False  # same event again
-        # a different event for the same session (e.g. async_payment_succeeded) must not grant twice
         await billing.handle_event(db, _topup_session_event(topup, kind="checkout.session.async_payment_succeeded"))
         assert db.get(TopUp, topup.id).status == "paid"
-        assert entitlements.allowance(db, db.get(Account, acc_id)).limit == 1250
         rev = db.exec(select(RevenueEvent).where(RevenueEvent.account_id == acc_id)).all()
         assert [(r.kind, r.amount_pence) for r in rev] == [("topup", 199)]
 
 
-async def test_concurrent_duplicate_webhooks_grant_once(billing_on, fake_checkout, enforce):
+async def test_concurrent_duplicate_webhooks_grant_once(billing_on, enforce):
     acc_id = _account()
     _grant(acc_id)
     topup = _new_topup(acc_id)
@@ -325,10 +259,10 @@ async def test_concurrent_duplicate_webhooks_grant_once(billing_on, fake_checkou
     results = await asyncio.gather(deliver(), deliver(), deliver())
     assert sorted(results) == [False, False, True]
     with session_scope() as db:
-        assert entitlements.allowance(db, db.get(Account, acc_id)).extra == 250
+        assert len(db.exec(select(RevenueEvent).where(RevenueEvent.account_id == acc_id)).all()) == 1
 
 
-async def test_unpaid_expired_and_mismatched_sessions_grant_nothing(billing_on, fake_checkout, enforce):
+async def test_unpaid_expired_and_mismatched_sessions_grant_nothing(billing_on, enforce):
     acc_id, other_id = _account(), _account()
     _grant(acc_id)
     _grant(other_id)
@@ -347,11 +281,9 @@ async def test_unpaid_expired_and_mismatched_sessions_grant_nothing(billing_on, 
         await billing.handle_event(db, _topup_session_event(underpaid, amount=1))
         assert db.get(TopUp, wrong_account.id).status == "pending"
         assert db.get(TopUp, underpaid.id).status == "pending"
-        assert entitlements.allowance(db, db.get(Account, acc_id)).extra == 0
-        assert entitlements.allowance(db, db.get(Account, other_id)).extra == 0  # isolation
 
 
-async def test_refund_withdraws_topup(billing_on, fake_checkout, enforce):
+async def test_refund_of_an_earlier_topup(billing_on, enforce):
     acc_id = _account()
     _grant(acc_id)
     topup = _new_topup(acc_id)
@@ -362,16 +294,14 @@ async def test_refund_withdraws_topup(billing_on, fake_checkout, enforce):
             "amount_refunded": 199, "currency": "gbp"}}}
         await billing.handle_event(db, refund)
         assert db.get(TopUp, topup.id).status == "refunded"
-        assert entitlements.allowance(db, db.get(Account, acc_id)).extra == 0
         kinds = sorted((r.kind, r.amount_pence) for r in db.exec(select(RevenueEvent).where(RevenueEvent.account_id == acc_id)))
         assert kinds == [("refund", -199), ("topup", 199)]
 
 
-async def test_topup_needs_a_plan(billing_on, fake_checkout, enforce):
-    acc_id = _account()
-    with session_scope() as db, pytest.raises(billing.BillingError) as exc:
-        billing.create_topup_checkout(db, db.get(Account, acc_id))
-    assert exc.value.status == 409
+def test_extra_usage_is_no_longer_sold(billing_on):
+    client, _me = _customer()
+    assert client.post("/api/me/topups/checkout").status_code in (404, 405)
+    assert not hasattr(billing, "create_topup_checkout")
 
 
 async def test_failed_handler_releases_the_event_claim(billing_on):
@@ -423,8 +353,9 @@ def test_customer_plan_api_hides_costs(enforce):
     body = client.get("/api/me/plan").json()
     assert body["status"]["kind"] == "complimentary" and body["enforced"] is True
     u = body["usage"]
-    assert (u["used"], u["limit"], u["remaining"], u["used_pct"], u["extra"]) == (520, 1000, 480, 52, 0)
-    assert body["prices"] == {"currency": "GBP", "care_price_pence": 790, "topup_price_pence": 199, "topup_interactions": 250}
+    assert u["used"] == 520 and u["unlimited"] is True and "limit" not in u and "remaining" not in u
+    assert body["prices"] == {"currency": "GBP", "care_price_pence": 790}
+    assert "topup_available" not in body and "thresholds" not in body
     def walk(node):
         if isinstance(node, dict):
             for k, v in node.items():
@@ -441,22 +372,21 @@ def test_customer_plan_api_hides_costs(enforce):
         assert not any(isinstance(v, str) and secret in v.lower() for v in values), secret
     assert 1.3 not in values and 1_300_000 not in values  # the internal £ amount is never sent
     usage = client.get("/api/me/usage").json()
-    assert usage["questions"] == 520 and usage["remaining"] == 480 and "cost" not in usage
-    assert client.get("/api/me/usage-notice").json() == {"notice": None}  # 52 % < 80 %
+    assert usage["questions"] == 520 and usage["unlimited"] is True and "limit" not in usage and "cost" not in usage
+    assert client.get("/api/me/usage-notice").status_code == 404  # no usage warnings any more
 
 
 def test_operator_settings_and_complimentary_api():
     from tests.test_api import _client as _admin_client  # operator session helper
 
     c = _admin_client()
-    r = c.put("/api/billing/settings", json={"interaction_limit": 1200, "thresholds": "95, 80,100",
-                                             "cost_warn_pence": 150})
-    assert r.status_code == 200 and r.json()["thresholds"] == "80,95,100" and r.json()["interaction_limit"] == 1200
-    assert r.json()["cost_warn_pence"] == 150 and "care_allowance_pence" not in r.json()
-    assert c.put("/api/billing/settings", json={"thresholds": "0,150"}).status_code == 422
-    assert c.put("/api/billing/settings", json={"interaction_limit": 0}).status_code == 422
+    r = c.put("/api/billing/settings", json={"cost_warn_pence": 150})
+    assert r.status_code == 200 and r.json()["cost_warn_pence"] == 150
+    for gone in ("interaction_limit", "topup_interactions", "topup_price_pence", "thresholds", "care_allowance_pence"):
+        assert gone not in r.json()
     assert c.put("/api/billing/settings", json={"cost_warn_pence": 600}).status_code == 422  # above the target
-    c.put("/api/billing/settings", json={"interaction_limit": 1000, "cost_warn_pence": 200})
+    c.put("/api/billing/settings", json={"cost_warn_pence": 200})
+    assert c.patch("/api/accounts/1/allowance", json={"interaction_limit_override": 5}).status_code in (404, 405)
     acc_id = _account()
     first = c.post(f"/api/accounts/{acc_id}/complimentary", json={"days": 30}).json()
     second = c.post(f"/api/accounts/{acc_id}/complimentary", json={"days": 30}).json()
@@ -469,27 +399,9 @@ def test_operator_settings_and_complimentary_api():
 # --- watch notice + full customer journey (fake Stripe) ------------------------------------------------------
 
 
-async def test_watch_notice_sent_once_to_the_accounts_watches(enforce):
-    from app.gateway.hub import DeviceHub
-    from tests.test_items import FakeConn
-
-    acc_id, other = _account(), _account()
-    _grant(acc_id)
-    _use(acc_id, 800)  # 80 %
-    await usage_notices.evaluate(acc_id)
-    hub = DeviceHub()
-    mine, theirs = FakeConn(acc_id), FakeConn(other)
-    hub.connections.update({"w-mine": mine, "w-theirs": theirs})
-    assert await hub.push_usage_notice(acc_id) is True
-    assert await hub.push_usage_notice(acc_id) is False  # once per threshold and period
-    notices = [f for t, f in mine.sent if t == "notice"]
-    assert notices == [{"level": "info", "text": "You've used 80% of your monthly AI interactions."}]
-    assert not [t for t, _ in theirs.sent if t == "notice"]  # other accounts see nothing
-
-
-async def test_customer_journey_subscribe_limit_topup_refund(billing_on, fake_checkout):
-    """Subscribe from the app -> webhook -> active -> 80/95/100 % -> refused -> extra usage paid -> answers
-    again -> refund -> refused again. Stripe is faked (signed webhooks are covered in test_shop)."""
+async def test_customer_journey_subscribe_and_talk_without_limit(billing_on, fake_checkout):
+    """Subscribe from the app -> webhook -> active -> thousands of interactions, an expensive month: always
+    answered, no usage warnings. Stripe is faked (signed webhooks are covered in test_shop)."""
     client, me = _customer()
     acc_id = me["id"]
     assert client.post("/api/me/subscribe").status_code == 200
@@ -503,33 +415,11 @@ async def test_customer_journey_subscribe_limit_topup_refund(billing_on, fake_ch
         await billing.handle_event(db, completed, fetch_subscription=lambda sid: _sub(sid, cus, "active") | {
             "current_period_start": int(NOW.timestamp()) - 3600, "metadata": {"account_id": str(acc_id)}})
     plan = client.get("/api/me/plan").json()
-    assert plan["status"]["kind"] == "active" and plan["topup_available"] and plan["usage"]["used_pct"] == 0
-
-    _use(acc_id, 800)
+    assert plan["status"]["kind"] == "active" and plan["usage"] == {**plan["usage"], "used": 0, "unlimited": True}
+    _use(acc_id, 3000)
     _spend(acc_id, 9.00)  # an expensive month: never what limits the customer
     assert (await entitlements.check(acc_id)).allowed
-    assert client.get("/api/me/usage-notice").json()["notice"] == {"threshold": 80, "level": "info"}
-    client.post("/api/me/usage-notice/dismiss", json={"threshold": 80})
-    assert client.get("/api/me/usage-notice").json()["notice"] is None
-    _use(acc_id, 200)
-    d = await entitlements.check(acc_id)
-    assert not d.allowed and d.code == "limit_reached"
-    await usage_notices.evaluate(acc_id)
-    assert client.get("/api/me/usage-notice").json()["notice"]["level"] == "limit"
-
-    r = client.post("/api/me/topups/checkout")
-    assert r.status_code == 200
-    with session_scope() as db:
-        topup = db.get(TopUp, r.json()["topup_id"])
-        await billing.handle_event(db, _topup_session_event(topup))
-    assert (await entitlements.check(acc_id)).allowed  # extra usage: talking again
-    plan = client.get("/api/me/plan").json()
-    assert plan["usage"]["extra"] == 250 and plan["usage"]["remaining"] == 250 and plan["topups"][0]["current"] is True
-
-    with session_scope() as db:
-        await billing.handle_event(db, {"id": f"evt_{secrets.token_hex(6)}", "type": "charge.refunded", "data": {"object": {
-            "id": "ch_r", "payment_intent": f"pi_{r.json()['topup_id']}", "refunded": True, "amount_refunded": 199, "currency": "gbp"}}})
-    assert not (await entitlements.check(acc_id)).allowed
+    assert client.get("/api/me/plan").json()["usage"]["used"] == 3000
 
 
 async def test_invoice_paid_before_the_subscription_event_still_finds_the_account(billing_on):

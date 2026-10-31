@@ -1,4 +1,4 @@
-"""Stripe shop, "ola Care" subscription, extra-usage top-ups, complimentary grants.
+"""Stripe shop, "ola Care" subscription, complimentary grants (and the history of extra-usage top-ups).
 
 - Shop: one Checkout Session (mode=payment) sells the watch (one-time price, charged now) and saves the
   card for ola Care with the buyer's recorded consent (BillingConsent). No subscription is created at
@@ -7,10 +7,9 @@
   async_payment_succeeded. Stripe Tax computes UK VAT / EU VAT; addresses are collected for UK + EU
   shipping. Legacy sessions (watch + Care trial in one subscription Checkout) are still handled.
 - Existing accounts can subscribe from the app (subscription-only Checkout).
-- Top-ups: one-time Checkout (mode=payment, never recurring) for extra allowance in the current
-  period. A pending TopUp row is created first; it is granted only by a verified webhook whose
-  session is paid, matches the row's account and amount, and flips it from pending exactly once.
-  Refund policy: a refunded top-up's allowance is withdrawn (docs/BILLING.md).
+- Top-ups: extra AI interactions were sold until interactions became unlimited (31 Oct 2026). Nothing new
+  is sold; webhooks of sessions created before still settle their TopUp rows (paid, failed, refunded) so
+  receipts, revenue and refunds stay right.
 - Complimentary grants: operator-assigned pilot/test entitlements without any Stripe object.
 - Webhooks keep orders, subscriptions, top-ups, revenue and accounts in sync. Each event id is claimed
   before it is handled (a unique row), so concurrent or repeated deliveries run it once; a failed
@@ -201,73 +200,6 @@ def create_subscription_checkout(db: Session, account: Account) -> str:
         log.warning("subscription checkout failed: %s", stripe_error_summary(exc))
         raise BillingError(502, "payment provider unavailable, please try again") from exc
     return session["url"]
-
-
-def create_topup_checkout(db: Session, account: Account) -> tuple[TopUp, str]:
-    """One-time purchase of extra AI interactions for the current period. Nothing is granted here."""
-    from app import allowance as allowance_mod  # avoid an import cycle
-
-    s = get_settings()
-    if not s.billing_enabled:
-        raise BillingError(503, "extra usage cannot be bought yet")
-    sub = active_subscription(db, account.id)
-    if sub is None or not is_entitled(sub):
-        raise BillingError(409, "extra usage needs an active ola Care plan")
-    plan = get_plan(db)
-    pid = allowance_mod.period_identity(sub)
-    topup = TopUp(
-        account_id=account.id,
-        amount_pence=plan.topup_price_pence,
-        allowance_pence=0,  # legacy money allowance: not used since 0027
-        interactions=plan.topup_interactions,
-        period_start=pid.period.start,
-        period_end=pid.period.end,
-        period_key=pid.key,  # the period it tops up, even if it is paid after the period rolled over
-    )
-    db.add(topup)
-    db.commit()
-    db.refresh(topup)
-    meta = {"kind": "topup", "topup_id": str(topup.id), "account_id": str(account.id)}
-    params: dict[str, Any] = {
-        "mode": "payment",  # one-time: never a recurring charge
-        "line_items": [
-            {
-                "price_data": {
-                    "currency": "gbp",
-                    "unit_amount": plan.topup_price_pence,
-                    "tax_behavior": "inclusive",
-                    "product_data": {
-                        "name": f"ola extra usage: {plan.topup_interactions:,} AI interactions",
-                        "description": f"{plan.topup_interactions:,} extra AI interactions for your current ola Care "
-                                       "period. One-off, not recurring.",
-                    },
-                },
-                "quantity": 1,
-            }
-        ],
-        "client_reference_id": str(account.id),
-        "metadata": meta,
-        "payment_intent_data": {"metadata": meta},
-        "automatic_tax": {"enabled": s.stripe_tax_on},
-        "success_url": f"{_app_base()}/my/account?topup=success",
-        "cancel_url": f"{_app_base()}/my/account?topup=cancel",
-        **_stripe_customer(account),
-    }
-    if account.stripe_customer_id:
-        params["customer_update"] = {"address": "auto"}
-    try:
-        session = stripe.checkout.Session.create(api_key=s.stripe_secret_key, **params)
-    except stripe.StripeError as exc:
-        topup.status = "expired"
-        db.add(topup)
-        db.commit()
-        log.warning("top-up checkout failed: %s", stripe_error_summary(exc))
-        raise BillingError(502, "payment provider unavailable, please try again") from exc
-    topup.stripe_session_id = session["id"]
-    db.add(topup)
-    db.commit()
-    db.refresh(topup)
-    return topup, session["url"]
 
 
 def portal_url(account: Account) -> str:

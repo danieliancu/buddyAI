@@ -1,15 +1,14 @@
 """Internal AI cost monitoring per account and billing period (operator only - never shown to customers and
-never used to refuse a request: the customer's contractual allowance is a number of interactions, enforced
-by app/usage_ops.py).
+never used to refuse a request; AI interactions are unlimited for customers).
 
 For each account's current period:
   total cost        every priced, non-mock provider cost recorded in the period (micro-GBP), split into
                     interactive (the customer's requests) and background (memory learning, embeddings,
                     voice samples), and by component (stt / llm / tts / search / embedding)
   average           total cost / interactions counted in the period
-  projection        average x the account's interaction limit - an estimate, only shown from MIN_SAMPLE
-                    interactions on, flagged "incomplete" when some usage has no price yet (unpriced rows are
-                    never treated as free)
+  projection        the period's cost at its current pace (cost so far / share of the period elapsed) - an
+                    estimate, only shown from MIN_SAMPLE interactions on, flagged "incomplete" when some usage
+                    has no price yet (unpriced rows are never treated as free)
   status            within (< warn) | approaching (>= warn) | over (>= target) | critical (>= critical),
                     thresholds from Plan settings (defaults £2.00 / £2.50 / £5.00)
 
@@ -68,7 +67,7 @@ class AccountCost:
     period_key: str
     period_start: datetime
     period_end: datetime
-    limit: int
+    elapsed: float  # share of the period elapsed, 0..1
     interactions: int = 0
     interactive_micro: int = 0
     background_micro: int = 0
@@ -93,9 +92,9 @@ class AccountCost:
 
     @property
     def projected_micro(self) -> int | None:
-        if self.interactions < MIN_SAMPLE or self.average_micro is None:
+        if self.interactions < MIN_SAMPLE or self.elapsed <= 0:
             return None
-        return round(self.average_micro * self.limit)
+        return round(self.total_micro / min(1.0, self.elapsed))
 
 
 def _period_ids(db: Session, accounts: list[Account], now: datetime) -> dict[int, allowance_mod.PeriodId]:
@@ -116,10 +115,14 @@ def account_costs(db: Session, accounts: list[Account], plan: Plan | None = None
     pids = _period_ids(db, accounts, now)
     if not pids:
         return []
-    extra = _topups(db, list(pids), pids, now, plan)
+
+    def elapsed(p: allowance_mod.Period) -> float:
+        span = (p.end - p.start).total_seconds()
+        return max(0.0, min(1.0, (now - p.start).total_seconds() / span)) if span > 0 else 1.0
+
     out = {
         a.id: AccountCost(a.id, pids[a.id].key, pids[a.id].period.start, pids[a.id].period.end,  # type: ignore[index]
-                          allowance_mod.interaction_limit(a, plan) + extra.get(a.id, 0))  # type: ignore[arg-type]
+                          elapsed(pids[a.id].period))  # type: ignore[index]
         for a in accounts if a.id in pids
     }
     keys = {p.key for p in pids.values()}
@@ -163,25 +166,6 @@ def account_costs(db: Session, accounts: list[Account], plan: Plan | None = None
     return list(out.values())
 
 
-def _topups(db: Session, ids: list[int], pids: dict[int, allowance_mod.PeriodId], now: datetime,
-            plan: Plan) -> dict[int, int]:
-    """Top-up interactions of each account's current period, in one query (as allowance.topup_interactions)."""
-    from app.db.models import TopUp
-
-    out: dict[int, int] = {}
-    if not ids:
-        return out
-    for t in db.exec(select(TopUp).where(col(TopUp.account_id).in_(ids), TopUp.status == "paid")).all():
-        pid = pids.get(t.account_id)
-        if pid is None:
-            continue
-        start, end = allowance_mod._aware(t.period_start), allowance_mod._aware(t.period_end)
-        if (t.period_key == pid.key) if t.period_key is not None else (start <= now < end):  # type: ignore[operator]
-            out[t.account_id] = out.get(t.account_id, 0) + (t.interactions if t.interactions is not None
-                                                            else plan.topup_interactions)
-    return out
-
-
 def view(c: AccountCost, plan: Plan, account: Account | None = None) -> dict[str, Any]:
     """Operator view of one account (GBP floats for display; integers stay the source of truth)."""
     gbp = lambda m: None if m is None else round(m / 1_000_000, 4)  # noqa: E731
@@ -191,9 +175,7 @@ def view(c: AccountCost, plan: Plan, account: Account | None = None) -> dict[str
         "internal": bool(account.internal) if account else False,
         "period_start": c.period_start,
         "period_end": c.period_end,
-        "limit": c.limit,
         "interactions": c.interactions,
-        "used_pct": 100 if c.limit <= 0 else min(100, c.interactions * 100 // c.limit),
         "cost": gbp(c.total_micro),
         "interactive_cost": gbp(c.interactive_micro),
         "background_cost": gbp(c.background_micro),

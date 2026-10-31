@@ -6,7 +6,7 @@ the one you mean (status and a linked watch by name) before changing anything.
 
     python tools/grant_pilot.py --account-id 2 --expect-device Marineasca --dry-run
     python tools/grant_pilot.py --account-id 2 --expect-device Marineasca
-    python tools/grant_pilot.py --enable-enforcement      # turn allowance checks on (audited)
+    python tools/grant_pilot.py --enable-enforcement      # turn subscription checks on (audited)
 
 Every change is written to the audit log (actor "operator:cli").
 """
@@ -42,7 +42,7 @@ def main() -> int:
     ap.add_argument("--allowance-pence", type=int, default=None, help="default: the plan allowance")
     ap.add_argument("--note", default="Complimentary ola Care pilot - no payment")
     ap.add_argument("--extend", action="store_true", help="add --days to an unexpired grant")
-    ap.add_argument("--enable-enforcement", action="store_true", help="check subscriptions/allowances (audited)")
+    ap.add_argument("--enable-enforcement", action="store_true", help="check subscriptions (audited)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -98,7 +98,7 @@ def main() -> int:
         a = entitlements.allowance(db, db.get(Account, account_id))
         enforced = plan_mod.get_plan(db).enforced
     print(f"entitlement check: allowed={decision.allowed} code={decision.code} (enforcement {'on' if enforced else 'off'})")
-    print(f"allowance: {a.used_pct}% used, period {a.period.start:%Y-%m-%d} -> {a.period.end:%Y-%m-%d} ({a.period.kind})")
+    print(f"AI interactions: {a.used} this period (unlimited), period {a.period.start:%Y-%m-%d} -> {a.period.end:%Y-%m-%d} ({a.period.kind})")
     return 0 if decision.allowed else 1
 
 

@@ -160,7 +160,7 @@ function TurnCost({ turn: t }: { turn: ConversationTurn }) {
           )}
           <p className="mt-1.5 text-muted">
             Timings: STT {fmtMs(t.stt_ms)} · LLM first token {fmtMs(t.llm_first_token_ms)} · TTS first audio {fmtMs(t.tts_first_audio_ms)}
-            {t.billable != null && <> · {t.billable ? "Counted against the customer's allowance" : "Not charged to the customer"}</>}
+            {t.billable != null && <> · {t.billable ? "Counted as one of the customer's interactions" : "Not charged to the customer"}</>}
           </p>
           {t.search && (
             <p className="mt-1">

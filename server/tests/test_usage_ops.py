@@ -12,12 +12,12 @@ from sqlalchemy.exc import OperationalError
 from sqlmodel import select
 
 from app import allowance as allowance_mod
-from app import billing, entitlements, usage_notices, usage_ops
+from app import billing, entitlements, usage_ops
 from app.db.models import Account, PricingRule, TopUp, UsageNotice, UsageOperation, UsageRecord, utcnow
 from app.db.session import session_scope
 from app.money import usd_to_micro_gbp
 from app.providers.base import UsageItem
-from tests.test_billing_v2 import _account, _grant, _limit, _spend, _use, enforce  # noqa: F401 - fixture
+from tests.test_billing_v2 import _account, _grant, _spend, _use, enforce  # noqa: F401 - fixture
 
 PROV, MODEL, UNIT = "testprov", "m1", "unit"
 PRICE_USD = 0.04  # one unit = £0.03 at the default 0.75 rate
@@ -116,26 +116,15 @@ def test_request_keys_are_per_account(enforce):
     assert other.allowed
 
 
-def test_last_interaction_one_admitted_others_busy_or_limit(enforce):
+def test_no_interaction_limit_and_watches_run_together(enforce):
     acc = paid_account()
-    _limit(acc, 5)
-    _use(acc, 4)  # room for one more
+    _use(acc, 2500)  # far past the old 1,000 a month
     first = usage_ops.admit(req(acc, device="w1"))
     second = usage_ops.admit(req(acc, device="w2"))
-    assert first.allowed and second.code == "busy_concurrent"
-    assert "other conversations" in second.message
+    assert first.allowed and second.allowed  # no limit and no "other conversations in progress"
     usage_ops.settle(first.op_id, first.exec_token, status="completed", billable=True, items=[(0, item(2))],
                      interaction=True)
-    third = usage_ops.admit(req(acc, device="w2"))
-    assert not third.allowed and third.code == "limit_reached"  # 5 of 5
-
-
-def test_accounts_are_independent(enforce):
-    a1, a2 = paid_account(), paid_account()
-    _limit(a1, 3)
-    _use(a1, 3)
-    assert usage_ops.admit(req(a1)).code == "limit_reached"
-    assert usage_ops.admit(req(a2)).allowed
+    assert usage_ops.admit(req(acc, device="w2")).allowed
 
 
 def test_internal_unenforced_and_unowned_are_recorded_without_budget(enforce):
@@ -339,60 +328,12 @@ def test_period_keys_are_stable():
     assert allowance_mod.period_identity(None, datetime(2026, 9, 20, tzinfo=timezone.utc)).key == "cal:2026-09"
 
 
-def test_topup_and_refund_change_admission(enforce):
-    acc = paid_account()
-    _limit(acc, 2)
-    _use(acc, 2)
-    assert usage_ops.admit(req(acc)).code == "limit_reached"
-    with session_scope() as db:
-        sub = billing.active_subscription(db, acc)
-        pid = allowance_mod.period_identity(sub)
-        t = TopUp(account_id=acc, amount_pence=199, allowance_pence=0, interactions=1, period_start=pid.period.start,
-                  period_end=pid.period.end, period_key=pid.key, status="paid", stripe_payment_intent=f"pi_{secrets.token_hex(3)}")
-        db.add(t)
-        db.commit()
-        intent = t.stripe_payment_intent
-    a = usage_ops.admit(req(acc))
-    assert a.allowed
-    usage_ops.settle(a.op_id, a.exec_token, status="aborted", billable=True)  # e.g. cancelled before understood
-    assert usage_ops.admit(req(acc)).allowed  # not counted: the top-up's interaction is still there
-    with session_scope() as db:
-        billing._refund(db, {"payment_intent": intent, "refunded": True, "id": "ch_1", "amount_refunded": 199})
-    assert usage_ops.admit(req(acc)).code == "limit_reached"
-
-
-def test_limit_reduced_while_running(enforce):
-    acc = paid_account()
-    _use(acc, 3)
-    a = usage_ops.admit(req(acc))
-    _limit(acc, 3)  # an operator lowers the account's interactions
-    assert usage_ops.admit(req(acc)).code == "limit_reached"
-    # the running turn still finishes and counts (a started answer is never cut off)
-    view = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, items=[(0, item(1))],
-                            interaction=True)
-    assert view.state == "settled" and view.interaction
-
-
-def test_threshold_notices_once(enforce):
-    import asyncio
-
-    acc = paid_account()
-    _limit(acc, 10)
-    _use(acc, 8)
-    for _ in range(3):
-        asyncio.run(usage_notices.evaluate(acc))
-    with session_scope() as db:
-        rows = db.exec(select(UsageNotice).where(UsageNotice.account_id == acc)).all()
-    assert [r.threshold for r in rows] == [80]
-
-
 # --- non-turn operations ------------------------------------------------------------------------------------
 
 
 def test_free_operation_is_recorded_not_billed(enforce):
     acc = paid_account()
-    _limit(acc, 2)
-    _use(acc, 2)  # even with no interactions left: a voice sample is free
+    _use(acc, 2)  # a voice sample is free and never an interaction
     view = usage_ops.record_free_operation("voice_sample", "", acc, [item(1, "tts")])
     assert view is not None and view.billable is False and view.state == "settled" and view.interaction is False
     with session_scope() as db:

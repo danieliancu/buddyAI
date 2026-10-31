@@ -4,8 +4,11 @@ Operator and developer reference. Customer-facing wording lives in the web app (
 interactions work"), on the site (pricing, FAQ, subscription terms §3a) and in the consent text (`app/care_terms.py`).
 
 Two separate systems:
-- **A. The customer's interaction allowance — enforced.** ola Care includes **1,000 AI interactions per billing
-  period**, shared by the account's watches. This is the only usage limit customers have.
+- **A. AI interactions — unlimited (owner decision, 31 Oct 2026).** ola Care has no interaction allowance: an
+  entitled account is always admitted. Interactions are still counted per period (customer account page,
+  operator views, cost averages). No usage warnings, no extra usage for sale. Until 31 Oct 2026 there was an
+  allowance of 1,000 a month with top-ups; the sections below that describe it are kept as history and are
+  marked so.
 - **B. Internal AI cost monitoring — never enforced.** What the AI providers cost us per account and period is
   recorded and compared with an internal target (£2.50) for operator alerts and profitability views. It never
   refuses, slows or degrades a customer's request.
@@ -15,20 +18,22 @@ Two separate systems:
 | Setting (operator: Usage → Plan settings) | Default | Meaning |
 |---|---|---|
 | Care selling price | £7.99 / month | What the customer pays. Stripe price id `BUDDYAI_STRIPE_PRICE_CARE_GBP` must match. |
-| AI interactions per month | 1,000 | The customer's allowance per billing period, shared by all the account's watches. Enforced. |
-| Extra usage price | £1.99 one-off | Stripe Checkout `mode=payment`, `price_data` from settings. Never recurring. |
-| Extra usage: interactions added | 250 | Added to the current period only. |
-| Notification thresholds | 80, 95, 100 % | Of the interactions; each shown once per period (web banner/dialog, watch notice, first one also by email). |
+| AI interactions | unlimited | Not a setting any more (the old `interaction_limit`, `topup_*`, `thresholds` columns stay, unused). |
 | Cost: early warning / target / critical | £2.00 / £2.50 / £5.00 | Internal monitoring per account and period (operator only, never enforced). |
 | USD → GBP rate | 0.75 | Applied when usage is recorded; recorded rows keep their rate. |
-| Enforce | off | Check subscriptions and interactions without Stripe keys. Always on while Stripe is configured. |
+| Enforce | off | Check subscriptions without Stripe keys. Always on while Stripe is configured. |
 
-A per-account **interaction override** (Customers → account → Plan & allowance) is an authorised exception.
-The pre-0027 money allowance settings (`care_allowance_pence`, `topup_allowance_pence`, `reserve_pence`,
+The per-account interaction override was removed with the allowance (`accounts.interaction_limit_override`
+stays, unused). The pre-0027 money allowance settings (`care_allowance_pence`, `topup_allowance_pence`, `reserve_pence`,
 `accounts.allowance_override`, a complimentary grant's `allowance_pence`) are kept in the database for history
 and are no longer read. All setting changes are written to the audit log.
 
-## Interactions (the customer's allowance)
+## Interactions (counted, unlimited since 31 Oct 2026)
+
+> **Since 31 Oct 2026** admission only checks the subscription, the account status and duplicates:
+> `limit_reached` and `busy_concurrent` are no longer returned, no threshold notices or warning emails are
+> sent, and `POST /api/me/topups/checkout` and `PATCH /api/accounts/{id}/allowance` are gone. Counting
+> (what is one interaction, periods, period keys) is unchanged. The rules table below is the old behaviour.
 
 - **Per account**, shared by all its watches; **per billing period**:
   - Stripe subscriptions use their billing period. A Stripe period longer than a month — a free trial longer than
@@ -139,7 +144,7 @@ provider tests (`/api/system/test/*`) are a documented exception (`operator_test
 `tests/test_ai_call_sites.py` fails if a new provider call site appears without admission or a documented
 exception.
 
-**Money is not capped — by design.** A customer may use all their interactions whatever they cost us. Provider
+**Money is not capped — by design.** A customer may use the assistant as much as they like, whatever it costs us. Provider
 spend is monitored (below), never limited by admission. A turn that has started always finishes.
 
 ## Internal AI cost monitoring (operator only, never enforced)
@@ -149,7 +154,7 @@ spend is monitored (below), never limited by admission. A turn that has started 
   customer's requests) and background (memory learning, embeddings, voice samples), and by component (STT, LLM,
   TTS, web search, embeddings);
 - **average per interaction** = total cost / interactions counted;
-- **projected cost at the allowance** = average × the account's limit (override and top-ups included). An
+- **projected cost** = the period's cost at its current pace (cost so far / share of the period elapsed). An
   **estimate**, shown only from 20 interactions on; flagged *incomplete* when some usage has no pricing rule
   (unpriced usage is never treated as free);
 - **status**: within target (< £2.00), approaching target (≥ £2.00), over target (≥ £2.50), critical cost
@@ -165,7 +170,8 @@ cost / projection / per interaction / interactions) and the account page.
 
 Deterministic technical safeguards against misuse and runaway expense, independent of both the interaction
 allowance and the cost target. Ordinary heavy use is not abuse.
-- Concurrency: `busy_concurrent` (above) and one live connection per watch (a new one replaces the old).
+- Concurrency: one live connection per watch (a new one replaces the old). (`busy_concurrent` went with the
+  allowance.)
 - Turn bounds: listening and speaking limits, the 30 s "thinking" timeout on the watch, the server idle timeout,
   the uplink stall timeout, a maximum incoming message size.
 - Bounded tool and search use per request (search attempts are limited; search results are cached).
@@ -315,7 +321,11 @@ See `deploy/README.md` §6, "Stripe TEST MODE", and the manual checklist in `doc
 - **No Stripe objects** are created and no ids are fabricated. The grant is recorded as `subscriptions.source = "complimentary"`, with the note and the operator who granted it.
 - **Expiry**: after `current_period_end` the account shows "Pilot ended" and the watch receives `subscription_required`, until the grant is extended or the customer subscribes.
 
-## Top-ups (extra interactions)
+## Top-ups (extra interactions) — history
+
+> **No longer sold since 31 Oct 2026** (interactions are unlimited). Webhooks of sessions created before still
+> settle their rows (paid / expired / refunded) and record revenue and refunds; paid top-ups no longer change
+> anything. Customers see earlier purchases as receipts. The text below describes how they worked.
 
 **Decision (2026-10):** a top-up adds **250 AI interactions** for £1.99 to the current period. At the internal
 target (£2.50 per 1,000, about £0.0025 per interaction) 250 interactions cost about £0.63, against about £1.43

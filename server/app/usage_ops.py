@@ -2,7 +2,7 @@
 
 Every AI-consuming operation (a watch turn, a customer voice sample, an operator test, memory learning) is one
 row in usage_operations. The database - not process memory - is the authority, so any number of server
-processes (or hosts) share one interaction allowance per account:
+processes (or hosts) agree on what is admitted and what it cost:
 
   admit()          one short transaction: lock the account row (PostgreSQL SELECT ... FOR UPDATE; SQLite
                    BEGIN IMMEDIATE), apply the commercial rules, insert the operation with its reservation, a
@@ -20,13 +20,10 @@ processes (or hosts) share one interaction allowance per account:
 Lock order, everywhere (also in billing.py and the admin writers): account row -> subscriptions / top-ups ->
 usage_operations (ascending id) -> usage_records / usage_notices.
 
-Admission of a customer request (chat / note / reminder) on an enforced account, limit = the plan's
-interactions (or the account's override) + the period's top-up interactions:
-  interactions used >= limit                                -> limit_reached
-  interactions used + requests still running >= limit       -> busy_concurrent
-so concurrent watches can never take the account past its limit, and the limit-th request is admitted.
-AI provider cost is recorded for every operation but never decides admission (internal monitoring:
-app/cost_monitor.py). Background memory learning needs an entitled subscription, never uses an interaction.
+Admission of a customer request (chat / note / reminder) on an enforced account needs an entitled ola Care
+subscription; AI interactions are unlimited (owner decision, 31 Oct 2026: no allowance, no top-ups). They are
+still counted per period (app/interactions.py) for the customer's history and the operator. AI provider cost
+is recorded for every operation but never decides admission (internal monitoring: app/cost_monitor.py).
 """
 
 from __future__ import annotations
@@ -62,18 +59,14 @@ ACTIVE = ("reserved", "running")
 TERMINAL = ("settled", "cancelled", "expired")
 
 # Refusal codes (protocol error codes). Legacy watches get "busy" for the ones they do not know.
-LIMIT_REACHED = "limit_reached"
-BUSY_CONCURRENT = "busy_concurrent"
 SUBSCRIPTION_REQUIRED = "subscription_required"
 ACCOUNT_INACTIVE = "account_inactive"
 SERVICE_UNAVAILABLE = "service_unavailable"
 REQUEST_CONFLICT = "request_conflict"
 DUPLICATE = "duplicate"
-NEW_CODES = (BUSY_CONCURRENT, SERVICE_UNAVAILABLE, REQUEST_CONFLICT, DUPLICATE)
+NEW_CODES = (SERVICE_UNAVAILABLE, REQUEST_CONFLICT, DUPLICATE)
 
 MESSAGES = {
-    LIMIT_REACHED: "monthly AI interactions used up for this period",
-    BUSY_CONCURRENT: "other conversations of this account are in progress; try again when they finish",
     SUBSCRIPTION_REQUIRED: "ola Care subscription needed",
     ACCOUNT_INACTIVE: "account suspended or closed",
     SERVICE_UNAVAILABLE: "Ola can't answer right now. Please try again a little later.",
@@ -254,20 +247,7 @@ def _rules(db: Session, acc: Account | None, now: datetime, budget: bool = True,
         return None, pid, "unenforced", 0
     if sub is None or not billing.is_entitled(sub, now):
         return SUBSCRIPTION_REQUIRED, pid, pid.source, 0
-    if kind not in INTERACTION_KINDS:  # background work (memory learning): never uses an interaction
-        return None, pid, pid.source, 0
-    used = allowance_mod.interactions_used(db, acc.id, pid.key)  # type: ignore[arg-type]
-    limit = allowance_mod.interaction_limit(acc, plan) + allowance_mod.topup_interactions(
-        db, acc.id, now, pid.key, plan)  # type: ignore[arg-type]
-    if used >= limit:
-        _log("refused", account=acc.id, code=LIMIT_REACHED, used=used, limit=limit)
-        return LIMIT_REACHED, pid, pid.source, 0
-    if own:
-        active = allowance_mod.interactions_active(db, acc.id, pid.key)  # type: ignore[arg-type]
-        if used + active >= limit:
-            _log("refused", account=acc.id, code=BUSY_CONCURRENT, used=used, active=active, limit=limit)
-            return BUSY_CONCURRENT, pid, pid.source, 0
-    return None, pid, pid.source, 0
+    return None, pid, pid.source, 0  # interactions are unlimited: an entitled account is always admitted
 
 
 def preview(account_id: int | None) -> Admission:

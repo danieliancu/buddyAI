@@ -123,7 +123,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Is there a usage limit?",
-        a: `${prices.interactionsPerMonth.toLocaleString("en-GB")} AI interactions per month are included with ${brandHtml("care")}, shared by all your watches. Each question or request you make counts once — even if olá searches the web for it — and a follow-up counts as a new one. Silence and requests that fail on our side don't count. Your account shows how many you've used and when your allowance renews. If you use them all, olá answers again when it renews, or you can add ${prices.topup.interactions} more for the rest of the month (${formatPrice(prices.topup.GBP, "GBP")}, one-off). Unused interactions don't carry over.`,
+        a: `No. AI interactions are unlimited with ${brandHtml("care")}, for all your watches: olá answers whenever you ask, as often as you like, while your subscription is active. There is nothing extra to buy.`,
       },
       {
         q: `How do I cancel ${brandHtml("care")}?`,

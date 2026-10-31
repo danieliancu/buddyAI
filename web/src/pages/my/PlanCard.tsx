@@ -1,55 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ChevronDown, CircleCheck, ExternalLink, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { api, ApiError, type MyPlan } from "../../api";
 import { fmtDate } from "../../format";
-import { careErrorText, carePlanStatus, fmtCount, fmtDayMonth, fmtLongDate, MonthlyUsage, OrderStatusBadge, pence } from "../../components/BillingBits";
+import { careErrorText, carePlanStatus, fmtCount, fmtDayMonth, MonthlyUsage, OrderStatusBadge, pence } from "../../components/BillingBits";
 import { Button, Card, ErrorBox, cx, useAsync } from "../../components/ui";
 import { useLive } from "../../live";
 
-/** Start a one-off purchase of extra interactions (Stripe Checkout). Nothing is added until the payment succeeds. */
-export async function startTopup(): Promise<void> {
-  const { url } = await api.me.topupCheckout();
-  window.location.assign(url);
-}
-
 /**
- * "ola Care" (My Account): plan status, the month's AI interactions (used, remaining, renewal date - shared by
- * all the account's watches, never internal costs), how interactions are counted, prices, extra interactions
- * and orders.
+ * "ola Care" (My Account): plan status, the month's AI interactions (unlimited: only how many were used, shared
+ * by all the account's watches, never internal costs), how interactions are counted, price, earlier extra-usage
+ * receipts and orders.
  */
 export default function PlanCard() {
   const plan = useAsync(api.me.plan, []);
   const billing = useAsync(api.me.subscription, []); // orders
   const [params, setParams] = useSearchParams();
-  const returned = params.get("topup") ?? (params.get("subscribed") ? "subscribed" : null);
-  const [waiting, setWaiting] = useState(returned === "success");
-  const topupsBefore = useRef<number | null>(null);
+  const returned = params.get("subscribed") ? "subscribed" : null;
 
   useLive((e) => {
-    if (e.type === "turn_end" || e.type === "usage_threshold") plan.reload();
+    if (e.type === "turn_end") plan.reload();
   });
-
-  // Back from Stripe after a top-up: the extra usage appears once the payment webhook arrives.
-  useEffect(() => {
-    if (!waiting) return;
-    let tries = 0;
-    const t = window.setInterval(async () => {
-      tries += 1;
-      const fresh = await api.me.plan().catch(() => null);
-      if (fresh) {
-        plan.setData(fresh);
-        const paid = fresh.topups.filter((x) => x.status === "paid").length;
-        if (topupsBefore.current === null) topupsBefore.current = paid - 1;
-        if (paid > (topupsBefore.current ?? 0) || tries >= 15) {
-          setWaiting(false);
-          window.clearInterval(t);
-        }
-      }
-    }, 2000);
-    return () => window.clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waiting]);
 
   if (plan.error) return <ErrorBox error={plan.error} onRetry={plan.reload} />;
   const p = plan.data;
@@ -59,12 +30,12 @@ export default function PlanCard() {
   return (
     <Card title="olá Care" icon={<Sparkles />}>
       <div className="space-y-5">
-        {returned && <ReturnNotice kind={returned} waiting={waiting} onClose={() => setParams({}, { replace: true })} />}
+        {returned && <ReturnNotice onClose={() => setParams({}, { replace: true })} />}
         <StatusLine plan={p} />
         <CareDetails plan={p} onChange={plan.reload} />
         {p.enforced && USAGE_KINDS.includes(p.status.kind) && <MonthlyUsage usage={p.usage} />}
         <Actions plan={p} />
-        <HowInteractionsWork plan={p} />
+        <HowInteractionsWork />
         {p.topups.length > 0 && <Topups plan={p} />}
         {billing.data && billing.data.orders.length > 0 && <Orders orders={billing.data.orders} />}
       </div>
@@ -237,30 +208,27 @@ function CareCancelled({ plan, endsOn }: { plan: MyPlan; endsOn: string }) {
   );
 }
 
-/** Plan states that have a monthly allowance running (an ended or missing plan shows no meter). */
+/** Plan states with interactions running (an ended or missing plan shows no count). */
 const USAGE_KINDS: MyPlan["status"]["kind"][] = ["trial", "active", "past_due", "complimentary"];
 
 function Actions({ plan }: { plan: MyPlan }) {
-  const [busy, setBusy] = useState<"" | "topup" | "subscribe" | "portal">("");
+  const [busy, setBusy] = useState<"" | "subscribe" | "portal">("");
   const [error, setError] = useState<unknown>(null);
   const status = carePlanStatus(plan);
 
-  const run = async (kind: "topup" | "subscribe" | "portal") => {
+  const run = async (kind: "subscribe" | "portal") => {
     setBusy(kind);
     setError(null);
     try {
-      if (kind === "topup") await startTopup();
-      else {
-        const { url } = kind === "subscribe" ? await api.me.subscribe() : await api.me.billingPortal();
-        window.location.assign(url);
-      }
+      const { url } = kind === "subscribe" ? await api.me.subscribe() : await api.me.billingPortal();
+      window.location.assign(url);
     } catch (e) {
       setError(e instanceof ApiError && e.status === 404 ? new Error("There is no card on file for this account yet.") : e);
       setBusy("");
     }
   };
 
-  if (!plan.topup_available && !plan.can_subscribe && !plan.can_manage_billing) return null;
+  if (!plan.can_subscribe && !plan.can_manage_billing) return null;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
@@ -269,36 +237,18 @@ function Actions({ plan }: { plan: MyPlan }) {
             Subscribe — {pence(plan.prices.care_price_pence)} / month
           </Button>
         )}
-        {plan.topup_available && (
-          <Button
-            className="w-full justify-center sm:w-auto"
-            variant={plan.usage.used_pct >= 95 ? "primary" : "secondary"}
-            loading={busy === "topup"}
-            icon={<PlusCircle className="size-4" />}
-            onClick={() => run("topup")}
-          >
-            Add {fmtCount(plan.prices.topup_interactions)} interactions — {pence(plan.prices.topup_price_pence)}
-          </Button>
-        )}
         {plan.can_manage_billing && (
           <Button variant={status.problem ? "primary" : "ghost"} loading={busy === "portal"} icon={<ExternalLink className="size-4" />} onClick={() => run("portal")}>
             {status.problem ? "Update card" : "Manage billing"}
           </Button>
         )}
       </div>
-      {plan.topup_available && (
-        <p className="text-xs text-muted">
-          One-off payment, never recurring. Adds {fmtCount(plan.prices.topup_interactions)} AI interactions until{" "}
-          {fmtLongDate(plan.usage.reset_at)}.
-        </p>
-      )}
       <ErrorBox error={error} />
     </div>
   );
 }
 
-function HowInteractionsWork({ plan }: { plan: MyPlan }) {
-  const included = fmtCount(plan.usage.included || plan.usage.limit);
+function HowInteractionsWork() {
   return (
     <details className="group rounded-2xl bg-surface-2 px-4 py-3 text-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium">
@@ -306,9 +256,7 @@ function HowInteractionsWork({ plan }: { plan: MyPlan }) {
         <ChevronDown className="size-4 text-muted transition group-open:rotate-180" />
       </summary>
       <div className="mt-3 space-y-2 text-muted">
-        <p>
-          olá Care includes {included} AI interactions per month, shared by all your watches. Unused interactions don't carry over.
-        </p>
+        <p>olá Care includes unlimited AI interactions for all your watches: Olá always answers while your plan is active.</p>
         <p>
           <b className="text-fg">One request is one interaction</b> — a question, a note, a reminder or another voice command. If Olá
           searches the web or uses other tools to answer it, that's still one. A follow-up question is a new interaction.
@@ -316,14 +264,6 @@ function HowInteractionsWork({ plan }: { plan: MyPlan }) {
         <p>
           Silence, and requests that fail because of a fault on our side or a dropped connection, don't count. If you stop an answer
           yourself after Olá understood your request, it counts.
-        </p>
-        <p>
-          Your allowance renews on {fmtLongDate(plan.usage.reset_at)}. If you use it all before then, Olá answers again when it renews
-          {plan.topup_available || plan.billing_enabled
-            ? ` — or you can add ${fmtCount(plan.prices.topup_interactions)} interactions for the rest of the period (${pence(plan.prices.topup_price_pence)}, one-off, never recurring).`
-            : "."}{" "}
-          We let you know at {plan.thresholds.filter((t) => t < 100).join("% and ")}% and when they're used up — we never charge you
-          for more without asking.
         </p>
       </div>
     </details>
@@ -334,7 +274,7 @@ function Topups({ plan }: { plan: MyPlan }) {
   return (
     <div className="border-t border-border pt-4">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium">
-        <PlusCircle className="size-4 text-muted" /> Extra interactions
+        <PlusCircle className="size-4 text-muted" /> Extra interactions bought earlier
       </p>
       <ul className="space-y-2">
         {plan.topups.map((t) => (
@@ -342,9 +282,7 @@ function Topups({ plan }: { plan: MyPlan }) {
             <span className="font-medium">+{fmtCount(t.interactions)} interactions</span>
             <span className="text-muted">{pence(t.amount_pence)}</span>
             <span className="text-muted">{t.paid_at ? fmtDate(t.paid_at) : ""}</span>
-            <span className={cx("ml-auto text-xs", t.status === "refunded" ? "text-warn" : t.current ? "text-ok" : "text-muted")}>
-              {t.status === "refunded" ? "Refunded" : t.current ? `Active until ${fmtDayMonth(t.period_end)}` : `Ended ${fmtDayMonth(t.period_end)}`}
-            </span>
+            {t.status === "refunded" && <span className="ml-auto text-xs text-warn">Refunded</span>}
           </li>
         ))}
       </ul>
@@ -380,17 +318,10 @@ function Orders({ orders }: { orders: { id: number; status: string; created_at: 
   );
 }
 
-function ReturnNotice({ kind, waiting, onClose }: { kind: string; waiting: boolean; onClose: () => void }) {
-  const text =
-    kind === "success"
-      ? waiting
-        ? "Payment received — adding your extra interactions…"
-        : "Thank you — your extra interactions are ready."
-      : kind === "cancel"
-        ? "Purchase cancelled. Nothing was charged."
-        : "Thank you — your subscription is being set up.";
+function ReturnNotice({ onClose }: { onClose: () => void }) {
+  const text = "Thank you — your subscription is being set up.";
   return (
-    <div className={cx("flex items-center gap-3 rounded-lg px-3 py-2 text-sm", kind === "cancel" ? "bg-surface-2 text-muted" : "bg-ok-bg text-ok")}>
+    <div className="flex items-center gap-3 rounded-lg bg-ok-bg px-3 py-2 text-sm text-ok">
       <CircleCheck className="size-4 shrink-0" />
       <span className="flex-1">{text}</span>
       <button className="text-xs underline" onClick={onClose}>

@@ -82,7 +82,7 @@ export function carePlanStatus(plan: MyPlan): { text: string; tone: Tone; proble
     case "canceled":
       return { text: s.period_end ? `Ended on ${fmtDayMonth(s.period_end)}` : "Cancelled", tone: "neutral", problem: false };
     case "internal":
-      return { text: "Internal account — no usage limit", tone: "neutral", problem: false };
+      return { text: "Internal account", tone: "neutral", problem: false };
     default: {
       const care = careSetupStatus(plan.care_activation);
       return care ?? { text: "No plan yet", tone: "neutral", problem: false };
@@ -119,53 +119,20 @@ export function careErrorText(error: string | null): string {
 }
 
 /**
- * The account's monthly AI interactions (My Account → ola Care): % used, a bar, used / allowance, remaining and the
- * renewal date - shared by all the account's watches. A subtle note at 80 %, a stronger one at 95 %, a friendly
- * explanation at 100 %. Never costs or tokens.
+ * The account's AI interactions (My Account → ola Care): unlimited, so no bar and no warnings - only how many were
+ * used this month, shared by all the account's watches. Never costs or tokens.
  */
 export function MonthlyUsage({ usage }: { usage: MyPlan["usage"] }) {
-  const pct = Math.max(0, Math.min(100, usage.used_pct));
-  const level = pct >= 100 ? "limit" : pct >= 95 ? "high" : pct >= 80 ? "warn" : "ok";
-  const renews = fmtLongDate(usage.reset_at);
   return (
-    <section aria-label="Monthly usage" data-testid="monthly-usage" className="space-y-2.5">
+    <section aria-label="AI interactions" data-testid="monthly-usage" className="space-y-1.5">
       <div className="flex items-end justify-between gap-3">
-        <h3 className="text-sm font-medium">Monthly usage</h3>
-        <span className={cx("tabular text-sm font-semibold", level === "limit" ? "text-danger" : level === "ok" ? "text-fg" : "text-warn")}>
-          {Math.floor(pct)}% used
-        </span>
+        <h3 className="text-sm font-medium">AI interactions</h3>
+        <span className="text-sm font-semibold text-ok">Unlimited</span>
       </div>
-      <div className="liquid" role="progressbar" aria-label="Monthly AI interactions used" aria-valuenow={Math.floor(pct)} aria-valuemin={0} aria-valuemax={100}>
-        <div className={cx("liquid-fill", level === "limit" ? "danger" : level === "ok" ? "" : "warn")} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span>
-          <b className="tabular">{fmtCount(usage.used)}</b> of {fmtCount(usage.limit)} interactions
-        </span>
-        <span className="text-muted">
-          <span className="tabular">{fmtCount(usage.remaining)}</span> {usage.remaining === 1 ? "interaction" : "interactions"} remaining
-        </span>
-      </div>
-      <p className="text-xs text-muted">
-        Renews on {renews}
-        {usage.extra > 0 ? ` · includes ${fmtCount(usage.extra)} extra this period` : ""}
+      <p className="text-sm text-muted">
+        <b className="tabular text-fg">{fmtCount(usage.used)}</b> {usage.used === 1 ? "interaction" : "interactions"} this month, all
+        your watches together
       </p>
-      {level === "warn" && (
-        <p className="text-xs text-warn" data-testid="usage-hint">
-          You've used {Math.floor(pct)}% of your monthly AI interactions.
-        </p>
-      )}
-      {level === "high" && (
-        <p className="rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn" data-testid="usage-hint">
-          You've used {Math.floor(pct)}% of your monthly AI interactions — {fmtCount(usage.remaining)} left until {renews}.
-        </p>
-      )}
-      {level === "limit" && (
-        <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger" data-testid="usage-hint">
-          You've reached your {fmtCount(usage.limit)} monthly AI interactions. Your allowance renews on {renews}, when Olá answers
-          again. Your saved notes, reminders and their alarms keep working.
-        </p>
-      )}
     </section>
   );
 }
@@ -190,10 +157,6 @@ export function turnRefusedText(code: TurnRefusedCode, operator = false): string
   switch (code) {
     case "subscription_required":
       return operator ? "Refused: no active subscription" : "Olá needs an active olá Care subscription to answer.";
-    case "limit_reached":
-      return operator
-        ? "Refused: monthly AI interactions used up"
-        : "You've used all your monthly AI interactions. Olá answers again when your allowance renews — see Account → olá Care.";
     case "account_inactive":
       return operator ? "Refused: account inactive" : "Your account is inactive — please contact support.";
     default:

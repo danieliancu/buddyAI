@@ -16,7 +16,7 @@ from app.db.session import session_scope
 from app.interactions import counts_as_interaction
 from app.pipeline.turn import TurnResult
 from app.providers.base import ProviderError, UsageItem
-from tests.test_billing_v2 import _account, _grant, _limit, _use, enforce  # noqa: F401 - fixture
+from tests.test_billing_v2 import _account, _grant, _use, enforce  # noqa: F401 - fixture
 from tests.test_e2e import SAMPLES, server  # noqa: F401 - fixture
 from tests.test_usage_ws import _settled_ops, _watch
 from fake_watch import load_wav_16k  # noqa: E402 - path set by test_usage_ws
@@ -190,20 +190,18 @@ async def test_refused_input_creates_nothing(server, enforce):
     assert await _settled_ops(w.device_id) == [] and _used(acc) == 0
 
 
-async def test_the_1000th_is_admitted_the_1001st_refused_and_two_watches_share_it(server, enforce):
-    acc, w1 = await _paid_watch(server, used=999)
+async def test_no_limit_past_1000_and_two_watches_share_the_count(server, enforce):
+    acc, w1 = await _paid_watch(server, used=1000)
     w2 = await _watch(server, acc)  # a second watch of the same account
     tl = await w1.ask(load_wav_16k(SAMPLES / "en_1.wav"), "en", realtime=False)
-    assert tl.status == "completed"  # the 1,000th
+    assert tl.status == "completed"  # the 1,001st: interactions are unlimited
     await _settled_ops(w1.device_id)
-    assert _used(acc) == 1000
-    t = w2.new_turn()
-    await w2.send("listen_start", t.turn_id, request_id=secrets.token_hex(16), language="en")
-    err = await w2.expect("error")
-    assert err["code"] == "limit_reached"  # the 1,001st, from the other watch
+    tl = await w2.ask(load_wav_16k(SAMPLES / "en_1.wav"), "en", realtime=False)
+    assert tl.status == "completed"  # and from the other watch
+    await _settled_ops(w2.device_id)
     await w1.close()
     await w2.close()
-    assert _used(acc) == 1000 and await _settled_ops(w2.device_id) == []  # a refusal never counts
+    assert _used(acc) == 1002  # still counted
 
 
 def _trial(days: int, start):
@@ -226,7 +224,7 @@ def test_a_long_trial_renews_the_interactions_every_month():
     assert (p2.period.start, p2.period.end) == (datetime(2026, 2, 28, 9, 0, tzinfo=timezone.utc),
                                                 datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc))  # no day drift
     assert p3.period.end == start + timedelta(days=90)  # the last cycle ends with the trial
-    assert len({p1.key, p2.key, p3.key}) == 3  # each month has its own 1,000
+    assert len({p1.key, p2.key, p3.key}) == 3  # each month is counted on its own
 
 
 @pytest.mark.parametrize("days", [28, 30, 31])
@@ -239,8 +237,8 @@ def test_a_one_month_period_or_trial_is_one_cycle(days):
     assert (p.period.start, p.period.end) == (start, start + timedelta(days=days))
 
 
-def test_trial_month_two_starts_a_fresh_allowance(enforce):
-    """The 1,000 renew a month into a long trial: interactions of the first month do not count in the second."""
+def test_trial_month_two_starts_a_fresh_count(enforce):
+    """A month into a long trial the count starts again: interactions of the first month are not in the second."""
     from app.db.models import Subscription
 
     acc = _account()
@@ -250,9 +248,9 @@ def test_trial_month_two_starts_a_fresh_allowance(enforce):
                             current_period_start=now - timedelta(days=40), current_period_end=now + timedelta(days=50),
                             trial_end=now + timedelta(days=50)))
         db.commit()
-    _use(acc, 1000)  # the whole allowance of the current (second) month
+    _use(acc, 1000)  # this (second) month
     assert usage_ops.admit(usage_ops.AdmitRequest(device_id="d", request_key=f"r:{secrets.token_hex(8)}", request_kind="client",
-                                                  kind="chat", account_id=acc, fingerprint="f")).code == "limit_reached"
+                                                  kind="chat", account_id=acc, fingerprint="f")).allowed  # no limit
     with session_scope() as db:
         a = entitlements.allowance(db, db.get(Account, acc))
         first_month = f"stripe:{a.period_key.split(':')[1]}:{int((now - timedelta(days=40)).timestamp())}"
@@ -264,9 +262,7 @@ def test_new_period_starts_from_zero(enforce):
     acc = _account()
     _grant(acc)
     _use(acc, 1000)
-    a = usage_ops.admit(usage_ops.AdmitRequest(device_id="d", request_key=f"r:{secrets.token_hex(8)}",
-                                               request_kind="client", kind="chat", account_id=acc, fingerprint="f"))
-    assert a.code == "limit_reached"
+    assert _used(acc) == 1000
     from app import billing
 
     with session_scope() as db:  # the next period (a renewed grant: a new period key)
@@ -284,8 +280,7 @@ def test_memory_learning_never_uses_an_interaction_but_needs_a_plan(enforce):
                                          request_kind="server", kind="memory", account_id=acc, fingerprint="m")
     assert usage_ops.admit(req()).code == "subscription_required"
     _grant(acc)
-    _limit(acc, 3)
-    _use(acc, 3)  # all interactions used: learning from earlier conversations still runs
+    _use(acc, 3)
     a = usage_ops.admit(req())
     assert a.allowed
     v = usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, interaction=True)

@@ -598,7 +598,7 @@ async def delete_item(
 
 @router.get("/usage")
 def usage(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    """AI interactions in the current period. Internal costs are never sent to customers."""
+    """AI interactions in the current period (unlimited). Internal costs are never sent to customers."""
     from app import entitlements
 
     a = entitlements.allowance(db, acc)
@@ -607,9 +607,7 @@ def usage(acc: Account = Depends(current_account), db: Session = Depends(get_ses
         "reset_at": a.period.end,
         "questions": a.used,  # older web clients
         "used": a.used,
-        "limit": a.limit,
-        "remaining": a.remaining,
-        "used_pct": a.used_pct,
+        "unlimited": True,
     }
 
 

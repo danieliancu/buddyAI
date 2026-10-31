@@ -14,7 +14,7 @@ const plan = (status: MyPlan["status"]): MyPlan =>
   ({
     status,
     care_activation: null,
-    prices: { currency: "GBP", care_price_pence: 799, topup_price_pence: 199, topup_interactions: 250 },
+    prices: { currency: "GBP", care_price_pence: 799 },
   }) as MyPlan;
 
 describe("olá Care cancelled", () => {

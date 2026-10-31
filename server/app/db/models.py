@@ -51,7 +51,7 @@ class Account(SQLModel, table=True):
     last_login_at: Optional[datetime] = None
     stripe_customer_id: Optional[str] = Field(default=None, index=True, max_length=64)
     allowance_override: Optional[float] = None  # legacy (pre-0027 money allowance in GBP): no longer enforced
-    # AI interactions per period for this account (authorised operator override); None = the plan's limit
+    # legacy (0027 until 31 Oct 2026, when interactions became unlimited): no longer used
     interaction_limit_override: Optional[int] = None
     allowance_warned_month: Optional[str] = Field(default=None, max_length=7)  # legacy (pre-0007 80% email)
     # Internal/operator account (the built-in owner of operator stock): never limited, costs still tracked.
@@ -183,12 +183,13 @@ class BillingSettings(SQLModel, table=True):
     care_allowance_pence: int = 250  # legacy (pre-0027 money allowance): no longer enforced
     topup_price_pence: int = 199
     topup_allowance_pence: int = 65  # legacy (pre-0027): no longer enforced
-    thresholds: str = Field(default="80,95,100", max_length=40)  # % of the allowance that notify
+    thresholds: str = Field(default="80,95,100", max_length=40)  # legacy usage warnings: no longer used
     usd_gbp_rate: str = Field(default="0.75", max_length=16)  # USD -> GBP for provider costs (Decimal text)
     reserve_pence: int = 3  # legacy (pre-0027 money reservation): no longer used
-    # Since 0027: the customer allowance in AI interactions, and the internal cost monitoring thresholds
-    interaction_limit: int = 1000  # AI interactions per billing period, shared by the account's watches
-    topup_interactions: int = 250  # added by one extra-usage purchase for the rest of the period
+    # 0027 until 31 Oct 2026: the customer allowance in AI interactions (unlimited since: no longer used)
+    interaction_limit: int = 1000
+    topup_interactions: int = 250  # also the size of top-ups bought before 0027 (history)
+    # internal cost monitoring thresholds
     cost_warn_pence: int = 200  # internal: approaching the AI cost target (monitoring only)
     cost_target_pence: int = 250  # internal: expected monthly AI cost per account (monitoring only)
     cost_critical_pence: int = 500  # internal: investigate unusually expensive usage (monitoring only)

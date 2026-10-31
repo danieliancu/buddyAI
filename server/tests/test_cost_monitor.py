@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -76,19 +77,25 @@ def test_thresholds_alert_once_and_never_block(enforce):
         assert len(audits) == 3 and "£5.00" in audits[-1].detail
 
 
-def test_customer_reaches_all_interactions_despite_high_cost(enforce):
+def test_high_cost_never_refuses_and_there_is_no_interaction_limit(enforce):
     acc = _paid()
-    _use(acc, 999)
+    _use(acc, 1500)
     _cost(acc, 6.00)  # well above the £5 critical level
     cost_monitor.evaluate(acc)
     a = _admit(acc)
-    assert a.allowed  # the 1,000th is honoured
+    assert a.allowed
     usage_ops.settle(a.op_id, a.exec_token, status="completed", billable=True, interaction=True)
-    assert _admit(acc).code == "limit_reached"  # refused for interactions, never for money
+    assert _admit(acc).allowed
 
 
 def test_projection_maths_and_background_costs(enforce):
     acc = _paid()
+    with session_scope() as db:  # a period ten days in: a stable share elapsed
+        sub = billing.active_subscription(db, acc)
+        sub.current_period_start = datetime.now(timezone.utc) - timedelta(days=10)
+        sub.current_period_end = sub.current_period_start + timedelta(days=30)
+        db.add(sub)
+        db.commit()
     _use(acc, 299)
     _cost(acc, 0.60, interaction=True)  # 300 interactions
     _cost(acc, 0.20, kind="stt", unit="audio_second", interaction=False)
@@ -98,9 +105,13 @@ def test_projection_maths_and_background_costs(enforce):
     assert v["interactions"] == 300 and v["cost"] == pytest.approx(0.90)
     assert v["interactive_cost"] == pytest.approx(0.80) and v["background_cost"] == pytest.approx(0.10)
     assert v["average_cost"] == pytest.approx(0.003)
-    assert v["projected_cost"] == pytest.approx(3.00) and v["projection"] == "estimate"
+    # the period's cost at its current pace: cost so far / share of the period elapsed
+    start, end = v["period_start"], v["period_end"]
+    now = datetime.now(timezone.utc)
+    elapsed = (now - start).total_seconds() / (end - start).total_seconds()
+    assert v["projected_cost"] == pytest.approx(0.90 / elapsed, rel=0.05) and v["projection"] == "estimate"
     assert v["by_group"] == {"llm": pytest.approx(0.70), "stt": pytest.approx(0.20)}
-    assert v["target"] == 2.5 and v["status"] == "within" and v["limit"] == 1000
+    assert v["target"] == 2.5 and v["status"] == "within" and "limit" not in v and "used_pct" not in v
 
 
 def test_zero_and_insufficient_data_are_not_projected(enforce):
@@ -121,7 +132,7 @@ def test_requests_from_before_the_count_flag_the_projection(enforce):
     _use(acc, 30)
     _cost(acc, 0.30)
     with session_scope() as db:  # one request settled before migration 0027
-        op = db.exec(select(UsageOperation).where(UsageOperation.account_id == acc)).first()
+        op = db.exec(select(UsageOperation).where(UsageOperation.account_id == acc, UsageOperation.interaction == True)).first()  # noqa: E712
         op.interaction = None
         db.add(op)
         db.commit()

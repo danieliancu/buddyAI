@@ -297,16 +297,6 @@ def payment_failed(to: str) -> Email:
     )
 
 
-def allowance_warning(to: str, line: str) -> Email:
-    """`line`: e.g. "You've used 80% of your monthly AI interactions. Your allowance renews on 8 November 2026."
-    (app/usage_notices.web_text)."""
-    return Email(
-        to,
-        "You've used most of this month's ola AI interactions",
-        f"Hi,\n\n{line}\nYou can see your usage any time in your ola account (Account > ola Care)." + _footer(),
-    )
-
-
 def trial_ending(to: str, trial_end) -> Email:
     when = trial_end.strftime("%d %B %Y") if trial_end else "in a few days"
     body = (

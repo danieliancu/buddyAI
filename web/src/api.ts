@@ -222,17 +222,9 @@ export interface OrderUpdate {
   tracking_number: string;
 }
 
-/** AI allowance of the current period, in GBP (operator view). */
-/** The account's AI interactions this period (operator view). */
+/** The account's AI interactions this period (operator view; unlimited, counted only). */
 export interface Allowance {
   used: number;
-  limit: number;
-  remaining?: number;
-  /** Interactions added by this period's extra-usage purchases. */
-  extra?: number;
-  /** Operator override of the plan's interactions per period; null = plan default. */
-  override: number | null;
-  used_pct?: number;
   period_start?: string;
   period_end?: string;
   period_kind?: "stripe" | "complimentary" | "calendar";
@@ -247,16 +239,14 @@ export interface AccountCost {
   internal: boolean;
   period_start: string;
   period_end: string;
-  limit: number;
   interactions: number;
-  used_pct: number;
   cost: number;
   interactive_cost: number;
   background_cost: number;
   by_group: Record<string, number>;
   /** cost / interactions; null with no interactions. */
   average_cost: number | null;
-  /** average x limit: an estimate, null below the minimum sample. */
+  /** The period's cost at its current pace: an estimate, null below the minimum sample. */
   projected_cost: number | null;
   projection: "estimate" | "incomplete" | "insufficient_data";
   unpriced_rows: number;
@@ -448,29 +438,27 @@ export interface MySubscription {
   /** False when the server runs without Stripe: hide the whole plan section. */
   billing_enabled: boolean;
   subscription: SubscriptionInfo | null;
-  /** 0–100 */
-  allowance_used_pct: number;
+  /** AI interactions used this period (unlimited). */
+  interactions_used: number;
   orders: Pick<Order, "id" | "status" | "created_at" | "tracking_number" | "carrier">[];
 }
 
-/** GET /api/me/usage: completed conversations in the current allowance period (no costs). */
+/** GET /api/me/usage: AI interactions in the current period (unlimited; no costs). */
 export interface MyUsage {
   period_start: string;
   reset_at: string;
   /** AI interactions used this period (same as `used`). */
   questions: number;
   used?: number;
-  limit?: number;
-  remaining?: number;
-  used_pct?: number;
+  unlimited?: boolean;
 }
 
 export type PlanKind = "trial" | "active" | "past_due" | "canceled" | "complimentary" | "expired" | "none" | "internal";
 
-/** GET /api/me/plan: ola Care for the customer. Shares of the allowance only, never internal costs. */
+/** GET /api/me/plan: ola Care for the customer. Never internal costs. */
 export interface MyPlan {
   billing_enabled: boolean;
-  /** False: usage limits are not active for this account (no meter). */
+  /** False: subscriptions are not checked for this account. */
   enforced: boolean;
   status: {
     kind: PlanKind;
@@ -479,27 +467,20 @@ export interface MyPlan {
     cancel_at_period_end?: boolean;
     note?: string;
   };
-  /** AI interactions this period, shared by all the account's watches. */
+  /** AI interactions this period, all the account's watches (unlimited). */
   usage: {
     used: number;
-    limit: number;
-    remaining: number;
-    used_pct: number;
-    /** The plan's interactions (or the account's override). */
-    included: number;
-    /** Interactions added by this period's extra-usage purchases. */
-    extra: number;
+    unlimited: true;
     period_start: string;
     reset_at: string;
   };
-  thresholds: number[];
-  prices: { currency: "GBP"; care_price_pence: number; topup_price_pence: number; topup_interactions: number };
+  prices: { currency: "GBP"; care_price_pence: number };
   can_subscribe: boolean;
-  topup_available: boolean;
   can_manage_billing: boolean;
   /** ola Care that starts when the watch is paired (watch-only orders); null for older accounts. */
   care_activation: CareActivation | null;
-  topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; period_end: string; interactions: number; current: boolean }[];
+  /** Extra usage bought before interactions became unlimited (receipts). */
+  topups: { id: number; status: "paid" | "refunded" | string; amount_pence: number; paid_at: string | null; interactions: number }[];
 }
 
 /** The ola Care trial waiting for the watch to be paired (server: app/care_activation.py). */
@@ -529,21 +510,11 @@ export interface Onboarding {
   waiting_watch?: { name: string; expires_in_s: number } | null;
 }
 
-export interface UsageNotice {
-  threshold: number;
-  level: "info" | "warning" | "limit";
-}
-
 /** Operator: plan settings (GBP pence). */
 export interface BillingSettings {
   enforce: boolean;
   care_price_pence: number;
-  topup_price_pence: number;
-  thresholds: string;
   usd_gbp_rate: string;
-  /** AI interactions per billing period (the customer's allowance, enforced). */
-  interaction_limit: number;
-  topup_interactions: number;
   /** Internal AI cost monitoring per account and period (never enforced). */
   cost_warn_pence: number;
   cost_target_pence: number;
@@ -1017,11 +988,6 @@ const accountsApi = {
   grantComplimentary: (id: number, body: { days: number; allowance_pence?: number | null; note?: string; extend?: boolean }) =>
     post<{ created: boolean; subscription: Subscription }>(`/api/accounts/${id}/complimentary`, body),
   revokeComplimentary: (id: number) => del<{ revoked: boolean }>(`/api/accounts/${id}/complimentary`),
-  /** AI interactions per period for this account; null = back to the plan default. */
-  setAllowance: (id: number, interaction_limit_override: number | null) =>
-    patch<{ interaction_limit_override: number | null; used: number; limit: number }>(`/api/accounts/${id}/allowance`, {
-      interaction_limit_override,
-    }),
 };
 
 // ---------- operator: shop orders (/api/orders) ----------
@@ -1108,10 +1074,6 @@ const meApi = {
   activateCare: () => me.post<{ care_activation: CareActivation | null }>("/api/me/care/activate"),
   /** Stripe Checkout URL for ola Care (existing account). */
   subscribe: () => me.post<{ url: string }>("/api/me/subscribe"),
-  /** Stripe Checkout URL for a one-off extra-usage purchase (granted only after payment). */
-  topupCheckout: () => me.post<{ url: string; topup_id: number }>("/api/me/topups/checkout"),
-  usageNotice: () => me.get<{ notice: UsageNotice | null }>("/api/me/usage-notice"),
-  dismissUsageNotice: (threshold: number) => me.post<{ ok: boolean }>("/api/me/usage-notice/dismiss", { threshold }),
   /** Stripe Billing Portal URL (404 = no subscription on this account). */
   billingPortal: () => me.post<{ url: string }>("/api/me/billing-portal"),
 };
@@ -1268,10 +1230,8 @@ export type LiveEvent =
   | ({ type: "turn_refused"; code: TurnRefusedCode } & LiveBase)
   /** Notes or reminders of the account changed (voice, another tab, a watch). */
   | { type: "items_changed"; account_id: number; at?: number }
-  /** The account reached a usage threshold (80 / 95 / 100 % of the allowance). */
-  | { type: "usage_threshold"; account_id: number; threshold: number; at?: number }
   /** Operator only: an account's AI cost reached a monitoring level this period (never blocks anything). */
   | { type: "cost_alert"; account_id: number; level: "approaching" | "over" | "critical"; cost: number; interactions: number; at?: number }
   | { type: "keepalive"; at?: number };
 
-export type TurnRefusedCode = "subscription_required" | "limit_reached" | "account_inactive" | string;
+export type TurnRefusedCode = "subscription_required" | "account_inactive" | string;

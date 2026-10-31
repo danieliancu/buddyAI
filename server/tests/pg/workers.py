@@ -48,16 +48,15 @@ def reset_schema() -> str:
     return "ok"
 
 
-def make_account(used: int = 0, limit: int | None = None) -> int:
-    """An account with a complimentary plan, `used` interactions already counted this period and (optionally)
-    an interaction override of `limit`."""
+def make_account(used: int = 0) -> int:
+    """An account with a complimentary plan and `used` interactions already counted this period."""
     from app import allowance as allowance_mod
     from app import billing
     from app.db.models import Account, UsageOperation
     from app.db.session import session_scope
 
     with session_scope() as db:
-        acc = Account(email=f"mp-{secrets.token_hex(5)}@example.com", interaction_limit_override=limit)
+        acc = Account(email=f"mp-{secrets.token_hex(5)}@example.com")
         db.add(acc)
         db.commit()
         db.refresh(acc)
@@ -169,34 +168,6 @@ def record(op_id: int, n_items: int, barrier=None) -> int:
     if barrier is not None:
         barrier.wait(30)
     return usage_ops.record_costs(op_id, items)
-
-
-def refund_topup(account_id: int, barrier=None) -> str:
-    from app import billing
-    from app.db.session import session_scope
-
-    if barrier is not None:
-        barrier.wait(30)
-    with session_scope() as db:
-        billing._refund(db, {"payment_intent": f"pi_mp_{account_id}", "refunded": True, "id": f"ch_{account_id}",
-                             "amount_refunded": 199})
-    return "refunded"
-
-
-def add_paid_topup(account_id: int) -> int:
-    from app import allowance as allowance_mod
-    from app import billing
-    from app.db.models import TopUp
-    from app.db.session import session_scope
-
-    with session_scope() as db:
-        sub = billing.active_subscription(db, account_id)
-        pid = allowance_mod.period_identity(sub)
-        t = TopUp(account_id=account_id, amount_pence=199, allowance_pence=0, interactions=1, period_start=pid.period.start,
-                  period_end=pid.period.end, period_key=pid.key, status="paid", stripe_payment_intent=f"pi_mp_{account_id}")
-        db.add(t)
-        db.commit()
-        return t.id
 
 
 def expire(op_id: int) -> None:

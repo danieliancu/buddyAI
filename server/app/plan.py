@@ -1,10 +1,10 @@
 """ola Care plan settings (operator-editable, table billing_settings, one row).
 
-The customer's allowance is a number of AI interactions per billing period (interaction_limit, plus
-topup_interactions per extra-usage purchase): that is what admission enforces. The cost thresholds
-(cost_*_pence) are internal monitoring of what the AI providers cost us: they never refuse anything.
-The legacy money allowance fields (care_allowance_pence, topup_allowance_pence, reserve_pence) are kept for
-history and no longer used. Nothing here talks to Stripe: the Stripe price ids live in the environment.
+AI interactions are unlimited (owner decision, 31 Oct 2026): what admission enforces is the subscription.
+The cost thresholds (cost_*_pence) are internal monitoring of what the AI providers cost us: they never
+refuse anything. Fields of earlier allowances are kept for history and no longer used or editable: the
+interaction allowance and extra usage (interaction_limit, topup_interactions, topup_price_pence, thresholds)
+and the money allowance (care_allowance_pence, topup_allowance_pence, reserve_pence). Nothing here talks to Stripe: the Stripe price ids live in the environment.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class Plan:
 
     @property
     def enforced(self) -> bool:
-        """Subscriptions and allowances are checked when the operator enabled it, or Stripe is live."""
+        """Subscriptions are checked when the operator enabled it, or Stripe is live."""
         return self.enforce or get_settings().billing_enabled
 
 
@@ -89,16 +89,11 @@ def get_plan(db: Session) -> Plan:
 EDITABLE = (
     "enforce",
     "care_price_pence",
-    "topup_price_pence",
-    "thresholds",
     "usd_gbp_rate",
-    "interaction_limit",
-    "topup_interactions",
     "cost_warn_pence",
     "cost_target_pence",
     "cost_critical_pence",
 )
-MAX_INTERACTIONS = 1_000_000
 
 
 def update(db: Session, changes: dict, actor: str) -> BillingSettings:
@@ -106,14 +101,8 @@ def update(db: Session, changes: dict, actor: str) -> BillingSettings:
     for key, value in changes.items():
         if key not in EDITABLE or value is None:
             continue
-        if key == "thresholds":
-            value = ",".join(str(t) for t in parse_thresholds(str(value)))
-        elif key == "usd_gbp_rate":
+        if key == "usd_gbp_rate":
             value = str(parse_rate(str(value)))
-        elif key in ("interaction_limit", "topup_interactions"):
-            value = int(value)
-            if not (1 <= value <= MAX_INTERACTIONS):
-                raise ValueError(f"{key} must be between 1 and {MAX_INTERACTIONS}")
         elif key != "enforce" and int(value) < 0:
             raise ValueError(f"{key} must not be negative")
         setattr(r, key, value)

@@ -16,9 +16,7 @@ const row = (over: Partial<AccountCost>): AccountCost => ({
   internal: false,
   period_start: "2026-10-08T00:00:00Z",
   period_end: "2026-11-08T00:00:00Z",
-  limit: 1000,
   interactions: 300,
-  used_pct: 30,
   cost: 0.9,
   interactive_cost: 0.8,
   background_cost: 0.1,
@@ -45,17 +43,17 @@ describe("AI cost per account (operator)", () => {
   it("shows interactions, cost, average, projection (an estimate) and status", async () => {
     accountCosts.mockResolvedValue(body([
       row({}),
-      row({ account_id: 2, account: "bob***@example.com", interactions: 5, used_pct: 0, cost: 5.2, average_cost: 1.04,
+      row({ account_id: 2, account: "bob***@example.com", interactions: 5, cost: 5.2, average_cost: 1.04,
             projected_cost: null, projection: "insufficient_data", status: "critical", unpriced_rows: 2 }),
     ]));
     render(<MemoryRouter><AccountCostsCard /></MemoryRouter>);
     expect(await screen.findByText("ann***@example.com")).toBeTruthy();
-    expect(screen.getByText("300 / 1,000", { exact: false })).toBeTruthy();
+    expect(screen.getByText("300")).toBeTruthy();
     expect(screen.getByText("~£3.00")).toBeTruthy();
     expect(screen.getByText("not enough data")).toBeTruthy(); // fewer than 20 interactions: no projection
     expect(screen.getByText("Critical cost")).toBeTruthy();
     expect(screen.getByText("+?")).toBeTruthy(); // unpriced usage is not treated as free
-    expect(screen.getByText(/Monitoring only: customers can always use all their interactions/)).toBeTruthy();
+    expect(screen.getByText(/Monitoring only: interactions are unlimited for customers/)).toBeTruthy();
     expect(screen.getAllByText(/Embeddings £0.10/)).toHaveLength(2); // the group label, not the raw key
   });
 

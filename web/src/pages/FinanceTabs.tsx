@@ -150,7 +150,7 @@ export function FinanceTab({ days }: { days: number }) {
           </tbody>
         </Table>
         <p className="mt-2 text-xs text-muted">
-          Failed interactions are not counted against customers' allowances ({gbp(f.turns.not_charged_to_customers, 4)} in this
+          Failed interactions are not counted for customers ({gbp(f.turns.not_charged_to_customers, 4)} in this
           period); their cost stays in the operator totals.
         </p>
       </Card>
@@ -205,7 +205,7 @@ const COST_SORTS = [
 ] as const;
 
 /** Internal: each customer's AI cost in their current billing period against the monthly target, and the
- * projected cost at their interaction allowance. Monitoring only - it never limits a customer. */
+ * projected cost of the period at its current pace. Monitoring only - it never limits a customer. */
 export function AccountCostsCard() {
   const [status, setStatus] = useState<CostStatus | "">("");
   const [sort, setSort] = useState<(typeof COST_SORTS)[number][0]>("cost");
@@ -248,8 +248,8 @@ export function AccountCostsCard() {
               <th className="text-right">Interactions</th>
               <th className="text-right">AI cost</th>
               <th className="text-right">Per interaction</th>
-              <th className="text-right" title="Average × the account's allowance. An estimate.">
-                Projected at limit*
+              <th className="text-right" title="The period's cost at its current pace. An estimate.">
+                Projected*
               </th>
               <th>Status</th>
               <th>Breakdown</th>
@@ -264,8 +264,7 @@ export function AccountCostsCard() {
                   </Link>
                 </td>
                 <td className="tabular text-right">
-                  {a.interactions.toLocaleString("en-GB")} / {a.limit.toLocaleString("en-GB")}{" "}
-                  <span className="text-xs text-muted">({a.used_pct}%)</span>
+                  {a.interactions.toLocaleString("en-GB")}
                 </td>
                 <td className="tabular text-right" title={`Interactive ${gbp(a.interactive_cost, 4)} · background ${gbp(a.background_cost, 4)}`}>
                   {gbp(a.cost, 2)}
@@ -300,8 +299,8 @@ export function AccountCostsCard() {
       {d && (
         <p className="py-3 text-xs text-muted">
           Internal target {gbp(d.thresholds.target, 2)} per account per month (warning from {gbp(d.thresholds.warn, 2)}, critical from{" "}
-          {gbp(d.thresholds.critical, 2)}). Monitoring only: customers can always use all their interactions. *Projections are
-          estimates (average cost per interaction × the account's allowance), shown from {d.min_sample} interactions on.
+          {gbp(d.thresholds.critical, 2)}). Monitoring only: interactions are unlimited for customers. *Projections are estimates
+          (the period's cost at its current pace), shown from {d.min_sample} interactions on.
         </p>
       )}
     </Card>
@@ -385,10 +384,7 @@ export function PlanSettingsTab() {
     setSaved(false);
     setDraft({ ...draft, [k]: v });
   };
-  const countField = (k: "interaction_limit" | "topup_interactions") => (
-    <Input inputMode="numeric" value={String(draft[k])} onChange={(e) => set(k, Math.max(1, Math.round(Number(e.target.value)) || 1))} />
-  );
-  const penceField = (k: "care_price_pence" | "topup_price_pence" | "cost_warn_pence" | "cost_target_pence" | "cost_critical_pence") => (
+  const penceField = (k: "care_price_pence" | "cost_warn_pence" | "cost_target_pence" | "cost_critical_pence") => (
     <Input
       inputMode="decimal"
       value={(draft[k] / 100).toFixed(2)}
@@ -399,11 +395,9 @@ export function PlanSettingsTab() {
     setBusy(true);
     setError(null);
     try {
-      const { enforce, care_price_pence, topup_price_pence, thresholds, usd_gbp_rate, interaction_limit, topup_interactions,
-        cost_warn_pence, cost_target_pence, cost_critical_pence } = draft;
+      const { enforce, care_price_pence, usd_gbp_rate, cost_warn_pence, cost_target_pence, cost_critical_pence } = draft;
       q.setData(
-        await api.billingSettings.update({ enforce, care_price_pence, topup_price_pence, thresholds, usd_gbp_rate, interaction_limit,
-          topup_interactions, cost_warn_pence, cost_target_pence, cost_critical_pence }),
+        await api.billingSettings.update({ enforce, care_price_pence, usd_gbp_rate, cost_warn_pence, cost_target_pence, cost_critical_pence }),
       );
       setSaved(true);
     } catch (e) {
@@ -429,15 +423,8 @@ export function PlanSettingsTab() {
           <Field label="Selling price per month (£, what the customer pays)" hint="Shown to customers. The Stripe price id must match.">
             {penceField("care_price_pence")}
           </Field>
-          <Field label="AI interactions per month" hint="The customer's allowance, shared by an account's watches. Enforced.">
-            {countField("interaction_limit")}
-          </Field>
-          <Field label="Extra usage: selling price (£, one-off)">{penceField("topup_price_pence")}</Field>
-          <Field label="Extra usage: interactions added" hint="For the rest of the billing period.">
-            {countField("topup_interactions")}
-          </Field>
-          <Field label="Usage notifications (%)" hint="Comma-separated, e.g. 80,95,100. Each shows once per period.">
-            <Input value={draft.thresholds} onChange={(e) => set("thresholds", e.target.value)} />
+          <Field label="AI interactions" hint="Unlimited for every customer (counted, never limited).">
+            <p className="py-2 text-sm">Unlimited</p>
           </Field>
           <Field label="USD → GBP rate for provider costs" hint="Applied to new usage; recorded costs keep the rate of their day.">
             <Input value={draft.usd_gbp_rate} onChange={(e) => set("usd_gbp_rate", e.target.value)} />
@@ -455,11 +442,11 @@ export function PlanSettingsTab() {
           </div>
         </div>
         <div className="mt-5 rounded-lg border border-border p-3">
-          <Toggle checked={draft.enforce} onChange={(v) => set("enforce", v)} label="Check subscriptions and interaction allowances" />
+          <Toggle checked={draft.enforce} onChange={(v) => set("enforce", v)} label="Check subscriptions" />
           <p className="mt-2 text-xs text-muted">
             {draft.stripe_configured
               ? "Always on while Stripe is configured."
-              : "Without Stripe, watches of accounts without a plan are refused once this is on. Internal accounts are never limited."}
+              : "Without Stripe, watches of accounts without a plan are refused once this is on. Internal accounts are never refused."}
           </p>
         </div>
         <div className="mt-4 flex items-center gap-3">

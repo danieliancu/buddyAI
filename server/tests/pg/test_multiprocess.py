@@ -74,29 +74,14 @@ def pgc():
     return c
 
 
-# --- the last interaction, shared by watches on different processes ----------------------------------------
+# --- no interaction limit: watches on different processes are all admitted ----------------------------------
 
 
 @pg
-def test_last_budget_race_admits_exactly_one(pgc):
-    acc = pgc.run("make_account", 4, 5)  # 4 of 5 interactions used: room for exactly one more
+def test_watches_on_different_processes_are_all_admitted(pgc):
+    acc = pgc.run("make_account", 1500)  # far past the old 1,000 a month
     res = pgc.race("admit", [(acc, None, f"watch-{i}") for i in range(6)])
     assert len({r["pid"] for r in res}) == 6  # six independent processes
-    assert sum(r["allowed"] for r in res) == 1
-    assert {r["code"] for r in res if not r["allowed"]} == {"busy_concurrent"}
-
-
-@pg
-def test_budget_room_for_several_is_shared_not_multiplied(pgc):
-    acc = pgc.run("make_account", 6, 10)  # room for four more interactions
-    res = pgc.race("admit", [(acc, None, f"w{i}") for i in range(8)])
-    assert sum(r["allowed"] for r in res) == 4
-
-
-@pg
-def test_accounts_do_not_block_each_other(pgc):
-    a1, a2 = pgc.run("make_account", 4, 5), pgc.run("make_account", 4, 5)
-    res = pgc.race("admit", [(a1, None, "x1"), (a2, None, "x2")])
     assert all(r["allowed"] for r in res)
 
 
@@ -115,7 +100,7 @@ def test_admission_waits_for_the_account_lock(pgc):
     inside admit, another one's admit waits on a row lock (pg_stat_activity) and decides after it."""
     from sqlalchemy import create_engine, text
 
-    acc = pgc.run("make_account", 4, 5)
+    acc = pgc.run("make_account", 4)
     flag = Path(tempfile.mkdtemp()) / "locked"
     holder = pgc.start("admit_holding_lock", acc, 2.0, str(flag))
     waiter = pgc.start("admit_after_flag", acc, str(flag))
@@ -134,7 +119,7 @@ def test_admission_waits_for_the_account_lock(pgc):
     engine.dispose()
     first, second = (a, b) if "t_start" not in a else (b, a)
     assert seen_wait, "the second admission never waited on a lock"
-    assert first["allowed"] and not second["allowed"] and second["code"] == "busy_concurrent"
+    assert first["allowed"] and second["allowed"]  # both admitted (no limit), one after the other
     assert second["t_done"] >= first["t_done"] - 0.05  # decided only after the holder committed
 
 
@@ -192,23 +177,6 @@ def test_concurrent_cost_reports_are_written_once(pgc):
 
 
 @pg
-def test_refund_and_admission_concurrently_match_a_serial_order(pgc):
-    acc = pgc.run("make_account", 5, 5)  # used up; a paid top-up gives room
-    pgc.run("add_paid_topup", acc)
-    barrier = CTX.Barrier(2)
-    p1 = pgc.start("refund_topup", acc, barrier=barrier)
-    p2 = pgc.start("admit", acc, None, "w-refund", barrier=barrier)
-    values = pgc.results(2)
-    p1.join(10)
-    p2.join(10)
-    adm = next(v for v in values if isinstance(v, dict))
-    # either admitted before the refund (allowed) or after it (limit) - never a half-applied state
-    assert adm["allowed"] or adm["code"] == "limit_reached"
-    after = pgc.run("admit", acc, None, "w-after")
-    assert after["code"] in ("limit_reached", "busy_concurrent")
-
-
-@pg
 def test_database_unreachable_refuses():
     bad = Cluster("postgresql+psycopg://buddyai:wrong@localhost:1/none", BUDDYAI_USAGE_ADMIT_RETRIES="1")
     res = bad.run("admit_cold", 1, timeout=120)
@@ -218,11 +186,11 @@ def test_database_unreachable_refuses():
 # --- SQLite: several processes on one file (development) ------------------------------------------------------
 
 
-def test_sqlite_processes_share_the_budget():
+def test_sqlite_processes_admit_together():
     path = Path(tempfile.mkdtemp()) / "mp.db"
     c = Cluster(f"sqlite:///{path.as_posix()}", BUDDYAI_DATA_DIR=str(path.parent))
     assert c.run("reset_schema", timeout=180) == "ok"
-    acc = c.run("make_account", 4, 5)
+    acc = c.run("make_account", 1500)
     res = c.race("admit", [(acc, None, f"s{i}") for i in range(4)])
     assert len({r["pid"] for r in res}) == 4
-    assert sum(r["allowed"] for r in res) == 1
+    assert all(r["allowed"] for r in res)

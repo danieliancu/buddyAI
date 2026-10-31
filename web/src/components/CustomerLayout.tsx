@@ -5,7 +5,6 @@ import { api } from "../api";
 import { useCustomer } from "../pages/my/session";
 import { Button, cx } from "./ui";
 import BrandMark from "./BrandMark";
-import UsageNotice from "./UsageNotice";
 import { SITE_URL } from "../site";
 
 const NAV = [
@@ -71,7 +70,6 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
       </header>
 
       {!account.email_verified && <VerifyBanner email={account.email} />}
-      <UsageNotice />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-8">{children}</main>
 

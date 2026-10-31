@@ -78,14 +78,9 @@ def account_detail(account_id: int, request: Request, db: Session = Depends(get_
         "subscription": sub.model_dump() if sub else None,
         "entitled": bool(sub and billing.is_entitled(sub)),
         "internal": acc.internal,
-        # AI interactions this period (the customer's allowance) and the internal cost monitoring view
+        # AI interactions this period (unlimited: counted only) and the internal cost monitoring view
         "allowance": {
             "used": a.used,
-            "limit": a.limit,
-            "remaining": a.remaining,
-            "extra": a.extra,
-            "override": acc.interaction_limit_override,
-            "used_pct": a.used_pct,
             "period_start": a.period.start,
             "period_end": a.period.end,
             "period_kind": a.period.kind,

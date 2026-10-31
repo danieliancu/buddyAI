@@ -34,10 +34,6 @@ export const prices = {
   care: { GBP: PRICE_GBP.care, EUR: toEur(PRICE_GBP.care) },
   /** Free olácare trial, in days from first pairing (server: care_trial_days). */
   trialDays: 30,
-  /** AI interactions included per month (server: Plan settings, interaction_limit). */
-  interactionsPerMonth: 1000,
-  /** One-off extra usage (server: topup_interactions, topup_price_pence). */
-  topup: { interactions: 250, GBP: 1.99 },
   currencyDefault: "GBP" as Currency,
 } as const;
 

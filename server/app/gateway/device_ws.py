@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from app import languages, usage_notices, usage_ops
+from app import languages, usage_ops
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
 from app.db.models import Account, utcnow
@@ -386,7 +386,6 @@ class DeviceConnection:
             if account_id is not None:
                 await self.hub.push_items(account_id, only=self)
                 await deliver_due(self.hub, account_id)  # reminders that came due while offline
-                await self.hub.push_usage_notice(account_id)  # a threshold reached while this watch was off
             return
         if is_valid_pairing_code(code):
             try:
@@ -471,8 +470,8 @@ class DeviceConnection:
             await self._cancel_active()
         self._unfollow(cancel=True)
         self.last_turn_id = turn_id
-        # The database admits the turn and reserves a little allowance for it (app/usage_ops.py), shared by
-        # every server process: several watches of one account cannot start turns past the limit together.
+        # The database admits the turn (app/usage_ops.py: subscription, account status, duplicates), shared by
+        # every server process.
         fp = usage_ops.fingerprint(self.device_id, edit_kind or "chat", edit_uid)
         req = usage_ops.AdmitRequest(device_id=self.device_id, request_key=request_key, request_kind=request_kind,
                                      kind=edit_kind or "chat", account_id=self.account_id, fingerprint=fp)
@@ -494,8 +493,6 @@ class DeviceConnection:
                                     "error", False, [], None, "start_failed")
             await self.send_json("turn_end", turn_id, status="error")
             return
-        if self.account_id is not None:
-            await usage_notices.evaluate(self.account_id)
 
     @staticmethod
     def _settle_quietly(op_id, token, status, billable, items, turn_db_id, reason, interaction=False):
@@ -793,11 +790,6 @@ class DeviceConnection:
                                     counted)
             if turn.account_id is not None:
                 cost_monitor.evaluate_soon(self.hub, turn.account_id)  # internal monitoring, never blocks
-        if turn.account_id is not None:
-            new = await usage_notices.evaluate(turn.account_id)
-            if new:  # a usage threshold was crossed: web banner / dialog, and a short note on the watch
-                self.hub.publish({"type": "usage_threshold", "account_id": turn.account_id, "threshold": max(new)})
-                await self.hub.push_usage_notice(turn.account_id)
         self.hub.publish(
             {
                 "type": "turn_end",

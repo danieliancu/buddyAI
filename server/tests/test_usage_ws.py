@@ -91,32 +91,6 @@ async def test_legacy_watch_is_admitted_by_session_turn(server):
     assert len(ops) == 1 and ops[0].request_kind == "legacy" and ops[0].request_key.startswith("l:")
 
 
-async def _blocked_account() -> int:
-    acc = _account()
-    _grant(acc)
-    _use(acc, 999)  # room for one more interaction, held by another watch below
-    other = usage_ops.admit(usage_ops.AdmitRequest(device_id="other-watch", request_key=f"r:{secrets.token_hex(8)}",
-                                                   request_kind="client", kind="chat", account_id=acc, fingerprint="x"))
-    assert other.allowed
-    return acc
-
-
-async def test_other_conversations_in_progress_new_and_legacy(server, enforce):
-    acc = await _blocked_account()
-    new = await _watch(server, acc)
-    tl = new.new_turn()
-    await new.send("listen_start", tl.turn_id, language="en", request_id=secrets.token_hex(16))
-    err = await new.expect("error")
-    assert err["code"] == "busy_concurrent"
-    await new.close()
-    old = await _watch(server, acc, legacy=True)
-    tl = old.new_turn()
-    await old.send("listen_start", tl.turn_id, language="en")
-    err = await old.expect("error")
-    assert err["code"] == "busy"  # older firmware: its existing "Server busy" screen
-    await old.close()
-
-
 async def test_bad_request_id_is_rejected(server):
     w = await _watch(server, None)
     tl = w.new_turn()

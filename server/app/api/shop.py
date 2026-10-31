@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 
 from datetime import datetime, timezone
 
-from app import accounts, billing, care_activation, care_terms, email, entitlements, plan as plan_mod, usage_notices
+from app import accounts, billing, care_activation, care_terms, email, entitlements, plan as plan_mod
 from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
@@ -125,8 +125,8 @@ def my_subscription(acc: Account = Depends(current_account), db: Session = Depen
             "current_period_end": sub.current_period_end,
             "cancel_at_period_end": sub.cancel_at_period_end,
         },
-        # Customers see how much of their monthly AI interactions is used, never our internal costs.
-        "allowance_used_pct": a.used_pct,
+        # Customers see how many AI interactions they used (unlimited), never our internal costs.
+        "interactions_used": a.used,
         "orders": [
             {"id": o.id, "status": o.status, "created_at": o.created_at, "tracking_number": o.tracking_number, "carrier": o.carrier}
             for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()
@@ -151,8 +151,8 @@ def _status(sub, now: datetime) -> dict:
 
 @router.get("/api/me/plan")
 def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    """ola Care for the customer: status, monthly AI interactions (used / limit / remaining / %), reset date,
-    prices, top-ups. Never internal costs, tokens or providers."""
+    """ola Care for the customer: status, AI interactions used this period (unlimited), period dates, price,
+    earlier extra-usage purchases (history). Never internal costs, tokens or providers."""
     s = get_settings()
     p = plan_mod.get_plan(db)
     now = datetime.now(timezone.utc)
@@ -173,39 +173,28 @@ def my_plan(acc: Account = Depends(current_account), db: Session = Depends(get_s
         "status": status,
         "usage": {
             "used": a.used,
-            "limit": a.limit,
-            "remaining": a.remaining,
-            "used_pct": a.used_pct,
-            "included": a.included,
-            "extra": a.extra,  # interactions added by this period's extra-usage purchases
+            "unlimited": True,
             "period_start": a.period.start,
             "reset_at": a.period.end,
         },
-        "thresholds": list(p.thresholds),
         "prices": {
             "currency": "GBP",
             "care_price_pence": p.care_price_pence,
-            "topup_price_pence": p.topup_price_pence,
-            "topup_interactions": p.topup_interactions,
         },
         # A complimentary pilot can be turned into a paid plan at any time.
         "can_subscribe": s.billing_enabled and bool(s.stripe_price_care_gbp) and not paying and not acc.internal
         and not trial_pending,
-        "topup_available": s.billing_enabled and entitled and not acc.internal,
         "can_manage_billing": s.billing_enabled and bool(acc.stripe_customer_id),
         # ola Care that starts when the watch is paired (watch-only orders); None for legacy accounts.
         "care_activation": care,
+        # extra usage bought before interactions became unlimited (history: receipts, refunds)
         "topups": [
             {
                 "id": t.id,
                 "status": t.status,
                 "amount_pence": t.amount_pence,
                 "paid_at": t.paid_at,
-                "period_end": t.period_end,
                 "interactions": t.interactions if t.interactions is not None else p.topup_interactions,
-                "current": t.status == "paid" and (
-                    t.period_key == a.period_key if t.period_key is not None
-                    else a.period.start <= (t.period_start if t.period_start.tzinfo else t.period_start.replace(tzinfo=timezone.utc)) < a.period.end),
             }
             for t in topups
         ],
@@ -244,35 +233,6 @@ async def operator_retry_care_activation(account_id: int, request: Request, db: 
     await care_activation.activate(account_id)
     db.expire_all()
     return {"care_activation": care_activation.public_state(db, account_id)}
-
-
-@router.post("/api/me/topups/checkout")
-def topup_checkout(request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    """Starts a one-time payment. Nothing is granted until Stripe confirms the payment (webhook)."""
-    SIGNUP_PER_IP.hit(f"topup|{client_ip(request)}")
-    try:
-        topup, url = billing.create_topup_checkout(db, acc)
-    except billing.BillingError as exc:
-        raise _http(exc) from exc
-    accounts.audit(db, f"account:{acc.id}", "topup.checkout", acc.id, detail=f"top-up {topup.id}")
-    return {"url": url, "topup_id": topup.id}
-
-
-@router.get("/api/me/usage-notice")
-def usage_notice(acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    """The highest usage threshold of this period not dismissed yet (or none)."""
-    n = usage_notices.pending_web(db, acc)
-    return {"notice": None if n is None else {"threshold": n.threshold, "level": usage_notices.level(n.threshold)}}
-
-
-class DismissBody(BaseModel):
-    threshold: int = Field(ge=1, le=100)
-
-
-@router.post("/api/me/usage-notice/dismiss")
-def dismiss_usage_notice(body: DismissBody, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    usage_notices.dismiss_web(db, acc, body.threshold)
-    return {"ok": True}
 
 
 @router.post("/api/me/billing-portal")
@@ -342,13 +302,8 @@ def get_billing_settings(db: Session = Depends(get_session)) -> dict:
 class BillingSettingsBody(BaseModel):
     enforce: bool | None = None
     care_price_pence: int | None = Field(None, ge=0, le=100_000)
-    topup_price_pence: int | None = Field(None, ge=0, le=100_000)
-    thresholds: str | None = Field(None, max_length=40)
     usd_gbp_rate: str | None = Field(None, max_length=16)
-    # The customer's allowance (enforced) ...
-    interaction_limit: int | None = Field(None, ge=1, le=1_000_000)
-    topup_interactions: int | None = Field(None, ge=1, le=1_000_000)
-    # ... and the internal cost monitoring thresholds (never enforced)
+    # internal cost monitoring thresholds (never enforced)
     cost_warn_pence: int | None = Field(None, ge=1, le=1_000_000)
     cost_target_pence: int | None = Field(None, ge=1, le=1_000_000)
     cost_critical_pence: int | None = Field(None, ge=1, le=1_000_000)
@@ -399,22 +354,4 @@ def revoke_complimentary(account_id: int, request: Request, db: Session = Depend
     return {"revoked": billing.revoke_complimentary(db, acc, request.session["admin"])}
 
 
-class AllowanceBody(BaseModel):
-    # AI interactions per period for this account (an authorised exception); None = the plan's limit
-    interaction_limit_override: int | None = Field(None, ge=1, le=1_000_000)
 
-
-@router.patch("/api/accounts/{account_id}/allowance", dependencies=[Depends(require_admin_role)])
-def set_allowance(account_id: int, body: AllowanceBody, request: Request, db: Session = Depends(get_session)) -> dict:
-    acc = db.get(Account, account_id)
-    if not acc or acc.status == "deleted":
-        raise HTTPException(404, "account not found")
-    lock_account(db, acc.id)  # the limit changes: admissions of this account wait for it
-    before = acc.interaction_limit_override
-    acc.interaction_limit_override = body.interaction_limit_override
-    db.add(acc)
-    db.commit()
-    accounts.audit(db, request.session["admin"], "account.allowance", acc.id,
-                   detail=f"interactions per period: {before or 'plan'} -> {body.interaction_limit_override or 'plan'}")
-    a = entitlements.allowance(db, acc)
-    return {"interaction_limit_override": acc.interaction_limit_override, "used": a.used, "limit": a.limit}

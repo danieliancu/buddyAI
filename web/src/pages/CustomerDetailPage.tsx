@@ -1,12 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Ban, CheckCircle2, ScrollText, Watch } from "lucide-react";
 import { api, ApiError, type AccountCost, type AccountDetail, type Order } from "../api";
 import { fmtAgo, fmtDateTime } from "../format";
-import { fmtDayMonth, Meter, OrderStatusBadge, planStatus } from "../components/BillingBits";
+import { fmtDayMonth, OrderStatusBadge, planStatus } from "../components/BillingBits";
 import { fmtMinor, OrderDialog } from "./OrdersPage";
 import { BatteryInfo, OnlineDot, StateBadge } from "../components/DeviceBits";
-import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, Field, Input, PageHeader, Spinner, Table, useAsync } from "../components/ui";
+import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, Input, PageHeader, Spinner, Table, useAsync } from "../components/ui";
 import { AccountStatusBadge } from "./CustomersPage";
 import { useIsAdmin } from "../operator";
 
@@ -14,7 +14,7 @@ const ACTION_LABEL: Record<string, string> = {
   "account.create": "Account created",
   "account.active": "Reactivated",
   "account.suspended": "Suspended",
-  "account.allowance": "Interaction allowance changed",
+  "account.allowance": "Interaction allowance changed (before unlimited)",
   "cost.alert": "AI cost alert (internal)",
   "subscription.complimentary": "Complimentary plan granted",
   "subscription.complimentary.extend": "Complimentary plan extended",
@@ -250,7 +250,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Subscription status + monthly allowance with an operator override. */
+/** Subscription status and the AI interactions of the period (unlimited). */
 /** Complimentary / test access: no payment, no Stripe objects; recorded in the audit log. */
 function ComplimentaryControls({ account: a, onChanged }: { account: AccountDetail; onChanged: () => void }) {
   const [days, setDays] = useState("30");
@@ -304,10 +304,6 @@ function ComplimentaryControls({ account: a, onChanged }: { account: AccountDeta
 function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged: () => void }) {
   const isAdmin = useIsAdmin();
   const al = a.allowance;
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  useEffect(() => setValue(al?.override != null ? String(al.override) : ""), [al?.override]);
 
   if (!al) return null;
   const sub = a.subscription;
@@ -317,35 +313,13 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
       ? { text: `Complimentary until ${fmtDayMonth(sub?.current_period_end)}`, tone: "accent" as const }
       : { text: `Complimentary access ended ${fmtDayMonth(sub?.current_period_end)}`, tone: "warn" as const }
     : planStatus(sub);
-  const pct = al.limit > 0 ? (al.used / al.limit) * 100 : 0;
-
-  const save = async (override: number | null) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.accounts.setAllowance(a.id, override);
-      onChanged();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const v = value.trim();
-    if (v === "") return void save(null);
-    const n = Number(v);
-    if (!Number.isInteger(n) || n < 1) return setError(new Error("Enter a whole number of interactions, or leave empty for the plan default."));
-    void save(n);
-  };
 
   return (
-    <Card title="Plan & allowance">
+    <Card title="Plan & usage">
       <dl className="space-y-3 text-sm">
         <Row label="Plan">
           <Badge tone={plan.tone}>{a.internal ? "internal" : comp ? "complimentary" : sub ? sub.status : "none"}</Badge>
-          <span className="mt-1 block text-muted">{a.internal ? "Internal account — never limited, costs still tracked" : plan.text}</span>
+          <span className="mt-1 block text-muted">{a.internal ? "Internal account — costs still tracked" : plan.text}</span>
           {comp && sub?.note && <span className="mt-1 block text-xs text-muted">{sub.note} · granted by {sub.granted_by ?? "—"}</span>}
         </Row>
         {sub?.trial_end && <Row label="Trial end">{fmtDayMonth(sub.trial_end)}</Row>}
@@ -357,41 +331,12 @@ function PlanCard({ account: a, onChanged }: { account: AccountDetail; onChanged
         )}
       </dl>
       <div className="mt-4 border-t border-border pt-4">
-        <Meter
-          pct={pct}
-          label={`AI interactions this period (${fmtDayMonth(al.period_start)} – ${fmtDayMonth(al.period_end)}): ${al.used.toLocaleString("en-GB")} of ${al.limit.toLocaleString("en-GB")}${al.extra ? ` (incl. ${al.extra} extra)` : ""}`}
-        />
+        <p className="text-sm">
+          AI interactions this period ({fmtDayMonth(al.period_start)} – {fmtDayMonth(al.period_end)}):{" "}
+          <b className="tabular">{al.used.toLocaleString("en-GB")}</b> <span className="text-muted">(unlimited)</span>
+        </p>
         {a.cost && <CostLine cost={a.cost} />}
         {!a.internal && isAdmin && <ComplimentaryControls account={a} onChanged={onChanged} />}
-        {isAdmin && (
-          <form onSubmit={submit} className="mt-4 space-y-2">
-            <Field
-              label="Interactions per month (override)"
-              htmlFor="al-override"
-              hint={al.override != null ? "An authorised exception to the plan's allowance for this account." : "Empty = plan default."}
-            >
-              <div className="flex gap-2">
-                <Input
-                  id="al-override"
-                  inputMode="numeric"
-                  placeholder="Plan default"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="min-w-0 flex-1"
-                />
-                <Button type="submit" loading={busy}>
-                  Save
-                </Button>
-              </div>
-            </Field>
-            {al.override != null && (
-              <button type="button" className="text-xs text-accent hover:underline" onClick={() => void save(null)} disabled={busy}>
-                Reset to plan default
-              </button>
-            )}
-            <ErrorBox error={error} />
-          </form>
-        )}
       </div>
     </Card>
   );
@@ -409,7 +354,7 @@ function CostLine({ cost: c }: { cost: AccountCost }) {
         <Badge tone={COST_TONE[c.status]}>{COST_TEXT[c.status]}</Badge>
         <span>
           AI cost {money(c.cost)} (target {money(c.target)}) · {money(c.average_cost)} per interaction ·{" "}
-          {c.projected_cost == null ? "no projection yet" : `~${money(c.projected_cost)} projected at the allowance (estimate)`}
+          {c.projected_cost == null ? "no projection yet" : `~${money(c.projected_cost)} projected for the period at this pace (estimate)`}
         </span>
       </div>
       <p className="mt-1 text-muted">
