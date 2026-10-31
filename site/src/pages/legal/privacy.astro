@@ -42,9 +42,11 @@ import { privacyLine } from "../../data/features";
     </li>
     <li><strong>Notes and reminders</strong> you create with olá or in your account. Legal basis: contract.</li>
     <li>
-      <strong>Web search</strong> — for questions about current events, olá may use OpenAI's hosted web search. Your
-      approximate city, worked out from your watch's time zone, is sent with the search so results are relevant. Some
-      general answers (for example weather, transport, sport, business and news) may be stored for a short time and
+      <strong>Web search</strong> — for questions about current events, olá searches the web. The search question,
+      never your name or account details, is sent to a search service (OpenAI's hosted web search, or Brave Search,
+      DuckDuckGo and Yahoo), and olá may then read the most relevant public web pages. For weather, the town you ask
+      about is sent to MET Norway and OpenStreetMap's Nominatim service to find its forecast. Your approximate city,
+      worked out from your watch's time zone, may be included so results are relevant. Some general answers (for example weather, transport, sport, business and news) may be stored for a short time and
       reused for other users' similar questions; these stored answers do not identify you. Legal basis: contract.
     </li>
     <li><strong>Watch settings and usage</strong> (language, persona, colours, the number of AI interactions used in each billing period). Legal basis: contract.</li>
@@ -69,6 +71,11 @@ import { privacyLine } from "../../data/features";
     <li>Our hosting provider — the servers that run olá.</li>
     <li>Delivery carriers — name, address and contact details needed to deliver your order.</li>
   </ul>
+  <p>
+    To answer web questions, the search question (or, for weather, the town) is also sent to independent search and
+    data services: Brave Search, DuckDuckGo, Yahoo, MET Norway and OpenStreetMap (Nominatim). They receive it from our
+    servers, not from your watch, and never with your name or account details.
+  </p>
   <p>We never sell your data and we don't use it for advertising.</p>
 
   <h2>4. International transfers</h2>

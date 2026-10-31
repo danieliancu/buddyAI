@@ -84,7 +84,7 @@ export function formatPrice(amount: number, currency: Currency): string {
 }
 
 /** Date of the last content update of the legal pages (set by hand when their text changes). */
-export const legalLastUpdated = "2026-10-12";
+export const legalLastUpdated = "2026-10-31";
 
 export function formatDate(iso: string): string {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
