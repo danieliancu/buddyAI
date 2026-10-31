@@ -87,6 +87,21 @@ estimate, now 1.7 m, 2021).
 IKEA Lakeside: the answer says sources disagree on Saturday hours (the legacy answer differs on weekday hours too).
 Bank of England: both backends now say 17 September (C1, first half resolved).
 
+## Production check (31 October, 13:28–13:41, one account) and the news fix
+
+15 search turns on the production watch: 9 answered. Search part £0.0027 per search on average (hosted search
+≈ £0.0093: −71%); Brave is 93% of it (£0.00375 per request, inside the $5 monthly credit). Own search time p50
+3.8 s; first audio of search turns p50 9.8 s (turns without a search 3.3–4.7 s). Both "UK news today" questions
+failed: news sites refuse our page reader and a web search for "UK news today" finds section pages.
+
+Fix (B13): news questions use Brave's **news endpoint** (articles with their age, no page download, no
+freshness limit so "the latest BoE decision" from weeks ago is still found); the undated wording goes first;
+for news the ranking uses the topic words only (not "latest / news / today / dates", not a site's .co.uk ending)
+with a bonus for stories from today or yesterday, and a site's two places go to its newest stories; a general
+news request ("… news / headlines") tells the answering model that one or two recent stories are the answer.
+Benchmark news questions + the two production failures: 6 / 7 twice (was 4 / 7), then the full run
+`server/out/search_bench_20261031_1411.json`: news 5 / 5, all 26 / 30, p50 2.1 s, p95 6.8 s, $0.0037 per question.
+
 ## TODO
 
 Re-run the benchmark after each step and add the results to this file.
@@ -139,7 +154,7 @@ Re-run the benchmark after each step and add the results to this file.
 ### C. Checks and clean-up
 
 - [x] C1. BoE date: both say 17 Sep. Bucharest population: 2021 census after B8.
-- [ ] C2. Watch for the flaky test (timing-based tests); 78 tests now.
+- [ ] C2. Watch for the flaky test (timing-based tests); 84 tests now (plus tools/search_report.py's test).
 - [ ] C3. The answering call may finish up to ~2 s after the deadline.
 - [ ] C4. Benchmark from the test server (datacenter bandwidth).
 - [ ] **C5.** In the Brave dashboard, check that `/web/rich` is billed as one request ($0.005), and whether failed
@@ -159,7 +174,7 @@ legacy_openai for transport only (live status), ddgs_brave for everything else.
 ```
 git switch feature/ddgs-brave-search
 cd server
-.venv\Scripts\python -m pytest -q tests/test_websearch.py      # 78 tests, mocked
+.venv\Scripts\python -m pytest -q tests/test_websearch.py      # 84 tests, mocked
 .venv\Scripts\python tools/search_bench.py --legacy             # real, ~10 min, ~$0.37 legacy + ~$0.11 ddgs_brave
 ```
 

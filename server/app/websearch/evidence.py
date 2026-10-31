@@ -34,6 +34,17 @@ _WEAK = (
 # Days after which a dated page is weaker evidence for a category (only when the page states its date).
 _FRESH_DAYS = {"weather": 2, "transport": 2, "news": 7, "sport": 21}
 
+# News: words that only say "news" or "when" are not the topic ("UK latest news today 31 October" is about the UK);
+# a story from today or yesterday counts more.
+_NEWS_WORDS = frozenset((
+    "news", "latest", "headline", "headlines", "today", "todays", "tonight", "breaking", "top", "story", "stories",
+    "update", "updates", "current", "recent", "now", "this", "week", "morning", "evening", "live",
+    "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+    "december",
+))
+NEWS_RECENT_BONUS = 0.5
+_DOMAIN_ENDINGS = frozenset(("co", "com", "org", "net", "gov", "ac", "uk", "ro", "eu", "www"))
+
 _ROLE = re.compile(r"(?im)^\s*(system|assistant|user|developer|tool)\s*:")
 _MARKUP = re.compile(r"(?i)</?\s*untrusted_web_content\s*>|<\|[^|>]{0,40}\|>|\[/?(?:INST|SYS)\]")
 
@@ -47,11 +58,16 @@ def reliability(domain: str) -> float:
     return 0.5
 
 
-def coverage(query: str, r: SearchResult) -> float:
+def coverage(query: str, r: SearchResult, category: str = "") -> float:
     want = terms(query)
+    if category == "news":
+        want = {w for w in want if w not in _NEWS_WORDS and not w.isdigit()}
     if not want:
         return 1.0
-    have = terms(" ".join((r.title, r.snippet, r.text, r.domain.replace(".", " "))))
+    domain = r.domain.replace(".", " ")
+    if category == "news":  # the site's name counts ("BBC"), its ending does not (every .co.uk site would be "UK")
+        domain = " ".join(p for p in r.domain.split(".")[:-1] if p not in _DOMAIN_ENDINGS)
+    have = terms(" ".join((r.title, r.snippet, r.text, domain)))
     return len(want & have) / len(want)
 
 
@@ -85,21 +101,28 @@ def rank(query: str, results: list[SearchResult], category: str, today: date) ->
     seen_urls: set[str] = set()
     per_domain: dict[str, int] = {}
     kept: list[SearchResult] = []
-    # most reliable first, so a duplicate keeps the authoritative copy (an aggregator's copy is dropped)
-    for r in sorted(results, key=lambda r: (-reliability(r.domain), r.rank)):
+    # most reliable first, so a duplicate keeps the authoritative copy (an aggregator's copy is dropped); for
+    # news the newest first within that, so a site's two places go to its latest stories
+    def order(r: SearchResult) -> tuple:
+        age = _age_days(r.published_at, today) if category == "news" else None
+        return -reliability(r.domain), age if age is not None and age >= 0 else 9999, r.rank
+
+    for r in sorted(results, key=order):
         key = norm_url(r.url)
         if key in seen_urls or per_domain.get(r.domain, 0) >= MAX_PER_DOMAIN:
             continue
         if any(_similar(r.snippet, k.snippet) for k in kept if r.snippet and k.snippet):
             continue
-        cov = coverage(query, r)
+        cov = coverage(query, r, category)
         if cov < MIN_COVERAGE:
             continue
         r.reliability = reliability(r.domain)
         age = _age_days(r.published_at, today)
         stale = age is not None and category in _FRESH_DAYS and age > _FRESH_DAYS[category]
         future = age is not None and age < -2  # a "published" date in the future is not to be trusted
-        r.relevance = cov + 0.4 * r.reliability - 0.03 * r.rank - (0.5 if stale else 0) - (0.3 if future else 0)
+        recent = category == "news" and age is not None and 0 <= age <= 1
+        r.relevance = (cov + 0.4 * r.reliability - 0.03 * r.rank - (0.5 if stale else 0) - (0.3 if future else 0)
+                       + (NEWS_RECENT_BONUS if recent else 0))
         seen_urls.add(key)
         per_domain[r.domain] = per_domain.get(r.domain, 0) + 1
         kept.append(r)

@@ -306,6 +306,60 @@ async def test_open_breaker_skips_ddgs():
     assert ddgs.queries == [] and len(brave.queries) == 1
 
 
+async def test_brave_news_questions_use_the_news_endpoint():
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["path"], seen["params"] = request.url.path, dict(request.url.params)
+        return httpx.Response(200, json={"type": "news", "results": [
+            {"title": "Celebrity Traitors final - BBC News", "url": "https://www.bbc.co.uk/news/a", "age": "16 hours ago",
+             "description": "The second series reached its climax", "page_age": "2026-10-30T21:00:00",
+             "extra_snippets": ["15 million viewers watched", "The second series reached its climax"]},
+            {"title": "bad", "url": "ftp://x/y", "description": "x"}]})
+
+    brave = BraveSearchProvider("k", transport=httpx.MockTransport(handler))
+    out = await brave.search("BBC News UK latest", tz="Europe/London", category="news", max_results=8, timeout=2)
+    assert seen["path"] == "/res/v1/news/search" and "freshness" not in seen["params"]  # weeks-old "latest" decisions too
+    assert seen["params"]["country"] == "GB" and seen["params"]["extra_snippets"] == "true"
+    assert len(out) == 1 and out[0].published_at == "2026-10-30" and out.rich_key == ""
+    assert out[0].snippet == "The second series reached its climax … 15 million viewers watched"
+    await brave.search("Romania result", tz="Europe/London", category="sport", max_results=8, timeout=2)
+    assert seen["path"] == "/res/v1/web/search"
+
+
+def test_general_news_ranks_by_topic_and_recency():
+    from datetime import date
+
+    today = date(2026, 10, 31)
+    section = R("News - The Telegraph", "Latest breaking news, politics, crime", "https://telegraph.co.uk/news", published_at="2026-10-31")
+    story = R("Support for rejoining EU grows", "Poll: UK closer to the European Union", "https://independent.co.uk/a", published_at="2026-10-31")
+    older = R("UK storm clean-up continues", "High winds hit parts of the UK", "https://example.org/b", published_at="2026-10-26")
+    ranked = evidence.rank("latest UK news today 31 October 2026", [section, story, older], "news", today)
+    assert section not in ranked  # only "news" words: not about the UK
+    assert ranked[0] is story and older in ranked  # today's story first
+    bbc = [R(f"BBC story {i}", f"UK story number {i} BBC", f"https://www.bbc.co.uk/news/{i}", rank=i,
+             published_at=f"2026-10-{25 + i}") for i in range(5)]
+    kept = evidence.rank("BBC News UK latest news", bbc, "news", today)
+    assert {r.published_at for r in kept} == {"2026-10-28", "2026-10-29"}  # a site's two places: its newest stories
+
+
+def test_news_wordings_start_undated():
+    v = query_variants("latest UK news today 31 October 2026", "", "news")
+    assert v[0] == "latest UK news today" and "latest UK news today 31 October 2026" in v
+    assert query_variants("Romania match 12 October", "", "sport")[0] == "Romania match 12 October"
+
+
+async def test_general_news_requests_ask_for_recent_stories():
+    fn, seen = answers({"answer": "A poll on 31 October found growing support for rejoining the EU."})
+    brave = FakeProvider("brave", [R("UK poll on the EU", "UK support for rejoining the EU grows", "https://independent.co.uk/a")])
+    await run(orch(FakeProvider("ddgs", OFF), brave), fn, query="UK latest news headlines today", category="news")
+    assert "latest news in general" in seen[0][1]
+    fn, seen = answers(ANSWER)
+    await run(orch(FakeProvider("ddgs", OFF), FakeProvider("brave", GOOD)), fn, category="news",
+              query="Romania national football team latest match result")
+    assert "latest news in general" not in seen[0][1]  # one particular fact asked
+
+
 async def test_brave_provider_request_and_errors():
     seen = {}
 

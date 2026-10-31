@@ -75,6 +75,12 @@ EVIDENCE_RULES = (
     'without dates, places or details the query does not imply; else empty>"}'
 )
 
+# A request for the news in general ("UK news today"): any recent story is the answer, not one exact fact.
+_GENERAL_NEWS = re.compile(r"(?i)\b(news|headlines?)\b")
+NEWS_ASK = ("\nThis asks for the latest news in general: the answer is one or two stories the results report from "
+            "today or yesterday, each in a sentence with its date. A page that only lists sections or links is not a "
+            "story. NOT_FOUND only if no result reports a story from today or yesterday.")
+
 # Live counters since the process started (operator finance page); durable figures are the usage rows.
 STATS: Counter = Counter()
 
@@ -114,7 +120,9 @@ def query_variants(query: str, location: str, category: str) -> list[str]:
         out.append(f"{query} {location}")
     undated = re.sub(r"\s+", " ", _DATEISH.sub(" ", query)).strip()
     if undated and undated != query:
-        out.append(undated)
+        # news: the undated wording first (with "31 October" a news search finds stories that mention the date,
+        # not the day's stories; the dates of the results say how recent they are)
+        out.insert(0, undated) if category == "news" else out.append(undated)
     base = undated or query
     swapped = re.sub(r"(?i)\blatest\b", "last", base) if re.search(r"(?i)\blatest\b", base) else \
         re.sub(r"(?i)\bnext\b", "upcoming", base)
@@ -372,7 +380,7 @@ class TurnSearch:
             if asked:
                 # Brave's extra snippets (and structured data) often hold the answer: ask before reading pages
                 quick = sorted([*pool.values(), *ranked], key=lambda r: -r.relevance)[: cfg.max_sources + 2]
-                answer, conflict, suggestion = await self._answer(query, location, quick, tokens, n)
+                answer, conflict, suggestion = await self._answer(query, location, quick, tokens, n, category)
                 if answer and answer != NOT_FOUND:
                     return answer, self._complete(quick, conflict, category)
                 if suggestion:
@@ -387,7 +395,7 @@ class TurnSearch:
             if asked and not read:
                 continue  # no page text beyond the snippets already asked about
             best = sorted(pool.values(), key=lambda r: -r.relevance)[: cfg.max_sources]
-            answer, conflict, suggestion = await self._answer(query, location, best, tokens, n)
+            answer, conflict, suggestion = await self._answer(query, location, best, tokens, n, category)
             if answer and answer != NOT_FOUND:
                 return answer, self._complete(best, conflict, category)
             if suggestion:
@@ -459,10 +467,11 @@ class TurnSearch:
         return not conflict and not (snippet_only and category in TIME_SENSITIVE) and self.remaining() >= 0
 
     async def _answer(self, query: str, location: str, sources: list[SearchResult], tokens: Counter,
-                      n: Counter) -> tuple[str, bool, str]:
+                      n: Counter, category: str = "") -> tuple[str, bool, str]:
         system = f"{search_instructions(self.tz, evidence=True)}\n{EVIDENCE_RULES}"
         where = f"\nThe user's area: {location}." if location else ""
-        user = f"Query: {query}{where}\n\n{evidence.package(sources, self.tz)}"
+        ask = NEWS_ASK if category == "news" and _GENERAL_NEWS.search(query) else ""
+        user = f"Query: {query}{where}{ask}\n\n{evidence.package(sources, self.tz)}"
         n["llm_calls"] += 1
         timeout = max(2.0, self.remaining())
         try:

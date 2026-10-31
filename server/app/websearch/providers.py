@@ -30,6 +30,10 @@ log = logging.getLogger(__name__)
 
 BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_RICH_URL = "https://api.search.brave.com/res/v1/web/rich"
+# News questions: articles with their age instead of web pages (news sites often refuse our page reader, and a
+# web search for "UK news today" finds section pages). No freshness limit: "the latest Bank of England decision"
+# can be weeks old, and the newest articles come first anyway.
+BRAVE_NEWS_URL = "https://api.search.brave.com/res/v1/news/search"
 SNIPPET_MAX = 700  # description + extra snippets per Brave result
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -43,7 +47,7 @@ _REGIONS = {
     "Europe/Athens": ("gr-el", "GR"), "Europe/Prague": ("cz-cs", "CZ"), "Europe/Budapest": ("hu-hu", "HU"),
 }
 # Categories whose answers age fast: recent pages only (sport: a national team plays about monthly).
-_BRAVE_FRESHNESS = {"news": "pw", "sport": "pm", "transport": "pd", "weather": "pd"}
+_BRAVE_FRESHNESS = {"sport": "pm", "transport": "pd", "weather": "pd"}  # news: the news endpoint (BRAVE_NEWS_URL)
 _DDGS_TIMELIMIT = {"news": "w", "sport": "m", "transport": "d", "weather": "d"}
 
 
@@ -163,29 +167,19 @@ class BraveSearchProvider:
                      local: bool = True) -> Results:
         country = region_for(tz)[1] if local else ""  # a place abroad: no country preference
         params: dict[str, str | int] = {"q": query, "count": min(20, max_results), "search_lang": "en",
-                                        "safesearch": "moderate", "text_decorations": 0, "extra_snippets": "true"}
+                                        "safesearch": "moderate", "extra_snippets": "true"}
         if country:
             params["country"] = country
+        if category == "news":
+            data = await self._get(BRAVE_NEWS_URL, params, timeout)
+            return Results(_rows(data.get("results") or []))
+        params["text_decorations"] = 0
         if category in _BRAVE_FRESHNESS:
             params["freshness"] = _BRAVE_FRESHNESS[category]
         if category == "sport":
             params["enable_rich_callback"] = 1
         data = await self._get(BRAVE_URL, params, timeout)
-        out = Results(_locations(data) + _infobox(data))
-        for i, row in enumerate((data.get("web") or {}).get("results") or []):
-            url = str(row.get("url") or "")
-            if not url.startswith(("http://", "https://")):
-                continue
-            page_age = row.get("page_age")  # ISO date the page states; "age" is only a human string
-            parts = [_clean(str(row.get("description") or ""))]
-            for extra in row.get("extra_snippets") or []:
-                text = _clean(str(extra))
-                if text and text not in parts:
-                    parts.append(text)
-            out.append(SearchResult(
-                "brave", _clean(str(row.get("title") or "")), url, " … ".join(p for p in parts if p)[:SNIPPET_MAX],
-                rank=i, published_at=str(page_age)[:10] if page_age else None,
-            ))
+        out = Results(_locations(data) + _infobox(data) + _rows((data.get("web") or {}).get("results") or []))
         hint = (data.get("rich") or {}).get("hint") or {}
         out.rich_key = str(hint.get("callback_key") or "") if category == "sport" else ""
         return out
@@ -194,6 +188,26 @@ class BraveSearchProvider:
         """Structured sport data for a rich-data key from `search` (one more Brave request)."""
         data = await self._get(BRAVE_RICH_URL, {"callback_key": callback_key}, timeout)
         return rich_results(data, tz)
+
+
+def _rows(rows: list) -> list[SearchResult]:
+    """Web or news results: the description plus the extra snippets, and the date the page states."""
+    out = []
+    for i, row in enumerate(rows):
+        url = str(row.get("url") or "")
+        if not url.startswith(("http://", "https://")):
+            continue
+        page_age = row.get("page_age")  # ISO date the page states; "age" is only a human string
+        parts = [_clean(str(row.get("description") or ""))]
+        for extra in row.get("extra_snippets") or []:
+            text = _clean(str(extra))
+            if text and text not in parts:
+                parts.append(text)
+        out.append(SearchResult(
+            "brave", _clean(str(row.get("title") or "")), url, " … ".join(p for p in parts if p)[:SNIPPET_MAX],
+            rank=i, published_at=str(page_age)[:10] if page_age else None,
+        ))
+    return out
 
 
 def _locations(data: dict) -> list[SearchResult]:
