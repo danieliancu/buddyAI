@@ -489,6 +489,34 @@ def test_delete_all_notes_means_every_note() -> None:
     assert all(_get(acc, u) is None for u in uids) and _get(acc, rem) is not None  # notes only
 
 
+def test_delete_all_notes_from_a_list_asks_once() -> None:
+    """The model lists the notes, then deletes them by their refs in the same turn: one question (the server's),
+    naming them all - not a refusal that makes the model ask first and the server ask again."""
+    acc = _account()
+    with session_scope() as db:
+        r = ItemRepo(db)
+        uids = [r.create(acc, "note", t).uid for t in ("Unu\na", "Doi\nb", "Trei\nc")]
+    chat = Chat(acc)
+    listing = [ToolCall("l1", "item_list", json.dumps({"kind": "note"}))]
+    delete = [ToolCall("d1", "item_delete", json.dumps({"targets": ["c1", "c2", "c3"]}))]
+    turn, _, _ = chat.say("Șterge toate notele", [listing, delete, "Șterg toate cele 3 note?"])
+    assert turn.expect_reply and _pending(acc, chat) is not None
+    chat.say("Da", ["Am șters."])
+    assert all(_get(acc, u) is None for u in uids)
+
+
+def test_one_note_from_a_list_waits_for_the_choice() -> None:
+    acc = _account()
+    with session_scope() as db:
+        r = ItemRepo(db)
+        uids = [r.create(acc, "note", t).uid for t in ("Unu\na", "Doi\nb")]
+    chat = Chat(acc)
+    listing = [ToolCall("l1", "item_list", json.dumps({"kind": "note"}))]
+    delete = [ToolCall("d1", "item_delete", json.dumps({"targets": ["c2"]}))]
+    chat.say("Șterge una din note", [listing, delete, "Care dintre ele?"])
+    assert _pending(acc, chat) is None and all(_get(acc, u) is not None for u in uids)
+
+
 def test_a_yes_with_more_deletes_and_hands_the_rest_to_the_model() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)

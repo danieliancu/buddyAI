@@ -36,6 +36,8 @@ def test_classify_answer(text: str, strict: bool, expected: str) -> None:
     "Yes, delete the reminder", "Da, sunt sigur.", "Da, sigur că da.", "Da, bineînțeles.", "Da, vreau.",
     "Da, șterge-l.", "Da, șterge memento-ul.", "Da, ștergeți", "Da, sterge evenimentul din calendar",
     "Da, poți s-o ștergi.", "Da, șterge-o te rog frumos", "Daaa", "Yesss",
+    # several notes waiting: "ok, ștears" (heard for "ok, șterge"), "da, șterge-ne pe astea", "... toate notele"
+    "Ok, ștears.", "Da, sterge-ne pe astea.", "Da, șterge-le pe toate.", "Da, șterge toate notele.",
 ])
 def test_natural_confirmations_are_yes(text: str) -> None:
     assert classify_answer(text, ["ro"]) == "yes"

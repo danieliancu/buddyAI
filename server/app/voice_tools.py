@@ -587,7 +587,9 @@ class VoiceItemTools:
             if targets:
                 for ref in targets[:MAX_BULK_DELETE + 1]:
                     try:
-                        r = STORE.resolve(self.ctx, str(ref), self.call.turn_id, for_change=True)
+                        # Several items: the confirmation names every one of them, so refs from a list (or from a
+                        # search that found more) can be used now; one item from such a list waits for the choice.
+                        r = STORE.resolve(self.ctx, str(ref), self.call.turn_id, for_change=len(targets) == 1)
                     except RefError as exc:
                         return _err(str(exc))
                     it = repo.get_by_uid(self.call.account_id, r.uid)

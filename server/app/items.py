@@ -392,7 +392,8 @@ TOOL_DEFS: list[dict[str, Any]] = [
         "name": "item_delete",
         "description": "Prepare deleting items. Nothing is deleted now: the server asks the user and deletes only "
         "after their explicit yes in their next answer. Use targets (refs), or query with all_matching=true for "
-        "'all notes about X'.",
+        "'all notes about X'. Everything of a kind ('delete all my notes'): query {\"kind\": \"note\"} (only the "
+        "kind) with all_matching=true, without listing them first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -432,7 +433,8 @@ TOOLS_RULE = (
     "Deleting anything (items, note lines, a reminder's place / people / end / alert) only prepares it: say "
     "concretely what will be deleted and ask the user to confirm; the server waits for their answer and does the "
     "deletion itself - you can never confirm it. Several items at once ('delete the X and the Y notes'): call "
-    "item_find for all of them in the same step, then ONE item_delete with all their refs in targets. "
+    "item_find for all of them in the same step, then ONE item_delete with all their refs in targets. All of "
+    "them ('delete all my notes'): ONE item_delete with query {kind} and all_matching=true. "
     "Call the tool as soon as the user asks to delete: never ask 'are you "
     "sure?' yourself first (that would ask twice), and once they have answered the server's question never ask it "
     "again. Items have no visible numbers (neither the watch nor the web "

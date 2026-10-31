@@ -89,7 +89,8 @@ _NO: dict[str, set[str]] = {
 # Delete / confirm verbs: a strict yes needs one ("da, șterge"); in chat they also count as yes.
 _CONFIRM_VERBS: dict[str, set[str]] = {
     "en": {"delete", "remove", "erase", "confirm", "confirmed", "go", "ahead", "do"},
-    "ro": {"sterge", "stergeo", "sterg", "stergel", "stergele", "stergei", "elimina", "scoate", "confirm", "confirmat", "fa"},
+    "ro": {"sterge", "stergeo", "sterg", "stergel", "stergele", "stergei", "sters", "stears", "stearsa", "sterse",
+           "stergeti", "elimina", "scoate", "confirm", "confirmat", "fa"},
     "de": {"loschen", "losch", "entfernen", "bestatigen", "mach"},
     "fr": {"supprime", "supprimer", "efface", "confirme", "vas", "y"},
     "es": {"borra", "borralo", "borrala", "elimina", "confirmo", "hazlo"},
@@ -121,14 +122,14 @@ _AFFIRM_EXTRA: dict[str, set[str]] = {
            "want", "to", "thats", "right", "really", "totally", "yes", "do", "so", "is", "please", "thank", "thanks"},
     "ro": {"sunt", "sigur", "sigura", "ca", "bineinteles", "vreau", "poti", "puteti", "s", "sa", "fa", "fao", "stergi",
            "stergeti", "sterg", "stearga", "l", "o", "i", "le", "ul", "lui", "frumos", "chiar", "deja", "tot", "asa",
-           "e", "este", "da", "inainte"},
+           "e", "este", "da", "inainte", "ne", "pe", "astea", "acestea", "alea", "toate", "lor"},
 }
 # Words naming the kind of item being deleted ("yes, delete the meeting", "da, șterge evenimentul din calendar") -
 # only that kind's words: "da, șterge lista" while a meeting waits is about something else.
 _KIND_WORDS: dict[str, set[str]] = {
     "reminder": {"reminder", "meeting", "event", "calendar", "appointment", "memento", "mementoul", "eveniment",
                  "evenimentul", "intalnire", "intalnirea", "sedinta", "programare", "programarea"},
-    "note": {"note", "list", "nota", "notita", "lista", "listele"},
+    "note": {"note", "notes", "list", "lists", "nota", "notele", "notita", "notitele", "lista", "listele"},
 }
 _GENERIC_ITEM_WORDS = {"item", "of", "from", "my", "din", "de", "la", "cu", "mea", "meu"}
 # A yes followed by one of these is a new request, not an answer ("da, dar mută-l mâine", "ok, ce vreme e mâine").
