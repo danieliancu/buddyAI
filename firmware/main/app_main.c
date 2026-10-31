@@ -42,6 +42,7 @@
 #include "ble_prov.h"
 #include "protocol_client.h"
 #include "ota.h"
+#include "dialog_clips.h"
 
 static const char *TAG = "app";
 
@@ -414,6 +415,20 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
 static void ui_mic_tap(void)
 {
     proto_mic_tap();
+}
+
+/* The mic button held: dialog mode, announced in the watch's language (English when it has no clip). */
+static void ui_mic_hold(void)
+{
+    const char *lang = ui_language();
+    const proto_clip_t *clip = &DIALOG_CLIPS[0].clip;
+    for (size_t i = 0; i < sizeof(DIALOG_CLIPS) / sizeof(DIALOG_CLIPS[0]); i++) {
+        if (strcmp(DIALOG_CLIPS[i].lang, lang) == 0) {
+            clip = &DIALOG_CLIPS[i].clip;
+            break;
+        }
+    }
+    proto_dialog_start(s_audio_ready ? clip : NULL);
 }
 
 static void ui_settings_change(const cJSON *changes)
@@ -818,6 +833,7 @@ void app_main(void)
     } else {
         const ui_callbacks_t ui_cb = {
             .on_mic_tap = ui_mic_tap,
+            .on_mic_hold = ui_mic_hold,
             .on_settings_change = ui_settings_change,
             .on_wifi_setup = ui_wifi_setup,
             .on_retry = ui_retry,

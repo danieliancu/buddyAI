@@ -226,6 +226,11 @@ bool        ui_i18n_set_language(const char *lang);
  * Returns true if the date language changed. */
 bool        ui_i18n_set_reply_language(const char *lang);
 
+/* The mic buttons (watch face, conversation): pass their PRESSED / PRESSING events (only presses that are not
+ * just waking the screen). Held MIC_HOLD_MS: on_mic_hold. True from then until the next press, so the CLICKED of
+ * that release is ignored. */
+bool        ui_mic_hold_track(lv_event_code_t code);
+
 /* ---- shared theme state ---- */
 typedef struct {
     lv_color_t accent;

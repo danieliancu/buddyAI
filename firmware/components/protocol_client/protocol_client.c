@@ -74,6 +74,7 @@ typedef enum {
     MSG_FIRST_AUDIO,        /* a = turn id, t = receive time ms */
     MSG_PLAYBACK_DONE,      /* a = turn id */
     MSG_TAP,
+    MSG_DIALOG,             /* ptr = the clip to say first (proto_clip_t), or NULL */
     MSG_SETTINGS_CHANGED,   /* str = JSON changes (owned) */
     MSG_OTA_STATUS,         /* a = state, b = pct */
     MSG_END_CONVERSATION,   /* user left the conversation screen */
@@ -92,6 +93,7 @@ typedef struct {
     int32_t    b;
     int64_t    t;
     char      *str;
+    const void *ptr;
 } msg_t;
 
 typedef enum {
@@ -143,6 +145,11 @@ static int              s_status_rssi;
  * a confirmation keeps the mic coming back; it stops when a turn ends without it (done, cancelled, no
  * answer heard) or the user taps. */
 static bool             s_expect_reply;
+/* Dialog mode (mic button held): the mic opens again after every reply; s_dialog_clip: "Dialog mode on" is playing,
+ * the mic opens when it ends. */
+static bool             s_dialog;
+static bool             s_dialog_clip;
+#define DIALOG_CLIP_TURN        0xFFFFFFF0u     /* playback id of the clip: never a real turn */
 /* Hand-off from the chat to an item's screen: the user's words fit several places inside one note /
  * reminder ("the milk" on two lines). The server opens the item with `listen` and a question; once the chat
  * reply has been played, the item's edit mode starts with the question shown (its own logic continues). */
@@ -760,6 +767,7 @@ static void start_turn(void)
     uint32_t turn = next_turn_locked_reset();
     s_capture_turn = turn;
     s_resume_pending = false;
+    s_dialog_clip = false;
     s_turn_note = s_note_open && !s_test_no_mic;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
@@ -809,6 +817,7 @@ static void note_open(int number, bool reminder)
         abort_turn("user_tap");
         set_conv(PROTO_CONV_IDLE);
     }
+    s_dialog = s_dialog_clip = false;     /* the item's own edit mode takes the mic */
     s_note_open = true;
     s_note_number = number;
     s_note_reminder = reminder;
@@ -852,7 +861,11 @@ static void handle_tap(void)
         start_turn();
         break;
     case PROTO_CONV_LISTENING:
-        /* Tap while listening cancels the turn. */
+        /* Tap while listening cancels the turn (and dialog mode). */
+        if (s_dialog) {
+            ESP_LOGI(TAG, "dialog mode off: tap");
+        }
+        s_dialog = false;
         abort_turn("user_tap");
         set_conv(PROTO_CONV_IDLE);
         break;
@@ -959,6 +972,36 @@ static void listen_again_if_asked(void)
     if (s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
         start_turn();
     }
+}
+
+/* The mic button held: dialog mode, announced by a clip played on the watch, then the mic opens. */
+static void dialog_start(const proto_clip_t *clip)
+{
+    if (s_conn != CONN_SESSION) {
+        handle_tap();           /* offline: what a tap does (a held question, or the error) */
+        return;
+    }
+    if (s_conv != PROTO_CONV_IDLE) {
+        abort_turn("user_tap");
+        set_conv(PROTO_CONV_IDLE);
+    }
+    end_hold(false);
+    s_expect_reply = false;
+    s_dialog = true;
+    ESP_LOGI(TAG, "dialog mode on");
+    if (!clip || !clip->count) {
+        start_turn();
+        return;
+    }
+    audio_capture_stop();
+    audio_playback_begin(DIALOG_CLIP_TURN);
+    size_t pos = 0;
+    for (size_t i = 0; i < clip->count; i++) {
+        audio_playback_feed(DIALOG_CLIP_TURN, clip->opus + pos, clip->lens[i]);
+        pos += clip->lens[i];
+    }
+    audio_playback_end(DIALOG_CLIP_TURN);
+    s_dialog_clip = true;       /* MSG_PLAYBACK_DONE opens the mic */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1256,7 +1299,12 @@ static void handle_text(const char *txt)
         if (has_turn && turn == s_active_turn && s_turn_live) {
             s_turn_ended = true;
             bool completed = status && strcmp(status, "completed") == 0;
-            s_expect_reply = completed && !s_turn_note && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "expect_reply"));
+            if (s_dialog && !completed) {
+                ESP_LOGI(TAG, "dialog mode off: turn %s", status ? status : "?");    /* no speech, error, abort */
+                s_dialog = false;
+            }
+            s_expect_reply = completed && !s_turn_note &&
+                             (s_dialog || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "expect_reply")));
             if (!completed || (!s_first_audio_seen && !audio_playback_active())) {
                 finish_turn_idle();
                 listen_again_if_asked();
@@ -1854,6 +1902,17 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_PLAYBACK_DONE:
+        if (m->a == DIALOG_CLIP_TURN) {
+            if (s_dialog_clip) {
+                s_dialog_clip = false;
+                if (s_dialog && s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
+                    start_turn();
+                } else {
+                    s_dialog = false;   /* the link dropped meanwhile: no dialog left to continue */
+                }
+            }
+            break;
+        }
         if (m->a == s_active_turn && s_turn_live) {
             send_turn_msg("playback_done", m->a, NULL);
             finish_turn_idle();
@@ -1861,6 +1920,7 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_END_CONVERSATION:
+        s_dialog = s_dialog_clip = false;
         end_hold(false);    /* the chat screen was left: no "try again" for a question given up */
         if (s_conv == PROTO_CONV_LISTENING) {
             abort_turn("user_tap");
@@ -1870,6 +1930,10 @@ static void handle_msg(msg_t *m)
     case MSG_TAP:
         note_close(false);
         handle_tap();
+        break;
+    case MSG_DIALOG:
+        note_close(false);
+        dialog_start(m->ptr);
         break;
     case MSG_NOTE_SESSION:
         if (m->b & 1) {
@@ -2042,6 +2106,7 @@ static void handle_timers(void)
                 s_turn_deadline_ms = now + 1000;    /* still playing */
             } else {
                 ESP_LOGW(TAG, "turn %lu timed out in state %d", (unsigned long)s_active_turn, s_conv);
+                s_dialog = false;
                 abort_turn("timeout");
                 set_conv(PROTO_CONV_IDLE);
                 emit(PROTO_EVT_ERROR, PROTO_ERR_NO_ANSWER, NULL);  /* no answer in time (the link is up) */
@@ -2134,6 +2199,12 @@ void proto_reconnect(void)
 void proto_mic_tap(void)
 {
     msg_t m = { .type = MSG_TAP };
+    post(&m);
+}
+
+void proto_dialog_start(const proto_clip_t *clip)
+{
+    msg_t m = { .type = MSG_DIALOG, .ptr = clip };
     post(&m);
 }
 

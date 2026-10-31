@@ -206,6 +206,24 @@ void ui_spinner_show(lv_obj_t *spinner, bool show, uint32_t ms, uint32_t arc)
     }
 }
 
+#define MIC_HOLD_MS     2000
+
+bool ui_mic_hold_track(lv_event_code_t code)
+{
+    static uint32_t down_ms;
+    static bool held;
+    if (code == LV_EVENT_PRESSED) {
+        down_ms = lv_tick_get();
+        held = false;
+    } else if (code == LV_EVENT_PRESSING && !held && lv_tick_elaps(down_ms) >= MIC_HOLD_MS) {
+        held = true;
+        if (g_ui_cb.on_mic_hold) {
+            g_ui_cb.on_mic_hold();
+        }
+    }
+    return held;
+}
+
 bool ui_consume_wake_tap(void)
 {
     bool s = s_swallow_click;
@@ -748,9 +766,14 @@ static void mic_event_cb(lv_event_t *e)
     if (code == LV_EVENT_PRESSED) {
         /* A tap on a dimmed / dark screen only wakes it. */
         s_swallow_click = (s_power != POWER_ON);
+        ui_mic_hold_track(code);
+    } else if (code == LV_EVENT_PRESSING) {
+        if (!s_swallow_click) {
+            ui_mic_hold_track(code);
+        }
     } else if (code == LV_EVENT_CLICKED) {
-        if (ui_consume_wake_tap()) {
-            return;
+        if (ui_consume_wake_tap() || ui_mic_hold_track(code)) {
+            return;     /* a wake tap, or the release of a hold (dialog mode started) */
         }
         if (g_ui_cb.on_mic_tap) {
             g_ui_cb.on_mic_tap();
@@ -1360,6 +1383,7 @@ static void build_watchface(void)
     lv_obj_set_ext_click_area(s_btn_mic, 10);
     lv_obj_add_flag(s_btn_mic, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_CLICKED, NULL);
     hero_render();
 

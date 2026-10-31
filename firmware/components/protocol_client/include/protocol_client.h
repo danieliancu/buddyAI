@@ -12,6 +12,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
 #include "cJSON.h"
@@ -99,6 +100,18 @@ void proto_network_down(void);
 
 /* The big mic button: start a turn, or interrupt/cancel the current one. */
 void proto_mic_tap(void);
+
+/* A clip the watch plays itself: 60 ms Opus packets at the speaker's rate, in flash. */
+typedef struct {
+    const uint8_t  *opus;
+    const uint16_t *lens;
+    size_t          count;
+} proto_clip_t;
+
+/* The mic button held: dialog mode. `clip` ("Dialog mode on", may be NULL) plays first, then the mic opens, and
+ * opens again after every reply. It ends when a question gets no speech (the usual listening timeout), a tap
+ * cancels the listening, the conversation screen is left or a turn fails. */
+void proto_dialog_start(const proto_clip_t *clip);
 
 /* User changed settings on the watch (subset of PROTOCOL.md section 5). The
  * change is applied locally at once and sent as settings_changed. */

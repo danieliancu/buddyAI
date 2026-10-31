@@ -76,6 +76,11 @@ bool ui_i18n_set_reply_language(const char *lang)
     return update_lang();
 }
 
+const char *ui_language(void)
+{
+    return s_lang->code;
+}
+
 const char *ui_str(ui_str_t id)
 {
     if (id >= STR__COUNT) {

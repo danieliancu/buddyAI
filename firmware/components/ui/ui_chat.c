@@ -284,7 +284,10 @@ static void mic_cb(lv_event_t *e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_PRESSED) {
         s_mic_swallow = !ui_screen_awake();     /* a tap on a dim screen only wakes it */
-    } else if (code == LV_EVENT_CLICKED && !s_mic_swallow && g_ui_cb.on_mic_tap) {
+        ui_mic_hold_track(code);
+    } else if (code == LV_EVENT_PRESSING && !s_mic_swallow) {
+        ui_mic_hold_track(code);
+    } else if (code == LV_EVENT_CLICKED && !s_mic_swallow && !ui_mic_hold_track(code) && g_ui_cb.on_mic_tap) {
         g_ui_cb.on_mic_tap();
     }
 }
@@ -401,6 +404,7 @@ void ui_chat_init(void)
     lv_obj_add_flag(s_mic, LV_OBJ_FLAG_ADV_HITTEST);
     lv_obj_add_event_cb(s_mic, mic_hit_test_cb, LV_EVENT_HIT_TEST, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_CLICKED, NULL);
     s_mic_lbl = lv_label_create(s_mic);
     lv_obj_set_style_text_font(s_mic_lbl, &buddy_font_28, 0);    /* colour: from the accent style */

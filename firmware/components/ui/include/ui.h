@@ -50,6 +50,8 @@ typedef enum {
 
 typedef struct {
     void (*on_mic_tap)(void);
+    /* The mic button held for 2 s: dialog mode (the mic opens again after every reply). */
+    void (*on_mic_hold)(void);
     /* Local settings change (subset of PROTOCOL.md section 5). */
     void (*on_settings_change)(const cJSON *changes);
     /* User asked for the Wi-Fi / server provisioning portal. */
@@ -156,6 +158,8 @@ bool ui_is_watchface(void);
 
 /* Localized helper for other components (e.g. hints). */
 const char *ui_text_connecting(void);
+/* The language the watch shows its texts in ("en", "ro", ...): a code of the UI tables. */
+const char *ui_language(void);
 
 #ifdef __cplusplus
 }
