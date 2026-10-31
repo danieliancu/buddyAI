@@ -13,13 +13,14 @@ const { cta = true } = Astro.props;
  * 2:1 and the SVG uses a 200 x 100 viewBox over it, so units are square. The watch image (1230 x 1278 px)
  * is 92% of the box height, centred: x 55.7..144.3, y 4..96 (0.072 units per image pixel). Targets are
  * image pixels mapped into that area: the screen (330,420), the mic button (760,610) for the AI assistant,
- * the left side of the case (290,640) for the microphone, the lower case (900,880) for the speaker.
+ * the left side of the case (290,640) for the microphone, the lower case (900,880) for the speaker, the notes
+ * shortcut (437,848) for notes sent by email. Three callouts on the left, two on the right.
  */
 const callouts = [
   {
-    icon: "display" as const, side: "left", top: "14%",
+    icon: "display" as const, side: "left", top: "4%",
     title: "AMOLED Touch Display", text: "Bright, crisp and easy to read: 410 × 502 pixels.",
-    path: "M48 21 H66 L79.5 34.2", dot: [79.5, 34.2],
+    path: "M48 11 H66 L79.5 34.2", dot: [79.5, 34.2],
   },
   {
     icon: "sparkle" as const, side: "right", top: "14%",
@@ -27,9 +28,14 @@ const callouts = [
     path: "M152 21 H134 L110.4 47.9", dot: [110.4, 47.9],
   },
   {
-    icon: "mic" as const, side: "left", top: "60%",
+    icon: "mic" as const, side: "left", top: "36%",
     title: "Built-in Microphone", text: "Tap the mic and talk naturally.",
-    path: "M48 67 H64 L76.6 50.1", dot: [76.6, 50.1],
+    path: "M48 43 H64 L76.6 50.1", dot: [76.6, 50.1],
+  },
+  {
+    icon: "mail" as const, side: "left", top: "68%",
+    title: "Notes to Your Inbox", text: "Dictate a note, then send it to your email by voice or with a tap.",
+    path: "M48 75 H72 L87.2 65.1", dot: [87.2, 65.1],
   },
   {
     icon: "speaker" as const, side: "right", top: "60%",
@@ -46,7 +52,8 @@ const alt = "olácompanion home screen: time, “Hi there! How can I help you to
         <span class="whitespace-nowrap">Thoughtfully Designed.</span><br /><span class="whitespace-nowrap">Powered by AI.</span>
       </h2>
       <p class="mt-4 max-w-md text-muted">
-        An AMOLED touch display, a built-in microphone and speaker, and a powerful AI that's ready when you tap.
+        An AMOLED touch display, a built-in microphone and speaker, and a powerful AI that's ready when you tap. Dictate a
+        note and send it straight to your email.
       </p>
       {cta && (
         <a href="/features/" class="btn btn-primary mt-6">Explore Features <Icon name="arrow" size={18} /></a>

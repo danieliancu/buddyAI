@@ -71,7 +71,7 @@ export const tabs = (trialDays: number): Tab[] => [
   {
     id: "home",
     label: "Home",
-    title: "Your watch at a glance",
+    title: "Your companion at a glance",
     lead: "Everything starts on the watchface: the time, a big mic to talk, and three shortcuts.",
     steps: [
       {
