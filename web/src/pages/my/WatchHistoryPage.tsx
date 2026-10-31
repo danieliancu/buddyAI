@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { MessagesSquare, Trash2 } from "lucide-react";
+import { MessagesSquare, Search, Trash2 } from "lucide-react";
 import { api, ApiError, type Device } from "../../api";
 import { useLive } from "../../live";
-import ConversationList from "../../components/ConversationList";
+import ConversationList, { foldText } from "../../components/ConversationList";
 import WatchPreview from "../../components/WatchPreview";
-import { Button, Card, ConfirmDialog, Empty, ErrorBox, Spinner, useAsync } from "../../components/ui";
+import { Button, Card, ConfirmDialog, Empty, ErrorBox, Input, Spinner, useAsync } from "../../components/ui";
 import WatchHeader from "./WatchHeader";
 
 export default function WatchHistoryPage() {
   const { id = "" } = useParams();
   const [device, setDevice] = useState<Device | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [q, setQ] = useState("");
   const convs = useAsync(() => api.me.devices.conversations(id), [id]);
   // The watch on the right, as on the Settings tab (same layout: the page keeps its width and position)
   const settings = useAsync(() => api.me.devices.settings(id), [id]);
@@ -36,6 +37,14 @@ export default function WatchHistoryPage() {
   // Newest first: conversations (already sorted by the server) and the exchanges inside each one.
   const list = (convs.data ?? []).map((c) => ({ ...c, turns: [...c.turns].reverse() }));
   const count = list.reduce((n, c) => n + c.turns.length, 0);
+  // Search: what the user said or what the watch answered, ignoring case and diacritics.
+  const needle = foldText(q.trim());
+  const shown = needle
+    ? list
+        .map((c) => ({ ...c, turns: c.turns.filter((t) => foldText(`${t.user_text}\n${t.assistant_text}`).includes(needle)) }))
+        .filter((c) => c.turns.length > 0)
+    : list;
+  const matches = shown.reduce((n, c) => n + c.turns.length, 0);
   const notFound = convs.error instanceof ApiError && convs.error.status === 404;
 
   const s = settings.data?.settings;
@@ -50,12 +59,23 @@ export default function WatchHistoryPage() {
         <>
           <div className="mb-4 flex items-center justify-between gap-3">
             <p className="text-sm text-muted">
-              {convs.data ? `${count} ${count === 1 ? "question" : "questions"} · newest first` : " "}
+              {!convs.data
+                ? " "
+                : needle
+                  ? `${matches} of ${count} ${count === 1 ? "question" : "questions"} match`
+                  : `${count} ${count === 1 ? "question" : "questions"} · newest first`}
             </p>
             <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} disabled={count === 0} onClick={() => setConfirm(true)}>
               Delete history
             </Button>
           </div>
+          {count > 0 && (
+            <div className="relative mb-4">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
+              <Input type="search" className="pl-9" placeholder="Search what you asked or what ola answered"
+                value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search history" />
+            </div>
+          )}
           <ErrorBox error={convs.error} onRetry={convs.reload} />
           {convs.loading && !convs.data ? (
             <Spinner />
@@ -65,8 +85,14 @@ export default function WatchHistoryPage() {
                 Press the button on the watch and ask a question — it will appear here.
               </Empty>
             </Card>
+          ) : shown.length === 0 ? (
+            <Card>
+              <Empty icon={<Search className="size-8" />} title="Nothing found">
+                No question or answer contains “{q.trim()}”.
+              </Empty>
+            </Card>
           ) : (
-            <ConversationList conversations={list} />
+            <ConversationList conversations={shown} highlight={needle ? q : undefined} />
           )}
         </>
       )}

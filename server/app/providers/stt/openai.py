@@ -7,6 +7,11 @@ and wait for `...input_audio_transcription.completed`. Input must be PCM16 at 24
 The realtime service sometimes stalls (handshake timeouts, a final transcript that never comes).
 The utterance is therefore also kept locally, and when the realtime path fails it is sent once to
 the regular (non-streaming) transcription endpoint instead: the user is not asked to repeat.
+
+Spare connections (`spares`): the handshake takes ~1 s, and someone who speaks right after pressing the
+button would see their first words on the watch only after it. A few connections are therefore kept open,
+not configured and never sent any audio; a turn takes one (it is its own: never used for another turn) and
+sets its language and prompt then. They are replaced before the service would expire them.
 """
 
 from __future__ import annotations
@@ -17,12 +22,14 @@ import contextlib
 import io
 import json
 import logging
+import time
 import wave
 
 import av
 import httpx
 import numpy as np
 import websockets
+from websockets.protocol import State
 
 from app.providers.base import ProviderError, error_dict_summary, error_summary, http_error_summary
 from app.providers.stt.base import PartialCallback, STTProvider, STTSession
@@ -30,6 +37,7 @@ from app.providers.stt.base import PartialCallback, STTProvider, STTSession
 log = logging.getLogger(__name__)
 FALLBACK_TIMEOUT_S = 9.0  # fallback transcription request (see OpenAISTTProvider.__init__)
 INPUT_RATE = 24000
+SPARE_MAX_AGE_S = 600.0  # a spare connection is replaced after this long (the service ends sessions later)
 
 
 class OpenAIRealtimeSTT(STTProvider):
@@ -45,6 +53,7 @@ class OpenAIRealtimeSTT(STTProvider):
         rest_url: str = "https://api.openai.com/v1",
         fallback_model: str = "gpt-4o-mini-transcribe",
         open_timeout_s: float = 5.0,
+        spares: int = 0,
     ) -> None:
         self.api_key = api_key
         self.ws_url = ws_url
@@ -57,6 +66,52 @@ class OpenAIRealtimeSTT(STTProvider):
         # Fallback transcription: realtime wait (4 s) + this stays well under the watch's 30 s limit, so a
         # stalled provider ends as an apology instead of the watch giving up.
         self._http = httpx.AsyncClient(timeout=FALLBACK_TIMEOUT_S)
+        self.spares = spares
+        self._spare: list[tuple[float, websockets.ClientConnection]] = []  # (opened at, connection)
+        self._keeper: asyncio.Task | None = None
+        self._taken = asyncio.Event()  # a spare was used: the keeper opens its replacement now
+
+    async def connect(self) -> websockets.ClientConnection:
+        return await websockets.connect(
+            self.ws_url,
+            additional_headers={"Authorization": f"Bearer {self.api_key}"},
+            max_size=2**22,
+            open_timeout=self.open_timeout_s,
+        )
+
+    def take_spare(self) -> websockets.ClientConnection | None:
+        """An open, unused connection, or None (then the session connects itself). Starts the keeper."""
+        if self.spares <= 0:
+            return None
+        if self._keeper is None or self._keeper.done():
+            self._keeper = asyncio.create_task(self._keep_spares())
+        while self._spare:
+            opened, ws = self._spare.pop(0)
+            if time.monotonic() - opened < SPARE_MAX_AGE_S - 30 and ws.state is State.OPEN:
+                self._taken.set()
+                return ws
+            _close_later(ws)
+        return None
+
+    async def _keep_spares(self) -> None:
+        """Keeps `spares` connections open; replaces old or closed ones."""
+        while True:
+            now = time.monotonic()
+            stale = [i for i in self._spare if now - i[0] >= SPARE_MAX_AGE_S or i[1].state is not State.OPEN]
+            for item in stale:
+                self._spare.remove(item)
+                _close_later(item[1])
+            while len(self._spare) < self.spares:
+                try:
+                    self._spare.append((time.monotonic(), await self.connect()))
+                except Exception as exc:
+                    log.warning("stt spare connection failed (%s)", error_summary(exc))
+                    await asyncio.sleep(10)
+                    break
+            oldest = min((o for o, _ in self._spare), default=time.monotonic())
+            self._taken.clear()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._taken.wait(), max(1.0, oldest + SPARE_MAX_AGE_S - time.monotonic()))
 
     async def start(self, language: str, sample_rate: int, on_partial: PartialCallback | None) -> STTSession:
         if not self.api_key:
@@ -83,12 +138,7 @@ class _OpenAISTTSession(STTSession):
         """Connect to the realtime service. A failure is not fatal: the session then only collects
         audio and finish() uses the regular transcription endpoint."""
         try:
-            self.ws = await websockets.connect(
-                self.p.ws_url,
-                additional_headers={"Authorization": f"Bearer {self.p.api_key}"},
-                max_size=2**22,
-                open_timeout=self.p.open_timeout_s,
-            )
+            self.ws = self.p.take_spare() or await self.p.connect()
         except Exception as exc:
             log.warning("stt realtime connect failed (%s): the fallback will transcribe", error_summary(exc))
             return
@@ -231,9 +281,13 @@ class _OpenAISTTSession(STTSession):
         if self.ws:
             # The close handshake with OpenAI takes ~4 s; the transcript is already in hand, so do
             # not hold up the reply for it.
-            task = asyncio.create_task(_close_quietly(self.ws))
-            _closing.add(task)
-            task.add_done_callback(_closing.discard)
+            _close_later(self.ws)
+
+
+def _close_later(ws: websockets.ClientConnection) -> None:
+    task = asyncio.create_task(_close_quietly(ws))
+    _closing.add(task)
+    task.add_done_callback(_closing.discard)
 
 
 _closing: set[asyncio.Task] = set()  # keeps background closes referenced until they finish

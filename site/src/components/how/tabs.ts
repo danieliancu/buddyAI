@@ -140,6 +140,12 @@ export const tabs = (trialDays: number): Tab[] => [
         run: "chat:followup",
       },
       {
+        title: "Dialog mode: keep talking",
+        text: "Hold the mic for 2 seconds. The watch says \"Dialog mode on\" and opens the mic again after every reply, so you can go back and forth without tapping. It ends when you stop talking, or with a tap.",
+        touch: "Hold the mic for 2 seconds",
+        run: "listen",
+      },
+      {
         title: "Interrupt or finish",
         text: "Press the button while olá is speaking to cut in with a new question. Tap the X or swipe right to end the conversation.",
         touch: "Top button to interrupt, X to finish",

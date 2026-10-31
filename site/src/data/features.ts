@@ -2,7 +2,7 @@ import { languageCount, languageCountLabel } from "../lib/languages";
 
 export type IconName =
   | "mic" | "tap" | "globe" | "persona" | "palette" | "history" | "display" | "speaker" | "wifi" | "update"
-  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays";
+  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays" | "chat";
 
 export interface Feature {
   icon: IconName;
@@ -24,6 +24,12 @@ export const features: Feature[] = [
     title: "Tap to talk, tap to interrupt",
     short: "One big mic button. Tap again to cut in.",
     long: "Tap the big mic button on the screen and start speaking. If you've heard enough or want to change direction, tap again to interrupt the reply.",
+  },
+  {
+    icon: "chat",
+    title: "Dialog mode",
+    short: "Hold the mic for 2 seconds and keep talking, no tapping.",
+    long: "Hold the mic button for 2 seconds: the watch says \"Dialog mode on\" in its own language and opens the mic again after every reply, so you can go back and forth without tapping. It ends by itself when you stop talking, or with a tap.",
   },
   {
     icon: "bell",
@@ -63,9 +69,9 @@ export const features: Feature[] = [
   },
   {
     icon: "history",
-    title: "History you control",
-    short: "Your conversations in your account. Export or delete anytime.",
-    long: "Your conversation history lives in your olá account. You can export it or delete it at any time.",
+    title: "Searchable history",
+    short: "Search everything you asked and every answer. Delete anytime.",
+    long: "Your conversation history lives in your olá account. Search it for anything you asked or anything olá answered, export it, or delete it at any time.",
   },
 ];
 
@@ -81,7 +87,7 @@ export const privacyLine =
 
 // The six cards under the home page hero.
 export const highlights: { icon: IconName; tint?: "blue" | "green" | "teal"; title: string; text: string }[] = [
-  { icon: "mail", tint: "green", title: "Notes to Your Inbox", text: "Dictate notes, then send any of them to your email." },
+  { icon: "mail", tint: "green", title: "Send to Email", text: "Dictate notes, then send any of them to your email." },
   { icon: "mic", title: "Voice Assistant", text: "Natural conversations, just tap and talk." },
   { icon: "bell", tint: "blue", title: "Smart Reminders", text: "Time, place, people and early alerts." },
   { icon: "search", tint: "blue", title: "Live Answers", text: "Weather, news, opening hours and more." },

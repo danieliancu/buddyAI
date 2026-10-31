@@ -148,6 +148,8 @@ static bool             s_expect_reply;
 /* Dialog mode (mic button held): the mic opens again after every reply; s_dialog_clip: "Dialog mode on" is playing,
  * the mic opens when it ends. */
 static bool             s_dialog;
+static int64_t          s_listen_ms;            /* this turn's listen_start (the log of its first words) */
+static bool             s_heard_logged;
 static bool             s_dialog_clip;
 #define DIALOG_CLIP_TURN        0xFFFFFFF0u     /* playback id of the clip: never a real turn */
 /* Hand-off from the chat to an item's screen: the user's words fit several places inside one note /
@@ -768,6 +770,8 @@ static void start_turn(void)
     s_capture_turn = turn;
     s_resume_pending = false;
     s_dialog_clip = false;
+    s_listen_ms = now_ms();
+    s_heard_logged = false;
     s_turn_note = s_note_open && !s_test_no_mic;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
@@ -1367,6 +1371,10 @@ static void handle_text(const char *txt)
             }
             emit(PROTO_EVT_NOTE_TEXT, 0, text);
         } else if (text) {
+            if (!s_heard_logged && text[0]) {
+                s_heard_logged = true;
+                ESP_LOGI(TAG, "first words on screen %lld ms after listen_start", (long long)(now_ms() - s_listen_ms));
+            }
             emit(PROTO_EVT_TRANSCRIPT, cJSON_IsTrue(cJSON_GetObjectItem(j, "final")), text);
         }
         const char *lang = json_str(j, "language");     /* optional, detected language */

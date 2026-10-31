@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_realtime_ws_url: str = "wss://api.openai.com/v1/realtime?intent=transcription"
+    # Transcription connections kept open in advance: the first words of a question show on the watch ~1 s sooner.
+    stt_spare_connections: int = 2
 
     azure_speech_key: str = ""
     azure_speech_region: str = "westeurope"

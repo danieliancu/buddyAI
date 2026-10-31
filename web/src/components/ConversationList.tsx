@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Timer } from "lucide-react";
 import type { Conversation, ConversationTurn } from "../api";
 import { fmtDate, fmtDateTime, fmtMoney, fmtMs, fmtTime, KIND_LABEL, langName, langNative, UNIT_LABEL } from "../format";
@@ -6,16 +6,48 @@ import { useLanguages } from "../languages";
 import { TurnStatusBadge } from "./DeviceBits";
 import { Badge, Card, cx } from "./ui";
 
+/** Lower case, without diacritics: "Șterge" and "sterge" match. */
+export const foldText = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** `text` with every match of `query` (folded, see foldText) marked. */
+function Highlight({ text, query }: { text: string; query?: string }) {
+  const q = query ? foldText(query.trim()) : "";
+  if (!q) return <>{text}</>;
+  // Folding can change a character's length (ș -> s once its mark is dropped): map positions character by character.
+  const chars = [...text];
+  const owner: number[] = [];
+  chars.forEach((c, i) => {
+    for (let k = 0; k < foldText(c).length; k++) owner.push(i);
+  });
+  const flat = chars.map(foldText).join("");
+  const marked = new Array<boolean>(chars.length).fill(false);
+  for (let at = flat.indexOf(q); at !== -1; at = flat.indexOf(q, at + q.length)) {
+    for (let k = at; k < at + q.length; k++) marked[owner[k]] = true;
+  }
+  const out: ReactNode[] = [];
+  for (let i = 0; i < chars.length; ) {
+    let j = i;
+    while (j < chars.length && marked[j] === marked[i]) j++;
+    const part = chars.slice(i, j).join("");
+    out.push(marked[i] ? <mark key={i} className="rounded-sm bg-yellow-300/60 text-inherit">{part}</mark> : part);
+    i = j;
+  }
+  return <>{out}</>;
+}
+
 /** Chat-style rendering of a watch's conversations. `technical` adds TTFA, status, type and cost (operator);
- * `newestFirst` lists the conversations and their turns newest first (latest at the top). */
+ * `newestFirst` lists the conversations and their turns newest first (latest at the top); `highlight` marks the
+ * words searched for. */
 export default function ConversationList({
   conversations,
   technical,
   newestFirst,
+  highlight,
 }: {
   conversations: Conversation[];
   technical?: boolean;
   newestFirst?: boolean;
+  highlight?: string;
 }) {
   const langs = useLanguages();
   return (
@@ -49,13 +81,19 @@ export default function ConversationList({
                     t.user_text ? "bg-accent text-accent-fg" : "border border-dashed border-border text-muted italic",
                   )}
                 >
-                  {t.user_text || (technical ? "(nothing recognized)" : "(didn't catch that)")}
+                  {t.user_text ? (
+                    <Highlight text={t.user_text} query={highlight} />
+                  ) : technical ? (
+                    "(nothing recognized)"
+                  ) : (
+                    "(didn't catch that)"
+                  )}
                 </div>
               </div>
               {t.assistant_text && (
                 <div className="flex flex-col items-start">
                   <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-surface-2 px-3.5 py-2 text-sm break-words whitespace-pre-line">
-                    {t.assistant_text}
+                    <Highlight text={t.assistant_text} query={highlight} />
                   </div>
                 </div>
               )}

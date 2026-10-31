@@ -97,6 +97,7 @@ class ProviderRouter:
                     prompt=prompt,
                     rest_url=s.openai_base_url,
                     fallback_model=fallback,
+                    spares=s.stt_spare_connections,
                 ),
             )
         if provider == "openai":

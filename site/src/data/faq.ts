@@ -19,7 +19,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What can olá do?",
-        a: `olá is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
+        a: `olá is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, hold the mic for 2 seconds to keep talking back and forth without tapping (dialog mode), talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
       },
       {
         q: "What's the battery life?",
@@ -98,7 +98,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Can I see or delete my conversation history?",
-        a: "Yes. Your history is in your olá account. You can export it or delete it anytime.",
+        a: "Yes. Your history is in your olá account, where you can search it for anything you asked or anything olá answered. You can export it or delete it anytime.",
       },
       {
         q: "Do you use cookies or tracking?",
