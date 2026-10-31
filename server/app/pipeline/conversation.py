@@ -26,7 +26,6 @@ from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
-from app.providers.base import UsageItem
 from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.spoken import for_speech
@@ -90,7 +89,7 @@ SILENCE_SEND_MS = 240
 SEARCH_NOTE_CHARS = 350  # search answer kept with a turn for the history
 HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
-MAX_TOOL_ROUNDS = 3  # LLM calls that may end in tool calls; the next one gets no tools and must answer
+MAX_TOOL_ROUNDS = 5  # LLM calls that may end in tool calls; the next one gets no tools and must answer (3 finds + a delete fit)
 NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
 NOTE_SENTENCE_S = 30  # note mode: the longest sentence
 NOTE_MAX_TOKENS = 300
@@ -829,6 +828,9 @@ class ConversationPipeline:
         lang = self._edit_lang(turn)
         try:
             ops = notes_edit.parse_ops(call.arguments)
+            if isinstance(ops, list) and any(isinstance(o, dict) and o.get("op") == "delete_note" for o in ops):
+                await self._note_delete(turn, io, it)
+                return
             undo = notes_edit.undo_get(account_id, it.uid, version)
             if not any(isinstance(o, dict) and o.get("op") == "undo" for o in ops):
                 ops = resolve_line_matches(lines, ops)
@@ -864,6 +866,27 @@ class ConversationPipeline:
         turn.changed_line = highlight
         # changed_line: 0 = the title, n = numbered line n (the watch's numbers), null = none
         turn.pending_open, turn.pending_uid = {"item": {**view, "changed_line": highlight}}, it2.uid
+
+    async def _note_delete(self, turn: TurnContext, io: TurnIO, it: Item) -> None:
+        """'Delete this note' on its own screen: deleted at once (no confirmation on an item's screen), then the
+        notes list opens (the watch goes home when it was the last one)."""
+        assert turn.account_id is not None
+        try:
+            with session_scope() as db:
+                ItemRepo(db).delete_exact(turn.account_id, [(it.uid, it.version)],
+                                          op=self._edit_op(turn, "note_delete", {"uid": it.uid}))
+        except ItemConflictError:
+            turn.assistant_text = "(not applied: the note changed meanwhile)"
+            await io.send(turn, "llm_display", text=edit_texts.text(self._edit_lang(turn), "conflict"))
+            return
+        except IntegrityError:  # the same operation already ran (a technical retry)
+            turn.assistant_text = "(already applied)"
+            return
+        notes_edit.undo_drop(turn.account_id, it.uid)
+        log.info("note #%s deleted from its screen", it.number)
+        turn.assistant_text = "note_delete"
+        turn.items_changed = True
+        turn.pending_open = {"list": "note"}
 
     # --- reminder edit mode: one sentence -> changes to one reminder ----------------------------
 

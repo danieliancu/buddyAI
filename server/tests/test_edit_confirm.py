@@ -58,6 +58,15 @@ def test_note_mode_line_delete_applies_at_once() -> None:
     assert turn.items_changed and turn.pending_open["item"]["number"] == n  # the note stays open, updated
 
 
+def test_note_mode_deletes_the_whole_note_and_opens_the_list() -> None:
+    acc = _account()
+    n, uid = _note(acc, "Magazine\nB&Q\nHomebase")
+    turn, io, llm = _say(acc, "note", n, "șterge nota", ("note_edit", {"ops": [{"op": "delete_note"}]}))
+    assert _text(acc, uid) is None and turn.items_changed and not _shown(io)  # at once, no question
+    assert turn.pending_open == {"list": "note"}  # the watch opens the notes list (home when it was the last)
+    assert "delete_note" in json.dumps(llm.requests[0].tools)
+
+
 def test_note_mode_clear_and_ambiguous_line() -> None:
     acc = _account()
     n, uid = _note(acc, "Listă\nlapte\nlapte bio")

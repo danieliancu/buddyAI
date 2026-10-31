@@ -87,6 +87,13 @@ def _ask(msg: str) -> ToolOutcome:
     return ToolOutcome(_json({"ok": False, "error": msg}), awaits_answer=True)
 
 
+def _whole_kind(query: dict[str, Any]) -> bool:
+    """A query that names only a kind ("all my notes"): every item of it, not a text search."""
+    q = ItemQuery.from_args(query)
+    return q.kind in ("note", "reminder") and not (q.text or q.person or q.place or q.date or q.date_from or q.date_to
+                                                    or q.weekday or q.time or q.status or q.number is not None)
+
+
 # --- descriptions ------------------------------------------------------------------------------------
 
 
@@ -587,6 +594,10 @@ class VoiceItemTools:
                     if it is None:
                         return _err("one of them no longer exists; nothing was deleted")
                     items.append(it)
+            elif a.get("all_matching") is True and isinstance(a.get("query"), dict) and _whole_kind(a["query"]):
+                items = self._items(db, a["query"]["kind"])  # "delete all (my) notes"
+                if not items:
+                    return ToolOutcome(_json({"ok": False, "status": "not_found", "hint": "There are none; nothing will be deleted."}), awaits_answer=True)
             elif a.get("all_matching") is True and isinstance(a.get("query"), dict):
                 q, res = self._search(db, a["query"], "delete")
                 if res.status == "insufficient":

@@ -22,8 +22,8 @@ MAX_OPS = 10
 
 NOTE_EDIT_TOOL: dict[str, Any] = {
     "name": "note_edit",
-    "description": "Apply the user's sentence to the note: add, insert, change, delete or move lines, or undo "
-    "the previous change.",
+    "description": "Apply the user's sentence to the note: add, insert, change, delete or move lines, undo "
+    "the previous change, or delete the whole note (delete_note).",
     "parameters": {
         "type": "object",
         "properties": {
@@ -35,7 +35,8 @@ NOTE_EDIT_TOOL: dict[str, Any] = {
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["append", "insert", "replace", "delete", "clear", "move", "title", "undo"],
+                            "enum": ["append", "insert", "replace", "delete", "clear", "move", "title", "undo",
+                                     "delete_note"],
                         },
                         "line": {
                             "type": "integer",
@@ -73,6 +74,8 @@ NOTE_SYSTEM = (
     "after 1', 'undo' -> the matching operations. When the user names a line by its content ('delete the "
     "milk'), pass match with their words instead of guessing a line number; use line only when they say a number "
     "(or answer your question about which line).\n"
+    "- 'Delete the note' / 'delete it' / 'delete this note' (the whole note, not a line) -> op delete_note "
+    "alone; the note is deleted and the watch goes back to the notes list.\n"
     "- The microphone stays open, so it also hears speech not meant for the note: someone talking to the user, "
     "a TV or radio, a lone filler word or exclamation ('ok', 'hmm', 'wow'). For that, do not call the tool: "
     f"reply only {IGNORE}.\n"
@@ -213,6 +216,10 @@ _UNDO_MAX = 500
 def undo_get(account_id: int, uid: str, version: int) -> list[str] | None:
     got = _UNDO.get((account_id, uid))
     return list(got[0]) if got is not None and got[1] == version else None
+
+
+def undo_drop(account_id: int, uid: str) -> None:
+    _UNDO.pop((account_id, uid), None)
 
 
 def undo_set(account_id: int, uid: str, lines: list[str], version: int) -> None:

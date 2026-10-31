@@ -156,9 +156,10 @@ class VoiceContextStore:
     # --- refs -------------------------------------------------------------------------------------
 
     def issue_refs(self, ctx: VoiceContext, items: list[tuple[Any, str]], turn_id: int, selectable_now: bool) -> list[str]:
-        """New candidates (item, summary) replace the previous ones (the open item stays)."""
+        """New candidates (item, summary) replace those of earlier turns (the open item stays); finds in the same
+        turn add up ("delete the shops note and the paint note": two finds, one delete of both)."""
         with self._lock:
-            ctx.refs = {}
+            ctx.refs = {k: r for k, r in ctx.refs.items() if r.issued_turn == turn_id}
             out = []
             for it, summary in items:
                 ctx.ref_seq += 1

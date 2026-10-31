@@ -2246,8 +2246,17 @@ void ui_items_refresh_text_size(void)
 void ui_items_show_list(bool reminder)
 {
     LOCK();
-    note_close_mic();       /* e.g. a reminder deleted by voice from its own screen */
-    open_list(reminder, false);
+    bool deleted_here = s_note_mic_open;   /* edit mode open: the item was deleted by voice from its own screen */
+    note_close_mic();
+    int left = 0;
+    for (int i = 0; i < s_row_count; i++) {
+        left += s_rows[i].reminder == reminder;
+    }
+    if (deleted_here && left == 0) {
+        ui_go_watchface();  /* the last one is gone: home, not an empty list */
+    } else {
+        open_list(reminder, false);
+    }
     UNLOCK();
 }
 

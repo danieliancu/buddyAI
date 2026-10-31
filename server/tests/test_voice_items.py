@@ -460,6 +460,35 @@ def test_note_deleted_once_after_a_yes(answer: str) -> None:
     assert len({o.op_key for o in ops}) == 1
 
 
+def test_several_notes_found_separately_are_deleted_together() -> None:
+    acc = _account()
+    with session_scope() as db:
+        r = ItemRepo(db)
+        shops, paint, food, ideas = (r.create(acc, "note", t).uid for t in
+                                     ("Magazine de bricolaj\nB&Q", "Vopsea\n8 litri", "Cumpărături\nlapte", "Idei\nGrecia"))
+    chat = Chat(acc)
+    finds = [[ToolCall(f"f{i}", "item_find", json.dumps({"kind": "note", "text": t}))]
+             for i, t in enumerate(("magazine", "vopsea", "cumparaturi"))]
+    delete = [ToolCall("d1", "item_delete", json.dumps({"targets": ["c1", "c2", "c3"]}))]
+    turn, _, _ = chat.say("Șterge notele cu magazine, vopsea și cumpărături", [*finds, delete, "Le șterg pe toate trei?"])
+    assert turn.expect_reply and _pending(acc, chat) is not None  # finds one after another: refs add up
+    chat.say("Da", ["Am șters."])
+    assert [_get(acc, u) for u in (shops, paint, food)] == [None, None, None] and _get(acc, ideas) is not None
+
+
+def test_delete_all_notes_means_every_note() -> None:
+    acc = _account()
+    with session_scope() as db:
+        r = ItemRepo(db)
+        uids = [r.create(acc, "note", t).uid for t in ("Unu\na", "Doi\nb", "Trei\nc")]
+        rem = r.create(acc, "reminder", "Dentist", FUTURE, None, None).uid
+    chat = Chat(acc)
+    call = [ToolCall("d1", "item_delete", json.dumps({"query": {"kind": "note"}, "all_matching": True}))]
+    chat.say("Șterge toate notele", [call, "Șterg toate cele 3 note?"])
+    chat.say("Da", ["Am șters."])
+    assert all(_get(acc, u) is None for u in uids) and _get(acc, rem) is not None  # notes only
+
+
 def test_a_yes_with_more_deletes_and_hands_the_rest_to_the_model() -> None:
     acc = _account()
     mon, _ = _two_stefans(acc)
