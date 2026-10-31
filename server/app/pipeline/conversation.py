@@ -26,6 +26,7 @@ from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
+from app.providers.base import UsageItem
 from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.spoken import for_speech
@@ -510,7 +511,27 @@ class ConversationPipeline:
                 answer_fn(search_llm, search_model, self.router.llm_params()), tz=s.timezone,
                 llm_provider=search_llm.name, llm_model=search_model,
             )
-            searcher = WebSearch(run.search, web_search.get("cache_ttl_s"), provider=search_llm.name,
+            search_fn = run.search
+            legacy = {c.strip() for c in getattr(router_settings(self.router), "search_legacy_categories", "").split(",")
+                      if c.strip()}
+            if legacy and hasattr(llm, "web_search"):
+                hosted = self.router.hosted_search_tool(web_search)
+
+                async def search_fn(query: str, location: str, language: str, category: str = "other"):
+                    if category not in legacy:
+                        return await run.search(query, location, language, category=category)
+                    # hybrid: OpenAI hosted search for these categories, accounted as legacy search
+                    answer, tin, tout, searches, *more = await llm.web_search(  # type: ignore[attr-defined]
+                        query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
+                        instructions=search_instructions(s.timezone), timezone_name=s.timezone,
+                    )
+                    complete = bool(more[0]) if more else True
+                    usage = [UsageItem("llm", llm.name, model, "input_token", tin),
+                             UsageItem("llm", llm.name, model, "output_token", tout),
+                             UsageItem("llm", llm.name, model, "web_search_call", max(1, searches) if answer else searches)]
+                    return answer, tin, tout, searches, complete, usage
+
+            searcher = WebSearch(search_fn, web_search.get("cache_ttl_s"), provider=search_llm.name,
                                  model=search_model, max_attempts=None, pass_category=True)
             turn.searcher, turn.search_city = searcher, city
         elif web_search is not None and hasattr(llm, "web_search"):

@@ -207,6 +207,20 @@
       "unit": "duration_ms",
       "price_usd": 0.0,
       "note": "Wall-clock time of ddgs_brave searches (for latency figures): no charge."
+    },
+    {
+      "provider": "metno",
+      "model": "weather",
+      "unit": "request",
+      "price_usd": 0.0,
+      "note": "MET Norway forecast / sunrise API (free, CC BY 4.0, attribution 'MET Norway'): counted, no charge."
+    },
+    {
+      "provider": "nominatim",
+      "model": "geocode",
+      "unit": "request",
+      "price_usd": 0.0,
+      "note": "Nominatim (OpenStreetMap) town lookup for the weather source, cached: counted, no charge."
     }
   ]
 }

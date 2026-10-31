@@ -7,7 +7,8 @@
   second DNS answer cannot swap in an internal address
 - redirects are followed by hand, at most MAX_REDIRECTS, each one checked again; https -> http is refused
 - certificates are always verified (no insecure retry); only text/html or application/xhtml+xml; the body is
-  streamed and refused past max_bytes; one deadline for the whole download
+  streamed and reading stops at max_bytes (the start of a page holds its text; the rest is not downloaded); one
+  deadline for the whole download
 - an honest User-Agent, no cookies, and at most one download per site every DOMAIN_GAP_S
 """
 
@@ -151,15 +152,12 @@ class PageFetcher:
                     ctype = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
                     if ctype not in HTML_TYPES:
                         raise FetchRefused("content type")
-                    length = resp.headers.get("content-length")
-                    if length and length.isdigit() and int(length) > self.max_bytes:
-                        raise FetchRefused("too large")
                     body = bytearray()
                     async for part in resp.aiter_bytes():
                         body += part
-                        if len(body) > self.max_bytes:
-                            raise FetchRefused("too large")
-                    return url, bytes(body)
+                        if len(body) >= self.max_bytes:
+                            break
+                    return url, bytes(body[: self.max_bytes])
                 finally:
                     await resp.aclose()
             raise FetchRefused("too many redirects")

@@ -141,7 +141,8 @@ def summarise(result: dict) -> dict:
                     cost += q * prices.get(f"openai:{model}:{k}", 0)
                 else:
                     provider, unit = k.split(":", 1)
-                    m = {"ddgs": "web", "brave": "web", "trafilatura": "extract", "buddyai": "websearch"}.get(provider, model)
+                    m = {"ddgs": "web", "brave": "web", "trafilatura": "extract", "buddyai": "websearch",
+                         "metno": "weather", "nominatim": "geocode"}.get(provider, model)
                     cost += q * prices.get(f"{provider}:{m}:{unit}", 0)
         out[backend] = {
             "queries": len(runs), "answered": len(found), "p50_ms": int(statistics.median(ms)),
@@ -153,6 +154,7 @@ def summarise(result: dict) -> dict:
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # answers in Romanian etc. on a cp1252 console
     p = argparse.ArgumentParser()
     p.add_argument("--legacy", action="store_true", help="also run legacy_openai (billed hosted search)")
     p.add_argument("--brave-only", type=int, default=0, help="also run the first N queries through Brave only")

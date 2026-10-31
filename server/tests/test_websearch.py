@@ -38,10 +38,12 @@ class FakeProvider:
     def __init__(self, name: str, *script, configured: bool = True, clock=None, step_s: float = 0.0, delay_s: float = 0.0):
         self.name, self.script, self.configured = name, list(script), configured
         self.queries: list[str] = []
+        self.local: list[bool] = []
         self.clock, self.step_s, self.delay_s = clock, step_s, delay_s
 
-    async def search(self, query, *, tz, category, max_results, timeout):
+    async def search(self, query, *, tz, category, max_results, timeout, local=True):
         self.queries.append(query)
+        self.local.append(local)
         if self.delay_s:
             await asyncio.sleep(self.delay_s)
         if self.clock is not None:
@@ -56,6 +58,9 @@ class FakeExtractor:
     def __init__(self, full: bool = True):
         self.full = full
         self.calls = 0
+
+    def skip(self, domain):
+        return False
 
     async def extract(self, result, query, max_chars, timeout=None):
         self.calls += 1
@@ -85,10 +90,10 @@ def answers(*replies):
     return fn, seen
 
 
-def orch(ddgs, brave=None, *, deadline=12.0, clock=None, extractor=None, brave_cap=1000, breaker=None, **cfg):
+def orch(ddgs, brave=None, *, deadline=12.0, clock=None, extractor=None, brave_cap=1000, breaker=None, weather=None, **cfg):
     c = SearchConfig(total_deadline_s=deadline, brave_cap=brave_cap, **cfg)
     return SearchOrchestrator(ddgs, brave or FakeProvider("brave", configured=False), extractor or FakeExtractor(), c,
-                              breaker=breaker, clock=clock or Clock())
+                              breaker=breaker, clock=clock or Clock(), weather=weather)
 
 
 async def run(o, fn, query="Romania national football team latest match result", category="sport", location=""):
@@ -156,6 +161,38 @@ async def test_deadline_ends_the_search():
     assert 1 <= len(ddgs.queries) <= 3 and clock.t - 1000 <= 12  # never past the deadline
 
 
+async def test_give_up_time_ends_a_search_nobody_answers_early():
+    clock = Clock()
+    ddgs = FakeProvider("ddgs", OFF, clock=clock, step_s=2.0)
+    answer, *_ = await run(orch(ddgs, clock=clock, deadline=12, give_up_s=6), answers()[0], category="other")
+    assert answer == NOT_FOUND and len(ddgs.queries) == 3 and clock.t - 1000 == 6  # not the whole 12 s
+
+
+class SlowExtractor(FakeExtractor):
+    def __init__(self):
+        super().__init__()
+        self.budgets: list[float] = []
+
+    async def extract(self, result, query, max_chars, timeout=None):
+        self.budgets.append(timeout)
+        return await super().extract(result, query, max_chars, timeout)
+
+
+async def test_page_downloads_never_wait_past_the_give_up_time():
+    clock = Clock()
+    extractor = SlowExtractor()
+    ddgs = FakeProvider("ddgs", GOOD, clock=clock, step_s=4.5)
+    answer, *_ = await run(orch(ddgs, clock=clock, deadline=12, give_up_s=6, extractor=extractor), answers(ANSWER)[0],
+                           category="other")
+    assert answer.startswith("Romania beat") and extractor.budgets and max(extractor.budgets) == 1.5
+
+
+def test_answer_rules_prefer_full_prices_and_official_figures():
+    from app.websearch.orchestrator import EVIDENCE_RULES
+
+    assert "not a monthly instalment" in EVIDENCE_RULES and "census or national statistics office" in EVIDENCE_RULES
+
+
 async def test_turn_shares_one_deadline_between_searches():
     clock = Clock()
     o = orch(FakeProvider("ddgs", OFF, clock=clock, step_s=9.0), clock=clock, deadline=12)
@@ -182,7 +219,7 @@ async def test_cancellation_propagates():
 async def test_ddgs_failure_falls_back_to_brave(kind):
     ddgs = FakeProvider("ddgs", SearchError("ddgs", kind))
     brave = FakeProvider("brave", GOOD)
-    answer, _, _, searches, complete, usage = await run(orch(ddgs, brave), answers(ANSWER)[0])
+    answer, _, _, searches, complete, usage = await run(orch(ddgs, brave), answers(ANSWER)[0], category="other")
     assert answer.startswith("Romania beat") and len(ddgs.queries) == 1 and len(brave.queries) == 1
     units = {(u.provider, u.unit): u.quantity for u in usage}
     assert units[("brave", "search_request")] == 1 and units[("ddgs", "failed_request")] == 1
@@ -190,14 +227,14 @@ async def test_ddgs_failure_falls_back_to_brave(kind):
 
 async def test_brave_not_used_when_ddgs_finds_it():
     brave = FakeProvider("brave", GOOD)
-    await run(orch(FakeProvider("ddgs", GOOD), brave), answers(ANSWER)[0])
+    await run(orch(FakeProvider("ddgs", GOOD), brave), answers(ANSWER)[0], category="other")
     assert brave.queries == []
 
 
 async def test_irrelevant_ddgs_rounds_switch_to_brave_before_time_runs_out():
     ddgs = FakeProvider("ddgs", OFF)
     brave = FakeProvider("brave", GOOD)
-    answer, *_ = await run(orch(ddgs, brave, deadline=60), answers(ANSWER)[0])
+    answer, *_ = await run(orch(ddgs, brave, deadline=60), answers(ANSWER)[0], category="other")
     assert len(ddgs.queries) == 2 and len(brave.queries) == 1 and answer.startswith("Romania beat")
 
 
@@ -283,7 +320,8 @@ async def test_brave_provider_request_and_errors():
     brave = BraveSearchProvider("secret-key", transport=httpx.MockTransport(handler))
     out = await brave.search("Romania result", tz="Europe/London", category="sport", max_results=8, timeout=2)
     assert seen["key"] == "secret-key" and "secret-key" not in json.dumps(seen["params"])
-    assert seen["params"]["country"] == "GB" and seen["params"]["freshness"] == "pw"
+    assert seen["params"]["country"] == "GB" and seen["params"]["freshness"] == "pm"
+    assert seen["params"]["extra_snippets"] == "true" and seen["params"]["enable_rich_callback"] == "1"
     assert len(out) == 1 and out[0].title == "Romania 2-1" and out[0].published_at == "2026-10-12"
     limited = BraveSearchProvider("k", transport=httpx.MockTransport(lambda r: httpx.Response(429)))
     with pytest.raises(SearchError) as e:
@@ -366,8 +404,8 @@ async def test_content_type_and_size_limits():
         await pdf.fetch("https://a.example.com/", 3)
     big = _fetcher(lambda r: httpx.Response(200, headers={"content-type": "text/html"}, content=b"x" * 5000),
                    {"b.example.com": ["93.184.216.34"]}, max_bytes=1000)
-    with pytest.raises(FetchRefused, match="too large"):
-        await big.fetch("https://b.example.com/", 3)
+    _, body = await big.fetch("https://b.example.com/", 3)
+    assert body == b"x" * 1000  # the start of the page is read, the rest is not downloaded
 
 
 async def test_tls_is_always_verified(monkeypatch):
@@ -405,6 +443,94 @@ async def test_extraction_failure_keeps_the_snippet():
     out = await ContentExtractor(FailingFetcher()).extract(r, "Romania", 2000)
     assert out.extraction == "snippet" and out.text == ""
     assert "search snippet only" in evidence.package([out], "Europe/London")
+
+
+class ScriptedFetcher:
+    """Per URL: an exception to raise, or HTML to return."""
+
+    def __init__(self, script: dict):
+        self.script = script
+        self.urls: list[str] = []
+
+    async def fetch(self, url, timeout):
+        self.urls.append(url)
+        item = self.script[url]
+        if isinstance(item, BaseException):
+            raise item
+        return url, item
+
+
+async def test_sites_that_refuse_us_or_keep_timing_out_are_skipped_for_a_while():
+    clock = Clock()
+    blocked, slow, flaky = "https://shop.example.com/p", "https://slow.example.com/a", "https://flaky.example.com/a"
+    fetcher = ScriptedFetcher({blocked: FetchRefused("http 403"), slow: TimeoutError(), flaky: TimeoutError()})
+    x = ContentExtractor(fetcher, timeout_s=2.5, clock=clock)
+    await x.extract(R("t", "Romania", blocked), "Romania", 2000)
+    assert x.skip("shop.example.com")  # refused once: skipped
+    for _ in range(2):
+        await x.extract(R("t", "Romania", slow), "Romania", 2000)
+    assert x.skip("slow.example.com")  # two timeouts in a row
+    await x.extract(R("t", "Romania", flaky), "Romania", 2000)
+    fetcher.script[flaky] = ARTICLE
+    await x.extract(R("t", "Romania", flaky), "Romania", 2000)
+    fetcher.script[flaky] = TimeoutError()
+    await x.extract(R("t", "Romania", flaky), "Romania", 2000)
+    assert not x.skip("flaky.example.com")  # a success in between resets the count
+    short = "https://short.example.com/a"
+    fetcher.script[short] = TimeoutError()
+    for _ in range(2):
+        await x.extract(R("t", "Romania", short), "Romania", 2000, timeout=1.0)
+    assert not x.skip("short.example.com")  # our own short budget is not the site's fault
+    clock.t += 16 * 60
+    assert not x.skip("slow.example.com") and x.skip("shop.example.com")  # 15 min vs 6 hours
+
+
+class PagesExtractor(FakeExtractor):
+    """Fails or hangs for chosen URLs, reads the rest."""
+
+    def __init__(self, fail=(), hang=(), skipped=()):
+        super().__init__()
+        self.fail, self.hang, self.skipped = set(fail), set(hang), set(skipped)
+        self.urls: list[str] = []
+
+    def skip(self, domain):
+        return domain in self.skipped
+
+    async def extract(self, result, query, max_chars, timeout=None):
+        self.urls.append(result.url)
+        if result.url in self.hang:
+            await asyncio.sleep(30)
+        if result.url in self.fail:
+            return result
+        return await super().extract(result, query, max_chars, timeout)
+
+
+def _five():
+    snippets = ("Romania national football team latest match result: a 2-1 win against Austria in Bucharest",
+                "Latest result for the Romania national team: Austria beaten 2-1, football report and goals",
+                "Football: Romania's national team won its latest match, the result 2-1 over the Austrians",
+                "Match report - national football side of Romania edge Austria, latest result two goals to one",
+                "Austria lose 2-1: Romania national football team latest match, result and player ratings")
+    return [R(f"Romania v Austria report {i}", s, f"https://news{i}.com/r") for i, s in enumerate(snippets)]
+
+
+async def test_failed_pages_are_replaced_and_avoided_sites_passed_over():
+    rows = _five()
+    extractor = PagesExtractor(fail={rows[0].url, rows[1].url, rows[3].url}, skipped={"news2.com"})
+    fn, seen = answers(ANSWER)
+    answer, *_ = await run(orch(FakeProvider("ddgs", rows), extractor=extractor), fn, category="other")
+    assert answer.startswith("Romania beat")
+    assert rows[2].url not in extractor.urls  # an avoided site is not downloaded
+    assert rows[4].url in extractor.urls and len(extractor.urls) == 4  # the fifth result, in place of a failed one
+    assert seen[0][1].count("Page text:") == 1
+
+
+async def test_once_a_page_arrives_the_slow_ones_get_only_a_grace_period():
+    rows = _five()
+    extractor = PagesExtractor(hang={r.url for r in rows[1:]})
+    start = asyncio.get_running_loop().time()
+    answer, *_, usage = await run(orch(FakeProvider("ddgs", rows), extractor=extractor), answers(ANSWER)[0], category="other")
+    assert answer.startswith("Romania beat") and asyncio.get_running_loop().time() - start < 2  # not 2.5 s per page
 
 
 ARTICLE = """<html><head><title>Romania beat Austria</title>
@@ -579,7 +705,7 @@ async def test_costs_are_reported_per_provider_never_as_hosted_search():
     _clear_cache()
     ddgs = FakeProvider("ddgs", SearchError("ddgs", "timeout"))
     brave = FakeProvider("brave", GOOD)
-    _, out = await _ask(_ws(orch(ddgs, brave), answers(ANSWER)[0]), f"Romania latest match result {uuid.uuid4().hex[:4]}")
+    _, out = await _ask(_ws(orch(ddgs, brave), answers(ANSWER)[0]), f"Romania latest match result {uuid.uuid4().hex[:4]}", "other")
     units = {(u.kind, u.provider, u.unit): u.quantity for u in out.usage}
     assert not any(u.unit == "web_search_call" for u in out.usage)
     assert units[("search", "brave", "search_request")] == 1 and units[("search", "ddgs", "failed_request")] == 1
@@ -593,6 +719,222 @@ async def test_costs_are_reported_per_provider_never_as_hosted_search():
         if u.quantity and u.provider != "openai":
             assert pricing.cost(u.provider, u.model, u.unit, u.quantity) is not None, u
     assert STATS["searches"] >= 1
+
+
+# --- live categories: Brave first, extra snippets, structured sport data, weather ---------------------------
+
+
+async def test_ddgs_names_its_engines_and_a_time_limit(monkeypatch):
+    import ddgs
+
+    from app.websearch.providers import DDGSSearchProvider
+
+    seen = {}
+
+    class FakeDDGS:
+        def __init__(self, timeout):
+            pass
+
+        def text(self, query, **kw):
+            seen.update(kw)
+            return [{"title": "t", "href": "https://bbc.co.uk/news/1", "body": "b"}]
+
+    monkeypatch.setattr(ddgs, "DDGS", FakeDDGS)
+    out = await DDGSSearchProvider(backends="duckduckgo,yahoo").search("UK news", tz="Europe/London", category="news",
+                                                                      max_results=8, timeout=2)
+    assert len(out) == 1 and seen["backend"] == "duckduckgo,yahoo" and seen["timelimit"] == "w" and seen["region"] == "uk-en"
+    await DDGSSearchProvider().search("Everest height", tz="UTC", category="other", max_results=8, timeout=2)
+    assert seen["timelimit"] is None  # facts are not limited by date
+
+
+STANDINGS = {"type": "rich", "results": [{
+    "type": "rich", "subtype": "sports", "provider": {"name": "API-Sports", "url": "https://api-sports.io/"},
+    "football": {"sport": "football", "type": "league", "view": "standings", "content": {
+        "type": "league_standings", "league": {"id": 39, "name": "Premier League", "season": "2026"},
+        "group_standings": [{"group_name": "Premier League", "standings": [
+            {"team": {"name": "Manchester City"}, "rank": 1, "matches_played": 8, "matches_won": 7, "matches_drawn": 0,
+             "matches_lost": 1, "goals_for": 20, "goals_against": 9, "points": 21},
+            {"team": {"name": "Arsenal"}, "rank": 2, "matches_played": 8, "matches_won": 7, "matches_drawn": 0,
+             "matches_lost": 1, "goals_for": 13, "goals_against": 5, "points": 21}]}],
+        "games": [{"teams": {"home": {"name": "Arsenal"}, "away": {"name": "Everton"}}, "score": {"home": 2, "away": 0},
+                   "start_time": 1792850400, "status": {"code": "FT"}, "competition_id": 39, "round": "Regular Season - 8"},
+                  {"teams": {"home": {"name": "Liverpool"}, "away": {"name": "Arsenal"}}, "start_time": 4102444800,
+                   "status": {"code": "NS"}, "competition_id": 39, "round": "Regular Season - 9"}]}}}]}
+
+
+async def test_brave_extra_snippets_local_hours_and_rich_sport_data():
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append((request.url.path, dict(request.url.params)))
+        if request.url.path.endswith("/rich"):
+            return httpx.Response(200, json=STANDINGS)
+        return httpx.Response(200, json={
+            "web": {"results": [{"title": "Library", "url": "https://libraries.essex.gov.uk/chelmsford",
+                                 "description": "Chelmsford Library",
+                                 "extra_snippets": ["Monday - 9am to 5:30pm", "Chelmsford Library"]}]},
+            "locations": {"results": [{"title": "Tesco Express", "url": "https://tesco.com/store/1",
+                                       "postal_address": {"displayAddress": "6 Dukes Walk, Chelmsford"},
+                                       "opening_hours": {"days": [[{"abbr_name": "Mon", "opens": "06:00", "closes": "23:00"}]]}}]},
+            "rich": {"type": "rich", "hint": {"vertical": "sports", "callback_key": "k123"}},
+        })
+
+    brave = BraveSearchProvider("key", transport=httpx.MockTransport(handler))
+    out = await brave.search("opening hours", tz="Europe/London", category="business", max_results=8, timeout=2)
+    assert out[0].title == "Tesco Express" and "Opening hours: Mon 06:00-23:00" in out[0].snippet
+    assert "Address: 6 Dukes Walk" in out[0].snippet
+    assert out[1].snippet == "Chelmsford Library … Monday - 9am to 5:30pm"  # extra snippets, without repeats
+    assert out.rich_key == "" and "enable_rich_callback" not in seen[0][1]  # structured data only for sport
+    sport = await brave.search("Premier League table leader", tz="Europe/London", category="sport", max_results=8, timeout=2)
+    assert sport.rich_key == "k123"
+    rich = await brave.rich("k123", tz="Europe/London", timeout=2)
+    assert seen[-1] == ("/res/v1/web/rich", {"callback_key": "k123"})
+    assert len(rich) == 1 and rich[0].extraction == "full" and "Premier League" in rich[0].title
+    assert "1. Manchester City 21 pts" in rich[0].text and "Arsenal 2-0 Everton" in rich[0].text
+    assert "Liverpool v Arsenal" in rich[0].text and "may not list every competition" in rich[0].text
+
+
+class RichBrave(FakeProvider):
+    """A Brave fake whose results offer structured data."""
+
+    def __init__(self, *script, rich=None, **kw):
+        super().__init__("brave", *script, **kw)
+        self.rich_calls = 0
+        self.rich_data = rich or []
+
+    async def search(self, query, **kw):
+        from app.websearch.types import Results
+
+        out = Results(await super().search(query, **kw))
+        out.rich_key = "k"
+        return out
+
+    async def rich(self, key, *, tz, timeout):
+        self.rich_calls += 1
+        return [SearchResult("brave", r.title, r.url, r.snippet, text=r.snippet, extraction="full") for r in self.rich_data]
+
+
+async def test_live_categories_ask_brave_first_and_answer_from_snippets():
+    ddgs = FakeProvider("ddgs", GOOD)
+    brave = FakeProvider("brave", GOOD)
+    extractor = FakeExtractor()
+    fn, seen = answers(ANSWER)
+    answer, _, _, searches, complete, usage = await run(orch(ddgs, brave, extractor=extractor), fn)
+    assert answer.startswith("Romania beat") and ddgs.queries == [] and len(brave.queries) == 1
+    assert extractor.calls == 0 and len(seen) == 1  # no page downloaded
+    assert not complete  # a time-sensitive fact from snippets only is not cached
+
+
+async def test_snippets_without_the_answer_read_the_pages():
+    brave = FakeProvider("brave", GOOD)
+    extractor = FakeExtractor()
+    fn, seen = answers({"answer": NOT_FOUND}, ANSWER)
+    answer, *_, complete, _ = await run(orch(FakeProvider("ddgs", GOOD), brave, extractor=extractor), fn)
+    assert answer.startswith("Romania beat") and extractor.calls == 1 and len(seen) == 2
+    assert complete and "Page text:" in seen[1][1]
+
+
+async def test_after_brave_first_the_next_wordings_go_to_ddgs():
+    ddgs = FakeProvider("ddgs", GOOD)
+    brave = FakeProvider("brave", OFF)
+    answer, *_ = await run(orch(ddgs, brave, deadline=60), answers(ANSWER)[0])
+    assert len(brave.queries) == 1 and len(ddgs.queries) == 1 and answer.startswith("Romania beat")
+
+
+async def test_structured_sport_data_is_one_more_brave_request():
+    table = [R("Premier League table leader standings", "Premier League table: 1. Manchester City 21 pts", "https://api-sports.io/")]
+    brave = RichBrave(OFF, rich=table)
+    fn, seen = answers({"answer": "Manchester City lead with 21 points."})
+    answer, _, _, searches, complete, usage = await run(orch(FakeProvider("ddgs", OFF), brave), fn,
+                                                        query="Premier League table leader")
+    assert answer.startswith("Manchester City") and brave.rich_calls == 1 and complete  # structured data: cacheable
+    assert "1. Manchester City 21 pts" in seen[0][1]
+    units = {(u.provider, u.unit): u.quantity for u in usage}
+    assert units[("brave", "search_request")] == 2 and searches == 2
+    capped = RichBrave(OFF, rich=table)
+    await run(orch(FakeProvider("ddgs", OFF), capped, brave_per_search=1), answers()[0], query="Premier League table leader")
+    assert capped.rich_calls == 0  # the per-search Brave cap includes structured data
+
+
+def _forecast_payload():
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    series = []
+    for h in range(0, 96):
+        t = now + timedelta(hours=h)
+        series.append({"time": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "data": {
+            "instant": {"details": {"air_temperature": 10 + h % 5, "wind_speed": 5.0, "relative_humidity": 80}},
+            "next_1_hours": {"summary": {"symbol_code": "lightrain_day"}, "details": {"precipitation_amount": 0.2}},
+            "next_6_hours": {"summary": {"symbol_code": "cloudy"}, "details": {"precipitation_amount": 1.0}}}})
+    return {"properties": {"timeseries": series}}
+
+
+def _weather(calls: list, fail: bool = False):
+    from app.websearch.weather import WeatherSource
+
+    def handler(request: httpx.Request):
+        calls.append(request.url.path)
+        if fail:
+            return httpx.Response(503)
+        assert request.headers["user-agent"].startswith("olaCompanionBot")
+        if "nominatim" in request.url.host:
+            return httpx.Response(200, json=[
+                {"lat": "37.54", "lon": "-77.43", "display_name": "Richmond, Virginia, United States", "importance": 0.67,
+                 "address": {"country_code": "us"}},
+                {"lat": "51.44", "lon": "-0.30", "display_name": "Richmond upon Thames, London, United Kingdom",
+                 "importance": 0.55, "address": {"country_code": "gb"}}])
+        if request.url.path.endswith("/sun"):
+            return httpx.Response(200, json={"properties": {"sunrise": {"time": "2026-10-31T06:50+00:00"},
+                                                            "sunset": {"time": "2026-10-31T16:32+00:00"}}})
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        return httpx.Response(200, json=_forecast_payload(), headers={"expires": expires, "last-modified": "x"})
+
+    return WeatherSource(transport=httpx.MockTransport(handler))
+
+
+def test_weather_symbols_read_as_words():
+    from app.websearch.weather import describe
+
+    assert describe("lightrainshowers_day") == "light rain showers" and describe("clearsky_night") == "clear sky"
+    assert describe("partlycloudy_day") == "partly cloudy" and describe("heavyrainandthunder") == "heavy rain and thunder"
+
+
+async def test_weather_source_prefers_the_watch_country_and_caches():
+    from collections import Counter
+
+    calls: list = []
+    w, n = _weather(calls), Counter()
+    r = await w.evidence("Richmond", "Europe/London", 3, n)
+    assert r is not None and r.extraction == "full" and r.domain == "api.met.no" and "Richmond upon Thames" in r.title
+    assert "Now (" in r.text and "Tomorrow" in r.text and "sunset 16:32" in r.text and "light rain" in r.text
+    assert n["geocode_requests"] == 1 and n["weather_requests"] == 2
+    await w.evidence("richmond", "Europe/London", 3, n)
+    assert n["geocode_requests"] == 1 and n["weather_requests"] == 2  # place, forecast (until Expires) and sun cached
+    assert evidence.reliability(r.domain) == 0.9
+
+
+async def test_weather_questions_use_the_forecast_before_searching():
+    calls: list = []
+    ddgs = FakeProvider("ddgs", GOOD)
+    fn, seen = answers({"answer": "Light rain, 12°C."})
+    answer, _, _, searches, complete, usage = await run(orch(ddgs, weather=_weather(calls)), fn,
+                                                        query="weather Richmond today", category="weather", location="Richmond")
+    assert answer == "Light rain, 12°C." and ddgs.queries == [] and searches == 0 and complete
+    assert "MET Norway" in seen[0][1]
+    units = {(u.provider, u.unit): u.quantity for u in usage}
+    assert units[("metno", "request")] == 2 and units[("nominatim", "request")] == 1
+
+
+async def test_weather_source_failure_falls_back_to_web_search():
+    calls: list = []
+    ddgs = FakeProvider("ddgs", [R("Weather Richmond today", "Richmond weather today 12°C rain", "https://www.metoffice.gov.uk/x")])
+    answer, *_ = await run(orch(ddgs, weather=_weather(calls, fail=True)), answers({"answer": "12°C, rain."})[0],
+                           query="weather Richmond today", category="weather", location="Richmond")
+    assert answer == "12°C, rain." and len(ddgs.queries) == 1 and calls
+
+
+def test_new_query_wordings_for_business_and_news():
+    assert "Tesco Chelmsford opening times" in query_variants("Tesco Chelmsford opening hours", "", "business")
+    assert "UK headlines BBC" in query_variants("UK headlines", "", "news")
 
 
 # --- the conversation ----------------------------------------------------------------------------------------
@@ -628,6 +970,74 @@ def test_conversation_uses_the_ddgs_backend(monkeypatch):
     assert not any(u.unit == "web_search_call" for u in turn.usage)
     assert any(u.kind == "search" and u.provider == "ddgs" for u in turn.usage)
     assert "14" in turn.assistant_text
+
+
+def test_hybrid_sends_transport_to_hosted_search(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    import app.websearch.service as service
+    from tests.test_cost_optimisation import SearchingLLM, SearchRouter, _account, _pipeline, _turn
+
+    ddgs = FakeProvider("ddgs", [R("Weather Chelmsford today", "Chelmsford weather today 14°C cloudy", "https://www.metoffice.gov.uk/x")])
+    monkeypatch.setattr(service, "get_orchestrator", lambda s: orch(ddgs))
+    monkeypatch.setattr(SearchRouter, "settings", NS(search_backend="ddgs_brave", search_legacy_categories="transport"),
+                        raising=False)
+    monkeypatch.setattr(SearchRouter, "llm_default", lambda self: (_AnswerLLM(), "mini"), raising=False)
+    for category, hosted in (("transport", 1), ("weather", 0)):
+        _clear_cache()
+        ddgs.queries.clear()
+        llm = SearchingLLM(category)
+        turn = _turn(_account(), "is my train late")
+        asyncio.run(_pipeline(llm)._reply(turn, NS(send=_noop_send, send_audio=_noop_audio)))
+        assert len(llm.searches) == hosted and len(ddgs.queries) == 1 - hosted
+        calls = sum(u.quantity for u in turn.usage if u.unit == "web_search_call")
+        assert calls == hosted  # hosted search billed as before, our own search never as a hosted call
+
+
+async def test_a_place_abroad_drops_the_watch_country_preference():
+    def handler(request: httpx.Request):
+        q = request.url.params["q"]
+        cc = "ro" if q == "Bucharest" else "gb"
+        assert "featureType" not in request.url.params  # countries and regions count too, not only towns
+        return httpx.Response(200, json=[{"lat": "44.4", "lon": "26.1", "display_name": q, "importance": 0.7,
+                                          "address": {"country_code": cc}}])
+
+    from app.websearch.weather import WeatherSource
+
+    w = WeatherSource(transport=httpx.MockTransport(handler))
+    for place, local in (("Bucharest", False), ("Chelmsford", True), ("", True)):
+        ddgs = FakeProvider("ddgs", GOOD)
+        await run(orch(ddgs, weather=w), answers(ANSWER)[0], category="other", location=place)
+        assert ddgs.local == [local]
+    ddgs = FakeProvider("ddgs", GOOD)
+    await run(orch(ddgs), answers(ANSWER)[0], category="other", location="Bucharest")
+    assert ddgs.local == [True]  # no place lookup without the weather source: the watch's country as before
+
+
+async def test_providers_search_worldwide_for_a_place_abroad(monkeypatch):
+    import ddgs
+
+    seen = {}
+
+    class FakeDDGS:
+        def __init__(self, timeout):
+            pass
+
+        def text(self, query, **kw):
+            seen.update(kw)
+            return []
+
+    monkeypatch.setattr(ddgs, "DDGS", FakeDDGS)
+    from app.websearch.providers import DDGSSearchProvider
+
+    await DDGSSearchProvider().search("CFR trains", tz="Europe/London", category="other", max_results=8, timeout=2, local=False)
+    assert seen["region"] == "wt-wt"
+    params = []
+    brave = BraveSearchProvider("key", transport=httpx.MockTransport(
+        lambda r: params.append(dict(r.url.params)) or httpx.Response(200, json={})))
+    await brave.search("CFR trains", tz="Europe/London", category="other", max_results=8, timeout=2, local=False)
+    await brave.search("CFR trains", tz="Europe/London", category="other", max_results=8, timeout=2)
+    assert "country" not in params[0] and params[1]["country"] == "GB"
 
 
 async def _noop_send(turn, type_, **fields):

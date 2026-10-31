@@ -56,6 +56,14 @@ services:
       BUDDYAI_STRIPE_SHIPPING_RATES_GBP: ${BUDDYAI_STRIPE_SHIPPING_RATES_GBP:-}
       BUDDYAI_STRIPE_SHIPPING_RATES_EUR: ${BUDDYAI_STRIPE_SHIPPING_RATES_EUR:-}
       BUDDYAI_CARE_TRIAL_DAYS: ${BUDDYAI_CARE_TRIAL_DAYS:-30}
+      # Web search (server/README.md): legacy_openai = OpenAI hosted search; ddgs_brave = our own search, with the
+      # categories in SEARCH_LEGACY_CATEGORIES still on hosted search. The Brave key can also go on the Providers page.
+      BUDDYAI_SEARCH_BACKEND: ${BUDDYAI_SEARCH_BACKEND:-legacy_openai}
+      BUDDYAI_BRAVE_API_KEY: ${BUDDYAI_BRAVE_API_KEY:-}
+      BUDDYAI_BRAVE_MONTHLY_BUDGET_USD: ${BUDDYAI_BRAVE_MONTHLY_BUDGET_USD:-5}
+      BUDDYAI_SEARCH_LEGACY_CATEGORIES: ${BUDDYAI_SEARCH_LEGACY_CATEGORIES-transport}
+      BUDDYAI_WEATHER_SOURCE: ${BUDDYAI_WEATHER_SOURCE-metno}
+      BUDDYAI_SEARCH_GIVE_UP_S: ${BUDDYAI_SEARCH_GIVE_UP_S:-6}
       # Long-term memory: remembering on request and learning are on; vectors stay off until switched on
       # (deploy/README.md, "Memory"). Customers can switch each part off on their Memory page.
       BUDDYAI_MEMORY_ENABLED: ${BUDDYAI_MEMORY_ENABLED:-true}

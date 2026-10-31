@@ -40,3 +40,9 @@ class SearchResult:
     def domain(self) -> str:
         host = (urlsplit(self.url).hostname or "").lower()
         return host[4:] if host.startswith("www.") else host
+
+
+class Results(list):
+    """A provider's result list, plus Brave's rich-data key when the response offers one (sport)."""
+
+    rich_key: str = ""

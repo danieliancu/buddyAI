@@ -55,17 +55,23 @@ class Settings(BaseSettings):
     brave_price_per_request_usd: float = 0.005  # Brave "Search" plan, $5 / 1,000 requests (verify)
     brave_max_requests_per_search: int = 2  # the paid fallback, per web_search call
     search_total_deadline_s: float = 12.0  # all searching of one turn (searches, pages, the answering call)
+    search_give_up_s: float = 6.0  # per search: no new search or page wait after this; answer from what was found
     ddgs_request_timeout_s: float = 3.0
     brave_request_timeout_s: float = 4.0
     search_max_results_per_request: int = 8
     search_max_extracted_sources: int = 3  # pages read per search round
     search_context_token_budget: int = 1800  # evidence sent to the answering model per call (approx. tokens)
-    extraction_max_bytes: int = 1_500_000
+    extraction_max_bytes: int = 800_000  # a page is read up to this much (the rest is not downloaded)
     extraction_timeout_s: float = 2.5  # download + Trafilatura of one page
     ddgs_circuit_breaker_threshold: int = 3  # technical failures in a row before DDGS is switched off...
     ddgs_circuit_breaker_cooldown_s: float = 120.0  # ...for this long, then one trial request
     search_max_concurrency: int = 4  # DDGS searches / page downloads at once (per process)
     ddgs_region: str = ""  # e.g. "uk-en"; "" = from the watch's time zone
+    ddgs_backends: str = "duckduckgo,yahoo"  # DDGS engines in order; "auto" also asks Wikipedia first (slow)
+    weather_source: str = "metno"  # weather questions: MET Norway forecast first; "" = web search only
+    # ddgs_brave: categories still answered by OpenAI hosted search (comma list; "" = none). Live transport status
+    # is rendered by JavaScript, which our page reader cannot see.
+    search_legacy_categories: str = "transport"
 
     # Cost display: stored costs are USD; shown as display_currency (editable in the web app)
     display_currency: str = "GBP"

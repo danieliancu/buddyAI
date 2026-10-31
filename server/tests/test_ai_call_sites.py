@@ -18,6 +18,8 @@ ALLOWED = {
     ("pipeline/conversation.py", "pump_llm"): "watch turn: admitted (LLM rounds)",
     ("pipeline/conversation.py", "_reply"): "watch turn: admitted (TTS of the reply)",
     ("pipeline/conversation.py", "run_search"): "watch turn: admitted (web search tool, usage via the tool outcome)",
+    ("pipeline/conversation.py", "search_fn"): "watch turn: admitted (ddgs_brave hybrid: hosted search for "
+    "search_legacy_categories, usage via the tool outcome)",
     ("websearch/service.py", "run"): "watch turn: admitted (ddgs_brave answering call inside the web search tool, "
     "usage via the tool outcome, kind search)",
     ("pipeline/conversation.py", "_apologise"): "watch turn: admitted (spoken apology)",
