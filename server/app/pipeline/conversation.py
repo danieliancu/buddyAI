@@ -982,7 +982,7 @@ class ConversationPipeline:
         if call.name == rag_tool.NAME:
             # earlier conversations: account and watch come from the session, never from the arguments
             result = await rag_tool.run(turn, call.arguments)
-            log.info("conversation_search(%s) -> ok=%s", args_shape(call.arguments), result_ok(result))
+            log.info("conversation_search(%s) -> status=%s", args_shape(call.arguments), json.loads(result).get("status"))
             return result
         assert self.tools is not None
         call_ctx = self._call_ctx(turn) if turn.account_id is not None else None

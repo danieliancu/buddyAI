@@ -8,6 +8,9 @@ _tmp = tempfile.mkdtemp(prefix="buddyai-test-")
 os.environ.setdefault("BUDDYAI_DATA_DIR", _tmp)
 os.environ.setdefault("BUDDYAI_MOCK_PROVIDERS", "true")
 os.environ.setdefault("BUDDYAI_MDNS_ENABLED", "false")
+# Test clients left open keep the server's background loops alive; a memory job loop waking up during a memory test takes
+# its job. No test relies on the loop's timing: they call the job functions themselves.
+os.environ.setdefault("BUDDYAI_MEMORY_JOB_INTERVAL_S", "3600")
 # Never use the developer's real Stripe settings from server/.env (tests fake Stripe explicitly).
 for _name in ("SECRET_KEY", "WEBHOOK_SECRET", "PRICE_CARE_GBP", "PRICE_CARE_EUR", "PRICE_WATCH_GBP", "PRICE_WATCH_EUR"):
     os.environ[f"BUDDYAI_STRIPE_{_name}"] = ""

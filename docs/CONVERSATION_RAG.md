@@ -46,7 +46,8 @@ whose rows would also need deleting. Memory jobs are not touched.
 
 **A8. Measured timeouts and dates (spec §13, §19, §22).**
 `tools/rag_bench.py` measured the query embedding at 250-375 ms (p95 up to ~800 ms) from a laptop, so the spec's
-suggested 350 ms sent most searches to word matching. Defaults: embedding 800 ms, database 500 ms, whole tool 2000 ms.
+suggested 350 ms sent most searches to word matching. On a real watch's turns, single calls took 730-810+ ms and
+800 ms was still too short in 2 of 3 searches. Defaults: embedding 1200 ms, database 500 ms, whole tool 2000 ms.
 These apply only when the tool runs. Requested dates narrow a search but do not exclude: the model read "about a month
 ago" as a few days and found nothing, so an empty period falls back to all dates, and the result says so
 (`outside_requested_dates`).
@@ -106,8 +107,8 @@ neither learned from nor indexed, until the idle gap (`conversation_idle_minutes
 ## Measurements
 
 From a laptop, real OpenAI embeddings and model, local PostgreSQL + pgvector, 2,008 synthetic turns on one watch.
-Reproduce with `python tools/rag_bench.py --db <localhost url>` (it wipes that database). **Not measured on a real
-watch or on the production network.** Samples are small: an indication, not a guarantee.
+Reproduce with `python tools/rag_bench.py --db <localhost url>` (it wipes that database). The real watch's results are
+below. **Not measured on the production network.** Samples are small: an indication, not a guarantee.
 
 | Measure | Result |
 |---|---|
@@ -149,6 +150,44 @@ small effects or occasional slow turns cannot be excluded from here.** Check it 
 Not measured: many watches backfilling together on the production database. Only one batch runs at a time per process,
 and indexing waits while `conversation_rag_index_pause_turns` voice turns are running.
 
+## Real watch
+
+2026-11-01: a real watch on a local server of this branch, with 307 synthetic turns; laptop and watch on a phone hotspot,
+so production's network will differ. `tts_first_audio` and the rest come from the `turns` table.
+
+Spoken questions, one each, first audio at the device (`ttfa_device_ms`). All six answers were right, including "nothing
+found" for a topic that does not exist:
+
+| Question | First audio | What happened |
+|---|---|---|
+| Holiday, about a month ago | 9.6 s | searched |
+| "And what else?" | 5.8 s | follow-up, no new search |
+| What the doctor said | 8.4 s | searched |
+| The car | 6.1 s | answered from the sources already found |
+| The cat (not in history) | 8.5 s | searched, said it found nothing |
+| A joke | 5.0 s | no search |
+
+In 2 of the 3 searches the embedding missed the 800 ms limit then in force, and word matching found the answer.
+
+The same fixed console question, switch on and off, order rotated, indexing off, 11 runs each (24 of 24 completed, the
+first pair discarded):
+
+| | Off, p50 / max | On, p50 / max |
+|---|---|---|
+| First audio at the device | 4594 / 9547 ms | 4906 / 8906 ms |
+| Model first token | 1968 / 6625 ms | 1750 / 6390 ms |
+| TTS first audio | 1109 / 1953 ms | 1109 / 1719 ms |
+| Speech to text | 1329 / 2141 ms | 1250 / 2875 ms |
+
+The stages do not lean towards a cost, and the +312 ms in first audio is smaller than the spread between runs. With 11 runs
+a difference of that size can be neither confirmed nor excluded. Two earlier runs are not counted: switching off deleted
+the vectors, so "on" turns ran during a re-index, and a reply ending in a question kept the microphone open for the next one.
+
+Moving the watch for such a test is delicate: the token is global, and the first hello to a server that does not know it
+erases it. For this test the server got a device row with the same token hash, and the URL was written to and removed from
+NVS, so the production pairing survived. Over USB, `esptool` sometimes could not reach the running watch; the cause was
+not found, and the watch's screen froze once around those attempts until a USB reset.
+
 ## Deployment
 
 Nothing here is enabled by deploying the code. **Before enabling for anyone:**
@@ -161,7 +200,7 @@ Nothing here is enabled by deploying the code. **Before enabling for anyone:**
 **Rollout**, with `BUDDYAI_OPENAI_API_KEY` set (required even under the `qwen` profile, which does not send this text to DashScope):
 
 1. `BUDDYAI_CONVERSATION_RAG_ACCOUNTS=<your account id>`, `BUDDYAI_CONVERSATION_RAG_ENABLED=true`, `BUDDYAI_CONVERSATION_RAG_INDEXING_ENABLED=true`.
-2. On the watch's Settings page: "I wear this watch", then switch on. A connected watch needs no restart. Ask about an old topic on the real watch.
+2. On the watch's Settings page: "I wear this watch", then switch on. A connected watch needs no restart. Ask about an old topic, and compare first audio with the "Real watch" figures.
 3. Watch `GET /api/diagnostics` → `conversation_rag`, usage kind `embedding`, and the log lines `conversation_rag …` (never content).
 4. Empty `BUDDYAI_CONVERSATION_RAG_ACCOUNTS` opens it to every account, once the checks above are done.
 

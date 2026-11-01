@@ -581,6 +581,7 @@ def test_no_conversation_content_reaches_the_logs(caplog):
         asyncio.run(_pipeline(llm)._reply(_voice_turn(acc, dev), FakeIO()))
     assert json.loads(llm.requests[1].messages[-1]["content"])["status"] == "ok"
     assert secret not in caplog.text and "Zamfirescu" not in caplog.text
+    assert "status=ok" in caplog.text  # the outcome is logged, not the content
 
 
 def test_a_call_when_not_offered_returns_nothing():
