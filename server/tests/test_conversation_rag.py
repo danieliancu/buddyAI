@@ -30,6 +30,7 @@ from app.pipeline.conversation import ConversationPipeline
 from app.pipeline.turn import TurnContext, TurnResult
 from app.providers.llm.base import LLMChunk, LLMProvider, LLMRequest, ToolCall
 from app.providers.mock import MockEmbeddings
+from app.ratelimit import LOGIN_PER_ACCOUNT, LOGIN_PER_IP, SIGNUP_PER_IP
 from app.security import hash_device_token
 from tests.test_accounts import _customer, _give_watch
 from tests.test_items import FakeIO, FakeRouter, _account
@@ -50,6 +51,8 @@ def rag_on():
     yield s
     for k, v in saved.items():
         setattr(s, k, v)
+    for limiter in (LOGIN_PER_ACCOUNT, LOGIN_PER_IP, SIGNUP_PER_IP):  # sign-ups here must not use up other tests' quota
+        limiter._hits.clear()
 
 
 def _device(acc: int) -> str:
@@ -566,6 +569,18 @@ def test_a_slow_search_is_cut_off_by_the_tool_timeout(monkeypatch, rag_on):
     llm = _Model("holiday")
     asyncio.run(_pipeline(llm)._reply(_voice_turn(acc, dev), FakeIO()))
     assert json.loads(llm.requests[1].messages[-1]["content"]) == {"status": "unavailable"}
+
+
+def test_no_conversation_content_reaches_the_logs(caplog):
+    acc, dev = _watch()
+    secret = "Zamfirescu thyroid"
+    _turn(acc, dev, f"my doctor {secret}", f"noted {secret}")
+    _index()
+    llm = _Model(secret)
+    with caplog.at_level("DEBUG"):
+        asyncio.run(_pipeline(llm)._reply(_voice_turn(acc, dev), FakeIO()))
+    assert json.loads(llm.requests[1].messages[-1]["content"])["status"] == "ok"
+    assert secret not in caplog.text and "Zamfirescu" not in caplog.text
 
 
 def test_a_call_when_not_offered_returns_nothing():

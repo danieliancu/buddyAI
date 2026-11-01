@@ -51,6 +51,13 @@ These apply only when the tool runs. Requested dates narrow a search but do not 
 ago" as a few days and found nothing, so an empty period falls back to all dates, and the result says so
 (`outside_requested_dates`).
 
+**A9. A RAG reply in the prompt's history counts as using its sources (spec §11, §14).**
+A reply built from earlier conversations stays in the prompt (`history_turns`) after the continuation turns, and later
+replies can repeat it. So a turn whose history holds a `rag_derived` turn is `rag_derived` too, with references to the
+same original sources. Reading the flag costs nothing: those rows are already loaded. One query reads the references,
+only in such a conversation, so these turns are not ordinary turns either. In effect the rest of that conversation is
+neither learned from nor indexed, until the idle gap (`conversation_idle_minutes`) starts a new one.
+
 ## Design
 
 ### Data (migration 0033)
@@ -94,29 +101,88 @@ ago" as a few days and found nothing, so an empty period falls back to all dates
 1. A+B — schema, migration, models, schema tests (SQLite + PostgreSQL with pgvector). **Checkpoint 1.**
 2. C+D — indexing, search, tool, continuation, query-count invariant tests, first measurements. **Checkpoint 2.**
 3. E–G — memory exclusion, retention redaction, concurrency tests, web controls, compliance docs, benchmarks,
-   final report.
+   final report. Awaiting review: not merged, not deployed.
 
-## Preliminary measurements (checkpoint 2)
+## Measurements
 
-From a laptop, real OpenAI embeddings and model, local PostgreSQL + pgvector, silent TTS, 2,008 synthetic turns on one
-watch. Reproduce with `python tools/rag_bench.py --db <localhost url>` (it wipes that database). Small samples: an
-indication, not the final benchmark (phase G).
+From a laptop, real OpenAI embeddings and model, local PostgreSQL + pgvector, 2,008 synthetic turns on one watch.
+Reproduce with `python tools/rag_bench.py --db <localhost url>` (it wipes that database). **Not measured on a real
+watch or on the production network.** Samples are small: an indication, not a guarantee.
 
 | Measure | Result |
 |---|---|
-| Indexing | 25-32 vectors/s (batches of 20, one watch) |
 | Right turn in the top 5 / first | 13 of 13 / 11 of 13 questions |
-| Query embedding | p50 282 ms, p95 802 ms |
-| Database search (includes word matching) | p50 266 ms, p95 421 ms |
-| Tool chosen for a question about the past (en, ro, de, fr, pl, el) | 10 of 10 |
+| Tool chosen for a question about the past (en, ro incl. no diacritics, de, fr, pl, el) | 10 of 10 |
 | Tool chosen wrongly for an ordinary question | 0 of 10 |
-| First token, question with search | ~3.3-4.1 s |
-| First token, follow-up without search | ~1.3 s |
+| Query embedding | p50 282-358 ms, p95 727-802 ms |
+| Database search, including word matching | p50 266-359 ms, p95 421-487 ms |
+| First token, question that searches (two model rounds) | 3.3-4.1 s |
+| First token, follow-up without a search | about 1.3 s |
+| Indexing | 24-32 vectors/s for one watch |
 
-**Open: the tool's presence in the request.** First token of the same ordinary question, alternating, with and
-without the tool: p50 +233 ms (11 runs each), +94 ms and +125 ms (29 runs each); p95 about the same in one run and
-+0.7 s and +1.3 s in the others. All three runs lean the same way, though network noise is large. It affects only
-watches that opted in. Phase G must measure it properly and try a smaller definition and rule.
+**Ordinary turn: the tool in the request.** The definition and rule add about 135 tokens to a prompt of about 6,300,
+inside the cached prefix. Same questions, first token, order rotated:
+
+| Runs per variant | No tool, p50 / p95 | With tool, p50 / p95 |
+|---|---|---|
+| 42 (definition before it was shortened) | 1227 / 2829 ms | 1242 / 2495 ms |
+| 42 (short definition) | as above | 1204 / 2138 ms |
+| 67, tool measured twice as a control | 1469 / 2417 ms | 1422 / 2245 and 1391 / 2232 ms |
+
+The tool was slower in about half the pairs, and the two identical variants differ from each other by 31 ms at p50.
+Through the whole pipeline with real TTS, 24 runs per variant: first token p50 1438 vs 1610 ms, first audio p50 2398 vs
+2500 ms, p95 2701 vs 3685 ms, leaning the other way. Earlier runs with a fixed order leaned that way too (p50 +94 to
++233 ms). **Conclusion: no systematic cost detected in the larger rotated samples; the 24-run p95 is not explained, and
+small effects or occasional slow turns cannot be excluded from here.** Check it on a real watch during rollout, using
+`ttfa_server_ms`, `llm_first_token_ms` and `tts_first_audio_ms`. A watch that has not opted in does not receive the tool.
+
+**While indexing** (45 s each, backfill at 500 vectors in the window, one process):
+
+| | Idle | Indexing |
+|---|---|---|
+| Event loop delay, p50 / p99 | 11 / 27 ms | 11 / 27 ms |
+| Turn row write, p50 / p95 | 47 / 91 ms | 39 / 92 ms |
+| Model first token, p50 | 1195 ms | 1211 ms |
+| Process CPU | 3% | 7% |
+| Database connections | 1 | 2 |
+
+Not measured: many watches backfilling together on the production database. Only one batch runs at a time per process,
+and indexing waits while `conversation_rag_index_pause_turns` voice turns are running.
+
+## Deployment
+
+Nothing here is enabled by deploying the code. **Before enabling for anyone:**
+
+1. Sign the OpenAI DPA and complete the transfer assessment (`docs/compliance/processor-register.md`), and the DPIA with the questions in `docs/compliance/data-inventory.md`. Legal review has not happened.
+2. Check in Coolify: the database runs `deploy/postgres.Dockerfile` (`SELECT extversion FROM pg_extension WHERE extname = 'vector'`), and migration 0022 has run. Not verified from here: no access to Coolify or production.
+3. Back up the database, deploy server and website, and let migration 0033 run. It only adds tables and columns.
+4. Deploy the site's privacy text together with the rollout, not before.
+
+**Rollout**, with `BUDDYAI_OPENAI_API_KEY` set (required even under the `qwen` profile, which does not send this text to DashScope):
+
+1. `BUDDYAI_CONVERSATION_RAG_ACCOUNTS=<your account id>`, `BUDDYAI_CONVERSATION_RAG_ENABLED=true`, `BUDDYAI_CONVERSATION_RAG_INDEXING_ENABLED=true`.
+2. On the watch's Settings page: "I wear this watch", then switch on. A connected watch needs no restart. Ask about an old topic on the real watch.
+3. Watch `GET /api/diagnostics` → `conversation_rag`, usage kind `embedding`, and the log lines `conversation_rag …` (never content).
+4. Empty `BUDDYAI_CONVERSATION_RAG_ACCOUNTS` opens it to every account, once the checks above are done.
+
+Cost: one vector costs about 30 tokens at $0.02 per million, roughly £0.0005 per 1,000 turns, plus about 2 KB of storage each; a question adds one more vector. On a question that searches, the real cost is the extra model round.
+
+## Rollback
+
+- **Stop it, keeping the data:** `BUDDYAI_CONVERSATION_RAG_ENABLED=false` (the tool, its rule and the website option go on the next turn or page load). `..._INDEXING_ENABLED=false` stops only the indexing.
+- **Remove the derived data as well:** `alembic downgrade 0032`. Conversations stay, but vectors, references, choices and the two turn columns go, and a reply already redacted is not restored. Old releases do not start on a newer schema, so downgrade only with the matching image.
+- A user's own switch-off deletes vectors for that watch; the kill switch does not.
+
+## Known limitations
+
+- Models choose the tool well in the sample measured, not in every phrasing or language; a miss means an ordinary answer without the history.
+- The current conversation is excluded from the search (it is in the prompt, except beyond `history_turns`).
+- Questions in another language than the conversation match less well, and distances do not separate relevant from irrelevant reliably: the model judges up to 5 passages.
+- A new fact said in a RAG-dependent turn, or later in that conversation, is not learned automatically; "remember that…" still works.
+- Audio already spoken cannot be recalled when a source is deleted during the reply; the stored reply is removed.
+- The rest of a conversation after a search is not indexed (A9).
+- Search reads vectors exactly, without an approximate index. Measured on 2,008 vectors; if one watch reaches far more, measure again.
+- If retention is ever enabled, individual-conversation deletion is added, or RAG answers are kept elsewhere, revisit the redaction: it covers retention only, by design.
 
 ## Running the PostgreSQL tests
 

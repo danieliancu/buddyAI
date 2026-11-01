@@ -41,8 +41,20 @@ Customer web app (HTTPS) --> /api/me/* --> PostgreSQL ; Stripe Checkout / portal
 | 18 | Customer support | emails exchanged with ola@olacompanion.com | support | contract / legitimate interests | email provider mailbox | email provider | unknown | not defined | manual | External |
 | 19 | Emails sent | recipient, subject, body (transactional) | account and billing notices | contract | SMTP provider; never logged in production after this change | email provider | unknown | provider's retention | — | Code; provider External |
 
+## Search Past Conversations (Conversation RAG) — not yet live
+
+| Data | Purpose | Legal basis | Where stored | Shared with | Location | Retention | Deletion |
+|---|---|---|---|---|---|---|---|
+| Embeddings of a watch's chat turns (numbers derived from the text; no text stored with them) | answer "what did we discuss…" | consent, per watch (to review, see below) | `conversation_rag_embeddings` | OpenAI (creates them from the text) | US | until the turn is deleted, the feature is switched off for the watch, the watch changes owner or the account is deleted | database cascade from the turn, plus explicit deletion on switch-off |
+| The choice for each watch: who wears it, on/off, when, notice version, method | record of the opt-in | legal obligation / accountability | `conversation_rag_authorizations`, audit log | none | UK/EU hosting | until the owner changes or the account is deleted (audit log per its own policy) | `forget_device`, `delete_account` |
+| Which earlier turns a reply was built from (ids only, no text) | removing replies whose source expires; follow-up questions | same as conversations | `conversation_rag_sources`, `turns.rag_derived` | none | UK/EU hosting | with the turns | database cascade |
+
+Not indexed: unfinished or failed turns, note and reminder editing, replies built from earlier conversations, and answers that came from a web search (their question only). Vectors are derived numbers, but they represent personal text and are treated as personal data.
+
 ## Items needing extra review
 
+- **Search Past Conversations, wearer:** the feature is available only when the account holder declares they wear the watch themselves. That declaration is not verified, and a watch someone else wears stays off because no approved way exists for that person to agree. Whether a voice confirmation could ever be enough (identity, capacity, legal authority, records) is an open legal question.
+- **Search Past Conversations, special categories:** past conversations can hold health or other Art. 9 data, and unlike memory extraction indexing does not filter them. Is the opt-in sufficient as explicit consent, and does its wording say enough? To be answered in the DPIA before enabling.
 - **Sensitive conversations / special-category data (Art. 9 UK GDPR):** users may speak about health, beliefs, etc. Memory extraction does not learn sensitive facts automatically (`app/memory/policy.py`); conversations are stored as said. A DPIA is recommended (external action).
 - **Children:** the privacy notice says the service is for adults (18+); site imagery and real use by family members should be reviewed. No age verification exists.
 - **Approximate location** sent with web search: disclosed in the privacy notice (branch); consider a setting to turn it off.

@@ -6,8 +6,10 @@ server/.env, costs a few pence, and its schema is wiped).
 Only a database on localhost is accepted: production is out of reach by design. TTS is mocked (nothing is spoken
 or billed); the web_search tool is offered to the model but never executed.
 
-Reports: indexing throughput, retrieval relevance and latency, which tool the model picks per language, the first
-token with and without the tool in the request, and one question with a follow-up, end to end.
+Reports: indexing throughput, retrieval relevance and latency, which tool the model picks per language, an ordinary
+turn with and without the tool through the whole pipeline (real TTS: first audio), one question with a follow-up end
+to end, and voice work while indexing runs. Whichever variant runs first in a pair rotates: a fixed order showed a
+difference that disappeared once it was removed.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 ap = argparse.ArgumentParser()
 ap.add_argument("--db", required=True)
 ap.add_argument("--filler", type=int, default=2000)
-ap.add_argument("--latency-runs", type=int, default=30)
+ap.add_argument("--latency-runs", type=int, default=25)
 ARGS = ap.parse_args()
 if urlparse(ARGS.db).hostname not in ("localhost", "127.0.0.1"):
     sys.exit("refusing: rag_bench only runs on a database on localhost")
@@ -234,34 +236,6 @@ async def selection(router, acc: int, dev: str, conv: int) -> dict:
             "ordinary_false_activation": sum(tool.NAME in r["tools"] for r in norm), "ordinary": len(norm), "rows": rows}
 
 
-async def first_token(router, acc: int, dev: str, conv: int) -> dict:
-    """The same ordinary question with and without the tool, alternating."""
-    from dataclasses import replace
-
-    from app.device_settings import DeviceSettings
-
-    llm, model = router.llm(DeviceSettings())
-    times: dict[bool, list[float]] = {True: [], False: []}
-    failed = 0
-    for i in range(ARGS.latency_runs * 2):
-        with_tool = bool(i % 2)
-        req = replace(_request(acc, dev, conv, "Tell me a short joke.", with_tool), model=model,
-                      params=router.llm_params())
-        started = time.monotonic()
-        first = None
-        try:
-            async for chunk in llm.stream(req):
-                if chunk.delta and first is None:
-                    first = (time.monotonic() - started) * 1000
-        except ProviderError:
-            failed += 1
-            continue
-        if first is not None and i >= 2:  # the first pair warms the connection and the prompt cache
-            times[with_tool].append(first)
-    return {"failed_runs": failed, **{k: {"runs": len(v), "p50_ms": round(pct(v, 50)), "p95_ms": round(pct(v, 95))}
-                                      for k, v in (("with_tool", times[True]), ("without_tool", times[False]))}}
-
-
 class Router:
     """The real model; a silent TTS; no web search."""
 
@@ -321,7 +295,13 @@ async def end_to_end(real, acc: int, dev: str) -> list[dict]:
                            conversation_id=conv_id, rag=access, rag_context=ctx, db_id=db_id)
         turn.user_text = text
         started = time.monotonic()
-        await pipeline._reply(turn, IO())
+        for attempt in range(3):  # a dropped connection is not a measurement
+            try:
+                await pipeline._reply(turn, IO())
+                break
+            except Exception:  # noqa: BLE001
+                await asyncio.sleep(2)
+                started = time.monotonic()
         total = (time.monotonic() - started) * 1000
         stored = DeviceConnection._persist(None, turn, TurnResult(status="completed"))
         ctx = context.after_turn(ctx, conv_id, turn.rag_found, stored, 2)
@@ -330,6 +310,138 @@ async def end_to_end(real, acc: int, dev: str) -> list[dict]:
                     "first_token_ms": turn.marks.llm_first_token - turn.marks.llm_request,
                     "total_ms": round(total)})
     return out
+
+
+class RealTTS(Router):
+    def tts(self, language, s):
+        return self.real.tts(language, s)
+
+
+class SilentIO:
+    async def send(self, turn, type_, **fields):
+        return True
+
+    async def send_audio(self, turn, packet):
+        return True
+
+
+async def ordinary_turn(real, acc: int, dev: str, generation: int) -> dict:
+    """The same ordinary questions through the pipeline, with the tool offered and without, alternating."""
+    from app.conversation_rag import authz
+    from app.device_settings import DeviceSettings
+    from app.items import AssistantTools
+    from app.pipeline.chunker import ChunkerConfig
+    from app.pipeline.conversation import ConversationPipeline
+    from app.pipeline.turn import TurnContext
+
+    pipeline = ConversationPipeline(RealTTS(real), ChunkerConfig(), tools=AssistantTools())
+    questions = ["Tell me a very short joke.", "What's the capital of Spain?", "Spune-mi o glumă scurtă."]
+    out: dict[str, dict[str, list[float]]] = {k: {"llm": [], "audio": [], "total": []} for k in ("with_tool", "without_tool")}
+    failed = 0
+    for i in range(ARGS.latency_runs * 2):
+        with_tool = bool((i + i // 2) % 2)  # on, off / off, on: who goes first rotates
+        key = "with_tool" if with_tool else "without_tool"
+        turn = TurnContext(i, "bench", dev, "auto", DeviceSettings(), 16000, account_id=acc,
+                           rag=authz.Access(True, generation) if with_tool else authz.OFF)
+        turn.user_text = questions[(i // 2) % len(questions)]
+        started = time.monotonic()
+        try:
+            await pipeline._reply(turn, SilentIO())
+        except Exception:  # noqa: BLE001 - a dropped connection is not a measurement
+            failed += 1
+            continue
+        if i < 2 or turn.tools_used:
+            continue
+        m = turn.marks
+        if m.llm_first_token is None or m.tts_first_pcm is None:
+            failed += 1
+            continue
+        out[key]["llm"].append(m.llm_first_token - m.llm_request)
+        out[key]["audio"].append(m.tts_first_pcm - m.llm_request)
+        out[key]["total"].append((time.monotonic() - started) * 1000)
+    return {"failed_runs": failed, **{k: {"runs": len(v["llm"]), **{f"{n}_p50_ms": round(pct(x, 50)) for n, x in v.items()},
+                                          **{f"{n}_p95_ms": round(pct(x, 95)) for n, x in v.items()}}
+                                      for k, v in out.items()}}
+
+
+async def under_load(real, acc: int, dev: str) -> dict:
+    """What a voice turn feels while indexing runs: event loop delay (audio is paced on it), a database write as in
+    every turn, and the model's first token. Measured with no indexing, then during a backfill."""
+    from sqlalchemy import text
+
+    from app.conversation_rag import index
+    from app.conversation_rag.embed import provider
+    from app.db.repositories import ConversationRepo, TurnRepo
+    from app.db.session import get_engine, session_scope
+    from app.device_settings import DeviceSettings
+    from app.providers.llm.base import LLMRequest
+
+    llm, model = real.llm(DeviceSettings())
+
+    def write_turn() -> float:
+        t0 = time.monotonic()
+        with session_scope() as db:
+            conv = ConversationRepo(db).current(dev, 30)
+            TurnRepo(db).create(device_id=dev, account_id=acc, conversation_id=conv.id, session_id="load", turn_no=1,
+                                language="en", status="active")
+        return (time.monotonic() - t0) * 1000
+
+    async def sample(seconds: float) -> dict:
+        lags, writes, tokens = [], [], []
+        stop = time.monotonic() + seconds
+        cpu0 = time.process_time()
+        wall0 = time.monotonic()
+
+        async def lag() -> None:
+            while time.monotonic() < stop:
+                t0 = time.monotonic()
+                await asyncio.sleep(0.02)  # audio frames are 20-60 ms
+                lags.append((time.monotonic() - t0 - 0.02) * 1000)
+
+        async def voice() -> None:
+            while time.monotonic() < stop:
+                writes.append(await asyncio.to_thread(write_turn))
+                t0 = time.monotonic()
+                first = None
+                req = LLMRequest(messages=[{"role": "user", "content": "Say hello."}], model=model, max_tokens=20,
+                                 params=real.llm_params())
+                try:
+                    async for c in llm.stream(req):
+                        if c.delta and first is None:
+                            first = (time.monotonic() - t0) * 1000
+                except Exception:  # noqa: BLE001 - a dropped connection is not a measurement
+                    pass
+                if first is not None:
+                    tokens.append(first)
+                await asyncio.sleep(0.5)
+
+        await asyncio.gather(lag(), voice())
+        with session_scope() as db:
+            conns = db.execute(text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")).scalar()
+        return {"loop_lag_p50_ms": round(pct(lags, 50), 1), "loop_lag_p99_ms": round(pct(lags, 99), 1),
+                "write_p50_ms": round(pct(writes, 50), 1), "write_p95_ms": round(pct(writes, 95), 1),
+                "first_token_p50_ms": round(pct(tokens, 50)), "turns_sampled": len(tokens),
+                "cpu_percent": round(100 * (time.process_time() - cpu0) / (time.monotonic() - wall0)),
+                "db_connections": conns}
+
+    idle = await sample(45)
+    with session_scope() as db:  # a backfill again: everything is waiting
+        db.execute(text("DELETE FROM conversation_rag_embeddings WHERE device_id = :d"), {"d": dev})
+        db.commit()
+    p = provider()
+    stored = 0
+
+    async def backfill() -> None:
+        nonlocal stored
+        while True:  # as index_loop with its 1 s pause after a full batch
+            n = await index.index_once(p)
+            stored += n
+            await asyncio.sleep(1)
+
+    task = asyncio.create_task(backfill())
+    indexing = await sample(45)
+    task.cancel()
+    return {"idle": idle, "while_indexing": {**indexing, "vectors_stored": stored}}
 
 
 async def main() -> None:
@@ -345,8 +457,15 @@ async def main() -> None:
     report["relevance"] = await relevance(acc, dev, ids)
     real = ProviderRouter(get_settings(), load_providers_config())
     report["selection"] = await selection(real, acc, dev, conv)
-    report["first_token"] = await first_token(real, acc, dev, conv)
+    from app.conversation_rag import authz
+    from app.db.session import session_scope
+
+    with session_scope() as db:
+        generation = authz.access(db, acc, dev).generation
+    report["ordinary_turn"] = await ordinary_turn(real, acc, dev, generation)
     report["end_to_end"] = await end_to_end(real, acc, dev)
+    print(json.dumps(report, ensure_ascii=False), file=sys.stderr)  # kept if the last part fails
+    report["under_load"] = await under_load(real, acc, dev)
     print(json.dumps(report, ensure_ascii=False, indent=1))
 
 

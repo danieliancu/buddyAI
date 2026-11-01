@@ -242,7 +242,7 @@ def test_system_prompt_is_stable_and_history_trimmed(monkeypatch) -> None:
     from app.pipeline import conversation as conv
 
     long_reply = "word " * 200
-    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [NS(user_text="q", assistant_text=long_reply, search_note="")]))
+    monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [NS(user_text="q", assistant_text=long_reply, search_note="", rag_derived=False, rag_redacted_at=None)]))
     turn = _turn(None, "and now?")
     turn.conversation_id = 1
     a = build_messages_from_db(turn, "and now?")
@@ -259,6 +259,8 @@ def test_history_keeps_what_the_search_found(monkeypatch) -> None:
     past = NS(
         user_text="Last Romania match score?",
         assistant_text="Romania lost 6-0 to Poland on 2 October.",
+        rag_derived=False,
+        rag_redacted_at=None,
         search_note="Romania latest match result -> Poland beat Romania 6-0 on 2 October 2026 in the UEFA Nations League.",
     )
     monkeypatch.setattr(conv, "ConversationRepo", lambda db: NS(history=lambda *a: [past]))
