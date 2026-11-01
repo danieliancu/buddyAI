@@ -77,6 +77,14 @@ class TurnContext:
     followers: list[Any] = field(default_factory=list)
     detached: bool = False
     finished_at: float | None = None  # time.monotonic() at the end (the hub forgets it RESUME_TTL_S later)
+    # Conversation RAG (app/conversation_rag): the watch's access when the session started, the follow-up
+    # context kept by the session, earlier turns put into this prompt (rag_sources) and those a search found
+    # (rag_found). rag_derived: the prompt received earlier conversations' content.
+    rag: Any = None
+    rag_context: Any = None
+    rag_sources: list[int] = field(default_factory=list)
+    rag_found: list[int] = field(default_factory=list)
+    rag_derived: bool = False
 
     def __post_init__(self) -> None:
         self.auto_language = self.language == "auto"

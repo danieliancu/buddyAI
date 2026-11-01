@@ -390,8 +390,43 @@ def conversations(dev: Device = Depends(owned_device), db: Session = Depends(get
 
 
 @router.delete("/devices/{device_id}/conversations")
-def delete_history(dev: Device = Depends(owned_device), db: Session = Depends(get_session)) -> dict:
-    return {"deleted_turns": ConversationRepo(db).delete_device_history(dev.id)}
+def delete_history(request: Request, dev: Device = Depends(owned_device), db: Session = Depends(get_session)) -> dict:
+    deleted = ConversationRepo(db).delete_device_history(dev.id)  # vectors and references go by cascade
+    hub_of(request).clear_rag_context(dev.id)
+    return {"deleted_turns": deleted}
+
+
+class ConversationSearchBody(BaseModel):
+    wearer: Literal["self", "other"]
+    enabled: bool = False
+
+
+@router.get("/devices/{device_id}/conversation-search")
+def conversation_search_get(dev: Device = Depends(owned_device), db: Session = Depends(get_session)) -> dict:
+    from app.conversation_rag import authz
+
+    return authz.view(db, dev.account_id, dev.id)
+
+
+@router.put("/devices/{device_id}/conversation-search")
+def conversation_search_put(body: ConversationSearchBody, request: Request, dev: Device = Depends(owned_device),
+                            db: Session = Depends(get_session)) -> dict:
+    """Who wears the watch, and whether its earlier conversations may be searched (only a watch the account
+    holder wears: someone else's watch stays off until an approved wearer authorisation exists)."""
+    from app.config import get_settings
+    from app.conversation_rag import authz
+
+    if body.enabled and not get_settings().conversation_rag_on_for(dev.account_id):
+        raise HTTPException(409, "Searching past conversations is not available for this account yet.")
+    try:
+        authz.set_choice(db, dev.account_id, dev.id, body.wearer, body.enabled)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    accounts.audit(db, f"account:{dev.account_id}", "conversation_search.on" if body.enabled else "conversation_search.off",
+                   dev.account_id, dev.id, detail=f"wearer={body.wearer} notice={authz.NOTICE_VERSION}")
+    db.commit()
+    hub_of(request).set_rag(dev.id, authz.access(db, dev.account_id, dev.id))
+    return authz.view(db, dev.account_id, dev.id)
 
 
 @router.get("/options")

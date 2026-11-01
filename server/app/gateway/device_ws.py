@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketState
 from app import languages, usage_ops
 from app.audio.codec import OpusDecoder
 from app.config import get_settings, load_providers_config
+from app.conversation_rag import authz as rag_authz, context as rag_context
 from app.db.models import Account, utcnow
 from app.db.repositories import ConversationRepo, DeviceRepo, ItemRepo, PersonaRepo, SettingsRepo, TurnRepo, VoiceOpRepo
 from app.db.session import session_scope
@@ -91,6 +92,9 @@ class DeviceConnection:
         self.recent: dict[int, TurnContext] = {}
         self.last_language: str | None = None  # last detected reply language in this session
         self.account_id: int | None = None  # owner of this watch
+        # Conversation RAG: the watch's access (read at connect, updated by the hub) and the follow-up context
+        self.rag = rag_authz.OFF
+        self.rag_context: rag_context.RagContext | None = None
         self._send_lock = asyncio.Lock()
         self._decoder: OpusDecoder | None = None
         self._closed = False
@@ -355,6 +359,7 @@ class DeviceConnection:
                     chat_title = PersonaRepo(db).chat_title(settings.persona_id, account_id)
                     owner = db.get(Account, account_id) if account_id else None
                     owner_status = owner.status if owner else None
+                    rag_access = rag_authz.access(db, account_id, dev.id)
             if dev is None:
                 await self.send_json("error", code="unauthorized", message="unknown or revoked token")
                 raise _Close()
@@ -363,6 +368,7 @@ class DeviceConnection:
                 raise _Close()
             self.account_id = account_id
             self.settings = settings
+            self.rag, self.rag_context = rag_access, None
             self.authenticated = True
             # A new session: nothing from an earlier one, except a deletion still waiting for its yes (an old
             # connection that has not been torn down yet) - handed over by STORE.get, once.
@@ -518,6 +524,7 @@ class DeviceConnection:
             downlink_rate=self.downlink_rate,
             fallback_language=self.last_language,
             account_id=self.account_id,
+            rag=self.rag,
         )
         if note_mode:
             # Stored only if something was said (_finish_turn), and outside the chat history.
@@ -534,6 +541,7 @@ class DeviceConnection:
                     language=language,
                 )
                 turn.db_id, turn.conversation_id = row.id, conv.id
+            turn.rag_context = self.rag_context
         self._decoder = OpusDecoder(16000)
         self.active = turn
         self.recent[turn_id] = turn
@@ -772,7 +780,10 @@ class DeviceConnection:
                     language=turn.language if turn.language != languages.AUTO else "",
                 )
                 turn.db_id = row.id
-        self._persist(turn, result)
+        stored = self._persist(turn, result)
+        if turn.mode == "chat":  # a search starts a follow-up context; other turns use one of its turns
+            self.rag_context = rag_context.after_turn(self.rag_context, turn.conversation_id, turn.rag_found, stored,
+                                                      get_settings().conversation_rag_continuation_turns)
         self._schedule_learning(turn, result)
         lease_task = getattr(turn, "lease_task", None)
         if lease_task is not None:
@@ -819,10 +830,18 @@ class DeviceConnection:
         except Exception as exc:  # noqa: BLE001 - learning never affects the turn
             log.warning("memory learning not scheduled: %s", type(exc).__name__)
 
-    def _persist(self, turn: TurnContext, result: TurnResult) -> None:
+    def _persist(self, turn: TurnContext, result: TurnResult) -> bool:
+        """Store the turn. False when the reply was built from an earlier turn deleted meanwhile: the reply is
+        then not kept (docs/CONVERSATION_RAG.md)."""
         if turn.db_id is None:
-            return
+            return True
         with session_scope() as db:
+            intact = True
+            if turn.rag_sources:
+                intact = rag_context.record_sources(db, turn.db_id, turn.account_id, turn.device_id, turn.rag_sources)
+            if not intact:
+                log.info("conversation_rag: a source was deleted during the reply; reply not kept turn=%s", turn.db_id)
+                turn.assistant_text = ""  # also for the live event to the website
             TurnRepo(db).update(
                 turn.db_id,
                 status=result.status,
@@ -837,8 +856,11 @@ class DeviceConnection:
                 llm_model=next((u.model for u in turn.usage if u.kind == "llm"), None),
                 stt_provider=next((u.provider for u in turn.usage if u.kind == "stt"), None),
                 tts_provider=next((u.provider for u in turn.usage if u.kind == "tts"), None),
+                rag_derived=turn.rag_derived,
+                rag_redacted_at=None if intact else utcnow(),
                 **turn.marks.as_db_fields(),
             )
+        return intact
 
     async def _on_playback_started(self, msg: dict[str, Any]) -> None:
         turn = self.recent.get(msg.get("turn_id"))

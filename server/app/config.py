@@ -191,9 +191,10 @@ class Settings(BaseSettings):
     conversation_rag_embed_model: str = "text-embedding-3-small"
     conversation_rag_embed_dims: int = 512
     conversation_rag_max_results: int = 5
-    conversation_rag_embed_timeout_ms: int = 350  # the question's embedding; slower -> word matching instead
+    # Only when the tool runs, never on an ordinary turn. tools/rag_bench.py measured 250-375 ms for the embedding
+    conversation_rag_embed_timeout_ms: int = 800  # the question's embedding; slower -> word matching instead
     conversation_rag_search_timeout_ms: int = 500  # the database search
-    conversation_rag_tool_timeout_ms: int = 1500  # the whole tool call
+    conversation_rag_tool_timeout_ms: int = 2000  # the whole tool call
     conversation_rag_index_batch_size: int = 20
     conversation_rag_index_interval_s: int = 30
     conversation_rag_index_pause_turns: int = 3  # indexing waits while this many voice turns are running

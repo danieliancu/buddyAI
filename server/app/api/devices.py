@@ -202,4 +202,6 @@ def conversations(device_id: str, request: Request, db: Session = Depends(get_se
 def delete_history(device_id: str, request: Request, db: Session = Depends(get_session)) -> dict:
     dev = DeviceRepo(db).get(device_id)
     accounts.audit(db, request.session["admin"], "history.delete", dev.account_id if dev else None, device_id)
-    return {"deleted_turns": ConversationRepo(db).delete_device_history(device_id)}
+    deleted = ConversationRepo(db).delete_device_history(device_id)  # vectors and references go by cascade
+    hub_of(request).clear_rag_context(device_id)
+    return {"deleted_turns": deleted}
