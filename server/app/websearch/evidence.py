@@ -96,8 +96,9 @@ def _age_days(published: str | None, today: date) -> int | None:
         return None
 
 
-def rank(query: str, results: list[SearchResult], category: str, today: date) -> list[SearchResult]:
-    """Relevant results, best first, without duplicates; scores are set on the results."""
+def rank(query: str, results: list[SearchResult], category: str, today: date, local_query: str = "") -> list[SearchResult]:
+    """Relevant results, best first, without duplicates; scores are set on the results. `local_query`: the same search
+    in the language of the pages, so a page counts if it fits either wording."""
     seen_urls: set[str] = set()
     per_domain: dict[str, int] = {}
     kept: list[SearchResult] = []
@@ -113,7 +114,7 @@ def rank(query: str, results: list[SearchResult], category: str, today: date) ->
             continue
         if any(_similar(r.snippet, k.snippet) for k in kept if r.snippet and k.snippet):
             continue
-        cov = coverage(query, r, category)
+        cov = max(coverage(query, r, category), coverage(local_query, r, category) if local_query else 0.0)
         if cov < MIN_COVERAGE:
             continue
         r.reliability = reliability(r.domain)

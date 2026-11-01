@@ -8,7 +8,7 @@ import asyncio
 import json
 import threading
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -1133,3 +1133,80 @@ def test_model_tool_loops_stay_bounded(monkeypatch):
     turn = _turn(_account(), "find it")
     asyncio.run(_pipeline(llm)._reply(turn, NS(send=_noop_send, send_audio=_noop_audio)))
     assert len(llm.requests) == MAX_TOOL_ROUNDS + 1 and llm.requests[-1].tools is None
+
+
+# --- pages in another language, whatever the language --------------------------------------------------------------
+
+
+def test_a_page_counts_if_it_fits_the_local_wording():
+    today = date(2026, 11, 1)
+    question = "Romanian league latest standings top four"
+
+    def page():
+        return R("Clasament SuperLiga", "clasament superliga etapa 14", "https://lpf.example/x")
+
+    assert evidence.rank(question, [page()], "sport", today) == []
+    assert [r.domain for r in evidence.rank(question, [page()], "sport", today, "clasament SuperLiga")] == ["lpf.example"]
+
+
+@pytest.mark.parametrize("local", ["clasament SuperLiga", "Tabelle 2. Bundesliga", "tabela Ekstraklasy", "Κατάταξη Σούπερ Λίγκα"])
+async def test_the_local_wording_is_searched_first_whatever_the_language(local):
+    brave = FakeProvider("brave", [R(local, f"{local} page", "https://a.example/x")])
+    o = orch(FakeProvider("ddgs", []), brave)
+    fn, _ = answers(ANSWER)
+    t = o.turn(fn, tz="Europe/London", llm_provider="openai", llm_model="mini")
+    answer, *_ = await t.search("league latest standings", "", "en", category="sport", local_query=local)
+    assert brave.queries[0] == local and answer == ANSWER["answer"]
+
+
+async def test_no_local_wording_changes_nothing():
+    brave = FakeProvider("brave", GOOD)
+    fn, _ = answers(ANSWER)
+    await run(orch(FakeProvider("ddgs", []), brave), fn)
+    assert brave.queries[0] == "Romania national football team latest match result"
+
+
+async def test_the_same_wording_is_not_searched_twice():
+    brave = FakeProvider("brave", GOOD)
+    o = orch(FakeProvider("ddgs", []), brave)
+    fn, _ = answers(ANSWER)
+    question = "Romania national football team latest match result"
+    t = o.turn(fn, tz="Europe/London", llm_provider="openai", llm_model="mini")
+    await t.search(question, "", "en", category="sport", local_query=question)
+    assert brave.queries.count(question) == 1
+
+
+async def test_passages_are_chosen_by_both_wordings():
+    seen = []
+
+    class Spy(FakeExtractor):
+        async def extract(self, result, query, max_chars, timeout=None):
+            seen.append(query)
+            return await super().extract(result, query, max_chars, timeout)
+
+    brave = FakeProvider("brave", [R("clasament superliga", "clasament superliga etapa", "https://a.example/x")])
+    o = orch(FakeProvider("ddgs", []), brave, extractor=Spy())
+    fn, _ = answers({"answer": NOT_FOUND}, ANSWER)
+    t = o.turn(fn, tz="Europe/London", llm_provider="openai", llm_model="mini")
+    await t.search("league standings", "", "en", category="sport", local_query="clasament superliga")
+    assert seen[0] == "league standings clasament superliga"
+
+
+def test_the_tool_offers_the_local_wording_without_requiring_it():
+    from app.search import SEARCH_TOOL
+
+    assert "local_query" in SEARCH_TOOL["parameters"]["properties"]
+    assert "local_query" not in SEARCH_TOOL["parameters"]["required"]
+
+
+async def test_the_local_wording_reaches_the_search():
+    got = {}
+
+    async def search_fn(query, location, language, category="other", local_query=""):
+        got.update(query=query, local_query=local_query)
+        return "answer", 1, 1, 1, False, []
+
+    web = WebSearch(search_fn, None, provider="x", model="y", max_attempts=None, pass_category=True)
+    args = json.dumps({"query": f"league table {uuid.uuid4().hex}", "local_query": "clasament SuperLiga", "category": "other"})
+    await web.run(args, account_id=None, device_id="d", tz="UTC", language="en", default_location="")
+    assert got["local_query"] == "clasament SuperLiga"

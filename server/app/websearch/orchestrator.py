@@ -198,7 +198,7 @@ class TurnSearch:
         left = self.remaining() - ANSWER_RESERVE_S
         return left if self.give_up_at is None else min(left, self.give_up_at - self.o.clock())
 
-    async def search(self, query: str, location: str, language: str, category: str = "other"):
+    async def search(self, query: str, location: str, language: str, category: str = "other", local_query: str = ""):
         o, cfg = self.o, self.o.config
         if self.deadline is None:
             self.deadline = o.clock() + cfg.total_deadline_s
@@ -207,7 +207,7 @@ class TurnSearch:
         n: Counter = Counter()
         tokens = Counter()
         try:
-            answer, complete = await self._loop(query, location, category, n, tokens)
+            answer, complete = await self._loop(query, location, category, n, tokens, local_query)
         finally:
             elapsed_ms = int((o.clock() - started) * 1000)
             STATS.update(n)
@@ -240,7 +240,8 @@ class TurnSearch:
         searches = n["ddgs_requests"] + n["brave_requests"]
         return (answer or NOT_FOUND), tokens["in"] + tokens["cached"], tokens["out"], searches, complete, usage
 
-    async def _loop(self, query: str, location: str, category: str, n: Counter, tokens: Counter) -> tuple[str, bool]:
+    async def _loop(self, query: str, location: str, category: str, n: Counter, tokens: Counter,
+                    local_query: str = "") -> tuple[str, bool]:
         o, cfg = self.o, self.o.config
         try:
             today = datetime.now(timezone.utc).astimezone(ZoneInfo(self.tz)).date()
@@ -249,6 +250,11 @@ class TurnSearch:
         relevance_query = f"{query} {location}" if location and category in ("weather", "transport") else query
         pending = {"ddgs": deque(query_variants(query, location, category)),
                    "brave": deque(query_variants(query, location, category))}
+        if local_query and normalise(local_query) != normalise(query):
+            # The model says the pages are in another language, so that wording goes first: time is short, and a
+            # page there rarely has the English words. A result counts if it fits either wording (evidence.rank).
+            for wordings in pending.values():
+                wordings.appendleft(local_query)
         tried: dict[str, set[str]] = {"ddgs": set(), "brave": set()}
         pool: dict[str, SearchResult] = {}
 
@@ -366,7 +372,7 @@ class TurnSearch:
                 pending["ddgs"].appendleft(q)
                 n["ddgs_empty"] += 1
                 continue
-            ranked = [r for r in evidence.rank(relevance_query, results, category, today) if evidence.norm_url(r.url) not in pool]
+            ranked = [r for r in evidence.rank(relevance_query, results, category, today, local_query) if evidence.norm_url(r.url) not in pool]
             if not ranked:
                 n["irrelevant_rounds"] += 1
                 if provider is o.ddgs:
@@ -387,7 +393,8 @@ class TurnSearch:
                     for p in ("ddgs", "brave"):
                         pending[p].appendleft(suggestion)
             per_page = max(600, cfg.context_chars // max(1, cfg.max_sources))
-            read = await self._read(ranked, query, per_page, n)
+            # The passages of a page are chosen by the words of both wordings (the page may be in either language)
+            read = await self._read(ranked, f"{query} {local_query}".strip(), per_page, n)
             for r in read:
                 r.relevance += 0.2
             for r in [*new, *read]:  # a page read in place of a failed one joins the evidence too

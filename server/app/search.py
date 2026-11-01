@@ -83,6 +83,12 @@ SEARCH_TOOL: dict[str, Any] = {
                 "'Romania position UEFA Nations League 2026-27 group' (after a question about Romania's Nations "
                 "League match)",
             },
+            "local_query": {
+                "type": "string",
+                "description": "When the best pages are in another language than English (one country's league, "
+                "politics, shops, services): the same search in that language, with the names people there use. "
+                "E.g. 'clasament SuperLiga Romania', 'Tabelle 2. Bundesliga'. Otherwise leave it out.",
+            },
             "category": {"type": "string", "enum": list(CATEGORIES)},
             "location": {"type": "string", "description": "Town or area the question is about (default: the user's)"},
         },
@@ -239,6 +245,7 @@ class WebSearch:
             self.attempts += 1
         category = a.get("category") if a.get("category") in CATEGORIES else "other"
         location = str(a.get("location") or default_location or "").strip()[:80]
+        local_query = str(a.get("local_query") or "").strip()[:300]
         scope = "shared" if category in SHARED else (f"account:{account_id}" if account_id is not None else f"device:{device_id}")
         now = datetime.now(timezone.utc)
         try:
@@ -264,7 +271,7 @@ class WebSearch:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         _inflight[key] = future
         try:
-            outcome = await self._search(key, query, category, location, language, scope, tz, now)
+            outcome = await self._search(key, query, category, location, language, scope, tz, now, local_query)
         finally:
             if _inflight.get(key) is future:
                 del _inflight[key]
@@ -293,9 +300,9 @@ class WebSearch:
             )
 
     async def _search(self, key: str, query: str, category: str, location: str, language: str, scope: str, tz: str,
-                      now: datetime) -> SearchOutcome:
+                      now: datetime, local_query: str = "") -> SearchOutcome:
         if self.pass_category:
-            out = await self.search_fn(query, location, language, category=category)
+            out = await self.search_fn(query, location, language, category=category, local_query=local_query)
         else:
             out = await self.search_fn(query, location, language)
         answer, tokens_in, tokens_out, searches, *more = out

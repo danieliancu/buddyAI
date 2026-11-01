@@ -517,9 +517,10 @@ class ConversationPipeline:
             if legacy and hasattr(llm, "web_search"):
                 hosted = self.router.hosted_search_tool(web_search)
 
-                async def search_fn(query: str, location: str, language: str, category: str = "other"):
+                async def search_fn(query: str, location: str, language: str, category: str = "other",
+                                    local_query: str = ""):
                     if category not in legacy:
-                        return await run.search(query, location, language, category=category)
+                        return await run.search(query, location, language, category=category, local_query=local_query)
                     # hybrid: OpenAI hosted search for these categories, accounted as legacy search
                     answer, tin, tout, searches, *more = await llm.web_search(  # type: ignore[attr-defined]
                         query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
