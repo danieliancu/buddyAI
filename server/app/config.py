@@ -182,6 +182,29 @@ class Settings(BaseSettings):
         allowed = {a.strip() for a in self.memory_accounts.split(",") if a.strip()}
         return not allowed or str(account_id) in allowed
 
+    # Conversation RAG (docs/CONVERSATION_RAG.md): searching a watch's earlier conversations on request. Off until
+    # switched on here, the account is allowed and the watch's owner opts in for a watch they wear themselves.
+    conversation_rag_enabled: bool = False  # the conversation_search tool (operator kill switch: keeps the data)
+    conversation_rag_accounts: str = ""  # comma-separated account ids allowed while rolling out; "" = every account
+    conversation_rag_indexing_enabled: bool = False  # background vectors for opted-in watches
+    conversation_rag_embed_provider: str = "openai"  # only this one: never the AI profile's embedding provider
+    conversation_rag_embed_model: str = "text-embedding-3-small"
+    conversation_rag_embed_dims: int = 512
+    conversation_rag_max_results: int = 5
+    conversation_rag_embed_timeout_ms: int = 350  # the question's embedding; slower -> word matching instead
+    conversation_rag_search_timeout_ms: int = 500  # the database search
+    conversation_rag_tool_timeout_ms: int = 1500  # the whole tool call
+    conversation_rag_index_batch_size: int = 20
+    conversation_rag_index_interval_s: int = 30
+    conversation_rag_index_pause_turns: int = 3  # indexing waits while this many voice turns are running
+    conversation_rag_continuation_turns: int = 2  # turns after a search that re-read its sources
+
+    def conversation_rag_on_for(self, account_id: int | None) -> bool:
+        if not self.conversation_rag_enabled or account_id is None:
+            return False
+        allowed = {a.strip() for a in self.conversation_rag_accounts.split(",") if a.strip()}
+        return not allowed or str(account_id) in allowed
+
     def model_post_init(self, __context: Any) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         if self.providers_config is None:

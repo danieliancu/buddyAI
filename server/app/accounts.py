@@ -321,7 +321,8 @@ def delete_account(db: Session, account: Account, detail: str = "self-service") 
     Runs in one transaction under the account lock. Live ola Care subscriptions are cancelled in Stripe
     first; if Stripe fails, app.billing.BillingError(502) is raised and nothing is deleted.
 
-    Deleted: conversation history, notes/reminders, memories, personas, watch settings, sign-in tokens,
+    Deleted: conversation history, notes/reminders, memories, conversation-search choices and vectors,
+    personas, watch settings, sign-in tokens,
     the account's private web-search cache, voice-change records and usage notices; name, email, password
     and country are erased (the row stays, anonymised, status "deleted").
 
@@ -343,7 +344,10 @@ def delete_account(db: Session, account: Account, detail: str = "self-service") 
     turn_ids = [t.id for t in turns]
     from app.memory.repo import MemoryRepo
 
+    from app.conversation_rag import authz
+
     MemoryRepo(db).forget_all(account.id, commit=False)  # memories, their vectors and jobs
+    authz.forget_account(db, account.id)  # conversation-search choices and vectors (turn vectors also cascade)
     MemoryRepo(db).detach_turns(turn_ids)
     MemoryRepo(db).detach_conversations(list(db.exec(
         select(Conversation.id).where(col(Conversation.device_id).in_(device_ids or [""]))).all()))

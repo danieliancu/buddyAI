@@ -515,6 +515,10 @@ class Turn(SQLModel, table=True):
     ttfa_device_ms: Optional[int] = None  # end of speech -> device reported first frame
     created_at: datetime = Field(default_factory=utcnow, index=True)
     finished_at: Optional[datetime] = None
+    # Conversation RAG (docs/CONVERSATION_RAG.md): the prompt received earlier conversations' content. Such turns
+    # are never indexed nor learned from; the marker stays when their source references go.
+    rag_derived: bool = False
+    rag_redacted_at: Optional[datetime] = None  # reply removed: a source it repeated was deleted by retention
 
 
 class UsageRecord(SQLModel, table=True):
@@ -681,4 +685,54 @@ class MemoryEmbedding(SQLModel, table=True):
     dims: int
     text_hash: str = Field(max_length=64)
     embedding: Any = Field(sa_column=Column("embedding", EmbeddingVector(), nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class ConversationRagAuthorization(SQLModel, table=True):
+    """Conversation RAG for one watch (docs/CONVERSATION_RAG.md). No row = wearer not declared, off. Server-only:
+    never part of the device settings. `generation` changes with every change of state, wearer or owner, so work
+    started under an older one (an indexing batch, a search) is not stored or returned."""
+
+    __tablename__ = "conversation_rag_authorizations"
+    device_id: str = Field(primary_key=True, foreign_key="devices.id", ondelete="CASCADE", max_length=64)
+    account_id: int = Field(index=True)
+    wearer: str = Field(max_length=8)  # self | other (someone else wears it: stays off)
+    state: str = Field(default="off", max_length=8)  # off | on
+    generation: int = 1
+    notice_version: Optional[str] = Field(default=None, max_length=16)  # the explanation shown when switched on
+    method: Optional[str] = Field(default=None, max_length=16)  # web
+    authorized_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=utcnow)
+    # Background indexing of this watch: lease, failures, next attempt
+    index_lease_owner: Optional[str] = Field(default=None, max_length=80)
+    index_lease_until: Optional[datetime] = None
+    index_failures: int = 0
+    index_retry_after: Optional[datetime] = None
+
+
+class ConversationRagEmbedding(SQLModel, table=True):
+    """A turn's vector in one model space. Derived data without text: goes with the turn (ON DELETE CASCADE)."""
+
+    __tablename__ = "conversation_rag_embeddings"
+    __table_args__ = (
+        UniqueConstraint("turn_id", "model_key", name="uq_conversation_rag_embeddings_model"),
+        Index("ix_conversation_rag_embeddings_scope", "device_id", "account_id", "model_key"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    turn_id: int = Field(foreign_key="turns.id", ondelete="CASCADE")
+    account_id: int
+    device_id: str = Field(max_length=64)
+    model_key: str = Field(max_length=96)
+    dims: int
+    text_hash: str = Field(max_length=64)
+    embedding: Any = Field(sa_column=Column("embedding", EmbeddingVector(), nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class ConversationRagSource(SQLModel, table=True):
+    """An earlier turn whose content went into a later turn's prompt (references only, never the text)."""
+
+    __tablename__ = "conversation_rag_sources"
+    consumer_turn_id: int = Field(primary_key=True, foreign_key="turns.id", ondelete="CASCADE")
+    source_turn_id: int = Field(primary_key=True, foreign_key="turns.id", ondelete="CASCADE", index=True)
     created_at: datetime = Field(default_factory=utcnow)

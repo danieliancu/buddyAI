@@ -109,8 +109,12 @@ class DeviceRepo:
         return dev
 
     def _forget_owner_data(self, device_id: str) -> None:
-        """History and settings (which may hold personal text) are erased when the owner changes."""
+        """History and settings (which may hold personal text) are erased when the owner changes, and so is the
+        conversation-search choice (the next owner decides for themselves)."""
+        from app.conversation_rag import authz
+
         ConversationRepo(self.s).delete_device_history(device_id, commit=False)
+        authz.forget_device(self.s, device_id)
         row = self.s.get(DeviceSettingsRow, device_id)
         if row is not None:
             self.s.delete(row)
