@@ -74,10 +74,11 @@ def result_ok(result: str) -> bool:
     return '"ok": true' in result or '"ok":true' in result
 
 UPLINK_RATE = 16000
-UPLINK_STALL_S = 3.0  # watch stopped sending audio (e.g. Wi-Fi hiccup) -> end the utterance
-# ... unless it stopped mid-sentence: the watch streams without pause, so that is its link, not the user. Wait this
-# long in all for the rest (a short hiccup goes on where it stopped); a watch that reconnects sends the whole
-# question again as a new turn (listen_start `replaces`), which stops this one uncounted.
+UPLINK_STALL_S = 3.0  # how often a watch that stopped sending audio (e.g. Wi-Fi hiccup) is looked at
+# The watch streams without pause from the start of a turn, so silence from it is its link, not the user, whether they
+# have started to speak or not. Wait this long in all for the rest (a short hiccup goes on where it stopped; the watch
+# keeps the audio and catches up, firmware UPLINK_SEND_TIMEOUT_MS); a watch that reconnects sends the whole question
+# again as a new turn (listen_start `replaces`), which stops this one uncounted.
 UPLINK_LOST_S = 9.0
 PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
 # The end of speech is detected after END_SILENCE_MS of silence (700 ms by default). The first
@@ -422,7 +423,7 @@ class ConversationPipeline:
                     stalled_s = 0.0
                 except asyncio.TimeoutError:
                     stalled_s += UPLINK_STALL_S
-                    if detector.speech_started and not turn.cancelled and stalled_s < UPLINK_LOST_S:
+                    if not turn.cancelled and stalled_s < UPLINK_LOST_S:
                         continue
                     item = None
                 if turn.cancelled:
