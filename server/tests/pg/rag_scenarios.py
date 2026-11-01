@@ -315,6 +315,42 @@ def references_follow_their_turns() -> None:
                           {"c": other}).scalars().all() == [b]
 
 
+def retention_waits_for_a_reply_being_stored_and_removes_it() -> None:
+    """A reply stored while retention deletes its source: it must not slip past the redaction."""
+    from app import retention
+    from app.conversation_rag import context
+    from app.db.models import Turn
+    from app.db.session import session_scope
+
+    acc = _account()
+    dev = _watch(acc)
+    source, consumer = _turn(acc, dev), _turn(acc, dev, "what test?", "A thyroid test", rag_derived=True)
+    done = threading.Event()
+
+    def expire():
+        with session_scope() as db:
+            retention.delete_turns(db, [source])
+            db.commit()
+        done.set()
+
+    with session_scope() as db:
+        assert context.record_sources(db, consumer, acc, dev, [source]) is True
+        t = threading.Thread(target=expire)
+        t.start()
+        time.sleep(1)
+        assert not done.is_set(), "retention must wait for the reply being stored"
+        db.commit()
+    t.join(10)
+    assert done.is_set()
+    with session_scope() as db:
+        row = db.get(Turn, consumer)
+        assert row.assistant_text == "" and row.rag_redacted_at is not None and db.get(Turn, source) is None
+    # the other order: retention first, the reply then finds its source gone
+    late = _turn(acc, dev, "what test?", "A thyroid test", rag_derived=True)
+    with session_scope() as db:
+        assert context.record_sources(db, late, acc, dev, [source]) is False
+
+
 if __name__ == "__main__":
     name = sys.argv[1]
     if name == "setup":

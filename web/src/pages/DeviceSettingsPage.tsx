@@ -20,6 +20,7 @@ import { OnlineDot, StateBadge } from "../components/DeviceBits";
 import WatchPreview from "../components/WatchPreview";
 import { LanguagePicker, VoiceSampleButton } from "../components/LanguageBits";
 import { primeLanguages } from "../languages";
+import SearchPastConversations from "./my/SearchPastConversations";
 import WatchHeader from "./my/WatchHeader";
 import { Button, Card, ErrorBox, Field, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
@@ -542,6 +543,7 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
               </div>
             </div>
           </Card>
+          {customer && <SearchPastConversations id={id} />}
         </div>
 
         <aside className="hidden lg:block">

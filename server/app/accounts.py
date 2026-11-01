@@ -209,6 +209,17 @@ def public(acc: Account) -> dict[str, Any]:
 # --- GDPR: export and delete -----------------------------------------------------------------
 
 
+def _rag_export(db: Session, device_id: str, account_id: int) -> dict[str, Any] | None:
+    """The watch's choice for searching past conversations (its vectors are derived numbers, not personal text)."""
+    from app.db.models import ConversationRagAuthorization
+
+    row = db.get(ConversationRagAuthorization, device_id)
+    if row is None or row.account_id != account_id:
+        return None
+    return {"wearer": row.wearer, "enabled": row.state == "on", "authorized_at": row.authorized_at,
+            "notice_version": row.notice_version}
+
+
 def export(db: Session, account: Account) -> dict[str, Any]:
     devices = db.exec(select(Device).where(Device.account_id == account.id)).all()
     out_devices = []
@@ -221,6 +232,7 @@ def export(db: Session, account: Account) -> dict[str, Any]:
                 "name": d.name,
                 "paired_at": d.paired_at,
                 "settings": row.data if row else None,
+                "search_past_conversations": _rag_export(db, d.id, account.id),
                 "conversation_turns": [
                     {
                         "at": t.created_at,
@@ -228,6 +240,7 @@ def export(db: Session, account: Account) -> dict[str, Any]:
                         "status": t.status,
                         "you_said": t.user_text,
                         "assistant_replied": t.assistant_text,
+                        **({"reply_removed": True} if t.rag_redacted_at else {}),
                     }
                     for t in turns
                 ],

@@ -24,6 +24,7 @@ SCENARIOS = [
     "embedded_during_a_deletion_or_switch_off_stores_nothing",
     "only_one_process_leases_a_watch",
     "references_follow_their_turns",
+    "retention_waits_for_a_reply_being_stored_and_removes_it",
 ]
 
 

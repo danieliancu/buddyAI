@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from sqlalchemy import update as sa_update
 from sqlmodel import Session, col, select
 
 from app.conversation_rag import authz
 from app.conversation_rag.index import eligible, is_web_answer
 from app.conversation_rag.search import _aware, _cut, _zone
-from app.db.models import ConversationRagSource, Turn
+from app.db.models import ConversationRagSource, Turn, utcnow
 from app.db.session import is_postgres, session_scope
 
 MESSAGE_CHARS = 1500
@@ -71,6 +72,29 @@ def load(account_id: int, device_id: str, generation: int, ctx: RagContext, tz: 
         out.append(row)
         used.append(t.id)
     return {"role": "system", "content": HEADER + " " + json.dumps(out, ensure_ascii=False)}, used
+
+
+def redact_dependents(db: Session, source_ids: list[int]) -> int:
+    """Before these turns are deleted while later ones stay (retention): remove the replies built from them. The
+    whole reply, as what came from where in it cannot be told. The sources are locked first (PostgreSQL), so a reply
+    being stored now either is seen here or finds its source gone (record_sources). The caller commits and deletes;
+    the references then go by cascade."""
+    if is_postgres():
+        db.exec(select(Turn.id).where(col(Turn.id).in_(source_ids)).order_by(col(Turn.id)).with_for_update()).all()
+    consumers = list(db.exec(select(ConversationRagSource.consumer_turn_id).where(
+        col(ConversationRagSource.source_turn_id).in_(source_ids),
+        col(ConversationRagSource.consumer_turn_id).not_in(source_ids))).all())
+    if not consumers:
+        return 0
+    res = db.execute(sa_update(Turn).where(col(Turn.id).in_(set(consumers))).values(
+        assistant_text="", search_note="", rag_redacted_at=utcnow()))
+    return int(res.rowcount or 0)
+
+
+def sources_of(db: Session, consumer_turn_ids: list[int]) -> list[int]:
+    """The original turns behind these replies: a reply always refers to originals, never to another reply."""
+    return list(db.exec(select(ConversationRagSource.source_turn_id).where(
+        col(ConversationRagSource.consumer_turn_id).in_(consumer_turn_ids))).all())
 
 
 def record_sources(db: Session, consumer_turn_id: int, account_id: int | None, device_id: str,

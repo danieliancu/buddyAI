@@ -562,12 +562,24 @@ export interface Finance {
 
 export type TurnStatus = "active" | "completed" | "aborted" | "error" | "no_speech" | string;
 
+export type Wearer = "self" | "other";
+
+/** A watch's "Search Past Conversations" choice (server-only: never sent to the watch). */
+export interface ConversationSearchChoice {
+  available: boolean;
+  wearer: Wearer | null;
+  enabled: boolean;
+  authorized_at: string | null;
+  notice_version: string;
+}
+
 export interface ConversationTurn {
   id: number;
   status: TurnStatus;
   language: string;
   user_text: string;
   assistant_text: string;
+  redacted?: boolean; // the reply was removed: its source conversation was deleted
   ttfa_ms: number | null;
   created_at: string;
   /** Operator view only (GET /api/devices/{id}/conversations): type, tools, timings, resources and cost. */
@@ -1036,6 +1048,9 @@ const meApi = {
       me.patch<SettingsResponse>(`/api/me/devices/${enc(id)}/settings`, changes),
     conversations: (id: string) => me.get<Conversation[]>(`/api/me/devices/${enc(id)}/conversations`),
     deleteHistory: (id: string) => me.del<{ deleted_turns: number }>(`/api/me/devices/${enc(id)}/conversations`),
+    conversationSearch: (id: string) => me.get<ConversationSearchChoice>(`/api/me/devices/${enc(id)}/conversation-search`),
+    setConversationSearch: (id: string, wearer: Wearer, enabled: boolean) =>
+      me.put<ConversationSearchChoice>(`/api/me/devices/${enc(id)}/conversation-search`, { wearer, enabled }),
   },
   options: () => me.get<Options>("/api/me/options"),
   voiceSample: (voice: string, language: Language) => fetchVoiceSample("/api/me/voice-sample", voice, language, "me"),

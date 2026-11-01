@@ -96,11 +96,14 @@ def prune_search_cache(policy: RetentionPolicy, now: datetime) -> int:
 
 def delete_turns(db: Session, turn_ids: list[int]) -> None:
     """Delete turns; usage records stay for accounting (link removed), memories stay (link removed).
-    The same rules as ConversationRepo.delete_device_history. The caller commits."""
+    The same rules as ConversationRepo.delete_device_history. Later replies built from these turns are removed
+    too, or the expired content would live on in them (their question and marker stay). The caller commits."""
+    from app.conversation_rag.context import redact_dependents
     from app.memory.repo import MemoryRepo
 
     if not turn_ids:
         return
+    redact_dependents(db, turn_ids)
     MemoryRepo(db).detach_turns(turn_ids)
     db.execute(sa_update(UsageRecord).where(col(UsageRecord.turn_id).in_(turn_ids)).values(turn_id=None))
     db.execute(sa_delete(Turn).where(col(Turn.id).in_(turn_ids)))

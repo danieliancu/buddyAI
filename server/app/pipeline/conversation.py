@@ -129,7 +129,13 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
             else []
         )
         persona_prompt = persona.system_prompt if persona else "You are a helpful voice assistant."
-        past = [(t.user_text, t.assistant_text, t.search_note) for t in history]
+        past = [(t.user_text, t.assistant_text, t.search_note) for t in history if t.rag_redacted_at is None]
+        # A reply built from earlier conversations is in this prompt, so this reply may repeat it: it depends on the
+        # same sources. Only such conversations run this query; an ordinary turn just read the flag.
+        derived = [t.id for t in history if t.rag_derived and t.rag_redacted_at is None]
+        if derived:
+            turn.rag_sources.extend(rag_context.sources_of(db, derived))
+            turn.rag_derived = True
     now = datetime.now(ZoneInfo(s.timezone))
     lang = languages.display_name(turn.language)
     if turn.auto_language:

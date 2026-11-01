@@ -132,6 +132,8 @@ def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool) -> di
         "ttfa_ms": t.ttfa_device_ms or t.ttfa_server_ms,
         "created_at": t.created_at,
     }
+    if t.rag_redacted_at is not None:
+        out["redacted"] = True  # the reply was removed: its source conversation was deleted
     if not details:
         return out
     records = usage.get(t.id or 0, [])
