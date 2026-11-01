@@ -85,6 +85,7 @@ typedef enum {
     MSG_ITEM_PIN,           /* a = note number, b = 1 pinned / 0 not */
     MSG_ITEM_EMAIL,         /* a = note number: send it to the account's email */
     MSG_TEST_ASK,           /* development builds: proto_test_ask() */
+    MSG_UPLINK,             /* mic audio waits in s_up_buf: uplink_pump */
 } msg_type_t;
 
 typedef struct {
@@ -221,13 +222,20 @@ static int64_t          s_hold_until_ms;
 static hold_kind_t      s_hold_kind;
 static bool             s_resume_pending;   /* a `resume` went out: an older server answers bad_request */
 static char             s_req_id[33];       /* request_id of the active chat turn */
-/* This chat turn's uplink, kept to send again after a drop: [u16 length][Opus packet]... in PSRAM. capture_cb
- * appends (audio task), the proto task replays; both under s_turn_lock. While s_bursting the replay owns the
- * uplink and capture_cb only appends - so the live mic follows the replay in order. */
+/* This chat turn's uplink: [u16 length][Opus packet]... in PSRAM. capture_cb only appends (audio task); the proto
+ * task sends from s_up_sent (uplink_pump), and from the start again after a drop (the replay); all under s_turn_lock.
+ * The mic therefore never waits for the network, and a network that stalls for a moment only delays the words: the
+ * websocket client closes the link when a send times out, so a short timeout turned every hiccup of ~2 s (the TCP
+ * buffer holds about that much audio) into a reconnect and a replay of 10-20 s. While s_bursting the replay owns the
+ * uplink - so the live mic follows the replay in order. */
 #define UP_BUF_SIZE             (128 * 1024)    /* 24 kbit/s: ~40 s, more than the longest question */
+#define UPLINK_SEND_TIMEOUT_MS  8000            /* a stall longer than this is a lost link (server: UPLINK_LOST_S) */
+#define UPLINK_PUMP_PACKETS     8               /* at most, in one go */
 static uint8_t         *s_up_buf;
 static size_t           s_up_len;
+static size_t           s_up_sent;
 static bool             s_up_overflow;
+static bool             s_up_posted;
 static bool             s_bursting;
 static uint32_t         s_up_seq;           /* next uplink frame_seq of the active turn */
 static uint32_t         s_capture_turn;     /* the audio module's turn id (packets go out as s_active_turn) */
@@ -654,12 +662,13 @@ static void up_append(const uint8_t *opus, size_t len)
     s_up_len += 2 + len;
 }
 
-/* timeout_ms: how long a full TCP send buffer may hold the packet up (the client closes the link on a timeout) */
-static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, size_t len, int timeout_ms)
+/* timeout_ms: how long a full TCP send buffer may hold the packet up (the client closes the link on a timeout).
+ * False: not sent. */
+static bool send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, size_t len, int timeout_ms)
 {
     uint8_t frame[AUDIO_HDR_LEN + 1500];
     if (len > sizeof(frame) - AUDIO_HDR_LEN) {
-        return;
+        return true;    /* can never go out: not a reason to wait */
     }
     frame[0] = AUDIO_KIND_UPLINK;
     frame[1] = 0;
@@ -669,11 +678,64 @@ static void send_uplink(uint32_t turn_id, uint32_t seq, const uint8_t *opus, siz
     wr_be32(frame + 8, seq);
     memcpy(frame + AUDIO_HDR_LEN, opus, len);
     /* The send lock also keeps the client alive (ws_destroy takes it). */
+    int sent = -1;
     xSemaphoreTake(s_send_lock, portMAX_DELAY);
     if (s_ws && esp_websocket_client_is_connected(s_ws)) {
-        esp_websocket_client_send_bin(s_ws, (const char *)frame, AUDIO_HDR_LEN + len, pdMS_TO_TICKS(timeout_ms));
+        sent = esp_websocket_client_send_bin(s_ws, (const char *)frame, AUDIO_HDR_LEN + len, pdMS_TO_TICKS(timeout_ms));
     }
     xSemaphoreGive(s_send_lock);
+    return sent > 0;
+}
+
+/* Wake the proto task for uplink_pump. Never waits: the mic must not depend on the queue, and when the queue is full
+ * uplink_pump runs anyway (the timers, every 250 ms). */
+static void uplink_wake(void)
+{
+    msg_t m = { .type = MSG_UPLINK };
+    if (xQueueSend(s_q, &m, 0) != pdTRUE) {
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        s_up_posted = false;
+        xSemaphoreGive(s_turn_lock);
+    }
+}
+
+/* Proto task: send what the mic has put in s_up_buf, in order, up to `max` packets. What the server sends comes first:
+ * after a stall the backlog goes out in a burst and the words come back in a burst, and a full queue would drop them
+ * (turn_end among them). A packet that does not go out stays: the client was busy (the timers try again), or the link
+ * dropped (the replay sends everything). */
+static void uplink_pump(size_t max)
+{
+    for (size_t i = 0; i < max; i++) {
+        uint8_t opus[1500];
+        size_t len = 0;
+        uint32_t turn = 0, seq = 0;
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        s_up_posted = false;
+        if (!s_bursting && s_turn_live && s_conv == PROTO_CONV_LISTENING && s_up_buf && s_up_sent + 2 <= s_up_len) {
+            len = ((size_t)s_up_buf[s_up_sent] << 8) | s_up_buf[s_up_sent + 1];
+            memcpy(opus, s_up_buf + s_up_sent + 2, len);
+            turn = s_active_turn;
+            seq = s_up_seq;
+        }
+        xSemaphoreGive(s_turn_lock);
+        if (!len || !send_uplink(turn, seq, opus, len, UPLINK_SEND_TIMEOUT_MS)) {
+            return;
+        }
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        s_up_sent += 2 + len;
+        s_up_seq++;
+        xSemaphoreGive(s_turn_lock);
+        if (uxQueueMessagesWaiting(s_q) > 0) {
+            break;
+        }
+    }
+    xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+    const bool more = s_up_sent < s_up_len && !s_up_posted;
+    s_up_posted = s_up_posted || more;
+    xSemaphoreGive(s_turn_lock);
+    if (more) {
+        uplink_wake();
+    }
 }
 
 static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
@@ -683,12 +745,19 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
     }
     xSemaphoreTake(s_turn_lock, portMAX_DELAY);
     up_append(opus, len);
-    const bool live = !s_bursting;      /* during a replay the packet goes out with it, in order */
+    /* Kept in the buffer: uplink_pump (or the replay) sends it. Not kept (a note's audio, a question past the buffer):
+     * sent from here, with a short timeout because this is the audio task. */
+    const bool kept = s_up_buf && !s_turn_note && !s_up_overflow;
+    const bool direct = !kept && !s_bursting;
+    const bool wake = kept && !s_up_posted;
+    s_up_posted = s_up_posted || wake;
     const uint32_t turn = s_active_turn;
-    const uint32_t seq = live ? s_up_seq++ : 0;
+    const uint32_t seq = direct ? s_up_seq++ : 0;
     xSemaphoreGive(s_turn_lock);
-    if (live) {
-        send_uplink(turn, seq, opus, len, 200);  /* fails quietly while the link is down: the buffer keeps it */
+    if (direct) {
+        send_uplink(turn, seq, opus, len, 200);
+    } else if (wake) {
+        uplink_wake();
     }
 }
 
@@ -763,7 +832,9 @@ static void start_turn(void)
     }
     xSemaphoreTake(s_turn_lock, portMAX_DELAY);
     s_up_len = 0;
+    s_up_sent = 0;
     s_up_overflow = false;
+    s_up_posted = false;
     s_bursting = false;
     xSemaphoreGive(s_turn_lock);
     uint32_t turn = next_turn_locked_reset();
@@ -929,13 +1000,14 @@ static void resume_after_drop(void)
             pos += 2 + len;
             seq = s_up_seq++;
         } else {
-            s_bursting = false;     /* caught up: capture_cb sends live again */
+            s_up_sent = pos;
+            s_bursting = false;     /* caught up: uplink_pump goes on from here */
         }
         xSemaphoreGive(s_turn_lock);
         if (!len) {
             break;
         }
-        send_uplink(turn, seq, opus, len, 2000);    /* a burst: TCP paces it */
+        send_uplink(turn, seq, opus, len, UPLINK_SEND_TIMEOUT_MS);    /* a burst: TCP paces it */
         packets++;
     }
     ESP_LOGI(TAG, "link back: question sent again as turn %lu (%u packets)%s", (unsigned long)turn,
@@ -2003,6 +2075,9 @@ static void handle_msg(msg_t *m)
             send_json(msg, m->type == MSG_ITEM_OPEN ? "item_open" : "item_delete", false, 0);
         }
         break;
+    case MSG_UPLINK:
+        uplink_pump(UPLINK_PUMP_PACKETS);
+        break;
     case MSG_TEST_ASK:
         if (s_conn != CONN_SESSION || s_conv != PROTO_CONV_IDLE || s_note_open || !s_test_opus) {
             ESP_LOGW(TAG, "test: ask needs an idle session");
@@ -2013,6 +2088,7 @@ static void handle_msg(msg_t *m)
         s_test_no_mic = false;
         for (size_t i = 0, off = 0; i < s_test_count; off += s_test_lens[i], i++) {
             capture_cb(s_capture_turn, i, s_test_opus + off, s_test_lens[i], NULL);
+            uplink_pump(UPLINK_PUMP_PACKETS);
             vTaskDelay(pdMS_TO_TICKS(20));  /* not a burst: the live mic sends one packet per 60 ms */
         }
         send_turn_msg("listen_end", s_active_turn, NULL);
@@ -2035,6 +2111,9 @@ static void handle_timers(void)
 {
     int64_t now = now_ms();
 
+    if (s_conv == PROTO_CONV_LISTENING && s_conn == CONN_SESSION && uxQueueMessagesWaiting(s_q) == 0) {
+        uplink_pump(UPLINK_PUMP_PACKETS);   /* a packet that could not go out a moment ago */
+    }
     if (s_hold_until_ms && now >= s_hold_until_ms) {
         ESP_LOGW(TAG, "link not back in %d s: the turn is given up", HOLD_MS / 1000);
         end_hold(true);
