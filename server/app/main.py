@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     config = load_providers_config()
     run_migrations()
+    from app import deletion_log
+
+    deletion_log.refuse_start_if_unreconciled()
     with session_scope() as db:
         PersonaRepo(db).seed()
         PricingRepo(db).seed(config.get("pricing_defaults", []))
@@ -74,6 +77,10 @@ async def lifespan(app: FastAPI):
 
     logging_redact.install()  # again: uvicorn has replaced its handlers by now
     retention_task = asyncio.create_task(retention.retention_loop(), name="retention")
+    deletion_monitor = asyncio.create_task(deletion_log.monitor_loop(app.state.hub), name="deletion-ledger")
+    from app import ota_rollout
+
+    ota_sweep = asyncio.create_task(ota_rollout.sweep_loop(app.state.hub), name="ota-rollout")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
     warmup = asyncio.create_task(asyncio.to_thread(languages.warm_up))
@@ -97,6 +104,8 @@ async def lifespan(app: FastAPI):
     care_recovery.cancel()
     diag_maint.cancel()
     retention_task.cancel()
+    deletion_monitor.cancel()
+    ota_sweep.cancel()
     # ola Diagnostics: every live session is about to be closed by this shutdown - recorded as the cause, so
     # the watches' reports of the drop are grouped under a confirmed server-side event.
     from app.incidents.events import server_event

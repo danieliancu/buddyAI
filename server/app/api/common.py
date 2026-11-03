@@ -85,9 +85,11 @@ def options(request: Request) -> dict[str, Any]:
 
 
 def conversations_out(
-    db: Session, device_id: str, account_id: int | None, details: bool = False
+    db: Session, device_id: str, account_id: int | None, details: bool = False, content: bool = True
 ) -> list[dict[str, Any]]:
     """History of one watch. With account_id, only that owner's turns are returned.
+
+    content=False (the operator's normal view): no words of the customer or the assistant, only metadata.
 
     details (operator only): each turn also carries its type, tools, stage timings and the usage
     records with their cost; voice-edit turns (notes / reminders, outside any conversation) are
@@ -109,7 +111,7 @@ def conversations_out(
             meta = {"id": -n, "edits": True, "started_at": day_turns[0].created_at, "last_activity_at": day_turns[-1].created_at}
             groups.append((meta, day_turns))
     usage = _usage_by_turn(db, [t.id for _, ts in groups for t in ts]) if details else {}
-    return [{**meta, "turns": [_turn_out(t, usage, details) for t in turns]} for meta, turns in groups]
+    return [{**meta, "turns": [_turn_out(t, usage, details, content) for t in turns]} for meta, turns in groups]
 
 
 def _usage_by_turn(db: Session, turn_ids: list[int | None]) -> dict[int, list[UsageRecord]]:
@@ -122,16 +124,26 @@ def _usage_by_turn(db: Session, turn_ids: list[int | None]) -> dict[int, list[Us
     return out
 
 
-def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool) -> dict[str, Any]:
+def operator_error(t: Turn) -> str | None:
+    """turns.error for an operator: why an aborted turn stopped is a fixed text; a failure's message can quote
+    provider output, so it stays out of the normal view (the codes are in ola Diagnostics)."""
+    if not t.error:
+        return None
+    return t.error if t.status == "aborted" else "Failed (see Diagnostics)"
+
+
+def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool, content: bool = True) -> dict[str, Any]:
     out: dict[str, Any] = {
         "id": t.id,
         "status": t.status,
         "language": t.language,
-        "user_text": t.user_text,
-        "assistant_text": t.assistant_text,
+        "user_text": t.user_text if content else "",
+        "assistant_text": t.assistant_text if content else "",
         "ttfa_ms": t.ttfa_device_ms or t.ttfa_server_ms,
         "created_at": t.created_at,
     }
+    if not content:
+        out["content_hidden"] = True
     if not details:
         return out
     records = usage.get(t.id or 0, [])
@@ -139,8 +151,8 @@ def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool) -> di
     out.update(
         mode=t.mode,
         tools=[x for x in t.tools.split(",") if x],
-        search=t.search_note or None,
-        error=t.error,
+        search=(t.search_note or None) if content else None,
+        error=t.error if content else operator_error(t),
         stt_ms=t.stt_ms,
         llm_first_token_ms=t.llm_first_token_ms,
         tts_first_audio_ms=t.tts_first_audio_ms,

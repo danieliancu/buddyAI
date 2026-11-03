@@ -14,6 +14,7 @@ from typing import Iterable, Sequence
 from sqlalchemy import delete as sa_delete, func, or_, update as sa_update
 from sqlmodel import Session, col, select
 
+from app import deletion_log
 from app.config import get_settings
 from app.db.models import Memory, MemoryEmbedding, MemoryJob, utcnow
 from app.memory import policy
@@ -214,6 +215,7 @@ class MemoryRepo:
             ids.append(cur.id)
             cur = self.s.get(Memory, cur.supersedes_id) if cur.supersedes_id else None
         n = self._delete_ids(account_id, ids)
+        deletion_log.record(self.s, deletion_log.MEMORY, account_id, target=uid)
         self.s.commit()
         return n
 
@@ -221,6 +223,7 @@ class MemoryRepo:
         ids = list(self.s.exec(select(Memory.id).where(Memory.account_id == account_id)).all())
         self.s.execute(sa_delete(MemoryJob).where(MemoryJob.account_id == account_id))
         n = self._delete_ids(account_id, ids)
+        deletion_log.record(self.s, deletion_log.ALL_MEMORIES, account_id)
         self._done(commit)
         return n
 

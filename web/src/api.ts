@@ -17,8 +17,9 @@ export interface AuthStatus {
   web_setup_allowed?: boolean;
 }
 
-/** Operator role: "admin" (everything) or "support" (no system, firmware, money settings or audit log). */
-export type OperatorRole = "admin" | "support";
+/** Operator role: "admin" (everything except customer content), "support" (no system, firmware, money settings or
+ *  audit log) or "principal" (an admin who may also open one conversation at a time, with a reason). */
+export type OperatorRole = "admin" | "support" | "principal";
 
 /** GET /api/auth/me: the signed-in operator. */
 export interface OperatorMe {
@@ -570,6 +571,8 @@ export interface ConversationTurn {
   assistant_text: string;
   ttfa_ms: number | null;
   created_at: string;
+  /** Operator view: the words are not sent; `user_text` and `assistant_text` are empty. */
+  content_hidden?: boolean;
   /** Operator view only (GET /api/devices/{id}/conversations): type, tools, timings, resources and cost. */
   mode?: "chat" | "note" | "reminder" | "edit";
   tools?: string[];
@@ -587,6 +590,12 @@ export interface ConversationTurn {
   /** Only mock (development) providers. */
   mock?: boolean;
   usage?: TurnUsage[];
+}
+
+export interface ContentAccessBody {
+  reason: string;
+  password: string;
+  code: string;
 }
 
 export interface TurnUsage {
@@ -693,6 +702,8 @@ export interface SystemInfo {
   mdns_enabled: boolean;
   mock_providers: boolean;
   ai_profile?: AiProfile | string;
+  /** Deletion events waiting to be copied off-site (see deploy/README.md section 8.5). */
+  deletion_ledger: { enabled: boolean; pending: number; oldest_pending_s: number };
   keys: Partial<Record<KeyName, string>>;
 }
 
@@ -712,6 +723,47 @@ export interface FirmwareRelease {
   size: number;
   notes: string;
   uploaded_at: string;
+  hw_model: string;
+  channel: "dev" | "release";
+  stage: string;
+  paused: boolean;
+  paused_reason: string;
+  signature_verified: boolean;
+}
+
+/** Where a release stands in its automatic rollout (GET /api/firmware/{id}/rollout). */
+export interface FirmwareRollout {
+  auto_enabled: boolean;
+  stage: string;
+  next_stage: string | null;
+  paused: boolean;
+  paused_reason: string;
+  signature_verified: boolean;
+  signing_evidence: boolean;
+  /** Attempts per state, plus failures nobody has reviewed yet. */
+  tally: Record<string, number>;
+  /** Watches of this model and channel, and how many the current stage really reaches. */
+  fleet: number;
+  in_stage: number;
+  pilot_devices: { id: string; name: string; fw_version: string; pilot: boolean }[];
+  watches: {
+    device_id: string;
+    attempt_id: string;
+    state: string;
+    reason: string;
+    previous_version: string;
+    counts_as_failure: boolean;
+    reviewed: boolean;
+    updated_at: string;
+  }[];
+}
+
+export interface SignedTestResults {
+  unit_mac: string;
+  valid_image_accepted: boolean;
+  unsigned_image_refused: boolean;
+  foreign_key_refused: boolean;
+  modified_image_refused: boolean;
 }
 
 export interface OtaOffer {
@@ -905,7 +957,11 @@ const operatorApi = {
     patchSettings: (id: string, changes: SettingsPatch) =>
       patch<SettingsResponse>(`/api/devices/${enc(id)}/settings`, changes),
     conversations: (id: string) => get<Conversation[]>(`/api/devices/${enc(id)}/conversations`),
-    deleteHistory: (id: string) => del<{ deleted_turns: number }>(`/api/devices/${enc(id)}/conversations`),
+    /** Exceptional access (principal only, audited): one conversation, with a reason. */
+    revealConversation: (id: string, conversationId: number, body: ContentAccessBody) =>
+      post<Conversation>(`/api/devices/${enc(id)}/conversations/${conversationId}/reveal`, body),
+    deleteHistory: (id: string, body: ContentAccessBody) =>
+      post<{ deleted_turns: number }>(`/api/devices/${enc(id)}/conversations/delete`, body),
     ota: (id: string, releaseId: number) => post<OtaOffer>(`/api/devices/${enc(id)}/ota`, { release_id: releaseId }),
   },
   options: () => get<Options>("/api/options"),
@@ -949,13 +1005,22 @@ const operatorApi = {
   },
   firmware: {
     list: () => get<FirmwareRelease[]>("/api/firmware"),
-    upload: (file: File, version: string, notes: string) => {
+    upload: (file: File, version: string, notes: string, hwModel: string, channel: string) => {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("version", version);
       fd.append("notes", notes);
+      fd.append("hw_model", hwModel);
+      fd.append("channel", channel);
       return post<FirmwareRelease>("/api/firmware", fd);
     },
+    rollout: (id: number) => get<FirmwareRollout>(`/api/firmware/${id}/rollout`),
+    promote: (id: number, to: string) => post<FirmwareRelease>(`/api/firmware/${id}/promote`, { to }),
+    pause: (id: number) => post<FirmwareRelease>(`/api/firmware/${id}/pause`, {}),
+    resume: (id: number) => post<FirmwareRelease>(`/api/firmware/${id}/resume`),
+    review: (attemptId: string) => post<{ ok: boolean }>(`/api/firmware/attempts/${attemptId}/review`),
+    signedTest: (id: number, results: SignedTestResults) => post<FirmwareRelease>(`/api/firmware/${id}/signed-test`, results),
+    setPilot: (deviceId: string, pilot: boolean) => put<{ ok: boolean }>(`/api/devices/${enc(deviceId)}/ota-pilot`, { pilot }),
   },
 };
 
@@ -1212,8 +1277,9 @@ export type LiveEvent =
       type: "turn_end";
       turn_id: number | string;
       status: TurnStatus;
-      user_text: string;
-      assistant_text: string;
+      /** Sent to the watch's owner only; operators never get the words over the live feed. */
+      user_text?: string;
+      assistant_text?: string;
       stt_ms: number | null;
       llm_first_token_ms: number | null;
       tts_first_audio_ms: number | null;
@@ -1231,6 +1297,8 @@ export type LiveEvent =
   /** Notes or reminders of the account changed (voice, another tab, a watch). */
   | { type: "items_changed"; account_id: number; at?: number }
   /** Operator only: an account's AI cost reached a monitoring level this period (never blocks anything). */
+  | { type: "ota_paused"; release_id: number; version: string; reason: string; at?: number }
+  | { type: "deletion_ledger_stale"; enabled: boolean; pending: number; oldest_pending_s: number; at?: number }
   | { type: "cost_alert"; account_id: number; level: "approaching" | "over" | "critical"; cost: number; interactions: number; at?: number }
   | { type: "keepalive"; at?: number };
 

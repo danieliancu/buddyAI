@@ -121,6 +121,7 @@ def main() -> None:
     p.add_argument("--days-before", type=int, default=30)
     p.add_argument("--account", type=int, default=None)
     p.add_argument("--list", type=int, default=40, help="search turns after --since to list")
+    p.add_argument("--show-text", action="store_true", help="also print what the customer asked (off: it is personal data)")
     args = p.parse_args()
     since = _utc(args.since)
     now = datetime.now(timezone.utc)
@@ -145,7 +146,8 @@ def main() -> None:
         for t in rows:
             print(f"- {t['at']:%m-%d %H:%M} [{t['how'] or '?':6}] {_fmt_c(t['cost']):>8} turn, "
                   f"{_fmt_c(t['search_cost']):>8} search, first audio {_fmt_s(t['ttfa'])}")
-            print(f"    asked: {t['user'][:140]}")
+            if args.show_text:
+                print(f"    asked: {t['user'][:140]}")
             print(f"    found: {t['note'][:220]}")
 
 

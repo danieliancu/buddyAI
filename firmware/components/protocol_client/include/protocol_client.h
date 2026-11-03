@@ -94,6 +94,9 @@ typedef struct {
 
 esp_err_t proto_init(const proto_config_t *cfg);
 
+/* The updated image passed its checks (from ota_boot_init's callback, any task). */
+void proto_ota_confirmed(void);
+
 /* Network availability (from Wi-Fi events). */
 void proto_network_up(void);
 void proto_network_down(void);

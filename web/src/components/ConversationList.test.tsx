@@ -32,3 +32,32 @@ describe("History search (My watch → History)", () => {
     expect(container.querySelector("mark")).toBeNull();
   });
 });
+
+describe("Operator view of a conversation", () => {
+  const hidden = {
+    ...conv,
+    turns: conv.turns.map((t) => ({ ...t, user_text: "", assistant_text: "", content_hidden: true })),
+  } as Conversation;
+
+  it("says the content is hidden, not that nothing was recognized", () => {
+    const { container } = render(<ConversationList conversations={[hidden]} technical />);
+    expect(container.textContent).toContain("Content hidden");
+    expect(container.textContent).not.toContain("nothing recognized");
+  });
+
+  it("offers opening a conversation only to the principal, and only while it is hidden", () => {
+    const opened: Conversation[] = [];
+    const principal = render(<ConversationList conversations={[hidden]} technical onReveal={(c) => opened.push(c)} />);
+    principal.getByText("Open with a reason").click();
+    expect(opened).toEqual([hidden]);
+    principal.unmount();
+
+    const other = render(<ConversationList conversations={[hidden]} technical />);
+    expect(other.queryByText("Open with a reason")).toBeNull();
+    other.unmount();
+
+    const shown = render(<ConversationList conversations={[conv]} technical onReveal={() => undefined} />);
+    expect(shown.queryByText("Open with a reason")).toBeNull();
+    expect(shown.container.textContent).toContain("Ștefan");
+  });
+});

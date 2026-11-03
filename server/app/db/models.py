@@ -345,6 +345,9 @@ class Device(SQLModel, table=True):
     # The server's session id of the latest authenticated hello: the session a report from older firmware
     # (no "prev_session") refers to on the next hello (ola Diagnostics, app/incidents).
     last_session_id: Optional[str] = Field(default=None, max_length=64)
+    # From the hello: "dev" or "release". Empty: firmware too old to report an update's outcome, so no automatic updates.
+    fw_channel: str = Field(default="", max_length=16)
+    ota_pilot: bool = False  # chosen by an operator for the pilot stage of automatic updates
 
 
 class DeviceIssue(SQLModel, table=True):
@@ -608,6 +611,28 @@ class PricingRule(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class DeletionEvent(SQLModel, table=True):
+    """Outbox of deletions, written in the same transaction as the deletion (app/deletion_log.py). Ids only."""
+
+    __tablename__ = "deletion_events"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uid: str = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, unique=True, index=True)
+    kind: str = Field(max_length=16)  # account | device_history | item | memory | all_memories
+    account_id: Optional[int] = None
+    device_id: Optional[str] = Field(default=None, max_length=64)
+    target: str = Field(default="", max_length=32)  # item or memory uid
+    occurred_at: datetime = Field(default_factory=utcnow)
+    replicated_at: Optional[datetime] = Field(default=None, index=True)  # copied to the off-site ledger
+
+
+class DeletionReconcileRequired(SQLModel, table=True):
+    """Written by deploy/backup/restore.sh: the server refuses to start until deletions are re-applied."""
+
+    __tablename__ = "deletion_reconcile_required"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    backup_created: str = Field(default="", max_length=64)
+
+
 class FirmwareRelease(SQLModel, table=True):
     __tablename__ = "firmware_releases"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -617,6 +642,30 @@ class FirmwareRelease(SQLModel, table=True):
     size: int
     notes: str = ""
     uploaded_at: datetime = Field(default_factory=utcnow)
+    # Automatic rollout (app/ota_rollout.py)
+    hw_model: str = Field(default="", max_length=64)
+    channel: str = Field(default="dev", max_length=16)  # dev | release: never crossed
+    stage: str = Field(default="development", max_length=16)
+    paused: bool = False
+    paused_reason: str = Field(default="", max_length=200)
+    signature_verified: bool = False  # the server checked the signature block with the public key
+    signing_evidence: str = ""  # JSON: who recorded the signed-update tests on a real watch, and the results
+
+
+class DeviceOta(SQLModel, table=True):
+    """One try to update one watch to one release (states: app/ota_rollout.py)."""
+
+    __tablename__ = "device_ota"
+    attempt_id: str = Field(primary_key=True, max_length=32)
+    device_id: str = Field(index=True, max_length=64)
+    release_id: int = Field(index=True)
+    previous_version: str = Field(default="", max_length=32)
+    state: str = Field(max_length=16)
+    reason: str = Field(default="", max_length=64)
+    innocent: bool = False  # a rollback caused by switching the watch off: not counted against the release
+    reviewed_at: Optional[datetime] = None  # an operator looked at this failure
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class Memory(SQLModel, table=True):

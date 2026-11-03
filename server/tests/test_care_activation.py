@@ -119,7 +119,7 @@ async def test_trial_starts_only_when_the_watch_is_paired(fake, gw):
     plan = c.get("/api/me/plan").json()
     assert plan["status"]["kind"] == "trial" and plan["status"]["trial_end"] and plan["care_activation"]["status"] == "active"
     started = [m for m in ConsoleEmailSender.sent if m.to == addr and "free trial has started" in m.subject]
-    assert len(started) == 1 and "£7.90 per month" in started[0].text
+    assert len(started) == 1 and "£7.99 per month" in started[0].text
     paired = [m for m in ConsoleEmailSender.sent if m.to == addr and m.subject == "Your ola watch is connected"]
     assert paired and paired[-1].html and "Gran&#x27;s ola" in paired[-1].html
 

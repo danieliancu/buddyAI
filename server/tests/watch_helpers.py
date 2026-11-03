@@ -17,7 +17,7 @@ from app.db.session import session_scope
 from app.email import ConsoleEmailSender
 
 WEBHOOK_SECRET = "whsec_test_secret"
-CARE_PENCE = 790
+CARE_PENCE = 799
 
 
 def enable_billing(monkeypatch) -> None:

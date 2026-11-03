@@ -378,8 +378,9 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
   - `customer.subscription.*` (created / updated / deleted / trial_will_end — `created` also completes a trial activation)
   - `invoice.paid`, `invoice.payment_failed`
   - `charge.refunded`
-- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive; the regular £99.99 is display-only on the site) and the Care price (£7.99/month), both in test mode first.
-- [ ] Have the ola Care consent wording, the subscription terms and the "was £99.99" claim reviewed (UK price-reduction and subscription-contract rules).
+- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive) and the Care price (£7.99/month), both in test mode first.
+- [ ] Have the ola Care consent wording and the subscription terms reviewed (UK subscription-contract rules). The site shows no "was" price; add one only for a price the watch was genuinely sold at.
+- [ ] **Price check, in test mode and again after going live:** the same Care amount (£7.99) on the site, in the customer account and the operator plan settings, in the consent text, on Stripe Checkout and in the trial emails. The amount charged comes from `BUDDYAI_STRIPE_PRICE_CARE_GBP`; `billing_settings.care_price_pence` is display only and changing it never touches an existing subscription.
 - [ ] Stripe Tax and VAT registration. The extra-usage price is VAT-inclusive (`tax_behavior=inclusive`).
 - [ ] Have the interaction-allowance wording reviewed (subscription terms §3a, FAQ, consent text `care-2026-12`; UK CMA / subscription rules): a clear renewal date, what counts, and the top-up refund wording.
 - [x] Usage admission and reservations live in PostgreSQL (multi-process safe). Before running more than one server worker, move the other process-local parts to shared stores (see "What is still process-local").

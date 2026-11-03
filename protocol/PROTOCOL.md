@@ -98,7 +98,7 @@ reports.
 | `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?`, `resume?` | Server finished the turn. `resume: "missing"` (with `status: error`): the answer to a `resume` - nothing to resume (unknown or expired request, or the question was not heard in full); the watch shows "try again". `expect_reply: true` (chat mode): the reply asked something and waits for the answer ("which one?", "delete it?", "what time?", a yes / no to an offer) - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
 | `item_emailed` | `number`, `status` (`sent`\|`unverified`\|`limit`\|`failed`\|`missing`) | Answer to `item_email`: the watch shows "Sent" or why not. |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
-| `ota_available` | `version`, `url`, `sha256`, `size`, `signature?` | Firmware update offer. |
+| `ota_available` | `version`, `url`, `sha256`, `size`, `attempt_id?`, `hw_model?`, `signature?` | Firmware update offer. `attempt_id`: the server's id of this try, echoed in `ota_status` and kept across the restart. Older firmware ignores it. See §3.4. |
 | `error` | `code`, `message`, `turn_id?` | See §7. |
 | `pong` | — | Reply to `ping`. |
 | `languages` | `items: [{code, label, name}]` | Every supported language for the watch's language picker (`label` renderable on the watch, `name` in English for search). Sent after `hello_ack`. |
@@ -141,6 +141,21 @@ stays on the dialog** (nothing to show): no `items_open` after an item is delete
 lines or details were removed. The item is shown (`item_show`) only when the same request also added or
 changed something. On an item's own screen a change shows it again (`item_show`) and deleting the item opens
 the list (`items_open`).
+
+### 3.4 Firmware updates
+
+The watch adds to `hello`: `fw_channel` (`dev`\|`release`), `ota_confirmed` (`attempt_id`, `version`) and `ota_rollback` (`attempt_id`, `version`, `check`, `reset_reason`): the outcome of the last update, repeated in every hello until a new update replaces it. Firmware without `fw_channel` gets no automatic updates.
+
+Device to server, `ota_status`: `attempt_id`, `state`, `reason?`, `progress?`.
+
+| `state` | Meaning |
+|---|---|
+| `accepted`, `downloading`, `installing`, `rebooting` | Progress. |
+| `installed` | The new image passed its checks and is confirmed. The new `fw_version` in a hello alone only means it is being checked. |
+| `failed` | `reason`: `integrity` (size or SHA-256), `image_invalid` (including a signature refused by the watch), `write`: counted against the release. `network`, `busy`, `bad_offer`: tried again later, not counted. |
+| `refused` | `reason`: `in_conversation`, `battery`, `older_version`, `same_version`, `wrong_model`. Tried again later, not counted. |
+
+Silence or a disconnect is never a failure: after 30 minutes the attempt becomes `unknown` and is tried again. Rollback checks: `display`, `audio`, `memory`, `server_session`; empty means the bootloader rolled back after a reset, with `reset_reason` `panic`, `watchdog`, `brownout`, `software`, `other`, or `power_on` / `usb` (the watch was switched off: not counted).
 
 ## 4. Binary audio frames
 

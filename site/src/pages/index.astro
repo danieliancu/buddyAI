@@ -16,7 +16,7 @@ import heroBg from "../assets/home/hero-bg.png";
 import heroWatch from "../assets/home/hero-watch.png";
 import watchBox from "../assets/home/watch-box.png";
 
-const description = `olácompanion is a wearable AI companion with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships to the UK & EU.`;
+const description = `olácompanion is a wearable AI companion with a built-in voice assistant: tap the mic, talk naturally, set reminders, take notes and get live answers in ${languageCount} languages. ${formatPrice(prices.watch.GBP, "GBP")}, ships within Great Britain.`;
 const site = Astro.site!;
 const heroImg = await getImage({ src: heroWatch, width: 1200, format: "png" });
 const boxImg = await getImage({ src: watchBox, width: 1200, format: "png" });
@@ -53,7 +53,6 @@ const jsonLd = [
     ],
     offers: [
       { ...offerBase, priceCurrency: "GBP", price: prices.watch.GBP.toFixed(2) },
-      { ...offerBase, priceCurrency: "EUR", price: prices.watch.EUR.toFixed(2) },
     ],
   },
 ];
@@ -182,7 +181,7 @@ const jsonLd = [
         <ul class="mt-5 hidden flex-wrap gap-x-5 gap-y-2 text-sm text-fg lg:flex">
           <li class="flex items-center gap-2"><Icon name="rocket" size={18} class="text-accent" /> Early Access</li>
           <li class="flex items-center gap-2"><Icon name="gift" size={18} class="text-accent" /> <span>Free {prices.trialDays}-day <Brand name="care" /> subscription</span></li>
-          <li class="flex items-center gap-2"><Icon name="truck" size={18} class="text-accent" /> Ships to the UK &amp; EU</li>
+          <li class="flex items-center gap-2"><Icon name="truck" size={18} class="text-accent" /> Ships within Great Britain</li>
         </ul>
         <Image
           src={watchBox}

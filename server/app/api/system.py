@@ -8,7 +8,7 @@ import socket
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app import accounts, languages, usage_ops
+from app import accounts, deletion_log, languages, usage_ops
 from app.config import get_settings
 from app.db.session import session_scope
 from app.device_settings import DeviceSettings
@@ -42,7 +42,10 @@ def _mask(value: str) -> str:
 @router.get("/info")
 def info() -> dict:
     s = get_settings()
+    with session_scope() as db:
+        ledger = deletion_log.status(db)
     return {
+        "deletion_ledger": ledger,
         "version": "0.1.0",
         "device_ws_url": base_url().replace("http", "ws", 1) + "/ws/device",
         "base_url": base_url(),

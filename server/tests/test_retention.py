@@ -141,7 +141,7 @@ def test_running_twice_is_idempotent() -> None:
     first = run_retention_once(policy)
     assert first["voice_operations"] >= 1 and first["search_cache"] >= 1 and first["conversations"] >= 1
     second = run_retention_once(policy)
-    assert second == {"voice_operations": 0, "search_cache": 0, "conversations": 0, "audit_log": 0}
+    assert second == {"voice_operations": 0, "search_cache": 0, "conversations": 0, "audit_log": 0, "deletion_events": 0}
 
 
 def test_a_failing_step_does_not_stop_the_others(monkeypatch) -> None:

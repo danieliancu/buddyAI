@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import timedelta
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, col, select
 
-from app import accounts
+from app import accounts, mfa
 from app.api.common import (
     PersonaBody,
     VoiceSampleBody,
@@ -20,11 +23,13 @@ from app.api.common import (
     read_settings,
     voice_sample,
 )
-from app.db.models import Account, Persona
+from app.config import get_settings
+from app.db.models import Account, AdminUser, AuditLog, Persona, utcnow
 from app.db.repositories import ConversationRepo, DeviceRepo, PersonaRepo
 from app.db.session import get_session
 from app.gateway.hub import PairingError
-from app.security import is_valid_pairing_code, require_admin
+from app.ratelimit import LOGIN_PER_ACCOUNT, client_ip
+from app.security import current_operator, is_valid_pairing_code, require_admin, verify_password
 
 router = APIRouter(prefix="/api", tags=["devices"], dependencies=[Depends(require_admin)])
 
@@ -185,7 +190,7 @@ def delete_persona(
     return {"ok": True}
 
 
-# --- history (operator access is audited) --------------------------------------------------------
+# --- history: metadata only; content needs the principal role and a stated reason, every time (audited) ----
 
 
 @router.get("/devices/{device_id}/conversations")
@@ -195,11 +200,73 @@ def conversations(device_id: str, request: Request, db: Session = Depends(get_se
         raise HTTPException(404, "device not found")
     if dev.account_id is not None:
         accounts.audit(db, request.session["admin"], "history.view", dev.account_id, device_id)
-    return conversations_out(db, device_id, dev.account_id, details=True)
+    return conversations_out(db, device_id, dev.account_id, details=True, content=False)
 
 
-@router.delete("/devices/{device_id}/conversations")
-def delete_history(device_id: str, request: Request, db: Session = Depends(get_session)) -> dict:
+class ContentAccessBody(BaseModel):
+    reason: str = Field("", max_length=500)
+    password: str = Field("", max_length=128)
+    code: str = Field("", max_length=32)
+
+
+MIN_REASON_CHARS = 20
+
+
+def _content_access(request: Request, db: Session, user: AdminUser, body: ContentAccessBody, device_id: str,
+                    account_id: int | None, target: str) -> str:
+    """The stated reason, or 403/429. Checked afresh on every request: nothing stays unlocked afterwards."""
+
+    def refuse(status: int, why: str, message: str) -> HTTPException:
+        accounts.audit(db, user.username, "content.access_refused", account_id, device_id,
+                       f"{target}: {why}; reason given: {body.reason.strip()}")
+        return HTTPException(status, message)
+
+    if user.role != "principal":
+        raise refuse(403, "not the principal role", "Only the principal administrator can open customer content.")
+    if not user.mfa_enabled:
+        raise refuse(403, "two-factor authentication off", "Turn on two-factor authentication first.")
+    reason = body.reason.strip()
+    if len(reason) < MIN_REASON_CHARS:
+        raise refuse(403, "no sufficient reason", f"State the reason (at least {MIN_REASON_CHARS} characters).")
+    LOGIN_PER_ACCOUNT.hit(f"opcontent|{client_ip(request)}|{user.username.lower()}")
+    if not verify_password(body.password, user.password_hash) or not mfa.verify_totp(user, body.code):
+        raise refuse(403, "wrong password or code", "The password or the two-factor code is not valid.")
+    used = db.exec(
+        select(func.count()).select_from(AuditLog).where(
+            col(AuditLog.actor) == user.username,
+            col(AuditLog.action) == "content.reveal",
+            col(AuditLog.created_at) >= utcnow() - timedelta(days=1),
+        )
+    ).one()
+    if used >= get_settings().content_reveal_daily_limit:
+        raise refuse(429, "daily limit reached", "The daily limit for opening customer content has been reached.")
+    return reason
+
+
+@router.post("/devices/{device_id}/conversations/{conversation_id}/reveal")
+def reveal_conversation(device_id: str, conversation_id: int, body: ContentAccessBody, request: Request,
+                        user: AdminUser = Depends(current_operator), db: Session = Depends(get_session)) -> dict:
+    """One conversation of one watch, as an exception. There is deliberately no form of this for a whole history."""
     dev = DeviceRepo(db).get(device_id)
-    accounts.audit(db, request.session["admin"], "history.delete", dev.account_id if dev else None, device_id)
+    if not dev:
+        raise HTTPException(404, "device not found")
+    target = f"conversation {conversation_id}"
+    reason = _content_access(request, db, user, body, device_id, dev.account_id, target)
+    found = next((c for c in conversations_out(db, device_id, dev.account_id, details=True)
+                  if c["id"] == conversation_id), None)
+    if found is None:
+        raise HTTPException(404, "conversation not found")
+    accounts.audit(db, user.username, "content.reveal", dev.account_id, device_id, f"{target}: {reason}")
+    return found
+
+
+@router.post("/devices/{device_id}/conversations/delete")
+def delete_history(device_id: str, body: ContentAccessBody, request: Request,
+                   user: AdminUser = Depends(current_operator), db: Session = Depends(get_session)) -> dict:
+    """Customers delete their own history themselves (api/me.py); an operator needs the same checks as /reveal."""
+    dev = DeviceRepo(db).get(device_id)
+    if not dev:
+        raise HTTPException(404, "device not found")
+    reason = _content_access(request, db, user, body, device_id, dev.account_id, "whole history (delete)")
+    accounts.audit(db, user.username, "history.delete", dev.account_id, device_id, reason)
     return {"deleted_turns": ConversationRepo(db).delete_device_history(device_id)}

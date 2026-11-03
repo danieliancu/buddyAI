@@ -1,6 +1,6 @@
 # Personal data inventory
 
-Status: working document, prepared from the code on branch `feature/uk-compliance` (12 October 2026). Lawful bases are **proposals** for review by a qualified adviser; nothing here is legal advice or a statement that processing is compliant.
+Status: working document, prepared from the code on 12 October 2026 and not fully re-checked since; web search has changed (see the open question in `dpia-draft.md`). Lawful bases are **proposals** for review by a qualified adviser; nothing here is legal advice or a statement that processing is compliant.
 
 Legend for verification: **Code** = confirmed in the repository; **Config** = depends on production configuration; **External** = needs confirmation outside the code.
 
@@ -39,11 +39,11 @@ Customer web app (HTTPS) --> /api/me/* --> PostgreSQL ; Stripe Checkout / portal
 | 16 | Application logs | operational events; personal content being removed (see security-controls.md) | operations, security | legitimate interests | container logs (Coolify/Docker) | hosting | — | set by the hosting/Docker log configuration — **not verified** | log rotation | Config/External |
 | 17 | Backups | full database dumps | recovery | legitimate interests | VPS volume (14 days); optional encrypted off-site copy (30 days) | hosting; off-site storage provider when enabled | depends on provider | 14 days local, 30 days off-site (when enabled) | automatic expiry | Code (scripts); production External |
 | 18 | Customer support | emails exchanged with ola@olacompanion.com | support | contract / legitimate interests | email provider mailbox | email provider | unknown | not defined | manual | External |
-| 19 | Emails sent | recipient, subject, body (transactional) | account and billing notices | contract | SMTP provider; never logged in production after this change | email provider | unknown | provider's retention | — | Code; provider External |
+| 19 | Emails sent | recipient, subject, body (transactional) | account and billing notices | contract | SMTP provider; never logged in production in production | email provider | unknown | provider's retention | — | Code; provider External |
 
 ## Items needing extra review
 
 - **Sensitive conversations / special-category data (Art. 9 UK GDPR):** users may speak about health, beliefs, etc. Memory extraction does not learn sensitive facts automatically (`app/memory/policy.py`); conversations are stored as said. A DPIA is recommended (external action).
 - **Children:** the privacy notice says the service is for adults (18+); site imagery and real use by family members should be reviewed. No age verification exists.
-- **Approximate location** sent with web search: disclosed in the privacy notice (branch); consider a setting to turn it off.
+- **Approximate location** sent with web search: disclosed in the privacy notice; consider a setting to turn it off.
 - **Qwen/Azure providers** exist in code as an alternative profile but are not used in production (`BUDDYAI_AI_PROFILE` default `openai`); if ever enabled, the processor register and privacy notice must change first.

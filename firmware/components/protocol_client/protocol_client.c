@@ -201,6 +201,7 @@ static SemaphoreHandle_t s_turn_lock;
 static uint32_t         s_turn_counter;     /* last turn id issued this session */
 static volatile uint32_t s_active_turn;
 static volatile bool    s_turn_live;        /* active turn not aborted/finished */
+static char             s_ota_attempt[33];  /* the server's id of the update offered last ("": a manual, untracked one) */
 static volatile bool    s_first_audio_seen;
 static volatile proto_conv_state_t s_conv = PROTO_CONV_IDLE;
 static bool             s_tts_ended;
@@ -566,6 +567,23 @@ static bool have_token(void)
     return settings_get_token(token, sizeof(token));
 }
 
+/* The outcome of the last update, until a new one replaces it (the server ignores repeats). */
+static void add_ota_report(cJSON *m)
+{
+    char attempt[33], version[32], check[24] = "", reset[16];
+    if (ota_report_rollback(attempt, version, check, reset)) {
+        cJSON *r = cJSON_AddObjectToObject(m, "ota_rollback");
+        cJSON_AddStringToObject(r, "attempt_id", attempt);
+        cJSON_AddStringToObject(r, "version", version);
+        cJSON_AddStringToObject(r, "check", check);
+        cJSON_AddStringToObject(r, "reset_reason", reset);
+    } else if (ota_report_confirmed(attempt, version)) {
+        cJSON *r = cJSON_AddObjectToObject(m, "ota_confirmed");
+        cJSON_AddStringToObject(r, "attempt_id", attempt);
+        cJSON_AddStringToObject(r, "version", version);
+    }
+}
+
 static void send_hello(void)
 {
     char token[SETTINGS_TOKEN_MAX];
@@ -573,6 +591,12 @@ static void send_hello(void)
     cJSON_AddStringToObject(m, "device_id", settings_device_id());
     cJSON_AddStringToObject(m, "fw_version", s_cfg.fw_version ? s_cfg.fw_version : "0.0.0");
     cJSON_AddStringToObject(m, "hw_model", s_cfg.hw_model ? s_cfg.hw_model : CONFIG_BUDDYAI_HW_MODEL);
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+    cJSON_AddStringToObject(m, "fw_channel", "release");
+#else
+    cJSON_AddStringToObject(m, "fw_channel", "dev");
+#endif
+    add_ota_report(m);
     if (settings_get_token(token, sizeof(token))) {
         cJSON_AddStringToObject(m, "token", token);
         s_paired_token = true;
@@ -1139,7 +1163,9 @@ static void on_hello_ack(const cJSON *j)
     diag_rtc_seal(&s_rtc);
     s_session_start_ms = now_ms();
     settings_set_last_server(s_url);
-    ota_mark_app_valid();
+    if (ota_on_probation()) {
+        send_simple("ping");    /* the answer starts the stable minute that confirms the new image */
+    }
     ESP_LOGI(TAG, "session %s established with %s (internal RAM free %u, largest %u, DMA free %u)", s_session_id,
              s_url, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
@@ -1245,6 +1271,39 @@ static void on_ota_status(ota_state_t state, int pct, void *ctx)
     post(&m);
 }
 
+static void send_ota_status(const char *state, const char *reason, int pct)
+{
+    if (!s_ota_attempt[0] || s_conn != CONN_SESSION) {
+        return;
+    }
+    cJSON *m = cJSON_CreateObject();
+    cJSON_AddStringToObject(m, "attempt_id", s_ota_attempt);
+    cJSON_AddStringToObject(m, "state", state);
+    if (reason) {
+        cJSON_AddStringToObject(m, "reason", reason);
+    }
+    if (pct >= 0) {
+        cJSON_AddNumberToObject(m, "progress", pct);
+    }
+    send_json(m, "ota_status", false, 0);
+}
+
+/* Why a server-chosen update must wait (NULL: go on). The server checks too; this watch knows it first-hand. */
+static const char *ota_refusal(const cJSON *j)
+{
+    const char *model = json_str(j, "hw_model");
+    if (model && model[0] && s_cfg.hw_model && strcmp(model, s_cfg.hw_model) != 0) {
+        return "wrong_model";
+    }
+    if (s_turn_live) {
+        return "in_conversation";
+    }
+    if (s_status_batt >= 0 && s_status_batt < 40 && !s_status_charging) {
+        return "battery";
+    }
+    return NULL;
+}
+
 static void handle_text(const char *txt)
 {
     cJSON *j = cJSON_Parse(txt);
@@ -1298,10 +1357,25 @@ static void handle_text(const char *txt)
         uint32_t size = 0;
         json_uint32(j, "size", &size);
         const char *ver = json_str(j, "version");
+        const char *attempt = json_str(j, "attempt_id");
+        strlcpy(s_ota_attempt, attempt ? attempt : "", sizeof(s_ota_attempt));
+        const char *refused = attempt ? ota_refusal(j) : NULL;
+#if CONFIG_BUDDYAI_RELEASE_BUILD
+        if (!refused && ota_version_older(ver, s_cfg.fw_version)) {
+            refused = "older_version";
+        }
+#endif
         if (ver && s_cfg.fw_version && strcmp(ver, s_cfg.fw_version) == 0) {
             ESP_LOGI(TAG, "ota_available %s = running version, ignored", ver);
-        } else if (ota_start(json_str(j, "url"), ver, json_str(j, "sha256"), size, on_ota_status, NULL) == ESP_OK) {
+            send_ota_status("refused", "same_version", -1);
+        } else if (refused) {
+            ESP_LOGI(TAG, "ota_available %s refused: %s", ver ? ver : "?", refused);
+            send_ota_status("refused", refused, -1);
+        } else if (ota_start(json_str(j, "url"), ver, json_str(j, "sha256"), size, s_ota_attempt, on_ota_status, NULL) == ESP_OK) {
+            send_ota_status("accepted", NULL, -1);
             emit(PROTO_EVT_OTA, 0, ver);
+        } else {
+            send_ota_status("failed", ota_in_progress() ? "busy" : "bad_offer", -1);
         }
         goto out;
     }
@@ -1309,6 +1383,7 @@ static void handle_text(const char *txt)
         if (s_ping_sent_ms) {
             ESP_LOGD(TAG, "rtt %lld ms", (long long)(now_ms() - s_ping_sent_ms));
         }
+        ota_health_exchange_ok();
         goto out;
     }
     if (strcmp(type, "error") == 0) {
@@ -1888,6 +1963,9 @@ static void note_connect_failure(const diag_ws_t *w, bool hello_timeout)
         s_fail_count++;
     }
     s_fail_hello_timeout = hello_timeout;
+    if (net_wifi_connected() && have_token()) {
+        ota_health_session_failed();
+    }
     if (w && !diag_ws_empty(w)) {
         s_fail_ws = *w;
     }
@@ -2064,6 +2142,31 @@ static void handle_msg(msg_t *m)
         break;
     }
     case MSG_OTA_STATUS:
+        if (m->a == OTA_STATE_CONFIRMED) {
+            /* Not a download: nothing for the screen. A lost message is repeated by the next hello. */
+            char attempt[33], version[32];
+            if (ota_report_confirmed(attempt, version) && s_conn == CONN_SESSION) {
+                strlcpy(s_ota_attempt, attempt, sizeof(s_ota_attempt));
+                send_ota_status("installed", NULL, -1);
+            }
+            break;
+        }
+        switch (m->a) {
+        case OTA_STATE_DOWNLOADING:
+            if (m->b % 25 == 0) {
+                send_ota_status("downloading", NULL, m->b);
+            }
+            break;
+        case OTA_STATE_VERIFYING:
+            send_ota_status("installing", NULL, -1);
+            break;
+        case OTA_STATE_DONE:
+            send_ota_status("rebooting", NULL, -1);
+            break;
+        default:
+            send_ota_status("failed", ota_last_failure(), -1);
+            break;
+        }
         emit(PROTO_EVT_OTA, m->a == OTA_STATE_FAILED ? -1 : m->b, NULL);
         break;
     case MSG_ITEM_OPEN:
@@ -2226,6 +2329,11 @@ static void proto_task(void *arg)
 /* ------------------------------------------------------------------------- */
 /* Public API                                                                 */
 /* ------------------------------------------------------------------------- */
+
+void proto_ota_confirmed(void)
+{
+    on_ota_status(OTA_STATE_CONFIRMED, 100, NULL);
+}
 
 esp_err_t proto_init(const proto_config_t *cfg)
 {

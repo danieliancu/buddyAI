@@ -65,8 +65,8 @@ def test_status_publishes_terms_with_price_trial_and_start_rule(client):
     st = client.get("/api/shop/status").json()
     assert st["open"] is True and st["trial_days"] == 30 and st["trial_starts"] == "on_pairing"
     t = st["care_terms"]["gbp"]
-    assert t["amount_minor"] == 790 and t["interval"] == "month"
-    assert "£7.90 per month" in t["text"] and "30-day" in t["text"] and "when I pair my watch" in t["text"]
+    assert t["amount_minor"] == 799 and t["interval"] == "month"
+    assert "£7.99 per month" in t["text"] and "30-day" in t["text"] and "when I pair my watch" in t["text"]
     assert "unlimited AI interactions" in t["text"] and "1,000" not in t["text"] and t["version"] == "care-2026-13"
     assert "Nothing is charged for ola Care today" in t["text"]
 
@@ -80,17 +80,17 @@ def test_checkout_is_one_time_payment_with_card_saved_and_no_subscription(client
     assert p["payment_intent_data"]["setup_future_usage"] == "off_session"
     assert p["customer_creation"] == "always"
     assert p["consent_collection"] == {"terms_of_service": "required"}
-    assert "£7.90 per month" in p["custom_text"]["terms_of_service_acceptance"]["message"]
+    assert "£7.99 per month" in p["custom_text"]["terms_of_service_acceptance"]["message"]
     assert "not charged today" in p["custom_text"]["submit"]["message"]
     assert p["metadata"]["kind"] == "watch" and p["metadata"]["care_terms_version"]
     assert p["automatic_tax"] == {"enabled": True}
     countries = p["shipping_address_collection"]["allowed_countries"]
-    assert "GB" in countries and "DE" in countries and "US" not in countries
+    assert countries == ["GB"]  # Great Britain only for launch
     assert p["shipping_options"] == [{"shipping_rate": "shr_uk"}]
     assert p["success_url"].startswith("https://www.example.com/thank-you?session_id=")
     with session_scope() as db:
         row = db.exec(select(BillingConsent).where(BillingConsent.stripe_checkout_session_id == cs_id)).one()
-        assert row.status == "pending" and row.amount_minor == 790 and row.currency == "gbp" and row.trial_days == 30
+        assert row.status == "pending" and row.amount_minor == 799 and row.currency == "gbp" and row.trial_days == 30
         assert row.terms_text == p["custom_text"]["terms_of_service_acceptance"]["message"]
         assert row.terms_sha256 == p["metadata"]["care_terms_sha256"] and row.trial_start_rule == "on_pairing"
         assert row.site_ip and row.site_accepted_at is not None
@@ -135,7 +135,7 @@ async def test_paid_session_creates_account_order_and_pending_care_but_no_subscr
     welcome = [m for m in mails if "set your password" in m.subject]
     assert len(welcome) == 1 and "/reset-password?welcome=1&token=" in welcome[0].text and "7 days" in welcome[0].text
     confirmed = [m for m in mails if m.subject.startswith("Your ola order")]
-    assert len(confirmed) == 1 and "£7.90 per month" in confirmed[0].text and "Nothing has been charged for ola Care" in confirmed[0].text
+    assert len(confirmed) == 1 and "£7.99 per month" in confirmed[0].text and "Nothing has been charged for ola Care" in confirmed[0].text
     assert client.get(f"/api/shop/checkout-status?session_id={cs_id}").json() == {"state": "paid", "needs_password": True}
 
 
@@ -295,7 +295,7 @@ def test_local_switches_drop_tax_and_stripe_tos_but_keep_the_terms_visible(clien
     p = fake.last
     assert p["automatic_tax"] == {"enabled": False}
     assert "consent_collection" not in p
-    assert "£7.90 per month" in p["custom_text"]["submit"]["message"]  # terms above the Pay button
+    assert "£7.99 per month" in p["custom_text"]["submit"]["message"]  # terms above the Pay button
 
 
 async def test_without_stripe_tos_the_site_checkbox_is_the_consent(client, fake, monkeypatch):

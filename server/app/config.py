@@ -110,10 +110,18 @@ class Settings(BaseSettings):
     stripe_require_tos: bool = True
     # Plan prices, allowances and thresholds are operator settings (table billing_settings, app/plan.py).
     site_url: str = ""  # public marketing site, for checkout success/cancel redirects
-    # UK + EU (post-Brexit shipping to the EU needs customs/IOSS handling — see deploy/README.md)
-    ship_countries: str = (
-        "GB,IE,AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE"
-    )
+    # Great Britain only until conformity, VAT and logistics for other markets are documented.
+    # Stripe's "GB" includes Northern Ireland; billing.py flags BT postcodes on paid orders.
+    ship_countries: str = "GB"
+    # deploy/backup/sync_deletions.sh is copying deletion events off-site: alert when they fall behind.
+    deletion_ledger_enabled: bool = False
+    # Automatic firmware updates (app/ota_rollout.py). Off: only an operator's manual push.
+    ota_auto_enabled: bool = False
+    ota_pause_min_failures: int = 3
+    ota_pause_failure_rate: float = 0.05
+    ota_pause_rollbacks: int = 2
+    firmware_signing_pubkey: str = ""  # PEM, or a path: checks release-channel uploads
+    content_reveal_daily_limit: int = 10  # exceptional operator access to customer content, per operator per 24 h
 
     @property
     def billing_enabled(self) -> bool:

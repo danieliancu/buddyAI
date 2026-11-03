@@ -45,7 +45,7 @@ from app.config import get_settings
 from app.db.models import AdminUser
 from app.db.session import get_session, session_scope
 
-ROLES = ("admin", "support")
+ROLES = ("admin", "support", "principal")  # principal: an admin who may also open customer content (CLI only)
 MFA_FIRST = "Set up two-factor authentication first."
 
 
@@ -132,7 +132,7 @@ def require_role(*roles: str):
     return dependency
 
 
-require_admin_role = require_role("admin")
+require_admin_role = require_role("admin", "principal")
 
 
 def websocket_admin(ws: WebSocket) -> str | None:

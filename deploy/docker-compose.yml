@@ -82,6 +82,7 @@ services:
       BACKUP_LOCAL_KEEP_DAYS: ${BACKUP_LOCAL_KEEP_DAYS:-}     # default 14
       BACKUP_INTERVAL_S: ${BACKUP_INTERVAL_S:-}               # default 86400
       BACKUP_SERVERDATA: ${BACKUP_SERVERDATA:-}               # 1 = also back up the serverdata volume
+      DELETION_SYNC_INTERVAL_S: ${DELETION_SYNC_INTERVAL_S:-} # default 300: deletion events to the off-site ledger
     env_file:
       # Optional: RCLONE_CONFIG_<REMOTE>_* variables for the off-site remote (README section 8).
       - path: backup.env

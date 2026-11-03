@@ -230,7 +230,7 @@ export const items: Item[] = [
     group: "compliance",
     status: "planned",
     title: "UKCA and CE conformity",
-    text: "Conformity assessment for the UK and EU, including a radio equipment (RED) test report. Until it is complete we don't claim UKCA or CE conformity.",
+    text: "Conformity assessment for Great Britain, including a radio equipment (RED) test report. Until it is complete we don't claim UKCA or CE conformity.",
   },
   {
     group: "compliance",

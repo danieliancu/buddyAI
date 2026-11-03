@@ -48,7 +48,7 @@ describe("buy box: the olá Care terms must be accepted", () => {
     open: true,
     currencies: ["gbp", "eur"],
     trial_days: 30,
-    care_terms: { gbp: { version: "care-2026-12", sha256: "ab".repeat(32), text: "I agree … £7.90 per month …", amount_minor: 790, interval: "month" } },
+    care_terms: { gbp: { version: "care-2026-12", sha256: "ab".repeat(32), text: "I agree … £7.99 per month …", amount_minor: 799, interval: "month" } },
   });
 
   it("a currency without published terms can't be bought", () => {

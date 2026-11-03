@@ -143,6 +143,12 @@ def prune_audit(policy: RetentionPolicy, now: datetime) -> int:
         return int(res.rowcount or 0)
 
 
+def prune_deletion_events(_policy: RetentionPolicy, now: datetime) -> int:
+    from app import deletion_log
+
+    return deletion_log.prune(now)
+
+
 def _steps() -> list[tuple[str, Callable[[RetentionPolicy, datetime], int]]]:
     # looked up at call time (tests replace single steps)
     return [
@@ -150,6 +156,7 @@ def _steps() -> list[tuple[str, Callable[[RetentionPolicy, datetime], int]]]:
         ("search_cache", prune_search_cache),
         ("conversations", prune_conversations),
         ("audit_log", prune_audit),
+        ("deletion_events", prune_deletion_events),
     ]
 
 

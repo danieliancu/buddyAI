@@ -142,12 +142,21 @@ set -- --no-owner --no-privileges --exit-on-error --single-transaction
 [ -z "$CLEAN" ] || set -- "$@" --clean --if-exists
 pg_restore "$@" -d "$TARGET" "$DUMP" || die "pg_restore (nothing was committed)"
 
+# Deleted data must not come back: the server refuses to start here until deletions are re-applied.
+psql -v ON_ERROR_STOP=1 -q "$TARGET" <<SQL || die "could not write the reconcile marker"
+CREATE TABLE IF NOT EXISTS deletion_reconcile_required (
+    id serial PRIMARY KEY,
+    backup_created varchar(64) NOT NULL DEFAULT ''
+);
+INSERT INTO deletion_reconcile_required (backup_created) VALUES ('${created:-unknown}');
+SQL
+
 echo "restore OK into $target_db"
 q "$TARGET" -c "select 'tables: ' || count(*) from information_schema.tables where table_schema = 'public'" || true
 q "$TARGET" -c "select 'accounts: ' || count(*) from accounts" || true
 q "$TARGET" -c "select 'latest audit_log entry: ' || coalesce(max(created_at)::text, 'none') from audit_log" || true
 cat <<EOF
 
-Next: deleted data must not come back. Before using this database for real, re-apply every deletion
-recorded in the production audit_log after ${created:-the backup time} (deploy/README.md section 8).
+Next: deleted data must not come back. The server will not start on this database until you re-apply
+the deletions made after ${created:-the backup time}: python -m app.cli reconcile-deletions (deploy/README.md section 8.5).
 EOF

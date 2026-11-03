@@ -77,7 +77,7 @@ export default function OperatorApp() {
   };
 
   const me = state.me;
-  const admin = me.role === "admin";
+  const admin = me.role !== "support";
   if (me.mfa_setup_needed) {
     // The server requires two-factor authentication: nothing else works until it is set up (no live socket either).
     return (

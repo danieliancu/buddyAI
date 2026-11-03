@@ -1,5 +1,5 @@
 import { brandHtml } from "../lib/brand";
-import { config, prices, formatPrice, shipCountryNames } from "../config";
+import { config, prices, formatPrice } from "../config";
 import { languageCount, languageCountLabel } from "../lib/languages";
 import { privacyLine } from "./features";
 
@@ -11,7 +11,7 @@ export interface Faq {
 
 const w = prices.watch;
 const c = prices.care;
-const priceLine = `${formatPrice(w.GBP, "GBP")} / ${formatPrice(w.EUR, "EUR")} for the watch today, then ${formatPrice(c.GBP, "GBP")} / ${formatPrice(c.EUR, "EUR")} a month for ${brandHtml("care")} after your free ${prices.trialDays}-day subscription. Cancel anytime.`;
+const priceLine = `${formatPrice(w.GBP, "GBP")} for the watch today, then ${formatPrice(c.GBP, "GBP")} a month for ${brandHtml("care")} after your free ${prices.trialDays}-day subscription. Cancel anytime.`;
 
 export const faqGroups: { title: string; items: Faq[] }[] = [
   {
@@ -136,15 +136,15 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "Where do you ship?",
-        a: `To the United Kingdom and all 27 EU member states: ${shipCountryNames.join(", ")}. ${config.shipping.note}`,
+        a: `To Great Britain (England, Scotland and Wales). We don't deliver to Northern Ireland or outside Great Britain yet. ${config.shipping.note}`,
       },
       {
         q: "Can I return it?",
-        a: `Yes. You have a 14-day right to cancel after delivery under UK and EU distance-selling rules — you don't need to give a reason. ${config.freeReturns ? "Returns are free." : "Unless the watch is faulty, you pay the cost of sending it back."} See <a href="/legal/returns/">returns &amp; cancellation</a>.`,
+        a: `Yes. You have a 14-day right to cancel after delivery under UK distance-selling rules — you don't need to give a reason. ${config.freeReturns ? "Returns are free." : "Unless the watch is faulty, you pay the cost of sending it back."} See <a href="/legal/returns/">returns &amp; cancellation</a>.`,
       },
       {
         q: "What guarantee do I get?",
-        a: "In the UK you have your statutory rights under the Consumer Rights Act 2015. In the EU you have a 2-year legal guarantee of conformity. These rights are not affected by anything we say. See <a href=\"/legal/warranty/\">guarantee &amp; warranty</a>.",
+        a: "In the UK you have your statutory rights under the Consumer Rights Act 2015. These rights are not affected by anything we say. See <a href=\"/legal/warranty/\">guarantee &amp; warranty</a>.",
       },
       {
         q: "What happens after I order?",

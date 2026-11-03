@@ -10,7 +10,7 @@ None of these is complete. Mark an item done only with evidence (document, recei
 | 4 | Identify the production email provider; accept its DPA; set `BUDDYAI_EMAIL_BACKEND=smtp` | Business owner | BLOCKER | console backend means no emails are delivered |
 | 5 | Confirm hosting provider, region (UK/EU) and DPA; check disk encryption options and provider snapshots | Business owner | HIGH | encryption at rest not claimed until done |
 | 6 | Provision off-site backup storage (UK/EU), generate the age key pair **offline**, set `BACKUP_AGE_RECIPIENT` / `BACKUP_RCLONE_REMOTE`; run a restore test | Business owner / operator | HIGH | see backup-and-recovery.md |
-| 7 | Real-device security tests on a spare unit: signed OTA, foreign-key rejection, rollback, Secure Boot, flash/NVS encryption, JTAG/download mode, random setup password | Engineering | BLOCKER (before production units) | firmware/README.md checklist |
+| 7 | Real-device security tests on a spare unit: signed OTA, foreign-key and modified-image rejection, rollback, Secure Boot, flash/NVS encryption, JTAG/download mode, random setup password | Engineering | BLOCKER (before production units) | firmware/README.md checklist |
 | 8 | Product conformity: UKCA route (RED radio test report incl. EN 18031 cyber requirements, EMC, safety), technical file, Declaration of Conformity, labelling; decide whether Waveshare's own certifications help | Business owner + test lab | BLOCKER | importer/brand owner may carry manufacturer duties |
 | 9 | Battery: obtain the EEMB LP402535 datasheet, IEC 62133 and UN 38.3 reports, MSDS; battery producer registration | Business owner + supplier | BLOCKER | shipping lithium batteries needs UN 38.3 |
 | 10 | WEEE producer registration and take-back arrangement | Business owner | BLOCKER | |
@@ -23,4 +23,9 @@ None of these is complete. Mark an item done only with evidence (document, recei
 | 17 | Confirm retention periods proposed in retention-policy.md (billing records, consents, audit log, logs) | Business owner + adviser | HIGH | |
 | 18 | Independent security assessment / penetration test before or soon after launch | Business owner | HIGH | |
 | 19 | Publish product information (size, weight, water resistance) | Business owner | HIGH | required before sale |
-| 20 | Enable operator MFA for every operator, then set `BUDDYAI_ADMIN_MFA_REQUIRED=true` | Operators | HIGH | after deploying this branch |
+| 20 | Enable operator MFA for every operator, then set `BUDDYAI_ADMIN_MFA_REQUIRED=true` | Operators | HIGH | after deploying |
+| 21 | Choose the principal administrator (`python -m app.cli set-operator-role <name> principal`) and review `content.*` audit entries regularly | Business owner | HIGH | nobody can open content until this is done |
+| 22 | Confirm in Stripe that `BUDDYAI_STRIPE_PRICE_CARE_GBP` is £7.99, leave the EUR price ids empty, then run the price check in `docs/BILLING.md` | Business owner | HIGH | the code only changes what is displayed |
+| 23 | Device tests of automatic updates on real watches, then `BUDDYAI_OTA_AUTO_ENABLED=true` | Engineering | BLOCKER | `firmware/README.md` checklist, `protocol/PROTOCOL.md` §3.4 |
+| 24 | Send the supplier requests and track replies (`supplier-requests.md`) | Business owner | BLOCKER | supports #8, #9, #11 |
+| 25 | Rehearse `incident-response.md`; approve it, `dpia-draft.md` and `support-procedures.md` | Business owner + adviser | HIGH | all drafts |

@@ -391,7 +391,9 @@ def conversations(dev: Device = Depends(owned_device), db: Session = Depends(get
 
 @router.delete("/devices/{device_id}/conversations")
 def delete_history(dev: Device = Depends(owned_device), db: Session = Depends(get_session)) -> dict:
-    return {"deleted_turns": ConversationRepo(db).delete_device_history(dev.id)}
+    deleted = ConversationRepo(db).delete_device_history(dev.id)
+    accounts.audit(db, f"account:{dev.account_id}", "history.delete", dev.account_id, dev.id, "self-service")
+    return {"deleted_turns": deleted}
 
 
 @router.get("/options")

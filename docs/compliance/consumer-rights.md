@@ -6,19 +6,19 @@ Prepared 12 October 2026 from the site, the web app and `server/app/billing.py`.
 
 | Area | Implementation | Evidence | Status |
 |---|---|---|---|
-| Watch price | £79.99 one-off (shown with a struck-through "was" price) | `site/src/config.ts` | IMPLEMENTED_NOT_VERIFIED — a "was" price needs a genuine prior selling price (**Legal review**, pricing practices guidance) |
-| VAT | business **not VAT-registered**; "including VAT" wording removed on this branch | site pages | IMPLEMENTED (branch) |
+| Watch price | £79.99 one-off; the "was" price was removed on 3 November 2026 because there is no evidence of a genuine sale at £99.99 | `site/src/config.ts` | IMPLEMENTED_NOT_VERIFIED in production |
+| VAT | business **not VAT-registered**; "including VAT" wording removed | site pages | IMPLEMENTED_NOT_VERIFIED in production |
 | Delivery | costs shown at Stripe checkout; delivery within 30 days | terms-of-sale §2, §4 | IMPLEMENTED_NOT_VERIFIED |
 | Contract formation | on confirmation email | terms-of-sale §3 | IMPLEMENTED_NOT_VERIFIED |
 | 14-day cancellation (goods) | from receipt; cancel by email; model form; refund within 14 days; customer pays return postage unless faulty | returns page | IMPLEMENTED_NOT_VERIFIED (**Legal review**) |
 | Faulty goods | statutory rights only (CRA 2015: 30-day reject, repair/replace, 6 years to claim); no voluntary warranty | warranty page | IMPLEMENTED_NOT_VERIFIED |
 | olácare price | £7.99/month (the brief mentions £8 — the site and Stripe price use £7.99; not changed) | config.ts, Stripe price ids | — |
-| Trial | 30 days, starts at **first pairing**, card saved at checkout with tick-box consent, reminder email before the trial ends (`trial_will_end` webhook) | `care_activation.py`, `billing.py:732-739`, SetupPage, PlanCard | IMPLEMENTED; site wording aligned to "30-day" on this branch |
+| Trial | 30 days, starts at **first pairing**, card saved at checkout with tick-box consent, reminder email before the trial ends (`trial_will_end` webhook) | `care_activation.py`, `billing.py:732-739`, SetupPage, PlanCard | IMPLEMENTED; site wording aligned to "30-day" in the repository |
 | Renewal | monthly, automatic until cancelled | subscription terms | IMPLEMENTED |
 | Cancellation | Account → Manage billing (Stripe portal); ends at period end; access until then; "Nothing more will be charged" shown | PlanCard.tsx, billing.portal_url | IMPLEMENTED; portal cancellation behaviour depends on Stripe portal settings — **verify in the Stripe dashboard** |
-| Refunds on cancellation | none for the current period | subscription terms (branch) | **Legal review** with the 14-day right for services |
+| Refunds on cancellation | none for the current period | subscription terms | **Legal review** with the 14-day right for services |
 | Failed payments | Stripe retries (Smart Retries per dashboard); `past_due` keeps access | `billing.py:41` | IMPLEMENTED_NOT_VERIFIED — retry schedule lives in the Stripe dashboard |
-| Account deletion | cancels the subscription immediately in Stripe (branch); refuses to delete if Stripe cancellation fails | `accounts.py`, `billing.py` | IMPLEMENTED (branch), tests |
+| Account deletion | cancels the subscription immediately in Stripe; refuses to delete if Stripe cancellation fails | `accounts.py`, `billing.py` | IMPLEMENTED_NOT_VERIFIED in production, tests |
 | Company identity | name "Ola Technologies London Ltd"; address "Essex, United Kingdom"; company number empty; VAT empty | config.ts | **NOT_IMPLEMENTED** — full registered office address and company number must be added (external action) |
 
 ## Open legal points
