@@ -43,7 +43,7 @@ In a small team one person can hold several roles. Keep a named deputy for the i
 | Defective firmware | Pause the release on the Firmware page. A pause stops new offers; watches that already installed it stay on it, so publish a fixed, higher version |
 | Firmware signing key lost or leaked | Stop all rollouts. Follow `firmware/keys/README.md`. Treat as Critical: watches trust that key |
 | Database or backup exposed | Rotate credentials. Check the encryption status of what was exposed (see `backup-and-recovery.md`): the live database has no application-level encryption |
-| Computer or disk holding backup copies lost or stolen | Treat as Critical until you know the copies were encrypted and the key was not with them. Assess under the notification section below |
+| Computer holding backup copies, or a key stick, lost or stolen | Treat as Critical until you know the copies were `.age` files and the key was not with them. If a key stick is lost, generate a new key, set it on the server, and keep the other stick until the old backups expire. Assess under the notification section below |
 | Watch token misuse | Revoke the watch from the operator app |
 
 ## Notifying the ICO

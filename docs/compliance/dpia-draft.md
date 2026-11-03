@@ -39,7 +39,7 @@ Ratings are proposals: likelihood × severity for the people affected.
 | Risk | Likelihood | Severity | Existing measures | Remaining | Further action |
 |---|---|---|---|---|---|
 | Staff read private conversations | Low | High | Metadata by default, one conversation at a time for the principal role only, reason and audit (`content-access-audit.md`) | Medium: whoever runs the server can reach the database | Limit who has server access; review the audit log regularly |
-| Database or backup stolen | Low | High | Password hashing; encrypted backup copies on the business owner's computer | High until disk encryption and those copies are confirmed; a lost or stolen computer is a further route | External action #5; encrypt the computer's disk and keep the key apart from the copies |
+| Database or backup stolen | Low | High | Password hashing; backups encrypted with `age`, private key kept apart on removable media | High until disk encryption and the backup encryption are confirmed | External actions #5, #26 |
 | Sensitive details sent to a processor abroad | Certain (by design) | Medium | `store=false`, disclosure | High until the DPA and transfer terms are signed | External action #2; check retention and ZDR |
 | Words of a third party stored | Likely | Medium | Owner can delete | Medium | Explain in the notice and guidance |
 | Someone else uses the watch or sees its screen | Possible | Medium | Per-watch settings | Medium | Consider a screen lock; explain in the manual |

@@ -2,7 +2,7 @@
 
 The operating procedure lives in `deploy/README.md` §8 (not duplicated here). This page records the control, its evidence and its status.
 
-**Decision, 3 November 2026 (business owner):** no off-site storage provider. The business owner keeps encrypted copies of the backups on their own computer and manages copying, storage and deletion themselves. This is a decision, not evidence that it has been done, and the application cannot see or check those copies.
+**Decision, 3 November 2026 (business owner):** no off-site storage provider. Backups are encrypted on the server with `age`. The business owner holds the private key on removable media and keeps the encrypted copies on their own computer, and manages copying, storage and deletion themselves. This is a decision, not evidence that it has been done, and the application cannot see or check those copies.
 
 Accepted consequences:
 
@@ -10,7 +10,7 @@ Accepted consequences:
 - Deletion events are not copied off the server between backups. If the server is lost, whatever customers deleted after the last copy comes back on restore and must be handled by hand (`reconcile-deletions --no-ledger`, `deploy/README.md` §8.5), as a personal data incident.
 - Recovery depends on the business owner being available.
 
-Commitments that follow from the privacy notice: copies stay encrypted, are held on a device under the company's control, and are deleted within 14 days of the backup. Losing that device is a possible personal data breach (`incident-response.md`).
+Commitments that follow from this and from the privacy notice: only `.age` and `.sha256` files are copied; the private key is never on the server or next to the copies, with two copies in different places; copies stay on a device under the company's control and are deleted within 14 days of the backup. Backups made before `BACKUP_AGE_RECIPIENT` was set stay unencrypted on the server until they expire and are not copied. If the key is lost, the encrypted backups cannot be restored by anyone. Losing that device is a possible personal data breach (`incident-response.md`).
 
 | Control | Implementation | Evidence | Test evidence | Status | Outstanding action | Owner |
 |---|---|---|---|---|---|---|
@@ -18,7 +18,7 @@ Commitments that follow from the privacy notice: copies stay encrypted, are held
 | Integrity check | `pg_restore --list` before keeping a dump; `.sha256` file | `backup.sh` | Docker test | IMPLEMENTED_NOT_VERIFIED in production | — | — |
 | Encryption before leaving the server | `age` to `BACKUP_AGE_RECIPIENT` public key(s); plaintext removed only after successful encryption; upload refused for unencrypted dumps | `backup.sh` | Docker test (refusal + encrypted upload) | IMPLEMENTED_NOT_VERIFIED in production, **not enabled** until the variable is set | generate key pair offline; set recipient | Business owner |
 | Keys separate from backups | only the public recipient on the server; private identity offline (two encrypted copies) | `deploy/README.md` §8.1 | — | PROCEDURE | do it | Business owner |
-| Copy away from the server | business owner's own computer, by the owner's own process; the code's `rclone` upload stays available but unused | decision above | none in the repository | OWNER-MANAGED | keep encrypted copies, delete within 14 days, keep evidence of restore tests outside this repository | Business owner |
+| Copy away from the server | business owner's own computer, by the owner's own process; the code's `rclone` upload stays available but unused | decision above | none in the repository | OWNER-MANAGED | set up the key (`deploy/README.md` §8.1), keep `.age` copies, delete within 14 days, keep evidence of restore tests outside this repository | Business owner |
 | Local retention | `BACKUP_LOCAL_KEEP_DAYS` (14, unchanged) | `backup.sh` | Docker test | IMPLEMENTED | — | — |
 | `serverdata` (cookie secret, provider keys, firmware images) | optional `BACKUP_SERVERDATA=1`, encrypted only | `backup.sh` | Docker test | NOT ENABLED | enable with encryption | Operator |
 | Restore | `deploy/backup/restore.sh`: explicit `--target`, refuses production without `--force-production`, refuses non-empty target without `--clean`, checksum + list check, single transaction | `restore.sh` | Docker tests (refusals + restores) | IMPLEMENTED_NOT_VERIFIED in production | monthly restore test into a separate database | Operator |

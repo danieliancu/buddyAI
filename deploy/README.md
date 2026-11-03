@@ -219,6 +219,10 @@ protect against losing the server: set up 8.1 and 8.2 before selling.
 
 ### 8.1 Encryption key (age), generated offline
 
+**In use:** this is how backups are protected (decision: `docs/compliance/backup-and-recovery.md`). On Windows, install
+it with `winget install --id FiloSottile.age` and generate the key on removable media:
+`age-keygen -o E:\buddyai-backup-key.txt`. Never keep the key on the computer that holds the backup copies.
+
 Backups are encrypted with [age](https://age-encryption.org). Only the **public** key (recipient,
 `age1…`) is on the server; the private key (identity) never is, so a stolen backup or a compromised
 storage account reveals nothing.
@@ -238,6 +242,11 @@ storage account reveals nothing.
 `BACKUP_AGE_RECIPIENT`. The business owner copies the encrypted `.age` and `.sha256` files from `deploy/backups`
 (Coolify: the `backupdata` volume) to their own computer and manages this themselves, including deleting copies
 within 14 days of the backup, which the privacy notice promises. See `docs/compliance/backup-and-recovery.md`.
+
+After setting `BACKUP_AGE_RECIPIENT` and redeploying, check it in the backup container: run `backup.sh`, then
+`ls -la /backups` must show a new `.dump.age` and `.sha256` and no new plain `.dump`. On the computer, check the key:
+`age -d -i E:\buddyai-backup-key.txt -o test.dump <file>.dump.age`, then delete `test.dump` at once. Older unencrypted
+backups stay on the server until they expire; do not copy them.
 
 The rest of this section applies only if a provider is ever used. Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
 than the server) or an S3 bucket. Use credentials that can reach only the backup directory. Give the
