@@ -35,7 +35,7 @@ Related existing docs: `docs/BILLING.md`, `docs/MEMORY.md`, `deploy/README.md` (
 | Central retention policy | `server/app/retention.py`, settings, hourly job | periods need approval | M | approve | IMPLEMENTED_NOT_VERIFIED in production |
 | Voice operations purge | retention job (was never run) | — | L | — | IMPLEMENTED_NOT_VERIFIED in production |
 | Account deletion cancels Stripe | `billing.cancel_all_for_account`, `accounts.delete_account` | DB failure after Stripe cancel leaves account (retryable) | M | — | IMPLEMENTED_NOT_VERIFIED in production |
-| Deletion of secondary data (search cache, voice ops, usage notices) | `accounts.delete_account` | backups up to 14/30 days | L | — | IMPLEMENTED_NOT_VERIFIED in production |
+| Deletion of secondary data (search cache, voice ops, usage notices) | `accounts.delete_account` | backups up to 14 days | L | — | IMPLEMENTED_NOT_VERIFIED in production |
 | Export completeness | `accounts.export` (+ orders, subscriptions, consents, top-ups, usage, events) | — | L | — | IMPLEMENTED_NOT_VERIFIED in production |
 | DSAR tracking | `POST /api/accounts/{id}/requests` → audit | no reminders for the one-month deadline | L | process | IMPLEMENTED_NOT_VERIFIED in production |
 | OpenAI application-state storage | `store=false` (Chat Completions, Responses) | abuse-monitoring retention, ZDR, residency unverified | M | DPA + account review | IMPLEMENTED_NOT_VERIFIED in production |
@@ -48,8 +48,8 @@ Related existing docs: `docs/BILLING.md`, `docs/MEMORY.md`, `deploy/README.md` (
 | Transport encryption (web) | HTTPS/HSTS verified live | — | — | — | IMPLEMENTED_AND_VERIFIED |
 | Transport encryption (watch) | release firmware wss-only | units on dev firmware | H | ship release firmware | IMPLEMENTED_NOT_VERIFIED |
 | Encryption at rest | none | DB/volumes unencrypted | H | provider disk encryption | NOT_IMPLEMENTED |
-| Deletions not reintroduced by a restore | transactional outbox, off-site ledger, block on start until re-applied (`backup-and-recovery.md`) | off-site copy needs external action #6; events not yet copied are lost if the whole server is lost | M | configure remote | IMPLEMENTED_NOT_VERIFIED in production |
-| Encrypted off-site backups | `deploy/backup/` (age + rclone), restore script | not enabled; same-VPS copies | H | external-actions #6 | PARTIALLY_IMPLEMENTED |
+| Deletions not reintroduced by a restore | transactional outbox, off-site ledger, block on start until re-applied (`backup-and-recovery.md`) | no off-site ledger (decided, external action #6): deletions after the last backup return if the whole server is lost | M | handle by hand if it happens | IMPLEMENTED_NOT_VERIFIED in production |
+| Backups away from the server | owner-managed encrypted copies on the business owner's computer (decided 3 Nov 2026); `deploy/backup/` encrypts, restore script | not visible to the application; no evidence yet | H | owner keeps copies and restore-test evidence | OWNER-MANAGED |
 | PSTI: no default passwords | per-device random setup password | dev firmware on units (debug server) | M | release firmware | IMPLEMENTED (code) |
 | PSTI: vulnerability reporting | `/security/`, `security.txt` | not deployed | H | deploy | IMPLEMENTED_NOT_VERIFIED in production |
 | PSTI: support period | "at least 2 years from purchase" on `/security/` | wording legal check; statement unsigned | H | external-actions #12 | IMPLEMENTED_NOT_VERIFIED in production |

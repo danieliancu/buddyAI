@@ -8,7 +8,7 @@ Internet ──► Caddy (HTTPS, ports 80/443)
                ├─ www.example.com  → marketing site (static) + /api/shop/* → server
                ├─ app.example.com  → customer app + operator app (/admin) + REST API + Stripe webhook
                └─ api.example.com  → watches: /ws/device (WebSocket) and /fw/* (firmware downloads)
-            server (FastAPI) ──► PostgreSQL        backup (daily pg_dump → deploy/backups, encrypted off-site)
+            server (FastAPI) ──► PostgreSQL        backup (daily pg_dump → deploy/backups, encrypted)
 ```
 
 ## 1. Rent the server
@@ -232,9 +232,14 @@ storage account reveals nothing.
    (comma-separated) let a second key holder restore, and allow rotating keys: add the new key, wait until
    the old backups have expired, then remove the old one.
 
-### 8.2 Off-site copy (rclone)
+### 8.2 Off-site copy (rclone): not used
 
-Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
+**Decision, 3 November 2026:** no storage provider. Leave `BACKUP_RCLONE_REMOTE` empty and still set
+`BACKUP_AGE_RECIPIENT`. The business owner copies the encrypted `.age` and `.sha256` files from `deploy/backups`
+(Coolify: the `backupdata` volume) to their own computer and manages this themselves, including deleting copies
+within 14 days of the backup, which the privacy notice promises. See `docs/compliance/backup-and-recovery.md`.
+
+The rest of this section applies only if a provider is ever used. Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
 than the server) or an S3 bucket. Use credentials that can reach only the backup directory. Give the
 container the rclone configuration in one of three ways (never commit it):
 
@@ -268,7 +273,7 @@ then unpack into the volume while the server is stopped.
 
 ### 8.4 Monthly restore test (separate database)
 
-Once a month, and after any change to the backup setup, restore the latest off-site backup into a
+Once a month, and after any change to the backup setup, restore the latest backup copy into a
 **separate** database and record the date and result. `restore.sh` decrypts, checks the `.sha256` and the
 archive, refuses the production database (unless `--force-production`), refuses a non-empty target
 (unless `--clean`) and restores in one transaction. There is no default target.
@@ -276,7 +281,7 @@ archive, refuses the production database (unless `--force-production`), refuses 
 On a trusted machine that holds the identity file (not the server):
 
 ```bash
-rclone copy offsite:buddyai-backups ./restore-test --include 'buddyai-YYYYMMDD-HHMM.dump*'
+# put the buddyai-YYYYMMDD-HHMM.dump.age and .sha256 copies in ./restore-test
 docker build -t buddyai-backup deploy/backup
 docker build -f deploy/postgres.Dockerfile -t buddyai-postgres .          # same database image (pgvector)
 docker network create restore-test
@@ -299,7 +304,7 @@ An unencrypted local dump can be tested on the server the same way, into a new d
 Restoring a backup would bring back everything deleted after it was taken: accounts, conversation history,
 notes, reminders and memories. Every such deletion writes an event in the same database transaction
 (`server/app/deletion_log.py`), and `sync_deletions.sh` copies new events, encrypted, to
-`<BACKUP_RCLONE_REMOTE>/deletions/` every 5 minutes. Set `BUDDYAI_DELETION_LEDGER_ENABLED=true` once the
+`<BACKUP_RCLONE_REMOTE>/deletions/` every 5 minutes **if a remote is configured; today none is (§8.2)**. Then set `BUDDYAI_DELETION_LEDGER_ENABLED=true` once the
 remote is configured: events waiting over 15 minutes then alert the operators and show on the System page.
 
 `restore.sh` leaves a marker, and **the server refuses to start on that database** until step 3 is done.
@@ -326,16 +331,15 @@ remote is configured: events waiting over 15 minutes then alert the operators an
    incident and work out what you can from support records.
 4. Start the server and Caddy.
 
-**Limit:** if the whole server is lost, events not yet copied off-site are lost with it (normally the last 5 minutes;
-longer during a storage outage). Until the off-site remote is configured there is no copy at all, and protection
-depends on the old database staying readable.
+**Limit:** with no remote there is no ledger away from the server, so protection depends on the old database
+staying readable (step 1). If the whole server is lost, restore the newest copy and use `--no-ledger`: whatever
+customers deleted after that copy comes back and must be handled as described in step 3.
 
-Data deleted on request stays in backups until they expire (local 14 days, off-site 30 days by default).
+Data deleted on request stays in backups until they expire (14 days, including the business owner's copies).
 
 ### 8.6 Coolify
 
-Same service, same variables (set them in Coolify's Environment Variables; use
-`BACKUP_RCLONE_CONFIG_B64` for the rclone configuration). Local backups are in the `backupdata` volume.
+Same service, same variables (set them in Coolify's Environment Variables). Local backups are in the `backupdata` volume.
 Coolify also has its own scheduled database backups to S3; check in your Coolify version whether they cover
 a PostgreSQL that runs inside a compose stack like this one before relying on them instead.
 
@@ -413,7 +417,7 @@ memory text) and `GET /api/diagnostics` → `memory` (job queue and failures).
 - [ ] Measured battery life, published on the site.
 - [ ] Firmware release image built with the production signing key (keep the key offline, with a backup).
 - [ ] Secure Boot + flash encryption enabled on **production units only** (see `firmware/README.md`).
-- [ ] Backups encrypted and copied off-site (section 8.1–8.2), the age key stored offline in two places,
+- [ ] Backups encrypted, copies on the business owner's computer (section 8.1–8.2; owner-managed), the age key stored offline in two places,
       and a restore test into a separate database done and recorded (8.4).
 - [ ] Test purchase end-to-end in Stripe test mode, then one real purchase with live keys and a refund.
 - [ ] Beta with 2–3 friendly customers before the public launch.

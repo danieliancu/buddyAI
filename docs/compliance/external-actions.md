@@ -1,6 +1,6 @@
 # External actions (cannot be done in software)
 
-None of these is complete. Mark an item done only with evidence (document, receipt, report) stored outside the public repository.
+None of these is complete, except where a row says a decision closed it. Mark an item done only with evidence (document, receipt, report) stored outside the public repository.
 
 | # | Action | Owner | Priority | Notes |
 |---|---|---|---|---|
@@ -9,7 +9,7 @@ None of these is complete. Mark an item done only with evidence (document, recei
 | 3 | Confirm Stripe DPA acceptance and transfer terms; check portal cancellation settings and Smart Retries schedule | Business owner | HIGH | |
 | 4 | Identify the production email provider; accept its DPA; set `BUDDYAI_EMAIL_BACKEND=smtp` | Business owner | BLOCKER | console backend means no emails are delivered |
 | 5 | Confirm hosting provider, region (UK/EU) and DPA; check disk encryption options and provider snapshots | Business owner | HIGH | encryption at rest not claimed until done |
-| 6 | Provision off-site backup storage (UK/EU), generate the age key pair **offline**, set `BACKUP_AGE_RECIPIENT` / `BACKUP_RCLONE_REMOTE`; run a restore test | Business owner / operator | HIGH | see backup-and-recovery.md |
+| 6 | **Closed by decision, 3 Nov 2026:** no off-site storage provider. The business owner keeps encrypted backup copies on their own computer and manages this themselves (`backup-and-recovery.md`) | Business owner | DECIDED | no provider, no `BACKUP_RCLONE_REMOTE`, no DPA for storage |
 | 7 | Real-device security tests on a spare unit: signed OTA, foreign-key and modified-image rejection, rollback, Secure Boot, flash/NVS encryption, JTAG/download mode, random setup password | Engineering | BLOCKER (before production units) | firmware/README.md checklist |
 | 8 | Product conformity: UKCA route (RED radio test report incl. EN 18031 cyber requirements, EMC, safety), technical file, Declaration of Conformity, labelling; decide whether Waveshare's own certifications help | Business owner + test lab | BLOCKER | importer/brand owner may carry manufacturer duties |
 | 9 | Battery: obtain the EEMB LP402535 datasheet, IEC 62133 and UN 38.3 reports, MSDS; battery producer registration | Business owner + supplier | BLOCKER | shipping lithium batteries needs UN 38.3 |

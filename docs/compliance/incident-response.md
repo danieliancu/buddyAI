@@ -30,7 +30,7 @@ In a small team one person can hold several roles. Keep a named deputy for the i
 2. **Assess.** What happened, which data, how many people, is it still going on?
 3. **Contain.** Use the actions below. Keep evidence: copy logs and the audit log before anything rotates or expires.
 4. **Decide on notification** (next section), and record the decision even if you do not notify.
-5. **Fix and recover.** Remove the cause. Restore if needed (`deploy/README.md` §8), including re-applying deletions (§8.5).
+5. **Fix and recover.** Remove the cause. Restore if needed (`deploy/README.md` §8), including re-applying deletions (§8.5). Backup copies are on the business owner's computer, and there is no off-site copy of recent deletions: if the server is lost, what customers deleted after the last copy comes back and must be handled by hand.
 6. **Review** within two weeks: cause, what worked, what changes. Update this plan.
 
 ## Containment actions
@@ -43,6 +43,7 @@ In a small team one person can hold several roles. Keep a named deputy for the i
 | Defective firmware | Pause the release on the Firmware page. A pause stops new offers; watches that already installed it stay on it, so publish a fixed, higher version |
 | Firmware signing key lost or leaked | Stop all rollouts. Follow `firmware/keys/README.md`. Treat as Critical: watches trust that key |
 | Database or backup exposed | Rotate credentials. Check the encryption status of what was exposed (see `backup-and-recovery.md`): the live database has no application-level encryption |
+| Computer or disk holding backup copies lost or stolen | Treat as Critical until you know the copies were encrypted and the key was not with them. Assess under the notification section below |
 | Watch token misuse | Revoke the watch from the operator app |
 
 ## Notifying the ICO

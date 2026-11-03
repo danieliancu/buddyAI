@@ -39,13 +39,13 @@ Ratings are proposals: likelihood × severity for the people affected.
 | Risk | Likelihood | Severity | Existing measures | Remaining | Further action |
 |---|---|---|---|---|---|
 | Staff read private conversations | Low | High | Metadata by default, one conversation at a time for the principal role only, reason and audit (`content-access-audit.md`) | Medium: whoever runs the server can reach the database | Limit who has server access; review the audit log regularly |
-| Database or backup stolen | Low | High | Password hashing, encrypted off-site backups when enabled | High until disk encryption and backups are confirmed | External actions #5, #6 |
+| Database or backup stolen | Low | High | Password hashing; encrypted backup copies on the business owner's computer | High until disk encryption and those copies are confirmed; a lost or stolen computer is a further route | External action #5; encrypt the computer's disk and keep the key apart from the copies |
 | Sensitive details sent to a processor abroad | Certain (by design) | Medium | `store=false`, disclosure | High until the DPA and transfer terms are signed | External action #2; check retention and ZDR |
 | Words of a third party stored | Likely | Medium | Owner can delete | Medium | Explain in the notice and guidance |
 | Someone else uses the watch or sees its screen | Possible | Medium | Per-watch settings | Medium | Consider a screen lock; explain in the manual |
 | Inaccurate memory affects answers | Possible | Low to medium | User can view, edit and forget | Low | None |
 | Children use the service | Possible | Medium | The notice says adults only; no age check | Medium | Review imagery and guidance |
-| Data returns after a restore | Low | Medium | Outbox, ledger, block on start (`backup-and-recovery.md`) | Low once the off-site copy is on | External action #6 |
+| Data returns after a restore | Low | Medium | Outbox, ledger, block on start (`backup-and-recovery.md`) | Medium: no off-site ledger, by decision; deletions after the last backup return if the whole server is lost | Handle by hand as an incident; adviser to review this accepted risk |
 | Data kept too long | Likely | Medium | Self-service deletion, retention job | Medium | Approve periods, external action #17 |
 | Malicious or defective firmware | Low | High | Signed release images, staged rollout, rollback | Medium until tested on watches and Secure Boot is on | External action #7 |
 

@@ -62,7 +62,7 @@ Respond **within one month**. It can be extended by two months for complex reque
 | Request | What to do |
 |---|---|
 | Access or copy | Show the customer "Download my data". If they cannot use it, help them; add anything held outside the app, such as support emails |
-| Deletion | The customer deletes in the account. Billing records stay for the tax period. Backups clear within 14 to 30 days |
+| Deletion | The customer deletes in the account. Billing records stay for the tax period. Backups, including the copies on the business owner's computer, clear within 14 days |
 | Correction | Profile page; anything else by hand |
 | Objection or restriction | Memory can be switched off; other requests go to the business owner |
 

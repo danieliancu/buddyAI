@@ -14,7 +14,7 @@ The periods below are **proposals that need business and legal approval**. They 
 | Diagnostics / incidents | `INCIDENT_RETENTION_DAYS` | 90 days | keep | `incidents/service.py` | existing |
 | Audit log | `AUDIT_RETENTION_DAYS` | 0 = keep | proposal: 2 years, longer for account-deletion records | retention job | `test_retention.py` |
 | Application logs | hosting/Docker log rotation | **not controlled by the application; not verified** | 30 days | Coolify / Docker log driver settings | — (external) |
-| Backups | `BACKUP_LOCAL_KEEP_DAYS`, `BACKUP_REMOTE_KEEP_DAYS` | 14 days local; 30 days off-site (when enabled) | keep | `deploy/backup/backup.sh` | Docker test |
+| Backups | `BACKUP_LOCAL_KEEP_DAYS` | 14 days on the server; encrypted copies on the business owner's computer also 14 days, deleted by the owner | keep | `deploy/backup/backup.sh`; the owner for their copies | Docker test (server only) |
 | Orders, subscriptions, top-ups, revenue, billing consents (incl. IP + user agent) | — | **kept after account deletion** | 6 years from the end of the financial year (UK tax records) — to confirm with an accountant; consider minimising IP/UA after the consent dispute window | not deleted | `test_account_deletion.py` (kept) |
 | Usage records | — | kept, unlinked from conversation content | as billing records | `delete_account`, history delete | existing |
 | OpenAI copies | provider | Chat Completions / Responses sent with `store=false`; abuse-monitoring retention per OpenAI terms (not verified) | per DPA | `providers/llm/openai.py` | `tests/test_openai_store.py` |
@@ -26,7 +26,7 @@ The periods below are **proposals that need business and legal approval**. They 
 2. Deletes conversations, memories (and embeddings/jobs), personas, notes/reminders, auth tokens, device settings, account-scope search cache, voice operations, usage notices; unpairs and revokes watches; anonymises the account row (`deleted-<id>@deleted.invalid`, name/password/country cleared).
 3. Writes `account.delete` to the audit log in the same transaction.
 4. Keeps billing records (above). Webhooks no longer email deleted accounts.
-Data remains in backups until they expire (14/30 days); after any restore, deletions made after the backup must be re-applied (deploy/README.md §8.5).
+Data remains in backups until they expire (14 days); after any restore, deletions made after the backup must be re-applied (deploy/README.md §8.5).
 
 ## Data subject requests
 

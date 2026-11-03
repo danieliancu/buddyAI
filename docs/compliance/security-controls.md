@@ -23,7 +23,7 @@ Status values: IMPLEMENTED_AND_VERIFIED · IMPLEMENTED_NOT_VERIFIED · PARTIALLY
 | Secrets handling | env / Coolify; provider keys may also be saved from the UI to `data/provider_keys.json` (plain JSON) | `config.py` | — | PARTIALLY_IMPLEMENTED | prefer env vars; restrict `serverdata` access; consider encrypting that file | Engineering |
 | Encryption at rest (database, volumes) | none in the application | — | — | NOT_IMPLEMENTED | VPS/volume encryption (provider) | Business owner |
 | Field-level encryption | not introduced: conversations/memories are searched and embedded (pgvector); would need key management, rotation, re-encryption | assessment | — | NOT_IMPLEMENTED (by decision) | revisit after DPIA | Engineering |
-| Backups | see backup-and-recovery.md | `deploy/backup/` | Docker tests | PARTIALLY_IMPLEMENTED | enable encryption/off-site | Business owner |
+| Backups | see backup-and-recovery.md | `deploy/backup/` | Docker tests | PARTIALLY_IMPLEMENTED | set `BACKUP_AGE_RECIPIENT`; owner keeps encrypted copies on their computer (decided 3 Nov 2026) | Business owner |
 | Firmware: signed OTA, rollback, https-only | release config | `sdkconfig.release`, `ota.c` | code review | IMPLEMENTED_NOT_VERIFIED | spare-unit tests | Engineering |
 | Firmware: Secure Boot, flash & NVS encryption, Secure Download Mode, JTAG off | `firmware/sdkconfig.production` (irreversible on first boot) | committed overlay, README §8 | none | NOT_IMPLEMENTED on units | spare-unit tests, then production | Engineering |
 | Firmware: OTA downgrade protection | not blocked (same version ignored only) | `protocol_client.c (`ota_available`)` | — | NOT_IMPLEMENTED (MEDIUM) | version check / anti-rollback | Engineering |

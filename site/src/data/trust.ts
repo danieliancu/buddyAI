@@ -208,8 +208,8 @@ export const items: Item[] = [
   {
     group: "data",
     status: "progress",
-    title: "Encrypted off-site backups",
-    text: "Keeping encrypted copies of our database backups in a separate location, which expire after 30 days.",
+    title: "Encrypted backup copies",
+    text: "Keeping an encrypted copy of our database backups on a separate device under our control, deleted after 14 days.",
   },
   {
     group: "data",

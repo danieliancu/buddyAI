@@ -93,7 +93,7 @@ export default function SystemPage() {
             <Row label="mDNS discovery">{i.mdns_enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge>}</Row>
             <Row label="Deletion ledger">
               {!i.deletion_ledger.enabled ? (
-                <Badge tone="warn">off-site copy off</Badge>
+                <Badge>no off-site copy</Badge>
               ) : i.deletion_ledger.oldest_pending_s > 900 ? (
                 <Badge tone="danger">{i.deletion_ledger.pending} waiting</Badge>
               ) : (
