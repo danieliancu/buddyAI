@@ -148,7 +148,11 @@ def test_webhook_signature(billing_on):
     assert bad.status_code == 400
 
 
-async def test_trial_ending_reminder_email(billing_on):
+async def test_trial_ending_reminder_email(billing_on, monkeypatch):
+    from app import care_terms
+
+    care_terms.clear_cache()
+    monkeypatch.setattr(care_terms, "_fetch_price", lambda _p: {"unit_amount": 799, "currency": "gbp", "recurring": {"interval": "month"}})
     addr = f"trial-{secrets.token_hex(3)}@example.com"
     cus, sub_id = f"cus_{secrets.token_hex(4)}", f"sub_{secrets.token_hex(4)}"
     with session_scope() as db:

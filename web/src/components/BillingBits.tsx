@@ -141,6 +141,7 @@ const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
   paid: { label: "Paid — preparing", tone: "accent" },
   shipped: { label: "Shipped", tone: "ok" },
   delivered: { label: "Delivered", tone: "neutral" },
+  partial_refund: { label: "Partly refunded", tone: "warn" },
   refunded: { label: "Refunded", tone: "warn" },
   cancelled: { label: "Cancelled", tone: "neutral" },
   payment_pending: { label: "Payment processing", tone: "warn" },

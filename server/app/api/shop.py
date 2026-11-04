@@ -270,7 +270,10 @@ async def update_order(order_id: int, body: OrderUpdate, request: Request, db: S
     order = db.get(Order, order_id)
     if not order:
         raise HTTPException(404, "order not found")
-    newly_shipped = body.status == "shipped" and order.status != "shipped"
+    if order.status == "refunded":  # final: a later "paid" would let this order start ola Care again
+        raise HTTPException(409, "this order was refunded")
+    # A partly refunded order that had already shipped goes back to "shipped" without a second email.
+    newly_shipped = body.status == "shipped" and order.status != "shipped" and not (order.status == "partial_refund" and order.shipped_at)
     order.status = body.status
     order.carrier, order.tracking_number = body.carrier, body.tracking_number
     if body.status == "shipped" and order.shipped_at is None:

@@ -149,6 +149,21 @@ def prune_deletion_events(_policy: RetentionPolicy, now: datetime) -> int:
     return deletion_log.prune(now)
 
 
+def prune_email_outbox(policy: RetentionPolicy, now: datetime) -> int:
+    """Finished outbox rows: nothing is left in them but the key that stopped duplicates (app/email_outbox.py)."""
+    from sqlalchemy import delete
+    from sqlmodel import col
+
+    from app.db.models import EmailOutbox
+    from app.email_outbox import KEEP_FINISHED
+
+    with session_scope() as db:
+        res = db.execute(delete(EmailOutbox).where(
+            col(EmailOutbox.status).in_(("sent", "gave_up")), col(EmailOutbox.created_at) < now - KEEP_FINISHED))
+        db.commit()
+        return res.rowcount or 0
+
+
 def _steps() -> list[tuple[str, Callable[[RetentionPolicy, datetime], int]]]:
     # looked up at call time (tests replace single steps)
     return [
@@ -157,6 +172,7 @@ def _steps() -> list[tuple[str, Callable[[RetentionPolicy, datetime], int]]]:
         ("conversations", prune_conversations),
         ("audit_log", prune_audit),
         ("deletion_events", prune_deletion_events),
+        ("email_outbox", prune_email_outbox),
     ]
 
 

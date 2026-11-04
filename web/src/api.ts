@@ -192,7 +192,7 @@ export interface Subscription extends SubscriptionInfo {
   updated_at: string;
 }
 
-export type OrderStatus = "paid" | "shipped" | "delivered" | "refunded" | "cancelled" | "payment_pending" | "payment_failed" | string;
+export type OrderStatus = "paid" | "shipped" | "delivered" | "partial_refund" | "refunded" | "cancelled" | "payment_pending" | "payment_failed" | string;
 
 export interface Order {
   id: number;
@@ -206,6 +206,8 @@ export interface Order {
   amount_total: number;
   amount_tax: number;
   amount_shipping: number;
+  /** Refunded so far, minor units. */
+  amount_refunded: number;
   status: OrderStatus;
   shipping_name: string;
   shipping_address: Record<string, unknown>;

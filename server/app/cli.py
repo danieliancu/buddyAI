@@ -8,6 +8,9 @@
     python -m app.cli enable-operator <username>
     python -m app.cli reconcile-deletions <ledger file or folder>... [--dry-run]   # after restoring a backup
     python -m app.cli reconcile-deletions --no-ledger   # no ledger exists: records that decision in the audit log
+    python -m app.cli price-change-notice --old-pence 799 --new-pence 899 --effective 2027-03-01 [--send]
+        # lists how many customers would be told; with --send, queues the emails for the running server to send.
+        # Changes nothing in Stripe: the new price is a separate step, in Stripe.
 
 Every change except create-operator signs the operator out everywhere (session_version) and is audited.
 """
@@ -18,11 +21,12 @@ import argparse
 import getpass
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from sqlmodel import Session
 
-from app import accounts, deletion_log
+from app import accounts, deletion_log, email_outbox
 from app.db.models import AdminUser
 from app.db.repositories import AdminRepo
 from app.db.session import run_migrations, session_scope
@@ -119,6 +123,22 @@ def _reconcile_deletions(db: Session, ledger: list[Path], dry_run: bool, no_ledg
     return 0
 
 
+def _price_change_notice(db: Session, old_pence: int, new_pence: int, effective: str, send: bool) -> None:
+    try:
+        day = datetime.strptime(effective, "%Y-%m-%d")
+    except ValueError:
+        raise OperatorError("--effective must be a date like 2027-03-01") from None
+    n = len(email_outbox.price_notice_recipients(db))
+    if not send:
+        print(f"Dry run: {n} customers would be told {old_pence}p -> {new_pence}p from {effective}. Add --send to queue the emails.")
+        return
+    try:
+        queued = email_outbox.queue_price_notice(db, old_pence, new_pence, day, "cli")
+    except ValueError as exc:
+        raise OperatorError(str(exc)) from None
+    print(f"{queued} emails queued ({n} customers). The running server sends them, up to 50 a minute. Stripe was not changed.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -135,13 +155,20 @@ def main() -> None:
     p.add_argument("ledger", nargs="*", type=Path)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--no-ledger", action="store_true")
+    p = sub.add_parser("price-change-notice")
+    p.add_argument("--old-pence", type=int, required=True)
+    p.add_argument("--new-pence", type=int, required=True)
+    p.add_argument("--effective", required=True, help="YYYY-MM-DD, at least 30 days from now")
+    p.add_argument("--send", action="store_true", help="queue the emails (without it: only count the customers)")
     args = parser.parse_args()
     run_migrations()
     with session_scope() as db:
         try:
             if args.cmd == "reconcile-deletions":
                 sys.exit(_reconcile_deletions(db, args.ledger, args.dry_run, args.no_ledger))
-            if args.cmd == "create-operator":
+            if args.cmd == "price-change-notice":
+                _price_change_notice(db, args.old_pence, args.new_pence, args.effective, args.send)
+            elif args.cmd == "create-operator":
                 if AdminRepo(db).get(args.username):
                     raise OperatorError(f"Operator {args.username!r} already exists.")
                 create_operator(db, args.username, _password(), args.role)

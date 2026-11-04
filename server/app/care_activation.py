@@ -15,6 +15,8 @@ Safety:
 - The `customer.subscription.*` webhook completes the row too (`complete_from_subscription`).
 - Eligibility is re-checked on each attempt: complimentary access, internal accounts and accounts that
   already had a Stripe subscription (trial used / already paying) get no new trial (`not_eligible`).
+  Nor does an order refunded in full: pairing or recovery must not start Care for a watch that went back. A newer
+  paid order starts it again. Care already running is never cancelled here (support procedures: manual).
 - A failure never reports an active plan: the row is `failed` with a short code, the watch stays paired,
   the customer can retry, and `recover()` retries with backoff (max MAX_AUTO_ATTEMPTS).
 Displayed plan status always comes from the Subscription rows that webhooks keep in sync.
@@ -44,7 +46,8 @@ MAX_AUTO_ATTEMPTS = 5
 RETRY_BASE = timedelta(minutes=5)
 RECOVER_INTERVAL_S = 300.0
 RECOVER_FIRST_DELAY_S = 60.0
-ELIGIBLE_ORDER_STATUSES = ("paid", "shipped", "delivered")
+ELIGIBLE_ORDER_STATUSES = ("paid", "shipped", "delivered", "partial_refund")  # a partial refund keeps the watch
+ORDER_REFUNDED = "order_refunded"
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -124,6 +127,41 @@ def ineligible_reason(db: Session, acc: Account | None) -> str | None:
     return None
 
 
+def order_refunded(db: Session, order: Order) -> None:
+    """A full refund: a trial that has not started will not start. Part of the caller's transaction. With another
+    paid watch order on the account the row stays: refund_block moves it to that order at the next attempt."""
+    if order.account_id is None:
+        return
+    row = db.exec(select(CareActivation).where(CareActivation.account_id == order.account_id)).first()
+    if row is None or row.order_id != order.id or row.status not in ("awaiting_pairing", "failed"):
+        return
+    if paid_watch_order(db, order.account_id) is None:
+        row.status, row.reason, row.next_retry_at, row.updated_at = "not_eligible", ORDER_REFUNDED, None, utcnow()
+        db.add(row)
+
+
+def refund_block(db: Session, row: CareActivation) -> str | None:
+    """Checked before every create (the refund may arrive after the row was claimed). Returns why this row must not
+    start Care, or None. If its order was refunded but another paid order exists, the row moves to that order's
+    consent and card."""
+    order = db.get(Order, row.order_id) if row.order_id else None
+    if order is None or order.status != "refunded":
+        return None
+    other = paid_watch_order(db, row.account_id)
+    if other is None:
+        return ORDER_REFUNDED
+    consent = db.exec(select(BillingConsent).where(BillingConsent.order_id == other.id,
+                                                   BillingConsent.status == "accepted")).first()
+    if consent is None or not consent.stripe_customer_id:
+        return "no_consent"
+    row.order_id, row.consent_id, row.stripe_customer_id = other.id, consent.id, consent.stripe_customer_id
+    row.payment_method_id, row.currency, row.updated_at = consent.stripe_payment_method_id, other.currency or row.currency, utcnow()
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return None
+
+
 # --- created by the paid-order webhook ------------------------------------------------------------------
 
 
@@ -150,8 +188,12 @@ def ensure_for_paid_order(
         db.commit()
         db.refresh(row)
         return row
-    if row.status in ("awaiting_pairing", "failed") and consented and customer:
-        # A second watch bought before the first was paired: use the newest card and consent.
+    bought_again = row.status == "not_eligible" and row.reason == ORDER_REFUNDED
+    if (row.status in ("awaiting_pairing", "failed") or bought_again) and consented and customer:
+        # A second watch bought before the first was paired, or after the first was refunded: use the newest
+        # card and consent.
+        if bought_again:
+            row.status, row.reason = "awaiting_pairing", ""
         row.order_id, row.consent_id, row.stripe_customer_id = order.id, consent.id, customer  # type: ignore[union-attr]
         row.payment_method_id, row.currency, row.updated_at = pm, order.currency or row.currency, utcnow()
         db.add(row)
@@ -255,7 +297,7 @@ def activate_sync(account_id: int, *, require_watch: bool = True) -> str:
             _adopt(db, row, existing)
             return row.status
         # 2. No new trial for complimentary, internal or trial-used accounts.
-        reason = ineligible_reason(db, db.get(Account, account_id))
+        reason = ineligible_reason(db, db.get(Account, account_id)) or refund_block(db, row)
         if reason:
             _finish(db, row, "not_eligible", reason=reason)
             return row.status

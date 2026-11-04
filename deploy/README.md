@@ -73,6 +73,8 @@ or copy it with `scp -r`.
   - check the data-residency options for EU customers.
 - **Email:** any SMTP provider works (Resend, Postmark, Amazon SES, Zoho…). Verify your domain with
   the provider (SPF/DKIM DNS records) so verification and order emails don't land in spam.
+- **`BUDDYAI_OPERATOR_ALERT_EMAIL`:** where Stripe disputes and refunds that need a manual step are
+  reported. Left empty, those alerts only reach the server log and the audit log.
 - **Stripe:** see section 6. You can leave it empty to launch with the shop closed.
 
 ## 5. Start
@@ -120,9 +122,12 @@ the watch is paired to the customer's account.
    - select the events:
      - `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`;
      - `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.trial_will_end`;
-     - `invoice.paid`, `invoice.payment_failed`;
+     - `invoice.paid`, `invoice.payment_failed`, `invoice.upcoming`;
      - `charge.refunded`;
-   - copy the signing secret into `BUDDYAI_STRIPE_WEBHOOK_SECRET`.
+     - `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed`, `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated`;
+   - copy the signing secret into `BUDDYAI_STRIPE_WEBHOOK_SECRET`;
+   - `invoice.upcoming` only fires if **Billing → Subscriptions → Upcoming renewal events** is on in the
+     Stripe dashboard. The number of days chosen there is when the renewal reminder goes out.
 8. Restart the server:
    `docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d server`.
 9. **Test purchase** (test card `4242 4242 4242 4242`, any future date, any CVC). On the website,

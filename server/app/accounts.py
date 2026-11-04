@@ -323,7 +323,7 @@ def delete_account(db: Session, account: Account, detail: str = "self-service", 
     first; if Stripe fails, app.billing.BillingError(502) is raised and nothing is deleted.
 
     Deleted: conversation history, notes/reminders, memories, personas, watch settings, sign-in tokens,
-    the account's private web-search cache, voice-change records and usage notices; name, email, password
+    the account's private web-search cache, voice-change records, usage notices and queued emails; name, email, password
     and country are erased (the row stays, anonymised, status "deleted").
 
     Kept (legal basis):
@@ -334,8 +334,8 @@ def delete_account(db: Session, account: Account, detail: str = "self-service", 
     - the audit log: accountability for actions on customer data (UK GDPR art. 5(2)).
     """
     from app import billing
-    from app.db.models import SearchCache, UsageNotice, VoiceOperation
-    from sqlalchemy import delete as sa_delete
+    from app.db.models import EmailOutbox, SearchCache, UsageNotice, VoiceOperation
+    from sqlalchemy import delete as sa_delete, or_
 
     lock_account(db, account.id)
     if cancel_stripe:
@@ -376,6 +376,7 @@ def delete_account(db: Session, account: Account, detail: str = "self-service", 
     db.execute(sa_delete(SearchCache).where(SearchCache.scope == f"account:{account.id}"))
     db.execute(sa_delete(VoiceOperation).where(VoiceOperation.account_id == account.id))
     db.execute(sa_delete(UsageNotice).where(UsageNotice.account_id == account.id))
+    db.execute(sa_delete(EmailOutbox).where(or_(EmailOutbox.account_id == account.id, EmailOutbox.to_addr == account.email)))
     # Audited in the same transaction (not with audit(), which commits on its own): the entry exists exactly
     # when the deletion does.
     db.add(AuditLog(actor=f"account:{account.id}", action="account.delete", account_id=account.id, detail=detail))

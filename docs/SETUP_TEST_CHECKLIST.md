@@ -6,7 +6,7 @@ firmware.
 
 ## A. Purchase (Stripe test mode)
 
-- [ ] Site buy box: £79.99 with £99.99 struck through and "Sale"; the ola Care sentence says the trial starts when the watch is paired and nothing is charged for it today.
+- [ ] Site buy box: £79.99, with no struck-through "was" price and no "Sale" label; the ola Care sentence says the trial starts when the watch is paired and nothing is charged for it today.
 - [ ] "Buy now" stays disabled until the ola Care terms box is ticked; the box shows the monthly price, trial length, start at pairing and how to cancel.
 - [ ] Stripe Checkout shows: the watch only (one-off), shipping, tax, the same ola Care terms by the Terms of Service checkbox, and the submit note ("ola Care is not charged today").
 - [ ] Pay with `4242 4242 4242 4242`. The thank-you page shows "Confirming your payment…", then "Payment confirmed". Open the thank-you URL with a made-up `session_id`: it must **not** claim success.
