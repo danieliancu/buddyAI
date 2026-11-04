@@ -78,8 +78,9 @@ async def lifespan(app: FastAPI):
     logging_redact.install()  # again: uvicorn has replaced its handlers by now
     retention_task = asyncio.create_task(retention.retention_loop(), name="retention")
     deletion_monitor = asyncio.create_task(deletion_log.monitor_loop(app.state.hub), name="deletion-ledger")
-    from app import ota_rollout
+    from app import email_outbox, ota_rollout
 
+    email_retry = asyncio.create_task(email_outbox.retry_loop(), name="email-outbox")
     ota_sweep = asyncio.create_task(ota_rollout.sweep_loop(app.state.hub), name="ota-rollout")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
@@ -106,6 +107,7 @@ async def lifespan(app: FastAPI):
     retention_task.cancel()
     deletion_monitor.cancel()
     ota_sweep.cancel()
+    email_retry.cancel()
     # ola Diagnostics: every live session is about to be closed by this shutdown - recorded as the cause, so
     # the watches' reports of the drop are grouped under a confirmed server-side event.
     from app.incidents.events import server_event

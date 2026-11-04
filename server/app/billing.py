@@ -13,7 +13,7 @@
 - Complimentary grants: operator-assigned pilot/test entitlements without any Stripe object.
 - Webhooks keep orders, subscriptions, top-ups, revenue and accounts in sync. Each event id is claimed
   before it is handled (a unique row), so concurrent or repeated deliveries run it once; a failed
-  handler releases the claim so Stripe's retry can apply it.
+  handler releases the claim so Stripe's retry can apply it. Their emails are durable (app/email_outbox.py).
 """
 
 from __future__ import annotations
@@ -25,14 +25,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 import stripe
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from app import accounts, care_activation, care_terms, email
+from app import accounts, care_activation, care_terms, email, email_outbox
 from app.account_lock import lock_account
 from app.config import get_settings
-from app.db.models import Account, BillingConsent, CareActivation, Order, RevenueEvent, StripeEvent, Subscription, TopUp, utcnow
+from app.db.models import (Account, AuditLog, BillingConsent, CareActivation, Order, RevenueEvent, StripeEvent, Subscription,
+                           TopUp, utcnow)
 from app.plan import get_plan
 
 log = logging.getLogger(__name__)
@@ -273,11 +274,12 @@ def cancel_all_for_account(db: Session, acc: Account) -> int:
 # --- webhook handling (plain dicts: testable without Stripe) --------------------------------------
 
 
-async def _send_to_customer(acc: Account | None, message: "email.Email") -> None:
-    """Webhook emails to the customer: never to a deleted account (late Stripe events still arrive)."""
+async def _send_to_customer(db: Session, acc: Account | None, message: "email.Email", key: str) -> None:
+    """Webhook emails to the customer: never to a deleted account (late Stripe events still arrive). Durable and
+    once per key (app/email_outbox.py)."""
     if acc is None or acc.status == "deleted":
         return
-    await email.send(message)
+    await email_outbox.send(db, message, key, acc.id)
 
 
 def _fetch_subscription(sub_id: str) -> dict[str, Any]:
@@ -386,8 +388,9 @@ async def _checkout_completed(db: Session, cs: dict[str, Any], fetch_subscriptio
     if acc.status == "deleted":
         return
     if new_account or acc.password_hash is None:
-        await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
-    await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency))
+        await _send_to_customer(db, acc, email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)), f"welcome:{order.id}")
+    await _send_to_customer(db, acc, email.order_confirmed(acc.email, order.id, order.amount_total, order.currency),
+                            f"order-confirmed:{order.id}")
 
 
 # --- watch-only sessions (card saved, ola Care started at pairing) ----------------------------------
@@ -507,9 +510,10 @@ async def _watch_order_paid(db: Session, cs: dict[str, Any], fetch_payment_inten
     if acc.status == "deleted":
         return
     if new_account or acc.password_hash is None:
-        await email.send(email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)))
+        await _send_to_customer(db, acc, email.welcome_set_password(acc.email, accounts.welcome_link(db, acc)), f"welcome:{order.id}")
     terms = consent.terms_text if consent is not None and consent.status == "accepted" else None
-    await email.send(email.order_confirmed(acc.email, order.id, order.amount_total, order.currency, terms))
+    await _send_to_customer(db, acc, email.order_confirmed(acc.email, order.id, order.amount_total, order.currency, terms),
+                            f"order-confirmed:{order.id}")
 
 
 async def _watch_order_failed(db: Session, cs: dict[str, Any]) -> None:
@@ -528,7 +532,7 @@ async def _watch_order_failed(db: Session, cs: dict[str, Any]) -> None:
         changed = result.rowcount == 1
     owner = db.get(Account, order.account_id) if order.account_id else None
     if changed and order.email and not (owner is not None and owner.status == "deleted"):
-        await email.send(email.order_payment_failed(order.email))
+        await email_outbox.send(db, email.order_payment_failed(order.email), f"order-failed:{order.id}", order.account_id)
 
 
 def _watch_session_expired(db: Session, cs: dict[str, Any]) -> None:
@@ -545,7 +549,7 @@ def checkout_status(db: Session, session_id: str) -> dict[str, Any]:
         known = db.exec(select(BillingConsent.id).where(BillingConsent.stripe_checkout_session_id == session_id)).first()
         return {"state": "processing" if known is not None else "unknown", "needs_password": False}
     state = {
-        "paid": "paid", "shipped": "paid", "delivered": "paid",
+        "paid": "paid", "shipped": "paid", "delivered": "paid", "partial_refund": "paid",
         "payment_pending": "processing", "payment_failed": "failed",
         "cancelled": "cancelled", "refunded": "cancelled",
     }.get(order.status, "unknown")
@@ -615,28 +619,197 @@ def _topup_failed(db: Session, cs: dict[str, Any]) -> None:
         db.commit()
 
 
-def _refund(db: Session, charge: dict[str, Any]) -> None:
-    intent = charge.get("payment_intent")
-    if not intent:
-        return
-    order = db.exec(select(Order).where(Order.stripe_payment_intent == intent)).first()
-    if order and charge.get("refunded"):
-        order.status = "refunded"
+def _id_of(value: Any) -> str | None:
+    """A Stripe reference: an id, or the object when the field was expanded."""
+    return value.get("id") if isinstance(value, dict) else value
+
+
+def _account_of_customer(db: Session, customer: str | None) -> int | None:
+    """Care charges name no order: their customer does. Kept on the account, the subscription or the activation."""
+    if not customer:
+        return None
+    found = db.exec(select(Account.id).where(Account.stripe_customer_id == customer)).first()
+    if found is None:
+        found = db.exec(select(Subscription.account_id).where(Subscription.stripe_customer_id == customer,
+                                                              col(Subscription.account_id).is_not(None))).first()
+    if found is not None:
+        return found
+    return db.exec(select(CareActivation.account_id).where(CareActivation.stripe_customer_id == customer)).first()
+
+
+def _refunded_so_far(db: Session, charge_id: str) -> int:
+    """What the revenue events already took off for this charge (positive), including the old `refund:<charge>` key."""
+    rows = db.exec(select(RevenueEvent.amount_pence).where(
+        or_(col(RevenueEvent.source_id) == f"refund:{charge_id}",
+            col(RevenueEvent.source_id).startswith(f"refund:{charge_id}:", autoescape=True)))).all()
+    return -sum(rows)
+
+
+async def _refund(db: Session, charge: dict[str, Any]) -> None:
+    """charge.refunded. Stripe's `amount_refunded` is the running total for the charge, so each event records the
+    part not recorded yet, under a key holding that total: a replay finds nothing new, and an older event that
+    arrives late (Stripe does not promise the order) neither. The account lock makes the read and the write one
+    step, and everything here lands in one commit, so a failed event can be applied again from the start."""
+    charge_id = str(charge.get("id") or "")
+    intent = _id_of(charge.get("payment_intent"))
+    order = db.exec(select(Order).where(Order.stripe_payment_intent == intent)).first() if intent else None
+    topup = db.exec(select(TopUp).where(TopUp.stripe_payment_intent == intent)).first() if intent else None
+    account_id = order.account_id if order else (topup.account_id if topup else None)
+    care_payment = not (order or topup)
+    if care_payment:
+        customer = _id_of(charge.get("customer"))
+        account_id = _account_of_customer(db, customer)
+        # Newer Stripe API versions have no charge.invoice: the known customer is what identifies a Care payment.
+        if account_id is None and not charge.get("invoice"):
+            log.warning("refund on charge %s: no order, top-up or known customer", charge_id)
+            accounts.audit(db, "system", "refund.unmatched", detail=f"charge {charge_id}: {charge.get('amount_refunded')} {charge.get('currency')}")
+            return
+    lock_account(db, account_id)  # held until the commit below
+    for row in (order, topup):
+        if row is not None:
+            db.refresh(row)
+    total = int(charge.get("amount_refunded") or 0)
+    full = bool(charge.get("refunded"))
+    currency = (charge.get("currency") or "gbp").lower()
+    new_amount = total - _refunded_so_far(db, charge_id)
+    now_refunded = False
+    if order:
+        order.amount_refunded = max(order.amount_refunded, total)
+        if full and order.status != "refunded":
+            order.status, now_refunded = "refunded", True
+            care_activation.order_refunded(db, order)
+        elif not full and total > 0 and order.status in ("paid", "shipped", "delivered"):
+            order.status = "partial_refund"
         db.add(order)
-        db.commit()
-    topup = db.exec(select(TopUp).where(TopUp.stripe_payment_intent == intent)).first()
-    if topup is not None:
-        lock_account(db, topup.account_id)
-        db.refresh(topup)
-    if topup and topup.status == "paid":
+    if topup and full and topup.status == "paid":
         # Policy: a refunded top-up's extra allowance is withdrawn for the period (docs/BILLING.md).
         topup.status, topup.refunded_at = "refunded", utcnow()
         db.add(topup)
+        db.add(AuditLog(actor="system", action="topup.refunded", account_id=topup.account_id, detail=f"top-up {topup.id}"))
+    row_ids: list[int | None] = []
+    if new_amount > 0:
+        db.add(RevenueEvent(source_id=f"refund:{charge_id}:{total}", account_id=account_id, kind="refund",
+                            amount_pence=-new_amount, tax_pence=0, currency=currency))
+        what = f"your ola order #{order.id}" if order else ("your ola extra usage" if topup else "your ola Care payment")
+        target = "order" if order else ("topup" if topup else "care")
+        db.add(AuditLog(actor="system", action=f"refund.{target}", account_id=account_id,
+                        detail=f"charge {charge_id}: {new_amount} {currency} ({total} so far, {'full' if full else 'partial'})"
+                        + (f", order {order.id}" if order else "")))
+        acc = db.get(Account, account_id) if account_id else None
+        if acc is not None and acc.status != "deleted":
+            row_ids.append(email_outbox.enqueue(
+                db, email.refund_confirmed(acc.email, new_amount, currency, what, total),
+                f"refund:{charge_id}:{total}", acc.id, commit=False))
+    if now_refunded:
+        row_ids.append(_care_still_running_alert(db, order))
+    try:
         db.commit()
-        accounts.audit(db, "system", "topup.refunded", topup.account_id, detail=f"top-up {topup.id}")
+    except IntegrityError:  # a concurrent delivery recorded this total
+        db.rollback()
+        return
+    for row_id in row_ids:
+        if row_id is not None:
+            await email_outbox.attempt(db, row_id)
+
+
+def _care_still_running_alert(db: Session, order: Order) -> int | None:
+    """A full refund does not touch the subscription: cancelling is manual (docs/compliance/support-procedures.md).
+    Tell the operator, so that the manual step is not forgotten."""
+    sub = active_subscription(db, order.account_id) if order.account_id else None
+    if sub is None or sub.source != "stripe" or not is_entitled(sub):
+        return None
+    detail = (f"Order {order.id} was refunded in full; account {order.account_id} still has ola Care ({sub.status}, "
+              f"{sub.stripe_subscription_id}). If they no longer have the watch, cancel Care in Stripe and tell them.")
+    db.add(AuditLog(actor="system", action="order.refunded_care_running", account_id=order.account_id, detail=detail))
+    return email_outbox.queue_operator_alert(db, f"refund-care:{order.id}", f"Order {order.id} refunded, ola Care still running", [detail])
+
+
+async def _dispute(db: Session, dispute: dict[str, Any], event: dict[str, Any]) -> None:
+    """charge.dispute.*: tell the operator and leave an audit record. Nothing is done to the money, the order or the
+    subscription: responding is the operator's decision, in Stripe, before the deadline."""
+    what = event["type"].removeprefix("charge.dispute.")
+    intent = _id_of(dispute.get("payment_intent"))
+    order = db.exec(select(Order).where(Order.stripe_payment_intent == intent)).first() if intent else None
+    topup = db.exec(select(TopUp).where(TopUp.stripe_payment_intent == intent)).first() if intent else None
     account_id = order.account_id if order else (topup.account_id if topup else None)
-    if order or topup:
-        _revenue(db, f"refund:{charge.get('id')}", account_id, "refund", -int(charge.get("amount_refunded") or 0), charge.get("currency") or "gbp")
+    amount = care_terms.money(int(dispute.get("amount") or 0), dispute.get("currency") or "gbp")
+    due = _ts((dispute.get("evidence_details") or {}).get("due_by"))
+    dispute_id = dispute.get("id")
+    lines = [
+        f"Stripe dispute {dispute_id}: {what}.",
+        f"Amount: {amount}. Status: {dispute.get('status')}. Reason: {dispute.get('reason')}.",
+        f"Evidence due by: {due:%d %B %Y, %H:%M} UTC." if due else "Evidence due by: not stated.",
+        f"Charge: {_id_of(dispute.get('charge'))}. Payment: {intent}.",
+        f"Order {order.id}, account {account_id}." if order else (
+            f"Top-up {topup.id}, account {account_id}." if topup else "No order or top-up matches: probably an ola Care payment."),
+        "Nothing was done automatically. Respond in the Stripe dashboard, under Disputes.",
+    ]
+    row_id = email_outbox.queue_operator_alert(db, f"dispute:{event['id']}", f"Stripe dispute {what}: {amount}, {dispute_id}", lines)
+    accounts.audit(db, "system", f"dispute.{what}"[:64], account_id, detail=" ".join(lines[:5]))  # commits the alert too
+    if row_id is not None:
+        await email_outbox.attempt(db, row_id)
+
+
+def _care_price_of(sub: dict[str, Any]) -> tuple[int, str, str]:
+    """(amount, currency, interval): the price on this subscription, which is what will be charged; if the event
+    does not carry it, the configured Care price (never a number typed in the code)."""
+    items = (sub.get("items") or {}).get("data") or []
+    price = (items[0].get("price") or {}) if items else {}
+    interval = (price.get("recurring") or {}).get("interval")
+    if price.get("unit_amount") is not None and interval:
+        return int(price["unit_amount"]), (price.get("currency") or "gbp").lower(), str(interval)
+    return care_activation._price_for((sub.get("currency") or "gbp").lower())
+
+
+async def _cancellation_email(db: Session, row: Subscription, sub: dict[str, Any], event: dict[str, Any]) -> None:
+    """One email per cancellation: when the subscription is set to cancel (the portal) or ends, whichever comes
+    first, whatever is repeated. Taking the cancellation back re-arms it, so a later new cancellation is told too;
+    a stale event, older than the email, does not."""
+    ended = row.status == "canceled"
+    ending = ended or (row.cancel_at_period_end and row.status in ("trialing", "active", "past_due", "unpaid"))
+    now = utcnow()
+    if not ending:
+        if row.cancel_notified_at is not None and (_ts(event.get("created")) or now) > _aware(row.cancel_notified_at):
+            row.cancel_notified_at = None
+            db.add(row)
+            db.commit()
+        return
+    acc = db.get(Account, row.account_id) if row.account_id else None
+    if acc is None or acc.status == "deleted":
+        return
+    claimed = db.exec(  # type: ignore[call-overload]
+        update(Subscription).where(col(Subscription.id) == row.id, col(Subscription.cancel_notified_at).is_(None)).values(cancel_notified_at=now)
+    )
+    if claimed.rowcount != 1:
+        db.commit()
+        return
+    when = (_ts(sub.get("ended_at")) or now) if ended else (_ts(sub.get("cancel_at")) or row.current_period_end or row.trial_end)
+    row_id = email_outbox.enqueue(db, email.care_cancelled(acc.email, when, ended), f"care-cancelled:{row.id}:{int(now.timestamp() * 1_000_000)}",
+                                  acc.id, commit=False)
+    db.commit()
+    if row_id is not None:
+        await email_outbox.attempt(db, row_id)
+
+
+async def _renewal_reminder(db: Session, inv: dict[str, Any], event: dict[str, Any]) -> None:
+    """invoice.upcoming: a reminder of a paid renewal. Trials have their own (trial_will_end), and a subscription
+    set to cancel will not renew."""
+    amount = int(inv.get("amount_due") or 0)
+    if amount <= 0:
+        return
+    sub_id = _id_of(inv.get("subscription") or ((inv.get("parent") or {}).get("subscription_details") or {}).get("subscription"))
+    row = db.exec(select(Subscription).where(Subscription.stripe_subscription_id == sub_id)).first() if sub_id else None
+    acc = db.exec(select(Account).where(Account.stripe_customer_id == inv.get("customer"))).first() if inv.get("customer") else None
+    if acc is None and row is not None and row.account_id:
+        acc = db.get(Account, row.account_id)
+    if acc is None or acc.status != "active":
+        return
+    row = row or active_subscription(db, acc.id)
+    if row is None or row.source != "stripe" or row.cancel_at_period_end or row.status not in ("active", "past_due"):
+        return
+    when = _ts(inv.get("next_payment_attempt")) or _ts(inv.get("period_end")) or row.current_period_end
+    key = f"renewal:{row.stripe_subscription_id}:{int(when.timestamp())}" if when else f"renewal:{event['id']}"
+    await _send_to_customer(db, acc, email.renewal_reminder(acc.email, amount, inv.get("currency") or "gbp", when), key)
 
 
 def _invoice_paid(db: Session, inv: dict[str, Any]) -> None:
@@ -740,16 +913,23 @@ async def _apply(
         care_activation.complete_from_subscription(db, obj)
         acc = db.get(Account, row.account_id) if row.account_id else None
         if acc and acc.status == "active" and not row.cancel_at_period_end:
-            await _send_to_customer(acc, email.trial_ending(acc.email, row.trial_end))
+            message = email.trial_ending(acc.email, row.trial_end, *_care_price_of(obj))
+            await _send_to_customer(db, acc, message, f"trial-ending:{row.stripe_subscription_id}:{int(obj.get('trial_end') or 0)}")
+        await _cancellation_email(db, row, obj, event)
     elif kind.startswith("customer.subscription."):
-        upsert_subscription(db, obj)
+        row = upsert_subscription(db, obj)
         care_activation.complete_from_subscription(db, obj)
+        await _cancellation_email(db, row, obj, event)
+    elif kind == "invoice.upcoming":
+        await _renewal_reminder(db, obj, event)
     elif kind == "invoice.payment_failed":
         acc = db.exec(select(Account).where(Account.stripe_customer_id == obj.get("customer"))).first()
         if acc:
-            await _send_to_customer(acc, email.payment_failed(acc.email))
+            await _send_to_customer(db, acc, email.payment_failed(acc.email), f"payment-failed:{event['id']}")
     elif kind == "charge.refunded":
-        _refund(db, obj)
+        await _refund(db, obj)
+    elif kind.startswith("charge.dispute."):
+        await _dispute(db, obj, event)
 
 
 # --- entitlement ------------------------------------------------------------------------------------

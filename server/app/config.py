@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     app_url: str = ""  # public URL of the customer app, used in email links (e.g. https://app.example.com)
     email_backend: str = "console"  # console | smtp
     email_from: str = "ola <no-reply@localhost>"
+    operator_alert_email: str = ""  # receives operator alerts (Stripe disputes, refunds needing a manual step)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
