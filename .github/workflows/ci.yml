@@ -1,0 +1,113 @@
+# Tests only: this workflow builds no firmware and deploys nothing (Coolify deploys by hand, deploy/README.md section 7).
+# It uses no secrets: AI, speech, search and Stripe are all mocked or faked in the tests, and no key exists here to
+# call a paid service with.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server tests (SQLite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: server
+    env:
+      BUDDYAI_MOCK_PROVIDERS: "true"
+      BUDDYAI_MDNS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # same as deploy/server.Dockerfile
+          cache: pip
+          cache-dependency-path: |
+            server/requirements.txt
+            server/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  server-postgres:
+    name: Server tests (PostgreSQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    env:
+      BUDDYAI_MOCK_PROVIDERS: "true"
+      BUDDYAI_MDNS_ENABLED: "false"
+      # A throw-away database: the tests drop and recreate its schema.
+      BUDDYAI_PG_TEST_URL: postgresql+psycopg://buddyai:test@localhost:55432/buddyai_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            server/requirements.txt
+            server/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      # Built here rather than as a job service, because a service can only start a ready-made image. This is the
+      # production database image: migration 0022 needs pgvector, which the plain postgres image does not have.
+      - name: Build the database image
+        working-directory: .
+        run: docker build -f deploy/postgres.Dockerfile -t buddyai-postgres-test deploy
+      - name: Start the database
+        run: |
+          docker run -d --name buddyai-pg-test -p 55432:5432 \
+            -e POSTGRES_USER=buddyai -e POSTGRES_PASSWORD=test -e POSTGRES_DB=buddyai_test \
+            buddyai-postgres-test
+          for _ in $(seq 1 60); do
+            # -h 127.0.0.1: the image's first start runs a temporary server on a socket only, then restarts.
+            docker exec buddyai-pg-test pg_isready -h 127.0.0.1 -U buddyai -d buddyai_test && exit 0
+            sleep 1
+          done
+          docker logs buddyai-pg-test
+          exit 1
+      - run: python -m pytest -q tests/pg
+
+  web:
+    name: Web app tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22" # same as deploy/server.Dockerfile
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run
+
+  site:
+    name: Site tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run

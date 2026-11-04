@@ -84,6 +84,13 @@ export default function SystemPage() {
         <SecurityCard />
         <Card title={<span className="inline-flex items-center gap-2"><Server className="size-4 text-accent" /> Server</span>}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <Row label="Commit">
+              {i.commit === "unknown" ? (
+                <Badge tone="warn">unknown</Badge>
+              ) : (
+                <code className="font-mono text-xs break-all select-all">{i.commit}</code>
+              )}
+            </Row>
             <Row label="Watch WebSocket URL (server_url)">
               <code className="font-mono text-xs break-all select-all">{i.device_ws_url}</code>
             </Row>
@@ -108,6 +115,18 @@ export default function SystemPage() {
                   Switch it with <code className="font-mono">BUDDYAI_AI_PROFILE</code> in <code className="font-mono">server/.env</code> (restart required).
                 </span>
               </span>
+            </Row>
+            <Row label="Search backend">
+              <code className="font-mono text-xs">{i.search_backend}</code>
+            </Row>
+            <Row label="Search categories on hosted search">
+              {i.search_backend !== "ddgs_brave" ? (
+                <span className="text-xs text-muted">Not used by this backend</span>
+              ) : i.search_legacy_categories.length ? (
+                <code className="font-mono text-xs break-all">{i.search_legacy_categories.join(", ")}</code>
+              ) : (
+                <span className="text-xs text-muted">None</span>
+              )}
             </Row>
           </dl>
         </Card>

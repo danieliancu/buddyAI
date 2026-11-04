@@ -15,7 +15,7 @@ from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import languages, usage_ops
+from app import languages, usage_ops, version
 from app.api import accounts_admin, auth, devices, finance, firmware, incidents, issues, live, me, shop, system, usage
 from app.api import audit as audit_api
 from app.api import memory as memory_api
@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="ola Server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="ola Server", version=version.VERSION, lifespan=lifespan)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -205,7 +205,8 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict:
-        return {"ok": True}
+        """Public on both hosts: which release and commit answer, nothing else (deploy/README.md, section 7.1)."""
+        return {"ok": True, "version": version.VERSION, "commit": version.commit()}
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:

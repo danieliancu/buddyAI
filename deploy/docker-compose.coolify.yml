@@ -23,6 +23,8 @@ services:
     build:
       context: .
       dockerfile: deploy/server.Dockerfile
+    # Do not use SOURCE_COMMIT as a variable anywhere in this file. Coolify would create an empty variable of that
+    # name and stop supplying the real commit (deploy/README.md section 7.1). It reaches the container by itself.
     restart: unless-stopped
     environment:
       BUDDYAI_DATABASE_URL: postgresql+psycopg://buddyai:${POSTGRES_PASSWORD}@postgres:5432/buddyai
