@@ -83,6 +83,9 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+# Software AES for TLS. Hardware AES needs a DMA-capable block of internal RAM for each record, and with the update
+# task's 8 KB stack there is not enough left: an https OTA failed with "esp-aes: Failed to allocate memory".
+# CONFIG_MBEDTLS_HARDWARE_AES is not set
 # Development only: allows http:// OTA URLs on a LAN server. Disable in M5
 # (production requires https + signature).
 CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
