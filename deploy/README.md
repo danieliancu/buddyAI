@@ -179,15 +179,178 @@ accountant before the first EU sale.
 
 ## 7. Updates
 
+**Take a database copy first, every time.** Migrations run automatically when the server starts, so a deploy
+can change the database before anyone has looked at the new version. Run one backup now and check that it
+says `backup ok` (§8):
+
+- Coolify: open the Terminal of the `backup` container and run `backup.sh`.
+- Plain Docker: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm backup backup.sh`
+
+**On Coolify, a push does not deploy.** The server keeps running the old code until someone presses **Deploy**
+on the resource. After that, confirm what is live (§7.1).
+
+On a plain Docker server:
+
 ```bash
 cd ~/buddyai && git pull
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+SOURCE_COMMIT=$(git rev-parse HEAD) docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
-
-Database migrations run automatically when the server starts.
 
 Firmware updates: build a signed release image (see `firmware/README.md`), upload it under
 **Admin → Firmware**, then send the OTA update to the watches.
+
+### 7.1 Which version is live
+
+`/healthz` is public on both hosts and gives the release number and the commit, nothing else:
+
+```bash
+curl -s https://api.olacompanion.com/healthz
+curl -s https://app.olacompanion.com/healthz
+# {"ok":true,"version":"0.1.0","commit":"<commit id>"}
+```
+
+The **System** page shows the same commit to operators, with the search backend. Other REST routes answer 404 on
+`api.olacompanion.com`; they are served only on `app.olacompanion.com`.
+
+The answer is `"commit":"unknown"` when no commit reached the container:
+
+- **Coolify:** by default it sets `SOURCE_COMMIT` in the running container from its generated `.env`, so no setting
+  is needed. If the answer is still `unknown`, set **Advanced > Build > Source commit availability** to **Available
+  during build** and deploy again; the Dockerfile then stores it in the image. This setting makes Coolify rebuild
+  every layer on each commit, so leave it off if the default works.
+- **Do not use `SOURCE_COMMIT` as a variable in `docker-compose.coolify.yml`, and do not add it in Coolify's
+  Environment Variables.** Coolify creates a variable for each name the compose file refers to, and it supplies the
+  real commit only when no variable of that name exists. If one has appeared, delete it.
+- **Plain Docker:** pass it as in §7.
+
+A commit older than this feature answers only `{"ok":true}`. After rolling back that far, use Coolify's deployment
+log to see which commit it deployed.
+
+### 7.2 Rolling back
+
+**This procedure has not been rehearsed**, on Coolify or on production. Do the first real one with care, and rehearse
+it on a test environment before selling. The migration behaviour below was checked on 4 November 2026 on a throw-away
+PostgreSQL, running the application code of commit `4e967e6` (database revision 0032) against a 0035 database: the
+migration steps, that commit's account, deletion and operator tests, and its writes to firmware and device rows.
+That check did not include Coolify, a real backup, watches or Stripe.
+
+Rolling back changes the code, the site and the compose file. It does not change the database, the environment
+variables in Coolify or anything in Stripe. Coolify's own documentation says the same of its rollback: it does not
+reverse migrations.
+
+#### Step 1: compare the database with the target commit
+
+Take a database copy (§7), then find both revisions:
+
+```bash
+# Terminal of the postgres container: what the database is at
+psql -U buddyai -d buddyai -Atc "select version_num from alembic_version"
+# On your computer: the newest migration in the commit you want
+git ls-tree --name-only <commit> server/migrations/versions/ | sort | tail -1
+```
+
+- **Same revision:** nothing to do for the database. Go to step 3.
+- **The target is older:** do step 2 first. **Otherwise the old server will not start.** It runs its migrations at
+  start, does not recognise the database's revision and stops with `Can't locate revision identified by '0035'`.
+- **The target is newer:** this is an ordinary update; its migrations run at start.
+
+#### Step 2: when the target commit is older than the database
+
+For 0033, 0034 and 0035, leave the changes in place and only change the recorded revision. All three have a
+downgrade, but it is not needed and it loses data.
+
+| Migration | What it did | Older code with it left in place | What its downgrade does |
+|---|---|---|---|
+| 0033 | Care display price 790 to 799 pence | Safe. Display only; Stripe sets the amount charged | Shows £7.90 again, while the site, terms and Stripe say £7.99 |
+| 0034 | New tables `deletion_events`, `deletion_reconcile_required` | Safe. Older code ignores them, but also records no deletion events (see below) | **Drops the deletion events**, including any not copied anywhere |
+| 0035 | New OTA columns with defaults, new table `device_ota` | Safe. Defaults fill the new columns; new releases stay at `development` | Drops the OTA history and the rollout settings of every release and watch |
+
+In the Terminal of the postgres container, set the revision just before starting the rollback, using the target
+commit's revision (here 0032, the commit before these migrations):
+
+```bash
+psql -U buddyai -d buddyai -c "update alembic_version set version_num='0032'"
+```
+
+The running server is not affected, because it reads this only at start. If it restarts before the rollback
+finishes, it stops with an "already exists" error and changes nothing; carry on with the rollback.
+
+**While on the older code:** customer deletions write no deletion events, so a later restore cannot re-apply them.
+Note the start and end of this period and treat deletions made during it by hand after any restore. Commits before
+`506f590` also have no automatic OTA and no restore block.
+
+**Going forward again:** first set the revision back to the newest one the database really has, then Deploy.
+Without this the new code tries to create tables and columns that already exist, and stops without changing anything.
+
+```bash
+psql -U buddyai -d buddyai -c "update alembic_version set version_num='0035'"
+```
+
+**Other migrations:** this table covers 0033 to 0035 only. For anything else, read the migration first. Leaving a
+change in place is unsafe if it dropped or renamed something older code uses, or added a required column with no
+default. Revision 0019 has an empty downgrade, 0020 and 0021 refuse to downgrade once their tables hold data, and
+from 0022 the database must stay on the pgvector image (`deploy/postgres.Dockerfile`).
+
+If a downgrade is really needed, save the deletion events first (§8.5, step 1), then run this in the Terminal of the
+**server** container, with the code that is newer, and roll back straight away. That code cannot work on the older
+schema, and if it restarts it migrates back up.
+
+```bash
+python -m alembic downgrade <revision>
+```
+
+#### Step 3: go back to the commit in Coolify
+
+1. Open the resource's **Rollback** tab, choose the image of the target commit and start the rollback. Only images
+   still on the server are listed, so keep some with **Image retention > Images to keep**. Coolify uses today's
+   environment variables with the old image: check that they suit it.
+2. If the image is gone, set the commit in the resource's Git settings and press **Deploy**. A Coolify pull request
+   (#9292) reports that some versions ignore this field and deploy the newest commit on the branch, so check the
+   deployment log and §7.1.
+3. If the field is ignored, push a branch at that commit and deploy it, then set the branch back to `master`
+   afterwards:
+
+   ```bash
+   git push origin <commit>:refs/heads/rollback-YYYYMMDD
+   ```
+
+On a plain Docker server: `git checkout <commit>`, then the `up -d --build` command from §7.
+
+Reverting the bad commit on `master` and deploying is often simpler for a small problem. If the revert removes a
+migration that has already run, step 2 applies in the same way.
+
+#### Step 4: confirm
+
+Check §7.1 on both hosts and watch the server log for a clean start. Then check an operator login and the
+System page, a customer login, the site, a watch reconnecting and answering one question, and `/readyz` through
+the container health status in Coolify.
+
+#### Last resort: restore a backup
+
+Use this only when the data itself is damaged, or when a migration cannot be undone safely. **Everything since the
+backup is lost:** orders, new accounts, conversations, notes, reminders, usage. Whatever customers deleted since the
+backup comes back until it is handled. Read §8.5 and `docs/compliance/backup-and-recovery.md` first.
+
+1. Stop the server, and if the old database is still readable, save its deletion events (§8.5, step 1). On Coolify,
+   use `docker stop` on the server container over SSH. Coolify's generated compose file is in
+   `/data/coolify/applications/<uuid>/`, for the `docker compose … run` commands in §8.5; check this on your server.
+2. The private key must not go on the server. On the computer holding it, decrypt the backup, then copy the plain
+   dump and its `.sha256` into the `backupdata` volume for this restore only. Delete them from the server straight
+   afterwards.
+3. In the Terminal of the `backup` container:
+
+   ```bash
+   restore.sh --target "postgresql://buddyai:$PGPASSWORD@postgres:5432/buddyai" --clean --force-production /backups/<file>.dump
+   ```
+
+4. Before the server starts, apply the deletions with `reconcile-deletions` (§8.5, step 3). **Use code from `506f590`
+   or later for this step:** older code has no such command and does not honour the block `restore.sh` leaves. If no
+   ledger and no old database exist, use `--no-ledger` and treat the undone deletions as a personal data incident
+   (`docs/compliance/incident-response.md`).
+5. Start the server. A backup from an older revision is migrated up at start. A backup at a newer revision than the
+   code needs step 2.
+6. Confirm as in step 4, then compare orders and subscriptions with the Stripe dashboard, since Stripe keeps its
+   own record of everything since the backup.
 
 ## 8. Backups and restore
 
