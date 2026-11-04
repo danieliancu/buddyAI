@@ -66,6 +66,7 @@ services:
       # Web search (server/README.md): legacy_openai = OpenAI hosted search; ddgs_brave = our own search, with the
       # categories in SEARCH_LEGACY_CATEGORIES still on hosted search. The Brave key can also go on the Providers page.
       BUDDYAI_SEARCH_BACKEND: ${BUDDYAI_SEARCH_BACKEND:-legacy_openai}
+      BUDDYAI_SEARCH_SAY_CHECKING: ${BUDDYAI_SEARCH_SAY_CHECKING:-true}
       BUDDYAI_BRAVE_API_KEY: ${BUDDYAI_BRAVE_API_KEY:-}
       BUDDYAI_BRAVE_MONTHLY_BUDGET_USD: ${BUDDYAI_BRAVE_MONTHLY_BUDGET_USD:-5}
       BUDDYAI_SEARCH_LEGACY_CATEGORIES: ${BUDDYAI_SEARCH_LEGACY_CATEGORIES-transport}
