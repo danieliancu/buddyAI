@@ -15,7 +15,7 @@ from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import languages, usage_ops
+from app import languages, usage_ops, version
 from app.api import accounts_admin, auth, devices, finance, firmware, incidents, issues, live, me, shop, system, usage
 from app.api import audit as audit_api
 from app.api import memory as memory_api
@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
         tools=AssistantTools(),
     )
 
+    if settings.search_backend == "ddgs_brave":
+        from app.websearch.extract import preload
+
+        app.state.search_preload = asyncio.create_task(asyncio.to_thread(preload), name="search-preload")
     reminders = asyncio.create_task(reminder_loop(app.state.hub), name="reminders")
     # Usage operations: queued settlements and expired leases (each process runs it; see app/usage_ops.py).
     usage_maint = asyncio.create_task(usage_ops.maintenance_loop(), name="usage-maintenance")
@@ -78,8 +82,9 @@ async def lifespan(app: FastAPI):
     logging_redact.install()  # again: uvicorn has replaced its handlers by now
     retention_task = asyncio.create_task(retention.retention_loop(), name="retention")
     deletion_monitor = asyncio.create_task(deletion_log.monitor_loop(app.state.hub), name="deletion-ledger")
-    from app import ota_rollout
+    from app import email_outbox, ota_rollout
 
+    email_retry = asyncio.create_task(email_outbox.retry_loop(), name="email-outbox")
     ota_sweep = asyncio.create_task(ota_rollout.sweep_loop(app.state.hub), name="ota-rollout")
 
     # Build the language detector in the background so the first "auto" turn doesn't wait for it.
@@ -106,6 +111,7 @@ async def lifespan(app: FastAPI):
     retention_task.cancel()
     deletion_monitor.cancel()
     ota_sweep.cancel()
+    email_retry.cancel()
     # ola Diagnostics: every live session is about to be closed by this shutdown - recorded as the cause, so
     # the watches' reports of the drop are grouped under a confirmed server-side event.
     from app.incidents.events import server_event
@@ -134,7 +140,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="ola Server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="ola Server", version=version.VERSION, lifespan=lifespan)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
@@ -199,7 +205,8 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict:
-        return {"ok": True}
+        """Public on both hosts: which release and commit answer, nothing else (deploy/README.md, section 7.1)."""
+        return {"ok": True, "version": version.VERSION, "commit": version.commit()}
 
     @app.get("/readyz")
     def readyz() -> JSONResponse:

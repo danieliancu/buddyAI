@@ -26,6 +26,11 @@ COPY --from=web /src/web/dist /app/web/dist
 RUN useradd --system --uid 10001 --home /app buddyai \
     && mkdir -p /data && chown buddyai /data \
     && rm -rf tests tools/make_samples.ps1 .env data
+# Which commit this image was built from, for /healthz and the System page (server/app/version.py). Coolify passes
+# SOURCE_COMMIT only if "Available during build" is chosen; by default the running container gets it instead.
+# Kept after the slow steps so that a new commit rebuilds only this layer.
+ARG SOURCE_COMMIT=unknown
+ENV BUDDYAI_BUILD_COMMIT=$SOURCE_COMMIT
 USER buddyai
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

@@ -24,7 +24,7 @@ Prepared 12 October 2026 from the site, the web app and `server/app/billing.py`.
 ## Open legal points
 
 1. **Digital content / service cancellation:** olácare is a service starting at pairing; how the 14-day right applies when the trial starts after delivery needs advice.
-2. **DMCC Act 2024 subscription contract rules** (reminder notices, easy exit, cooling-off for renewals): announced; **check the commencement date** before relying on or implementing them. Today the product sends a trial-end reminder and allows online cancellation.
+2. **DMCC Act 2024 subscription contract rules** (reminder notices, easy exit, cooling-off for renewals): announced; **check the commencement date** before relying on or implementing them. Today the product sends a trial-end reminder, a renewal reminder (`invoice.upcoming`, timing set in the Stripe dashboard) and a cancellation confirmation, and allows online cancellation. These emails state facts only; nobody has checked them against the Act, and their text is in `server/app/email.py`.
 3. **"Was" price** on the watch.
 4. **Pre-contract information**: size, weight and water resistance are still not published (the site says "before shipping").
 5. **Imagery showing children** vs the 18+ age limit in the privacy notice.

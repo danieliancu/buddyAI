@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     brave_max_requests_per_search: int = 2  # the paid fallback, per web_search call
     search_total_deadline_s: float = 12.0  # all searching of one turn (searches, pages, the answering call)
     search_give_up_s: float = 6.0  # per search: no new search or page wait after this; answer from what was found
+    search_say_checking: bool = True  # the model says "Let me check" before a search (false: silent until the answer)
     ddgs_request_timeout_s: float = 3.0
     brave_request_timeout_s: float = 4.0
     search_max_results_per_request: int = 8
@@ -83,6 +84,7 @@ class Settings(BaseSettings):
     app_url: str = ""  # public URL of the customer app, used in email links (e.g. https://app.example.com)
     email_backend: str = "console"  # console | smtp
     email_from: str = "ola <no-reply@localhost>"
+    operator_alert_email: str = ""  # receives operator alerts (Stripe disputes, refunds needing a manual step)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

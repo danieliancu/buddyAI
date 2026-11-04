@@ -90,6 +90,14 @@ class SemanticSpeechChunker:
             out += self._emit(len(self._buf))
         return out
 
+    def flush(self) -> list[str]:
+        """A long pause in the reply follows (a web search): say what is buffered now, however short. The audio will
+        have run out by the time the reply goes on, so the next fragment counts as a first one again."""
+        out = self.finish()
+        self._emitted = 0
+        self._last_input_ms = None
+        return out
+
     @property
     def pending(self) -> str:
         return self._buf

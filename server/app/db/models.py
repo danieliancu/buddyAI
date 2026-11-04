@@ -77,8 +77,9 @@ class Order(SQLModel, table=True):
     amount_total: int  # minor units (pence / cents), including tax and shipping
     amount_tax: int = 0
     amount_shipping: int = 0
-    # paid | shipped | delivered | refunded | cancelled | payment_pending | payment_failed (delayed methods)
+    # paid | shipped | delivered | partial_refund | refunded | cancelled | payment_pending | payment_failed
     status: str = Field(default="paid", max_length=16)
+    amount_refunded: int = 0  # minor units, Stripe's running total for the charge (stays after a later "shipped")
     shipping_name: str = Field(default="", max_length=200)
     shipping_address: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     country: Optional[str] = Field(default=None, max_length=2)
@@ -107,6 +108,7 @@ class Subscription(SQLModel, table=True):
     current_period_start: Optional[datetime] = None
     current_period_end: Optional[datetime] = None  # complimentary: the grant ends here
     cancel_at_period_end: bool = False
+    cancel_notified_at: Optional[datetime] = None  # the customer got the email for the current cancellation
     allowance_pence: Optional[int] = None  # complimentary grants: allowance per period (None = plan default)
     granted_by: Optional[str] = Field(default=None, max_length=80)
     note: str = Field(default="", max_length=200)
@@ -311,6 +313,26 @@ class AuthToken(SQLModel, table=True):
     token_hash: str = Field(index=True, max_length=64)
     expires_at: datetime
     used_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class EmailOutbox(SQLModel, table=True):
+    """Emails that must not be lost (webhook emails, operator alerts, price notices), app/email_outbox.py.
+    pending -> sent | gave_up; body and address are cleared when the row is finished."""
+
+    __tablename__ = "email_outbox"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dedupe_key: str = Field(index=True, unique=True, max_length=255)  # one email per key, whatever is replayed
+    account_id: Optional[int] = Field(default=None, index=True)
+    to_addr: str = Field(max_length=254)
+    subject: str = Field(max_length=255)
+    text_body: str = ""
+    html_body: Optional[str] = None
+    status: str = Field(default="pending", index=True, max_length=16)
+    attempts: int = 0
+    last_error: str = Field(default="", max_length=64)  # the exception type only, never its message
+    next_attempt_at: datetime = Field(default_factory=utcnow, index=True)
+    sent_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
 
 

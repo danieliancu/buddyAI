@@ -192,7 +192,7 @@ export interface Subscription extends SubscriptionInfo {
   updated_at: string;
 }
 
-export type OrderStatus = "paid" | "shipped" | "delivered" | "refunded" | "cancelled" | "payment_pending" | "payment_failed" | string;
+export type OrderStatus = "paid" | "shipped" | "delivered" | "partial_refund" | "refunded" | "cancelled" | "payment_pending" | "payment_failed" | string;
 
 export interface Order {
   id: number;
@@ -206,6 +206,8 @@ export interface Order {
   amount_total: number;
   amount_tax: number;
   amount_shipping: number;
+  /** Refunded so far, minor units. */
+  amount_refunded: number;
   status: OrderStatus;
   shipping_name: string;
   shipping_address: Record<string, unknown>;
@@ -697,11 +699,16 @@ export type AiProfile = "openai" | "qwen";
 
 export interface SystemInfo {
   version: string;
+  /** Git commit id of the running server, or "unknown". */
+  commit: string;
   device_ws_url: string;
   base_url: string;
   mdns_enabled: boolean;
   mock_providers: boolean;
   ai_profile?: AiProfile | string;
+  search_backend: string;
+  /** Categories still answered by hosted search; only used by the ddgs_brave backend. */
+  search_legacy_categories: string[];
   /** Deletion events waiting to be copied off-site (see deploy/README.md section 8.5). */
   deletion_ledger: { enabled: boolean; pending: number; oldest_pending_s: number };
   keys: Partial<Record<KeyName, string>>;

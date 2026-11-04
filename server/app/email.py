@@ -105,7 +105,8 @@ def get_sender() -> EmailSender:
 
 
 async def send(email: Email) -> None:
-    """Never raises: a failed email must not break the request that triggered it."""
+    """Never raises: a failed email must not break the request that triggered it, and it is lost. What must not be
+    lost goes through app/email_outbox.py."""
     try:
         await get_sender().send(email)
     except Exception:  # noqa: BLE001
@@ -297,16 +298,116 @@ def payment_failed(to: str) -> Email:
     )
 
 
-def trial_ending(to: str, trial_end) -> Email:
+def trial_ending(to: str, trial_end, amount_minor: int, currency: str, interval: str = "month") -> Email:
     when = trial_end.strftime("%d %B %Y") if trial_end else "in a few days"
-    body = (
+    price = f"{_money(amount_minor, currency)} per {interval}"
+    link = _app_link("/my/account")
+    cancel = ("Nothing to do if you want to keep your assistant. To cancel, go to Account > Manage subscription "
+              "before that date and you won't be charged.")
+    return Email(
+        to,
+        "Your ola Care free period ends soon",
         "Hi,\n\n"
-        f"Your free ola Care period ends on {when}. After that your subscription continues "
-        "at the monthly price shown when you bought your watch, charged to the card on file.\n\n"
-        "Nothing to do if you want to keep your assistant. To cancel, go to Account > Manage subscription "
-        "before that date and you won't be charged."
+        f"Your free ola Care period ends on {when}. After that your subscription continues at {price}, charged to "
+        f"the card on file, until you cancel.\n\n{cancel}\n{link}\n" + _footer(),
+        html=designed(
+            "Your free period ends soon",
+            f"Your free ola Care period ends on {when}. After that your subscription continues at {price}, until you "
+            "cancel.",
+            "Manage my subscription", link, cancel,
+            details=[("Free until", when), ("Then", price), ("Paid with", "The card on file")],
+        ),
     )
-    return Email(to, "Your ola Care free period ends soon", body + _footer())
+
+
+# Billing notices below. docs/compliance/consumer-rights.md keeps the legal rules for these open (DMCC Act): they
+# state facts only and make no claim about compliance. Each text lives in one place, here: change it freely.
+
+
+def renewal_reminder(to: str, amount_minor: int, currency: str, renews_on) -> Email:
+    when = renews_on.strftime("%d %B %Y") if renews_on else "your next renewal date"
+    amount = _money(amount_minor, currency)
+    link = _app_link("/my/account")
+    cancel = f"To cancel, go to Account > Manage subscription before {when} and you won't be charged again."
+    return Email(
+        to,
+        "Your ola Care subscription renews soon",
+        f"Hi,\n\nYour ola Care subscription renews on {when}. We'll charge {amount} to the card on file.\n\n"
+        f"Nothing to do if you want to keep it. {cancel}\n{link}\n" + _footer(),
+        html=designed(
+            "Your subscription renews soon",
+            f"Your ola Care subscription renews on {when}. We'll charge {amount} to the card on file.",
+            "Manage my subscription", link, f"Nothing to do if you want to keep it. {cancel}",
+            details=[("Renews on", when), ("Amount", amount), ("Paid with", "The card on file")],
+        ),
+    )
+
+
+def care_cancelled(to: str, ends_on, ended: bool) -> Email:
+    """ended: the subscription has stopped; otherwise it is set to stop on `ends_on` (cancelled in the portal)."""
+    when = ends_on.strftime("%d %B %Y") if ends_on else "the end of the current period"
+    link = _app_link("/my/account")
+    if ended:
+        title, intro, note = (
+            "Your ola Care subscription has ended",
+            f"Your ola Care subscription ended on {when}. You won't be charged for it again.",
+            "You can subscribe again at any time from your account.",
+        )
+    else:
+        title, intro, note = (
+            "Your ola Care subscription is cancelled",
+            f"Your ola Care subscription is cancelled. It keeps working until {when}, then it stops and you won't be "
+            "charged for it again.",
+            f"Changed your mind? Go to Account > Manage subscription before {when}.",
+        )
+    return Email(
+        to, title, f"Hi,\n\n{intro}\n\n{note}\n{link}\n" + _footer(),
+        html=designed(title, intro, "Open my ola account", link, note,
+                      details=[("Ended on" if ended else "Stops on", when)]),
+    )
+
+
+def refund_confirmed(to: str, amount_minor: int, currency: str, what: str, total_refunded_minor: int | None = None) -> Email:
+    """`what`: what the payment was for ("your ola order #12"). The total is shown from the second refund on."""
+    amount = _money(amount_minor, currency)
+    link = _app_link("/my/account")
+    timing = "It goes back to the card you paid with and usually appears within 5 to 10 working days, depending on your bank."
+    total = _money(total_refunded_minor, currency) if total_refunded_minor and total_refunded_minor != amount_minor else None
+    return Email(
+        to,
+        "Your ola refund",
+        f"Hi,\n\nWe've refunded {amount} for {what}.\n"
+        + (f"Refunded so far on this payment: {total}.\n" if total else "")
+        + f"\n{timing}" + _footer(),
+        html=designed(
+            "Your refund is on its way", f"We've refunded {amount} for {what}.", "Open my ola account", link, timing,
+            details=[("Refund", amount)] + ([("Refunded so far", total)] if total else []),
+        ),
+    )
+
+
+def care_price_change(to: str, old_minor: int, new_minor: int, currency: str, effective, interval: str = "month") -> Email:
+    when = effective.strftime("%d %B %Y")
+    old, new = f"{_money(old_minor, currency)} per {interval}", f"{_money(new_minor, currency)} per {interval}"
+    link = _app_link("/my/account")
+    cancel = f"If you don't want to continue at the new price, go to Account > Manage subscription before {when}."
+    return Email(
+        to,
+        "The price of ola Care is changing",
+        f"Hi,\n\nThe price of your ola Care subscription changes from {old} to {new}. The new price applies from "
+        f"{when}.\n\n{cancel}\n{link}\n" + _footer(),
+        html=designed(
+            "The price of ola Care is changing",
+            f"The price of your ola Care subscription changes from {old} to {new}. The new price applies from {when}.",
+            "Manage my subscription", link, cancel,
+            details=[("Now", old), ("From " + when, new)],
+        ),
+    )
+
+
+def operator_alert(to: str, subject: str, lines: list[str]) -> Email:
+    """For the operator, not a customer: plain text, ids only."""
+    return Email(to, f"[ola operator] {subject}", "\n".join(lines) + "\n")
 
 
 # --- designed (HTML) emails -----------------------------------------------------------------------

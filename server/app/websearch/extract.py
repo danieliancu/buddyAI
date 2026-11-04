@@ -76,6 +76,15 @@ _NOISE = re.compile(rb"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<svg
 PARSE_MAX_BYTES = 400_000  # parse time grows with the page; an article's text sits well within this
 
 
+def preload() -> None:
+    """The heavy imports of the search backend, done at server start (in a worker thread). Done at the first search
+    they cost seconds out of that search's budget: Trafilatura took about as long as the 2.5 s page timeout, so the
+    first page after a restart could fail and count against the site."""
+    import ddgs  # noqa: F401
+    import htmldate  # noqa: F401
+    import trafilatura  # noqa: F401
+
+
 def _trafilatura(html: bytes, url: str) -> tuple[str, str | None]:
     import trafilatura
     from htmldate import find_date

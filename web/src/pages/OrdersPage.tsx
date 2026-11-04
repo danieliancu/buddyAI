@@ -27,6 +27,7 @@ export default function OrdersPage() {
             <option value="paid">Paid (to ship)</option>
             <option value="shipped">Shipped</option>
             <option value="delivered">Delivered</option>
+            <option value="partial_refund">Partly refunded</option>
             <option value="refunded">Refunded</option>
             <option value="cancelled">Cancelled</option>
           </Select>
@@ -75,7 +76,10 @@ export default function OrdersPage() {
                     {o.shipping_name && <span className="block text-xs text-muted">{o.shipping_name}</span>}
                   </td>
                   <td>{o.country ?? "—"}</td>
-                  <td className="tabular text-right">{fmtMinor(o.amount_total, o.currency)}</td>
+                  <td className="tabular text-right">
+                    {fmtMinor(o.amount_total, o.currency)}
+                    {o.amount_refunded > 0 && <span className="block text-xs text-muted">{fmtMinor(o.amount_refunded, o.currency)} refunded</span>}
+                  </td>
                   <td>
                     <OrderStatusBadge status={o.status} operator />
                   </td>
@@ -125,7 +129,9 @@ export function OrderDialog({ order, onClose, onSaved }: { order: Order | null; 
 
   useEffect(() => {
     if (!order) return;
-    setStatus(order.status === "paid" ? "shipped" : (order.status as OrderUpdate["status"]));
+    // A partly refunded order goes back to where its delivery is.
+    const current = order.status !== "partial_refund" ? order.status : order.delivered_at ? "delivered" : order.shipped_at ? "shipped" : "paid";
+    setStatus(current === "paid" ? "shipped" : (current as OrderUpdate["status"]));
     setCarrier(order.carrier);
     setTracking(order.tracking_number);
     setError(null);

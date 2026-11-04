@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_check.h"
@@ -59,6 +60,7 @@ static const char *TAG = "proto";
 #define WS_BUFFER_SIZE          4096
 #define MAX_TEXT_MSG            (32 * 1024)
 #define MAX_CANDIDATES          4
+#define PROTO_QUEUE_LEN         1024    /* in PSRAM: a stalled proto task must not lose what the server sends */
 
 /* ------------------------------------------------------------------------- */
 /* Messages to the proto task                                                 */
@@ -673,8 +675,11 @@ static void send_settings_changes(void)
 /* Keep one uplink packet for a resend (chat turns). Caller holds s_turn_lock. */
 static void up_append(const uint8_t *opus, size_t len)
 {
-    if (!s_up_buf || s_up_overflow || s_turn_note) {
+    if (!s_up_buf || s_up_overflow) {
         return;
+    }
+    if (s_turn_note && s_up_sent == s_up_len) {
+        s_up_len = s_up_sent = 0;   /* a note is not sent again after a drop, and may be longer than the buffer */
     }
     if (s_up_len + 2 + len > UP_BUF_SIZE) {
         s_up_overflow = true;   /* too long to send again: a drop now can only resume the answer */
@@ -762,6 +767,28 @@ static void uplink_pump(size_t max)
     }
 }
 
+/* Proto task: send everything still waiting, before an end of speech that would otherwise overtake it. Each send may
+ * wait UPLINK_SEND_TIMEOUT_MS at most, and a packet that does not go out ends this. */
+static void uplink_drain(void)
+{
+    for (;;) {
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        const size_t before = s_up_sent;
+        const bool waiting = s_up_sent < s_up_len;
+        xSemaphoreGive(s_turn_lock);
+        if (!waiting) {
+            return;
+        }
+        uplink_pump(UPLINK_PUMP_PACKETS);
+        xSemaphoreTake(s_turn_lock, portMAX_DELAY);
+        const bool moved = s_up_sent != before;
+        xSemaphoreGive(s_turn_lock);
+        if (!moved) {
+            return;
+        }
+    }
+}
+
 static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
 {
     if (turn_id != s_capture_turn || !s_turn_live || s_conv != PROTO_CONV_LISTENING || len > 1500) {
@@ -769,9 +796,9 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
     }
     xSemaphoreTake(s_turn_lock, portMAX_DELAY);
     up_append(opus, len);
-    /* Kept in the buffer: uplink_pump (or the replay) sends it. Not kept (a note's audio, a question past the buffer):
+    /* Kept in the buffer: uplink_pump (or the replay) sends it. Not kept (past the buffer):
      * sent from here, with a short timeout because this is the audio task. */
-    const bool kept = s_up_buf && !s_turn_note && !s_up_overflow;
+    const bool kept = s_up_buf && !s_up_overflow;
     const bool direct = !kept && !s_bursting;
     const bool wake = kept && !s_up_posted;
     s_up_posted = s_up_posted || wake;
@@ -896,6 +923,7 @@ static void note_close(bool keep)
     s_note_open = false;
     if (s_turn_note && s_turn_live && s_conv == PROTO_CONV_LISTENING) {
         if (keep) {
+            uplink_drain();     /* the sentence's last words may still wait in the buffer */
             send_turn_msg("listen_end", s_active_turn, NULL);  /* the server finishes the sentence */
         } else {
             abort_turn("user_tap");
@@ -2365,7 +2393,7 @@ esp_err_t proto_init(const proto_config_t *cfg)
     memset(&s_rtc, 0, sizeof(s_rtc));
     diag_rtc_seal(&s_rtc);
     ESP_LOGI(TAG, "reset reason: %s", reset_reason_str(esp_reset_reason()));
-    s_q = xQueueCreate(32, sizeof(msg_t));
+    s_q = xQueueCreateWithCaps(PROTO_QUEUE_LEN, sizeof(msg_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_send_lock = xSemaphoreCreateMutex();
     s_turn_lock = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_q && s_send_lock && s_turn_lock, ESP_ERR_NO_MEM, TAG, "rtos objs");

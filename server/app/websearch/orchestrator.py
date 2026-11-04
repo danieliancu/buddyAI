@@ -51,6 +51,7 @@ TIME_SENSITIVE = {"weather", "transport", "sport", "news"}
 BRAVE_FIRST = {"sport", "news", "transport", "business"}
 ANSWER_RESERVE_S = 2.5  # time kept back for the answering call
 MIN_ROUND_S = 0.8  # below this, no new search request is started
+MIN_ANSWER_S = 0.5  # below this, no answering call is started: it could not finish before the deadline
 WEATHER_TIMEOUT_S = 3.0  # geocoding (cached after the first time) + forecast
 PLACE_TIMEOUT_S = 1.0  # is the asked place abroad (cached after the first time)
 PAGE_GRACE_S = 0.5  # after the first page with text, how long the others still get
@@ -58,6 +59,11 @@ _MONTHS = ("january|february|march|april|may|june|july|august|september|october|
            "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec")
 _DATEISH = re.compile(rf"(?i)\b(?:\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{_MONTHS})|(?:{_MONTHS})\s+\d{{1,2}}(?:st|nd|rd|th)?|"
                       rf"(?:{_MONTHS})|20\d\d(?:[-/]\d\d)?|\d{{1,2}}[./-]\d{{1,2}}(?:[./-]\d{{2,4}})?)\b")
+# Sport: a question about a result (not the next match or the table) also gets the plain "<team> result" wording.
+_RESULT_ASK = re.compile(r"(?i)\b(?:results?|scores?)\b|\b(?:latest|last)\s+(?:match|game)\b")
+_NOT_RESULT = re.compile(r"(?i)\b(?:next|upcoming|fixtures?|table|standings?|position)\b")
+_RESULT_WORDS = re.compile(r"(?i)\b(?:latest|last|recent|most|match|game|results?|scores?|final|today|yesterday|"
+                           r"tonight|what|was|is|the)\b")
 _CATEGORY_HINT = {"weather": "forecast", "sport": "BBC Sport", "news": "news", "transport": "live", "business": "official site"}
 
 EVIDENCE_RULES = (
@@ -68,11 +74,19 @@ EVIDENCE_RULES = (
     "A price is the full price to buy it outright, not a monthly instalment or contract price, unless the "
     "query asks for those. A population or other statistic is the official figure (census or national "
     "statistics office) with its year; give an estimate or a metro-area figure only as such, and only "
-    "when no official figure is in the results.\n"
+    "when no official figure is in the results. "
+    "An address, opening hours or a phone number belong only to the place the result names. When the query names "
+    "one particular kind of store or branch (Tesco Extra) and a result names a different one (Tesco Express), never "
+    "give that result's details as the asked one's. If the asked one's own details are in the results, answer with "
+    "those. If not, give the other one's details, say clearly that they are for that other store and that you could "
+    "not find the asked one, and set other_place to true, with the asked store's name and street as next_query (its "
+    "name and town if the results do not mention the street). A query that names only the chain (Tesco Chelmsford) "
+    "is answered by any of its stores, saying which.\n"
     'Reply with one JSON object only: {"answer": "<the answer as described above, or NOT_FOUND>", '
     '"conflict": <true if sources disagree on the asked fact>, '
-    '"next_query": "<only with NOT_FOUND: a different short English web search phrase likely to find it, '
-    'without dates, places or details the query does not imply; else empty>"}'
+    '"other_place": <true only if the answer is about another store than the one asked for, as described above>, '
+    '"next_query": "<only with NOT_FOUND or other_place: a different short English web search phrase likely to find '
+    'it, without dates, places or details the query does not imply; else empty>"}'
 )
 
 # A request for the news in general ("UK news today"): any recent story is the answer, not one exact fact.
@@ -131,6 +145,10 @@ def query_variants(query: str, location: str, category: str) -> list[str]:
     hint = _CATEGORY_HINT.get(category)
     if hint and hint.casefold() not in base.casefold():
         out.append(f"{base} {hint}")
+    if category == "sport" and _RESULT_ASK.search(base) and not _NOT_RESULT.search(base):
+        team = re.sub(r"\s+", " ", _RESULT_WORDS.sub(" ", base)).strip()
+        if team:
+            out.append(f"{team} result")
     if category == "business" and re.search(r"(?i)\bopening hours\b", base):
         out.append(re.sub(r"(?i)\bopening hours\b", "opening times", base))
     if category == "news" and "bbc" not in base.casefold():
@@ -147,21 +165,27 @@ def query_variants(query: str, location: str, category: str) -> list[str]:
     return unique
 
 
+def _json_reply(text: str) -> dict | None:
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        return None
+    try:
+        d = json.loads(m.group(0))
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
 def parse_answer(text: str) -> tuple[str, bool, str]:
     """(answer or "", conflict, next_query) from the answering model's JSON; plain text is taken as the answer."""
     raw = text.strip()
-    m = re.search(r"\{.*\}", raw, re.S)
-    if m:
-        try:
-            d = json.loads(m.group(0))
-        except ValueError:
-            d = None
-        if isinstance(d, dict):
-            answer = str(d.get("answer") or "").strip()
-            nxt = str(d.get("next_query") or "").strip()[:200]
-            if NOT_FOUND in answer.upper() and sum(ch.isalnum() for ch in answer.replace(NOT_FOUND, "")) < 8:
-                answer = NOT_FOUND
-            return answer[:600], bool(d.get("conflict")), nxt
+    d = _json_reply(raw)
+    if d is not None:
+        answer = str(d.get("answer") or "").strip()
+        nxt = str(d.get("next_query") or "").strip()[:200]
+        if NOT_FOUND in answer.upper() and sum(ch.isalnum() for ch in answer.replace(NOT_FOUND, "")) < 8:
+            answer = NOT_FOUND
+        return answer[:600], bool(d.get("conflict")), nxt
     return raw[:600], False, ""
 
 
@@ -188,6 +212,7 @@ class TurnSearch:
         self.llm_provider, self.llm_model = llm_provider, llm_model
         self.deadline: float | None = None
         self.give_up_at: float | None = None
+        self.other_place = ""  # this search's answer about another store: used only if nothing better turns up
 
     def remaining(self) -> float:
         return 0.0 if self.deadline is None else self.deadline - self.o.clock()
@@ -204,6 +229,7 @@ class TurnSearch:
             self.deadline = o.clock() + cfg.total_deadline_s
         started = o.clock()
         self.give_up_at = started + cfg.give_up_s if cfg.give_up_s > 0 else None
+        self.other_place = ""
         n: Counter = Counter()
         tokens = Counter()
         try:
@@ -396,7 +422,7 @@ class TurnSearch:
             # The passages of a page are chosen by the words of both wordings (the page may be in either language)
             read = await self._read(ranked, f"{query} {local_query}".strip(), per_page, n)
             for r in read:
-                r.relevance += 0.2
+                r.relevance += 0.0 if evidence.needs_javascript(r.url) else 0.2  # a shell page's text is no better
             for r in [*new, *read]:  # a page read in place of a failed one joins the evidence too
                 pool[evidence.norm_url(r.url)] = r
             if asked and not read:
@@ -408,16 +434,17 @@ class TurnSearch:
             if suggestion:
                 for p in ("ddgs", "brave"):
                     pending[p].appendleft(suggestion)
-        return "", False
+        return self.other_place, False  # never cached (False): a repeat may well find the store that was asked for
 
     async def _read(self, ranked: list[SearchResult], query: str, per_page: int, n: Counter) -> list[SearchResult]:
-        """Page text for up to max_sources of `ranked`, best first: a failed page is replaced by the next result,
+        """Page text for up to max_sources of `ranked`, best first (pages that need JavaScript last: their snippets
+        still count, but a download rarely adds text): a failed page is replaced by the next result,
         sites the extractor is avoiding are passed over, and after the first page with text the rest get only
         PAGE_GRACE_S. All of it, replacements included, within one page timeout (extraction_timeout_s), so a
         replacement never waits out a second timeout. Returns the pages read; the others keep their snippets."""
         o, cfg = self.o, self.o.config
         queue: deque[SearchResult] = deque()
-        for r in ranked:
+        for r in sorted(ranked, key=lambda r: evidence.needs_javascript(r.url)):
             if r.extraction == "full":
                 continue  # structured data has nothing to download
             if o.extractor.skip(r.domain):
@@ -475,12 +502,15 @@ class TurnSearch:
 
     async def _answer(self, query: str, location: str, sources: list[SearchResult], tokens: Counter,
                       n: Counter, category: str = "") -> tuple[str, bool, str]:
+        timeout = self.remaining()  # never past the turn's deadline
+        if timeout < MIN_ANSWER_S:
+            log.info("search answer call skipped: %.1f s left", timeout)
+            return "", False, ""
         system = f"{search_instructions(self.tz, evidence=True)}\n{EVIDENCE_RULES}"
         where = f"\nThe user's area: {location}." if location else ""
         ask = NEWS_ASK if category == "news" and _GENERAL_NEWS.search(query) else ""
         user = f"Query: {query}{where}{ask}\n\n{evidence.package(sources, self.tz)}"
         n["llm_calls"] += 1
-        timeout = max(2.0, self.remaining())
         try:
             text, tin, cached, tout = await asyncio.wait_for(self.answer_fn(system, user), timeout)
         except asyncio.TimeoutError:
@@ -489,4 +519,9 @@ class TurnSearch:
         tokens["in"] += max(0, tin - cached)
         tokens["cached"] += cached
         tokens["out"] += tout
-        return parse_answer(text)
+        answer, conflict, suggestion = parse_answer(text)
+        if answer and answer != NOT_FOUND and (_json_reply(text) or {}).get("other_place"):
+            # Another store than the one asked for: keep it for the end, and go on looking for the right one.
+            self.other_place = self.other_place or answer
+            return "", False, suggestion
+        return answer, conflict, suggestion

@@ -26,7 +26,7 @@ from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app import notes_edit, reminder_edit
-from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_TOOL, WebSearch, search_instructions
+from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_SAY_CHECKING, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.spoken import for_speech
 from app import edit_texts
@@ -44,7 +44,15 @@ from app.voice_tools import (
     execute_confirmation,
     resolve_line_matches,
 )
-from app.pipeline.display_tag import ASK_RULE, DISPLAY_RULE, DisplayTagFilter, asks_for_value, echoes_question, guess_value
+from app.pipeline.display_tag import (
+    ASK_RULE,
+    DISPLAY_RULE,
+    DisplayTagFilter,
+    RepeatFilter,
+    asks_for_value,
+    echoes_question,
+    guess_value,
+)
 from app.pipeline.metrics import mono_ms
 from app.pipeline.turn import TurnContext, TurnIO, TurnResult
 from app.pipeline.turn_end import looks_unfinished
@@ -90,6 +98,8 @@ SILENCE_SEND_MS = 240
 SEARCH_NOTE_CHARS = 350  # search answer kept with a turn for the history
 HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
+SPEAK_NOW = ""  # in the reply's text queue: a long pause follows, say what is buffered (never real text: empty)
+SPEAKING_KEEPALIVE_S = 8.0  # how often the watch hears that the reply goes on while a search runs after "Let me check"
 MAX_TOOL_ROUNDS = 5  # LLM calls that may end in tool calls; the next one gets no tools and must answer (3 finds + a delete fit)
 NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
 NOTE_SENTENCE_S = 30  # note mode: the longest sentence
@@ -563,6 +573,8 @@ class ConversationPipeline:
         if extra_msgs and messages:
             messages = [*messages[:-1], *extra_msgs, messages[-1]]
         extra_rules = [SEARCH_RULE_SERVER if backend == "ddgs_brave" else SEARCH_RULE] if searcher else []
+        if searcher and getattr(router_settings(self.router), "search_say_checking", True):
+            extra_rules.append(SEARCH_SAY_CHECKING)
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
         if extra_rules and messages and messages[0]["role"] == "system":
@@ -589,17 +601,36 @@ class ConversationPipeline:
                 await io.send(turn, "llm_text", delta=caption)
             await deltas.put(delta)
 
+        async def keep_speaking() -> None:
+            """The watch ends a "speaking" turn 20 s after its last news (SPEAKING_IDLE_MS; 45 s while "thinking"): while
+            a search runs after a spoken "Let me check", tell it the reply is still coming."""
+            while True:
+                await asyncio.sleep(SPEAKING_KEEPALIVE_S)
+                if started:
+                    await io.send(turn, "state", state="speaking")
+
         async def pump_llm() -> None:
             turn.marks.llm_request = mono_ms()
             usage_in = usage_cached = usage_out = searches = 0
             nonlocal tools_used
             msgs = list(messages)
+            said = ""  # spoken before a search ("Let me check."): not to be repeated after it
+
+            async def say(delta: str, round_no: int, round_text: list[str]) -> None:
+                if turn.marks.llm_first_token is None:
+                    turn.marks.llm_first_token = mono_ms()
+                if round_no and not round_text and reply_parts and not reply_parts[-1].endswith(" "):
+                    delta = " " + delta  # text after a tool call continues the same reply
+                round_text.append(delta)
+                await emit_text(delta)
+
             try:
                 for round_no in range(MAX_TOOL_ROUNDS + 1):
                     last = round_no == MAX_TOOL_ROUNDS
                     req = replace(request, messages=msgs, tools=None if last else tool_defs)
                     calls: list[ToolCall] | None = None
                     round_text: list[str] = []
+                    repeat = RepeatFilter(said)
                     async for chunk in llm.stream(req):
                         had_value = display.value is not None
                         delta = display.feed(chunk.delta) if chunk.delta else ""
@@ -610,13 +641,9 @@ class ConversationPipeline:
                             and not echoes_question(display.value, turn.user_text)
                         ):
                             await io.send(turn, "llm_display", text=display.value)  # e.g. "21°C", shown large
+                        delta = repeat.feed(delta) if delta else ""
                         if delta:
-                            if turn.marks.llm_first_token is None:
-                                turn.marks.llm_first_token = mono_ms()
-                            if round_no and not round_text and reply_parts and not reply_parts[-1].endswith(" "):
-                                delta = " " + delta  # text after a tool call continues the same reply
-                            round_text.append(delta)
-                            await emit_text(delta)
+                            await say(delta, round_no, round_text)
                         if chunk.input_tokens is not None:
                             usage_in += chunk.input_tokens
                             usage_cached += min(chunk.cached_input_tokens, chunk.input_tokens)
@@ -624,8 +651,19 @@ class ConversationPipeline:
                             searches += chunk.web_searches
                         if chunk.tool_calls:
                             calls = chunk.tool_calls
+                    held = repeat.flush()
+                    if held:
+                        await say(held, round_no, round_text)
                     if not calls or not tool_defs or last:
                         break
+                    searching = any(c.name == SEARCH_TOOL["name"] for c in calls)
+                    if searching and round_text:
+                        # Said before a search: heard now, not after it, and the answer may start with its own tag.
+                        held = display.restart()
+                        if held:
+                            await say(held, round_no, round_text)
+                        said = f"{said} {''.join(round_text)}".strip()
+                        await deltas.put(SPEAK_NOW)
                     msgs.append(
                         {
                             "role": "assistant",
@@ -638,10 +676,15 @@ class ConversationPipeline:
                     )
                     # notes / reminders / settings: no large value on screen (a search answer may have one)
                     tools_used = tools_used or any(c.name != SEARCH_TOOL["name"] for c in calls)
-                    for c in calls:
-                        msgs.append(
-                            {"role": "tool", "tool_call_id": c.id, "content": await self._run_tool(turn, c)}
-                        )
+                    keep_alive = asyncio.create_task(keep_speaking()) if searching and said else None
+                    try:
+                        for c in calls:
+                            msgs.append(
+                                {"role": "tool", "tool_call_id": c.id, "content": await self._run_tool(turn, c)}
+                            )
+                    finally:
+                        if keep_alive is not None:
+                            keep_alive.cancel()
                 rest = display.flush()
                 if rest:
                     await emit_text(rest)
@@ -668,6 +711,8 @@ class ConversationPipeline:
                     else:
                         if delta is None:
                             out, finished = chunker.finish(), True
+                        elif delta == SPEAK_NOW:
+                            out = chunker.flush()
                         else:
                             out = chunker.feed(delta, mono_ms())
                     for frag in out:
