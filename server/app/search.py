@@ -17,7 +17,8 @@ answer is cached:
 
 Two backends (setting search_backend), both behind the same tool, cache and result format:
 
-- ddgs_brave (app/websearch): the server searches itself - DDGS first, Brave as fallback - and keeps
+- ddgs_brave (app/websearch): the server searches itself - Brave first for live topics, DDGS first for the rest with
+  Brave as fallback (transport can stay on hosted search: search_legacy_categories) - and keeps
   reformulating until the evidence answers the question or the deadline (search_total_deadline_s, shared by
   the turn) is reached. There is no fixed number of searches; the model is told the server already retried,
   so it does not spend LLM rounds retrying. The same query twice in a turn returns the first result.
@@ -105,6 +106,14 @@ SEARCH_RULE = (
     "upcoming one - search once more for the next one, or say you could not find it. "
     "If a search finds nothing reliable you may search once more with a broader or different wording; if that "
     "finds nothing either, say briefly that you couldn't find it - never guess."
+)
+
+# The conversation model says this before a search, so the user hears something while it runs (pipeline: _reply).
+SEARCH_SAY_CHECKING = (
+    "When you call web_search, write one very short phrase in the language of your reply before the call, in the same "
+    "response (e.g. 'Let me check.'): only that, with no facts, no guess at the answer and no [[value]] tag. Say it at "
+    "most once in a reply, and never without calling web_search. After the search result, start directly with the "
+    "answer (with its [[value]] tag when it has one)."
 )
 
 SEARCH_LEAD = "Search the web and answer"

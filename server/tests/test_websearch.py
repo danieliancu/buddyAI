@@ -19,11 +19,15 @@ from app.db.session import session_scope
 from app.providers.llm.base import LLMChunk, LLMProvider, LLMRequest, ToolCall
 from app.search import NOT_FOUND, SEARCH_RULE_SERVER, WebSearch
 from app.websearch import budget, evidence
+from app.websearch import extract as extract_module
 from app.websearch.extract import ContentExtractor, select_passages
 from app.websearch.fetch import FetchRefused, PageFetcher, check_url, public_ip
 from app.websearch.orchestrator import STATS, SearchConfig, SearchOrchestrator, parse_answer, query_variants
 from app.websearch.providers import BraveSearchProvider, CircuitBreaker
 from app.websearch.types import SearchError, SearchResult
+
+# The first import of Trafilatura takes seconds: not inside a test's page budget (the server does this at start too).
+extract_module.preload()
 
 # --- fakes ------------------------------------------------------------------------------------------------
 
@@ -514,7 +518,9 @@ class ScriptedFetcher:
         return url, item
 
 
-async def test_sites_that_refuse_us_or_keep_timing_out_are_skipped_for_a_while():
+async def test_sites_that_refuse_us_or_keep_timing_out_are_skipped_for_a_while(monkeypatch):
+    # the page parser is not what is tested here, and must not take part in the real page budget
+    monkeypatch.setattr(extract_module, "_trafilatura", lambda html, url: ("Romania beat Austria 2-1 in Bucharest on Sunday.", None))
     clock = Clock()
     blocked, slow, flaky = "https://shop.example.com/p", "https://slow.example.com/a", "https://flaky.example.com/a"
     fetcher = ScriptedFetcher({blocked: FetchRefused("http 403"), slow: TimeoutError(), flaky: TimeoutError()})
@@ -579,12 +585,20 @@ async def test_failed_pages_are_replaced_and_avoided_sites_passed_over():
     assert seen[0][1].count("Page text:") == 1
 
 
-async def test_once_a_page_arrives_the_slow_ones_get_only_a_grace_period():
+async def test_once_a_page_arrives_the_slow_ones_get_only_a_grace_period(monkeypatch):
     rows = _five()
     extractor = PagesExtractor(hang={r.url for r in rows[1:]})
-    start = asyncio.get_running_loop().time()
-    answer, *_, usage = await run(orch(FakeProvider("ddgs", rows), extractor=extractor), answers(ANSWER)[0], category="other")
-    assert answer.startswith("Romania beat") and asyncio.get_running_loop().time() - start < 2  # not 2.5 s per page
+    waits = []
+    real_wait = asyncio.wait
+
+    async def wait(tasks, *, timeout=None, return_when=asyncio.ALL_COMPLETED):
+        waits.append(timeout)
+        return await real_wait(tasks, timeout=timeout, return_when=return_when)
+
+    monkeypatch.setattr(asyncio, "wait", wait)
+    answer, *_ = await run(orch(FakeProvider("ddgs", rows), extractor=extractor), answers(ANSWER)[0], category="other")
+    # what is waited for, not how long it took on this machine (the wall clock made this test depend on the load)
+    assert answer.startswith("Romania beat") and waits == [2.5, 0.5]
 
 
 ARTICLE = """<html><head><title>Romania beat Austria</title>
@@ -598,10 +612,10 @@ ARTICLE = """<html><head><title>Romania beat Austria</title>
 
 async def test_trafilatura_extracts_main_text_and_the_page_date_only():
     r = R("Romania beat Austria", "snippet", url="https://news.example.com/romania")
-    out = await ContentExtractor(PageFetcherStub(ARTICLE)).extract(r, "Romania Austria result", 2000)
+    out = await ContentExtractor(PageFetcherStub(ARTICLE), timeout_s=60).extract(r, "Romania Austria result", 2000)
     assert out.extraction == "full" and "2-1" in out.text and "Cookie policy" not in out.text
     assert out.published_at == "2026-10-12"
-    undated = await ContentExtractor(PageFetcherStub(ARTICLE.replace(b'<meta property="article:published_time" content="2026-10-12T21:00:00+00:00">', b""))).extract(
+    undated = await ContentExtractor(PageFetcherStub(ARTICLE.replace(b'<meta property="article:published_time" content="2026-10-12T21:00:00+00:00">', b"")), timeout_s=60).extract(
         R("t", "s", url="https://news.example.com/b"), "Romania Austria result", 2000)
     assert undated.published_at is None  # never the retrieval time
 
@@ -1210,3 +1224,389 @@ async def test_the_local_wording_reaches_the_search():
     args = json.dumps({"query": f"league table {uuid.uuid4().hex}", "local_query": "clasament SuperLiga", "category": "other"})
     await web.run(args, account_id=None, device_id="d", tz="UTC", language="en", default_location="")
     assert got["local_query"] == "clasament SuperLiga"
+
+
+def test_search_imports_are_done_at_server_start(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+    from app.main import create_app
+
+    monkeypatch.setattr(get_settings(), "search_backend", "ddgs_brave")
+    app = create_app()
+    with TestClient(app):
+        assert app.state.search_preload.get_name() == "search-preload"
+
+
+# --- A4: "Let me check" spoken right away, and only once ---------------------------------------------------------------
+
+
+class _WaitsToBeHeard(FakeProvider):
+    """A search that only finishes once `heard` is set, whatever the machine's speed: without the phrase reaching the
+    voice before the search ends, the test fails on its timeout instead of depending on a sleep."""
+
+    def __init__(self, heard: asyncio.Event, *script):
+        super().__init__("ddgs", *script)
+        self.heard = heard
+
+    async def search(self, query, **kw):
+        await asyncio.wait_for(self.heard.wait(), 20)
+        return await super().search(query, **kw)
+
+
+class _SaysItFirst(LLMProvider):
+    """Round by round: (text pieces, a web_search query or None)."""
+
+    name = "openai"
+
+    def __init__(self, *rounds):
+        self.rounds = list(rounds)
+        self.requests = []
+
+    async def stream(self, request):
+        self.requests.append(request)
+        pieces, query = self.rounds[min(len(self.requests) - 1, len(self.rounds) - 1)]
+        for piece in pieces:
+            yield LLMChunk(delta=piece)
+        yield LLMChunk(input_tokens=10, output_tokens=1)
+        if query:
+            args = json.dumps({"query": query, "category": "other"})
+            yield LLMChunk(tool_calls=[ToolCall(f"c{len(self.requests)}", "web_search", args)])
+
+
+_CHECK_PAGE = [R("Chelmsford temperature today", "Chelmsford temperature today 14°C cloudy", "https://www.metoffice.gov.uk/x")]
+
+
+def _speaking_pipeline(monkeypatch, llm, ddgs, on_fragment, **settings):
+    from types import SimpleNamespace as NS
+
+    import app.websearch.service as service
+    from app.providers.mock import MockTTS
+    from tests.test_cost_optimisation import SearchRouter, _pipeline
+
+    class Tts(MockTTS):
+        async def stream(self, text_chunks, request):
+            async def heard():
+                async for text in text_chunks:
+                    on_fragment(text)
+                    yield text
+
+            async for pcm in super().stream(heard(), request):
+                yield pcm
+
+    monkeypatch.setattr(service, "get_orchestrator", lambda s: orch(ddgs))
+    monkeypatch.setattr(SearchRouter, "settings", NS(search_backend="ddgs_brave", **settings), raising=False)
+    monkeypatch.setattr(SearchRouter, "llm_default", lambda self: (_AnswerLLM(), "mini"), raising=False)
+    monkeypatch.setattr(SearchRouter, "tts", lambda self, language, s: NS(provider=Tts(first_audio_s=0), voice="v", instructions=None))
+    return _pipeline(llm)
+
+
+def _say_io():
+    from types import SimpleNamespace as NS
+
+    sent = []
+
+    async def send(turn, type_, **fields):
+        sent.append((type_, fields))
+        return True
+
+    return sent, NS(send=send, send_audio=_noop_audio)
+
+
+def test_let_me_check_is_heard_before_the_search_ends_and_only_once(monkeypatch):
+    from tests.test_cost_optimisation import _account, _turn
+
+    _clear_cache()
+
+    async def scenario():
+        heard = asyncio.Event()
+        spoken = []
+
+        def on_fragment(text):
+            spoken.append(text)
+            heard.set()
+
+        llm = _SaysItFirst((["Let", " me", " check."], "chelmsford temperature today"),
+                           (["[[14°C]] ", "Let me check. ", "It's 14 degrees and cloudy."], None))
+        pipeline = _speaking_pipeline(monkeypatch, llm, _WaitsToBeHeard(heard, _CHECK_PAGE), on_fragment)
+        turn = _turn(_account(), "how warm is it")
+        sent, io = _say_io()
+        await pipeline._reply(turn, io)
+        return spoken, turn, sent, llm
+
+    spoken, turn, sent, llm = asyncio.run(scenario())
+    # "Let me check." is shorter than the chunker's first fragment: without the flush it would wait for the answer
+    assert spoken[0] == "Let me check."
+    assert " ".join(spoken).casefold().count("let me check") == 1
+    assert turn.assistant_text == "Let me check. It's 14 degrees and cloudy."
+    assert "[[" not in " ".join(spoken) and "14°C" not in " ".join(spoken)  # the tag after the phrase is still a tag
+    assert ("llm_display", {"text": "14°C"}) in sent
+    assert llm.requests[1].messages[-2]["content"] == "Let me check."  # stays with the call in the model's history
+
+
+def test_let_me_check_is_said_once_over_two_searches(monkeypatch):
+    from tests.test_cost_optimisation import _account, _turn
+
+    _clear_cache()
+    spoken = []
+    ddgs = FakeProvider("ddgs", _CHECK_PAGE)
+    llm = _SaysItFirst((["Let me check."], "chelmsford temperature today"),
+                       (["Let me check."], "chelmsford temperature today cloudy"),
+                       (["It's 14 degrees."], None))
+    pipeline = _speaking_pipeline(monkeypatch, llm, ddgs, spoken.append)
+    turn = _turn(_account(), "how warm is it")
+    asyncio.run(pipeline._reply(turn, _say_io()[1]))
+    assert len(ddgs.queries) == 2 and spoken == ["Let me check.", "It's 14 degrees."]
+
+
+def test_the_search_rule_asks_for_the_phrase_and_a_setting_switches_it_off(monkeypatch):
+    from app.search import SEARCH_SAY_CHECKING
+    from tests.test_cost_optimisation import _account, _turn
+
+    assert "Let me check" in SEARCH_SAY_CHECKING and "at most once" in SEARCH_SAY_CHECKING
+    for setting, expected in ((True, True), (False, False)):
+        _clear_cache()
+        llm = _SaysItFirst((["It's 14 degrees."], None))
+        pipeline = _speaking_pipeline(monkeypatch, llm, FakeProvider("ddgs", _CHECK_PAGE), lambda text: None, search_say_checking=setting)
+        asyncio.run(pipeline._reply(_turn(_account(), "how warm is it"), _say_io()[1]))
+        assert (SEARCH_SAY_CHECKING in llm.requests[0].messages[0]["content"]) is expected
+
+
+def test_a_reply_without_a_search_is_not_changed(monkeypatch):
+    from tests.test_cost_optimisation import _account, _turn
+
+    spoken = []
+    llm = _SaysItFirst((["[[4]] ", "Four."], None))
+    pipeline = _speaking_pipeline(monkeypatch, llm, FakeProvider("ddgs", _CHECK_PAGE), spoken.append)
+    turn = _turn(_account(), "two plus two")
+    sent, io = _say_io()
+    asyncio.run(pipeline._reply(turn, io))
+    assert spoken == ["Four."] and ("llm_display", {"text": "4"}) in sent
+
+
+def test_the_watch_keeps_waiting_while_the_search_runs_after_the_phrase(monkeypatch):
+    import app.pipeline.conversation as conversation
+    from tests.test_cost_optimisation import _account, _turn
+
+    _clear_cache()
+    monkeypatch.setattr(conversation, "SPEAKING_KEEPALIVE_S", 0.01)
+
+    async def scenario():
+        told = asyncio.Event()
+        sent = []
+
+        async def send(turn, type_, **fields):
+            sent.append((type_, fields))
+            if sum(1 for t, f in sent if t == "state" and f.get("state") == "speaking") >= 2:
+                told.set()
+            return True
+
+        from types import SimpleNamespace as NS
+
+        llm = _SaysItFirst((["Let me check."], "chelmsford temperature today"), (["It's 14 degrees."], None))
+        pipeline = _speaking_pipeline(monkeypatch, llm, _WaitsToBeHeard(told, _CHECK_PAGE), lambda text: None)
+        await pipeline._reply(_turn(_account(), "how warm is it"), NS(send=send, send_audio=_noop_audio))
+        return sent
+
+    sent = asyncio.run(scenario())
+    # sent again during the search, and no more than the first "speaking" of the audio once the keep-alive has stopped
+    assert sum(1 for t, f in sent if t == "state" and f.get("state") == "speaking") >= 2
+    assert sent[-1][0] == "tts_end"
+
+
+def test_a_short_phrase_can_be_flushed_and_the_next_fragment_counts_as_first():
+    from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker
+
+    chunker = SemanticSpeechChunker("en", ChunkerConfig())
+    assert chunker.feed("Let me check.", 0) == []  # too short to be a first fragment on its own
+    assert chunker.flush() == ["Let me check."] and chunker.next_deadline_ms() is None
+    assert chunker.feed("It's fourteen degrees now, and cloudy. More", 10) == ["It's fourteen degrees now,"]  # a first fragment again
+
+
+@pytest.mark.parametrize("pieces, expected", [
+    (["Let me check. It's 14."], "It's 14."),
+    (["Let", " me", " check", ".", " ", "It's", " 14."], "It's 14."),
+    (["let me check... ", "It's 14."], "It's 14."),
+    (["Let me checking it."], "Let me checking it."),
+    (["Let me see. It's 14."], "Let me see. It's 14."),
+    (["It's 14."], "It's 14."),
+    (["Let me"], "Let me"),
+    (["Let me check."], ""),
+])
+def test_only_a_repeat_of_what_was_said_is_dropped(pieces, expected):
+    from app.pipeline.display_tag import RepeatFilter
+
+    f = RepeatFilter("Let me check.")
+    assert "".join(f.feed(p) for p in pieces) + f.flush() == expected
+    nothing_said = RepeatFilter("")
+    assert "".join(nothing_said.feed(p) for p in pieces) + nothing_said.flush() == "".join(pieces)
+
+
+# --- B4: pages that need JavaScript are downloaded last ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://tfl.gov.uk/tube-dlr-overground/status/", True),
+    ("https://www.tfl.gov.uk/tube-dlr-overground/status", True),
+    ("https://www.tesco.com/store-locator/chelmsford/princes-road", True),
+    ("https://www.example.co.uk/storefinder/", True),
+    ("https://www.example.com/find-a-store", True),
+    ("https://tfl.gov.uk/modes/elizabeth-line/", False),
+    ("https://www.ikea.com/gb/en/stores/lakeside/", False),
+    ("https://www.bbc.co.uk/news/status-of-women", False),
+    ("https://www.example.com/shop-local-news", False),
+])
+def test_pages_that_need_javascript_are_recognised(url, expected):
+    assert evidence.needs_javascript(url) is expected
+
+
+async def test_a_page_that_needs_javascript_is_downloaded_last():
+    status = R("Elizabeth line status now", "Elizabeth line status now", "https://tfl.gov.uk/tube-dlr-overground/status/")
+    article = R("Elizabeth line status now: delays", "Elizabeth line status: minor delays reported now", "https://example.org/elizabeth")
+    extractor = PagesExtractor()
+    fn, seen = answers({"answer": "Minor delays."})
+    await run(orch(FakeProvider("ddgs", [status, article]), extractor=extractor, max_sources=1), fn,
+              query="Elizabeth line status now", category="other")
+    assert extractor.urls == [article.url]  # first in the ranking (a public body), and still not worth the only download
+
+
+async def test_a_page_that_needs_javascript_still_counts_for_its_snippet():
+    hours = "Address: Princes Road, Chelmsford. Opening hours: Mon 06:00-00:00"
+    local = R("Tesco Extra Chelmsford opening hours", hours, "https://www.tesco.com/store-locator/chelmsford/princes-road")
+    extractor = PagesExtractor()
+    fn, seen = answers({"answer": "6am to midnight."})
+    answer, *_ = await run(orch(FakeProvider("ddgs", OFF), FakeProvider("brave", [local]), extractor=extractor), fn,
+                           query="Tesco Extra Chelmsford opening hours", category="business")
+    assert answer == "6am to midnight." and hours in seen[0][1] and extractor.urls == []
+
+
+async def test_a_page_that_needs_javascript_is_read_if_it_is_all_there_is_without_a_bonus():
+    only = R("Elizabeth line status now", "Elizabeth line status now", "https://tfl.gov.uk/tube-dlr-overground/status/")
+    extractor = PagesExtractor()
+    fn, seen = answers({"answer": "Good service."})
+    answer, *_ = await run(orch(FakeProvider("ddgs", [only]), extractor=extractor), fn, query="Elizabeth line status now", category="other")
+    assert answer == "Good service." and extractor.urls == [only.url]
+
+
+# --- B5: "<team> result" ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("query, wording", [
+    ("Romania national football team latest match result", "Romania national football team result"),
+    ("Arsenal latest match", "Arsenal result"),
+    ("Arsenal score today", "Arsenal result"),
+])
+def test_sport_results_get_the_team_result_wording(query, wording):
+    variants = query_variants(query, "", "sport")
+    assert variants[0] == query and wording in variants
+
+
+@pytest.mark.parametrize("query, category", [
+    ("Romania national football team next match", "sport"),
+    ("Premier League table leader", "sport"),
+    ("Romania position UEFA Nations League group result", "sport"),
+    ("exam results Essex", "other"),
+])
+def test_other_questions_do_not_get_the_team_result_wording(query, category):
+    assert not any(v.endswith(" result") and v != query for v in query_variants(query, "", category))
+
+
+# --- B9: another store than the one asked for -----------------------------------------------------------------------
+
+
+EXPRESS = [R("Tesco Express", "Address: 6 Dukes Walk, Chelmsford. Opening hours: Mon 06:00-23:00", "https://www.tesco.com/store/1")]
+EXPRESS_REPLY = {"answer": "I could not find Tesco Extra; Tesco Express on Dukes Walk opens 6am to 11pm.", "other_place": True,
+                 "next_query": "Tesco Extra Princes Road Chelmsford"}
+
+
+def test_the_answer_rules_cover_another_store():
+    from app.websearch.orchestrator import EVIDENCE_RULES
+
+    assert "Tesco Express" in EVIDENCE_RULES and "other_place" in EVIDENCE_RULES and "street" in EVIDENCE_RULES
+    assert "A query that names only the chain" in EVIDENCE_RULES  # "Tesco Chelmsford" is still answered
+
+
+async def test_another_store_searches_again_with_the_street():
+    extra = [R("Tesco Extra Princes Road Chelmsford opening hours", "Tesco Extra Princes Road, Chelmsford: 6am to midnight", "https://example.org/tesco-extra")]
+    ddgs = FakeProvider("ddgs", extra)
+    fn, seen = answers(EXPRESS_REPLY, {"answer": NOT_FOUND}, {"answer": "Tesco Extra opens 6am to midnight."})
+    answer, *_ = await run(orch(ddgs, FakeProvider("brave", EXPRESS), deadline=60), fn,
+                           query="Tesco Extra Chelmsford opening hours", category="business")
+    assert ddgs.queries[0] == "Tesco Extra Princes Road Chelmsford" and answer == "Tesco Extra opens 6am to midnight."
+    assert "Tesco Express" in seen[0][1]  # the answering model is shown which store the result names
+
+
+async def test_another_store_is_said_as_such_when_nothing_better_turns_up_and_is_not_cached():
+    fn, _ = answers(EXPRESS_REPLY)
+    answer, *_, complete, usage = await run(orch(FakeProvider("ddgs", OFF), FakeProvider("brave", EXPRESS), deadline=60), fn,
+                                            query="Tesco Extra Chelmsford opening hours", category="business")
+    assert answer == EXPRESS_REPLY["answer"] and not complete
+    assert {(u.provider, u.unit): u.quantity for u in usage}[("buddyai", "search_answered")] == 1
+
+
+async def test_the_answer_for_another_store_does_not_carry_over_to_the_next_search():
+    o = orch(FakeProvider("ddgs", OFF), FakeProvider("brave", EXPRESS, OFF), deadline=60, brave_per_search=1)
+    t = o.turn(answers(EXPRESS_REPLY)[0], tz="Europe/London", llm_provider="openai", llm_model="m")
+    first, *_ = await t.search("Tesco Extra Chelmsford opening hours", "", "en", category="business")
+    second, *_ = await t.search("Boots Chelmsford phone number", "", "en", category="business")
+    assert first == EXPRESS_REPLY["answer"] and second == NOT_FOUND
+
+
+# --- C3: the answering call and the deadline ---------------------------------------------------------------------------
+
+
+async def test_the_answering_call_never_runs_past_the_deadline(monkeypatch):
+    clock = Clock()
+    timeouts = []
+    real = asyncio.wait_for
+
+    async def wait_for(aw, timeout):
+        timeouts.append(timeout)
+        return await real(aw, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", wait_for)
+    ddgs = FakeProvider("ddgs", GOOD, clock=clock, step_s=11.0)  # 1 s left once the search is back
+    fn, seen = answers(ANSWER)
+    answer, *_ = await run(orch(ddgs, clock=clock, deadline=12), fn, category="other")
+    assert answer.startswith("Romania beat") and timeouts == [1.0]  # was at least 2 s, whatever was left
+
+
+async def test_a_slow_answer_gives_up_at_the_deadline_with_not_found(monkeypatch):
+    clock = Clock()
+    timeouts = []
+    real = asyncio.wait_for
+
+    async def wait_for(aw, timeout):
+        timeouts.append(timeout)
+        return await real(aw, 0)  # the time is up, on any machine
+
+    monkeypatch.setattr(asyncio, "wait_for", wait_for)
+
+    async def hangs(system, user):
+        await asyncio.sleep(30)
+
+    ddgs = FakeProvider("ddgs", GOOD, clock=clock, step_s=11.0)
+    answer, *_, complete, _ = await run(orch(ddgs, clock=clock, deadline=12), hangs, category="other")
+    assert timeouts == [1.0] and answer == NOT_FOUND and not complete
+
+
+async def test_no_answering_call_starts_when_it_could_not_finish():
+    clock = Clock()
+    ddgs = FakeProvider("ddgs", GOOD, clock=clock, step_s=11.7)
+    fn, seen = answers(ANSWER)
+    answer, *_ = await run(orch(ddgs, clock=clock, deadline=12), fn, category="other")
+    assert answer == NOT_FOUND and not seen  # no tokens paid for an answer nobody could wait for
+
+
+async def test_a_normal_search_keeps_all_the_time_the_turn_has_left(monkeypatch):
+    timeouts = []
+    real = asyncio.wait_for
+
+    async def wait_for(aw, timeout):
+        timeouts.append(timeout)
+        return await real(aw, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", wait_for)
+    clock = Clock()
+    await run(orch(FakeProvider("ddgs", GOOD, clock=clock, step_s=3.0), clock=clock, deadline=12), answers(ANSWER)[0], category="other")
+    assert timeouts == [9.0]

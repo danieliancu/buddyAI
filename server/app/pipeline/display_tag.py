@@ -186,6 +186,13 @@ class DisplayTagFilter:
         out, self._tail = self._tail, ""
         return out
 
+    def restart(self) -> str:
+        """The reply goes on after a search with something said before it ("Let me check."): the answer that follows
+        may start with its own [[value]]. Returns what was held back."""
+        out = self.flush()
+        self._done = self._trim = False
+        return out
+
     def _release(self) -> str:
         self._done = True
         out, self._buf = self._buf, ""
@@ -227,3 +234,52 @@ class DisplayTagFilter:
                 out.append(inner.strip())
             text = text[end + 2 :]
         return "".join(out)
+
+
+def _letters(text: str) -> str:
+    return re.sub(r"\W+", "", text.casefold())
+
+
+class RepeatFilter:
+    """Streaming filter for the text after a search: drops an opening that repeats what was already said before it
+    ("Let me check. It's 14 degrees." after "Let me check."), so the phrase is heard once."""
+
+    def __init__(self, said: str = "") -> None:
+        self._said = _letters(said)
+        self._held = ""
+        self._trim = False
+
+    def feed(self, delta: str) -> str:
+        if self._trim:  # the punctuation and spaces after the dropped repeat
+            delta = re.sub(r"^\W+", "", delta)
+            self._trim = not delta
+            return delta
+        if not self._said:
+            return delta
+        self._held += delta
+        key = _letters(self._held)
+        if len(key) < len(self._said) and self._said.startswith(key):
+            return ""  # may still become the repeat
+        if key == self._said and self._held[-1:].isalnum():
+            return ""  # "check" could still become "checking"
+        if key.startswith(self._said):
+            left, cut = len(self._said), len(self._held)
+            for i, ch in enumerate(self._held):
+                left -= len(_letters(ch))
+                if left <= 0:
+                    cut = i + 1
+                    break
+            rest = self._held[cut:]
+            if not rest[:1].isalnum():
+                self._held, self._said = "", ""
+                rest = re.sub(r"^\W+", "", rest)
+                self._trim = not rest
+                return rest
+        out, self._held, self._said = self._held, "", ""
+        return out
+
+    def flush(self) -> str:
+        """End of the round: text held back that did not turn out to be the repeat."""
+        out = "" if _letters(self._held) == self._said else self._held
+        self._held, self._said = "", ""
+        return out

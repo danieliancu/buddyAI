@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
         tools=AssistantTools(),
     )
 
+    if settings.search_backend == "ddgs_brave":
+        from app.websearch.extract import preload
+
+        app.state.search_preload = asyncio.create_task(asyncio.to_thread(preload), name="search-preload")
     reminders = asyncio.create_task(reminder_loop(app.state.hub), name="reminders")
     # Usage operations: queued settlements and expired leases (each process runs it; see app/usage_ops.py).
     usage_maint = asyncio.create_task(usage_ops.maintenance_loop(), name="usage-maintenance")

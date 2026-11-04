@@ -45,6 +45,13 @@ _NEWS_WORDS = frozenset((
 NEWS_RECENT_BONUS = 0.5
 _DOMAIN_ENDINGS = frozenset(("co", "com", "org", "net", "gov", "ac", "uk", "ro", "eu", "www"))
 
+# Pages that show their content only through JavaScript (our reader does not run it): live status and store locators.
+_NEEDS_JAVASCRIPT = re.compile(
+    r"(?i)^(?:[^/]+\.)?tfl\.gov\.uk/(?:[^?]*/)?status(?:[/-]|$)"
+    r"|(?:^|[./-])(?:store|shop|branch)[-_]?(?:locator|finder)"
+    r"|/find[-_]?a[-_]?(?:store|shop|branch)(?:[/-]|$)"
+)
+
 _ROLE = re.compile(r"(?im)^\s*(system|assistant|user|developer|tool)\s*:")
 _MARKUP = re.compile(r"(?i)</?\s*untrusted_web_content\s*>|<\|[^|>]{0,40}\|>|\[/?(?:INST|SYS)\]")
 
@@ -85,6 +92,12 @@ def norm_url(url: str) -> str:
     p = urlsplit(url)
     host = (p.hostname or "").lower().removeprefix("www.")
     return f"{host}{p.path.rstrip('/')}"
+
+
+def needs_javascript(url: str) -> bool:
+    """A page our reader will find empty. Only the download order and the page-text bonus use this, not the ranking of
+    results: the snippet of such a page can still hold the answer (Brave's local results carry the opening hours)."""
+    return bool(_NEEDS_JAVASCRIPT.search(norm_url(url)))
 
 
 def _age_days(published: str | None, today: date) -> int | None:
