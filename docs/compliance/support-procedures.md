@@ -14,7 +14,7 @@
 2. Confirm in writing and send the return address.
 3. The customer pays return postage unless the watch is faulty.
 4. Refund within 14 days of getting the watch back, or of proof that it was sent, whichever is first. Refund in Stripe.
-5. Check Care: a refund does not change the subscription by itself. If they no longer have the watch, cancel Care in Stripe and tell them.
+5. Check Care: a refund does not change the subscription by itself. If they no longer have the watch, cancel Care in Stripe and tell them. After a full refund of an order whose account still has Care, the server emails the operator address as a reminder. A Care trial that has not started will not start for that order.
 6. Before reselling a returned watch, erase it (factory reset) and remove it from the account.
 
 ## Faulty watch
@@ -48,7 +48,7 @@ Checkout cannot block Northern Ireland, and we are not on sale there yet. An ord
 | Payment failed | Stripe retries. The customer gets an email; point them to "Manage billing" |
 | Cancel | The customer does it in "Manage billing". When access ends depends on the Stripe portal setting (`external-actions.md` #3). If they cannot, cancel in Stripe |
 | Refund for Care | Refund in Stripe; check the subscription terms |
-| Chargeback | Reply in Stripe with the evidence. The server does not handle disputes automatically, so record it yourself |
+| Chargeback | Reply in Stripe with the evidence, before the deadline in the alert. The server emails the operator address and writes the audit log (`dispute.*`) on each dispute event, and does nothing to the money, the order or the subscription |
 | Trial question | The 30 days start at first pairing, not at purchase |
 
 ## Data protection requests

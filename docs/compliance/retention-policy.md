@@ -15,6 +15,7 @@ The periods below are **proposals that need business and legal approval**. They 
 | Audit log | `AUDIT_RETENTION_DAYS` | 0 = keep | proposal: 2 years, longer for account-deletion records | retention job | `test_retention.py` |
 | Application logs | hosting/Docker log rotation | **not controlled by the application; not verified** | 30 days | Coolify / Docker log driver settings | — (external) |
 | Backups | `BACKUP_LOCAL_KEEP_DAYS` | 14 days on the server; encrypted copies on the business owner's computer also 14 days, deleted by the owner | keep | `deploy/backup/backup.sh`; the owner for their copies | Docker test (server only) |
+| Queued billing emails (`email_outbox`) | until sent or given up (about 2 days at most), then address and body are cleared | deleted | The key and subject of a finished row: 90 days (stops duplicates) | `prune_email_outbox` | `test_payments_emails.py` |
 | Orders, subscriptions, top-ups, revenue, billing consents (incl. IP + user agent) | — | **kept after account deletion** | 6 years from the end of the financial year (UK tax records) — to confirm with an accountant; consider minimising IP/UA after the consent dispute window | not deleted | `test_account_deletion.py` (kept) |
 | Usage records | — | kept, unlinked from conversation content | as billing records | `delete_account`, history delete | existing |
 | OpenAI copies | provider | Chat Completions / Responses sent with `store=false`; abuse-monitoring retention per OpenAI terms (not verified) | per DPA | `providers/llm/openai.py` | `tests/test_openai_store.py` |

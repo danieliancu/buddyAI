@@ -345,7 +345,7 @@ their own period, so nothing already bought is lost.
 3. Failures and cancellations:
    - Expired or failed sessions are marked `expired` and grant nothing.
    - Abandoned checkouts stay `pending` and grant nothing.
-4. **Refund policy**: `charge.refunded` marks the top-up `refunded` and withdraws its extra interactions for the period, even if some were used. A negative revenue event is recorded. The customer-facing text says so.
+4. **Refund policy**: a full refund (`charge.refunded`, `refunded=true`) marks the top-up `refunded` and withdraws its extra interactions for the period, even if some were used. A partial refund leaves the top-up `paid`. Either way a negative revenue event is recorded. The customer-facing text says so.
 
 ## Webhooks
 
@@ -355,6 +355,47 @@ their own period, so nothing already bought is lost.
   - paid top-ups
   - watch orders
   - refunds (negative)
+
+### Refunds (`charge.refunded`)
+
+Stripe's `amount_refunded` is the running total for the charge. Each event records only the part not recorded yet, as one revenue event with the key `refund:<charge id>:<running total>`:
+
+- two partial refunds give two revenue events, which add up to the running total;
+- a replayed event finds nothing new, and neither does an older event arriving late;
+- the account row lock makes the read and the write one step, and the whole event is one commit.
+
+| The charge belongs to | Effect |
+|---|---|
+| An order | `orders.amount_refunded` holds the running total. Status `partial_refund`, or `refunded` once Stripe says the charge is fully refunded. `partial_refund` still counts as a paid watch; `refunded` is final and the operator can no longer edit the order. |
+| A top-up | See the top-up refund policy. |
+| Neither, but the customer is known (or `charge.invoice` is set) | A Care payment. Current Stripe API versions have no `charge.invoice`, so the known customer identifies it: the account, subscription or activation with that `stripe_customer_id`. |
+| Nothing known | No revenue event: a log warning and a `refund.unmatched` audit entry. |
+
+The customer gets a confirmation for each new amount. A refund that Stripe later reports as failed lowers `amount_refunded` but sends no `charge.refunded`, so it is not reversed here: correct it by hand. Refund events carry `tax_pence=0`, so net revenue after a refund is understated by the VAT in it.
+
+**Full order refund and ola Care.** The subscription is not touched: cancelling is manual (`docs/compliance/support-procedures.md`). If Care is running, the operator is alerted. If its trial has not started, the activation row becomes `not_eligible` with reason `order_refunded`, and `activate_sync` checks again before every create, so pairing, the customer's retry and recovery cannot start it. Another paid order on the account takes over (its consent and card); a later purchase sets the row back to `awaiting_pairing`.
+
+### Disputes (`charge.dispute.*`)
+
+Each event writes an audit entry (`dispute.created`, `dispute.closed`...) and alerts the operator: the server log always, and an email to `BUDDYAI_OPERATOR_ALERT_EMAIL` when set. The live operator feed is not used, as it only reaches a browser tab open at that moment. Nothing happens automatically to the money, the order or the subscription, and **a lost dispute is not recorded as negative revenue**: the Finance tab keeps counting that payment until it is corrected by hand.
+
+### Customer emails
+
+| Trigger | Email | Once per |
+|---|---|---|
+| `customer.subscription.trial_will_end` | Trial ending, with the amount: the price on the subscription (what will be charged) or, if the event lacks it, the configured Care price | Subscription and trial end |
+| `invoice.upcoming` | Renewal reminder: amount due, date, how to cancel. Not during a trial (the email above covers it), not if set to cancel, not for £0 | Subscription and renewal date |
+| `customer.subscription.*`, set to cancel or ended | Cancellation confirmation | Cancellation: `subscriptions.cancel_notified_at` is set when the email is queued. Taking the cancellation back clears it, so a new cancellation is told too; the later `deleted` event sends nothing more |
+| `charge.refunded` | Refund confirmation | New amount refunded |
+| `python -m app.cli price-change-notice` | Price change: operator only, never automatic. A dry run unless `--send`; refuses a date less than 30 days away (subscription terms §5); goes to accounts with a live subscription that will renew; a second run reaches only those not queued yet. Changes nothing in Stripe | Date, price and account |
+
+The texts state facts and make no claim about compliance: the legal rules are open (`docs/compliance/consumer-rights.md`).
+
+### Durable emails (`app/email_outbox.py`, table `email_outbox`)
+
+`email.send` swallows errors and an event is handled once, so webhook emails, operator alerts and price notices first go into a table, with a unique key, in the same commit as the change they report where possible. They are then tried at once. Failures are retried by a loop every minute with backoff (1 minute up to 24 hours, 11 tries, about two days), then given up: `email.gave_up` in the audit log and an error in the log. Delivery is at least once: a crash just after SMTP accepted a message can repeat it.
+
+While a row is pending it holds the address and the full body, including the one-time link of the welcome email. Both are cleared when the row is finished; the rest is pruned after 90 days. Deleting an account deletes its rows. Other emails (sign-in, password reset, pairing, trial started, order shipped) are not in the table.
 
 ## Operator finance (Usage → Finance)
 
@@ -376,8 +417,9 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
 - [ ] Webhook events to enable:
   - `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`
   - `customer.subscription.*` (created / updated / deleted / trial_will_end — `created` also completes a trial activation)
-  - `invoice.paid`, `invoice.payment_failed`
+  - `invoice.paid`, `invoice.payment_failed`, `invoice.upcoming` (needs "Upcoming renewal events" on in the Stripe dashboard)
   - `charge.refunded`
+  - `charge.dispute.created`, `.updated`, `.closed`, `.funds_withdrawn`, `.funds_reinstated`
 - [ ] Create the **watch price at £79.99** (one-off, tax-inclusive) and the Care price (£7.99/month), both in test mode first.
 - [ ] Have the ola Care consent wording and the subscription terms reviewed (UK subscription-contract rules). The site shows no "was" price; add one only for a price the watch was genuinely sold at.
 - [ ] **Price check, in test mode and again after going live:** the same Care amount (£7.99) on the site, in the customer account and the operator plan settings, in the consent text, on Stripe Checkout and in the trial emails. The amount charged comes from `BUDDYAI_STRIPE_PRICE_CARE_GBP`; `billing_settings.care_price_pence` is display only and changing it never touches an existing subscription.
