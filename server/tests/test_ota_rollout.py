@@ -211,7 +211,7 @@ def test_disconnect_before_install_is_unknown_not_failed():
 def test_network_errors_and_refusals_are_not_failures():
     model = _model()
     rel, dev = _release(model), _device(model)
-    for state, reason in (("failed", "network"), ("refused", "battery"), ("refused", "in_conversation")):
+    for state, reason in (("failed", "network"), ("failed", "no_memory"), ("refused", "battery"), ("refused", "in_conversation")):
         a = _attempt(dev, rel)
         _status(dev, a, state, reason)
         assert _state(a) == "unknown"

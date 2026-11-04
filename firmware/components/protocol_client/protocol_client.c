@@ -1371,11 +1371,18 @@ static void handle_text(const char *txt)
         } else if (refused) {
             ESP_LOGI(TAG, "ota_available %s refused: %s", ver ? ver : "?", refused);
             send_ota_status("refused", refused, -1);
-        } else if (ota_start(json_str(j, "url"), ver, json_str(j, "sha256"), size, s_ota_attempt, on_ota_status, NULL) == ESP_OK) {
-            send_ota_status("accepted", NULL, -1);
-            emit(PROTO_EVT_OTA, 0, ver);
         } else {
-            send_ota_status("failed", ota_in_progress() ? "busy" : "bad_offer", -1);
+            esp_err_t started = ota_start(json_str(j, "url"), ver, json_str(j, "sha256"), size, s_ota_attempt, on_ota_status, NULL);
+            if (started == ESP_OK) {
+                send_ota_status("accepted", NULL, -1);
+                emit(PROTO_EVT_OTA, 0, ver);
+            } else {
+                const char *why = ota_in_progress() ? "busy" : started == ESP_ERR_NO_MEM ? "no_memory" : "bad_offer";
+                ESP_LOGW(TAG, "ota_available %s not started: %s (internal RAM free %u, largest %u)", ver ? ver : "?", why,
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+                send_ota_status("failed", why, -1);
+            }
         }
         goto out;
     }

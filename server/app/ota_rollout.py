@@ -201,7 +201,7 @@ def on_status(db: Session, device_id: str, msg: dict[str, Any], hub: Any = None)
                                                        col(DeviceOta.created_at) > row.created_at)).first()
     if newer is not None:
         return
-    if state == "refused" or (state == "failed" and reason in ("network", "busy", "bad_offer")):
+    if state == "refused" or (state == "failed" and reason in ("network", "busy", "bad_offer", "no_memory")):
         # Not the image's fault: "not done yet", tried again later. The reason stays visible.
         _set(db, attempt_id, "unknown", reason or state)
     elif state == "failed":

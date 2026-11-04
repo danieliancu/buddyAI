@@ -1,6 +1,6 @@
 # Personal data inventory
 
-Status: working document, prepared from the code on 12 October 2026 and not fully re-checked since; web search has changed (see the open question in `dpia-draft.md`). Lawful bases are **proposals** for review by a qualified adviser; nothing here is legal advice or a statement that processing is compliant.
+Status: working document, prepared from the code on 12 October 2026 and not fully re-checked since; web search updated on 4 November 2026 (production runs `ddgs_brave`). Lawful bases are **proposals** for review by a qualified adviser; nothing here is legal advice or a statement that processing is compliant.
 
 Legend for verification: **Code** = confirmed in the repository; **Config** = depends on production configuration; **External** = needs confirmation outside the code.
 
@@ -10,7 +10,8 @@ Legend for verification: **Code** = confirmed in the repository; **Config** = de
 Watch (button/mic) --TLS*--> device gateway (server/app/gateway/device_ws.py)
    --> speech-to-text: OpenAI (providers/stt/openai.py)
    --> reply: OpenAI language model (providers/llm/openai.py), with history, notes/reminders, memories
-       (+ optional OpenAI hosted web search with approximate city)
+       (+ web search with approximate city: Brave, DuckDuckGo and Yahoo, page reading; MET Norway and
+          Nominatim for weather; OpenAI hosted search for transport by default)
    --> speech: OpenAI text-to-speech (providers/tts/openai.py) --> watch
    --> stored: turns (text), memories, items, usage records (PostgreSQL)
 Customer web app (HTTPS) --> /api/me/* --> PostgreSQL ; Stripe Checkout / portal for payments
@@ -29,7 +30,7 @@ Customer web app (HTTPS) --> /api/me/* --> PostgreSQL ; Stripe Checkout / portal
 | 6 | Voice audio | microphone audio (Opus) during a turn | speech-to-text | contract | **not stored** on our servers (memory only) | OpenAI | US | none on our side; provider retention per OpenAI terms | n/a | Code; provider External |
 | 7 | Long-term memory | facts the user asks olá to remember or that are learnt from conversations (on by default), embeddings | personalised answers | contract / legitimate interests (to review) | `memories`, embeddings, memory jobs | OpenAI (embeddings, extraction) | US | until forgotten / memory cleared / account deleted; superseded versions purged after 90 days | per item, clear all, account deletion | Code |
 | 8 | Notes & reminders | text, times, place, participants | features requested by the user | contract | `items` | OpenAI (processing when used in conversation) | US | until deleted | user or account deletion | Code |
-| 9 | Web search | query text, approximate city (from the watch's time zone), cached answer | answer current-events questions | contract / legitimate interests | `search_cache` (shared scope for general topics; account scope otherwise) | OpenAI hosted web search | US | cache expiry + 1 day; account-scope rows deleted with the account | retention job, account deletion | Code |
+| 9 | Web search | query text, approximate city (from the watch's time zone), cached answer | answer current-events questions | contract / legitimate interests | `search_cache` (shared scope for general topics; account scope otherwise) | Brave Search, DuckDuckGo, Yahoo, MET Norway, OpenStreetMap Nominatim, public websites (page reading); OpenAI hosted web search for transport by default (`BUDDYAI_SEARCH_LEGACY_CATEGORIES`) | US (OpenAI); others not verified, see `processor-register.md` | cache expiry + 1 day; account-scope rows deleted with the account | retention job, account deletion | Code; production backend Config (confirmed by the owner, 4 November 2026) |
 | 10 | Personas & settings | custom instructions, voice, language, watch settings | configure the assistant | contract | `personas`, `device_settings` | OpenAI (instructions sent with requests) | US | until changed/deleted | account deletion | Code |
 | 11 | Billing | Stripe customer/subscription/payment-method IDs, order (shipping name/address, amounts), top-ups, revenue events | sell and bill | contract; legal obligation (tax records) | `orders`, `subscriptions`, `topups`, … | Stripe | US/EU (Stripe) | tax/accounting period (proposal: 6 years; to be approved) | not deleted on account deletion (legal retention) | Code; period External |
 | 12 | Usage | usage records (counts, cost, no content after unlinking) | allowance and billing | contract / legitimate interests | `usage_records`, `usage_operations` | — | — | kept for accounting (unlinked from content) | turn link nulled on deletion | Code |

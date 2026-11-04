@@ -51,7 +51,7 @@ Ratings are proposals: likelihood × severity for the people affected.
 
 ## 5. Questions to answer before approval
 
-1. Which web search provider runs in production, and is it in `processor-register.md`? The register and inventory describe OpenAI hosted search; the code also has Brave, DDGS, page fetching and MET Norway.
+1. Production runs `ddgs_brave` (owner read `BUDDYAI_SEARCH_BACKEND=ddgs_brave` in Coolify on 4 November 2026). Its providers are now in `processor-register.md` and the inventory: Brave, the DDGS engines, page fetching, MET Norway and Nominatim, with OpenAI hosted search still used for transport by default. Still open for each: terms of use, role, processing location and transfer mechanism.
 2. Is the optional conversation search on its feature branch going ahead? It adds derived data and is not covered here (`docs/CONVERSATION_RAG.md` on that branch).
 3. Should memory learning be on by default?
 4. Should conversations have an automatic retention limit?

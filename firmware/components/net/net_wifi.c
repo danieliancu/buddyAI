@@ -35,7 +35,6 @@ static volatile bool    s_connected;
 static volatile int     s_last_disc_reason;    /* wifi_err_reason_t of the last drop, 0 = none */
 static volatile int     s_attempt_reason;      /* last failed attempt since net_wifi_connect(), 0 = none */
 static bool             s_sta_configured;
-static bool             s_mdns_ready;
 static bool             s_sntp_started;
 
 /* Saved-network mode (net_wifi_connect_saved): each attempt scans and joins the best saved network in
@@ -590,16 +589,16 @@ esp_err_t net_mdns_find_server(char *url, size_t len, uint32_t timeout_ms)
     if (!s_connected) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!s_mdns_ready) {
-        ESP_RETURN_ON_ERROR(mdns_init(), TAG, "mdns init");
-        mdns_hostname_set("buddyai-watch");
-        s_mdns_ready = true;
-    }
+    /* Started for this query only. Its task stack comes from internal RAM, where a running watch has about
+     * 9 KB left; kept running, it leaves no room for the update task's 8 KB stack (ota_start). */
+    ESP_RETURN_ON_ERROR(mdns_init(), TAG, "mdns init");
+    mdns_hostname_set("buddyai-watch");
 
     mdns_result_t *results = NULL;
     esp_err_t err = mdns_query_ptr("_buddyai", "_tcp", timeout_ms, 4, &results);
     if (err != ESP_OK || !results) {
         ESP_LOGI(TAG, "mDNS: no _buddyai._tcp service found");
+        mdns_free();
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -626,6 +625,7 @@ esp_err_t net_mdns_find_server(char *url, size_t len, uint32_t timeout_ms)
         }
     }
     mdns_query_results_free(results);
+    mdns_free();
     return err;
 }
 

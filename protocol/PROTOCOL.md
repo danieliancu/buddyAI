@@ -152,7 +152,7 @@ Device to server, `ota_status`: `attempt_id`, `state`, `reason?`, `progress?`.
 |---|---|
 | `accepted`, `downloading`, `installing`, `rebooting` | Progress. |
 | `installed` | The new image passed its checks and is confirmed. The new `fw_version` in a hello alone only means it is being checked. |
-| `failed` | `reason`: `integrity` (size or SHA-256), `image_invalid` (including a signature refused by the watch), `write`: counted against the release. `network`, `busy`, `bad_offer`: tried again later, not counted. |
+| `failed` | `reason`: `integrity` (size or SHA-256), `image_invalid` (including a signature refused by the watch), `write`: counted against the release. `network`, `busy`, `bad_offer`, `no_memory` (the watch could not start the download for lack of memory): tried again later, not counted. |
 | `refused` | `reason`: `in_conversation`, `battery`, `older_version`, `same_version`, `wrong_model`. Tried again later, not counted. |
 
 Silence or a disconnect is never a failure: after 30 minutes the attempt becomes `unknown` and is tried again. Rollback checks: `display`, `audio`, `memory`, `server_session`; empty means the bootloader rolled back after a reset, with `reset_reason` `panic`, `watchdog`, `brownout`, `software`, `other`, or `power_on` / `usb` (the watch was switched off: not counted).
