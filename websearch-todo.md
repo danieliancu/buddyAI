@@ -5,6 +5,11 @@
 what selects the backend. Statements below that it is not deployed or not to be switched on are out of date; the
 targets in section D are still not all met.
 
+**Update 4 November 2026, branch `feature/launch-search` (not merged, not deployed):** A4, B4, B5, B9, C2 and C3 are
+done, checked with mocked tests only. No benchmark was run: the figures below are still those of 31 October, and
+these changes have not been measured on real searches. See "To confirm after these changes" below before relying on
+them.
+
 ## Where we are (benchmark 31 October 2026, 12:51: after A7, B8 and A2 / B11 / B12)
 
 `python tools/search_bench.py` on the dev laptop (home connection). Full results:
@@ -104,6 +109,29 @@ news request ("… news / headlines") tells the answering model that one or two 
 Benchmark news questions + the two production failures: 6 / 7 twice (was 4 / 7), then the full run
 `server/out/search_bench_20261031_1411.json`: news 5 / 5, all 26 / 30, p50 2.1 s, p95 6.8 s, $0.0037 per question.
 
+## To confirm after these changes (4 November)
+
+Mocked tests show the code does what it should; they say nothing about how the real models and sites respond.
+
+Paid benchmark (`tools/search_bench.py`, owner's approval needed; last figures 26 / 30 answered, all correct, p95
+about 6.8 s):
+
+- **B9:** whether the model follows the rule on "Tesco Extra Chelmsford", and that chain-only questions ("Boots
+  Chelmsford High Street", "IKEA Lakeside") are still answered. A wrong-store answer now counts as answered, so read
+  the answers, not only the count.
+- **B4:** whether real pages come back in time once locators are read last. The URL patterns come from this file and
+  general knowledge of those sites, not from a measurement.
+- **B5:** whether "<team> result" finds anything the earlier wordings did not. Sport result questions already answer on
+  the first wording, so the benchmark may show no change.
+- **C3:** no change expected (see C3); p95 and the answer count should stay as they are.
+- **Cost:** the rule for B9 adds about 150 input tokens to each answering call (about 0.5% of the cost per question at
+  the benchmark's prices).
+
+Not measured by that benchmark, which runs the search without the conversation model and the watch:
+
+- **A4 on the real watch:** that the conversation model really writes the phrase in the same response as the call,
+  that it does not say it without searching, and how it sounds. See A4.
+
 ## TODO
 
 Re-run the benchmark after each step and add the results to this file.
@@ -119,8 +147,23 @@ Re-run the benchmark after each step and add the results to this file.
   timeouts in a row → 15 min (a timeout from our own short budget does not count). Their snippets still count.
   In-process memory (lost on restart, 2,000 sites at most).
 - [~] A3. Snippet answer first (done for Brave rounds, sequential). Running it in parallel with the downloads is
-  still open.
-- [ ] **A4. "Let me check" on the watch right away** (prompt rule + a test that it is spoken once).
+  still open, on purpose: in the 31 October 14:11 benchmark 13 of the 15 sport, news and business questions were
+  answered from snippets in about 2 s, with no download. In parallel, each of those would fetch up to 3 pages for
+  nothing, from sites we have not settled robots.txt for (C6), using the per-site limit and server CPU (a parse in a
+  worker thread cannot be cancelled). It could only save time on the few that go on to pages, by about the length of
+  one answering call, and those mostly end unanswered anyway. The slow "other" questions start on DDGS and have no snippet call,
+  so p95 would not move. It also needs care: pages finishing during the call change the results that
+  `_complete` reads to decide on caching. Revisit if a benchmark shows many Brave questions answered from pages.
+- [x] **A4. "Let me check" on the watch right away.** Rule `SEARCH_SAY_CHECKING`; off with
+  `BUDDYAI_SEARCH_SAY_CHECKING=false`. A prompt rule alone would not have worked, so the reply path changed too: the
+  chunker held a phrase under 20 characters until the answer came (`flush`), a `[[value]]` after the phrase would have been
+  spoken instead of shown (`DisplayTagFilter.restart`), and a repeat of the phrase is dropped (`RepeatFilter`). While
+  the search runs the server repeats `state: speaking` every 8 s, because the watch gives a speaking turn 20 s, not the
+  45 s of thinking (hosted search for transport can take longer). **Still to check on the real watch:** see "To
+  confirm". Known from the firmware (`audio.c`, not changed): after the gap, playback waits for a 1.5 s reserve (2.5 s at
+  most, or the end of the reply) before the answer starts; the amplifier stays on during the gap; the typing clicks
+  should stop at the first audio. First-audio figures of search turns now measure the phrase, so they are not
+  comparable with the earlier 9.8 s. The phrase costs about $0.0002 of TTS per search turn (13 characters).
 - [x] A5. Keep-alive clients for Brave, MET Norway and Nominatim. The page fetcher stays per request (pinned IPs).
 - [x] A6. Answering `max_tokens` 300 → 200 (reasoning effort is already "none").
 - [x] A7. Give-up time per search (`search_give_up_s`, 6 s): no new search round starts and no page download is
@@ -130,12 +173,15 @@ Re-run the benchmark after each step and add the results to this file.
 
 ### B. Answer rate
 
-- [x] B1. Weather from MET Norway + Nominatim. **Follow-up:** attribution "Weather data: MET Norway (CC BY 4.0)"
-  and "Geocoding © OpenStreetMap contributors" on the site's credits / legal page, before production.
+- [x] B1. Weather from MET Norway + Nominatim. Follow-up done: the attribution "Weather data: MET Norway" and
+  "Geocoding © OpenStreetMap contributors" is on `site/src/pages/legal/index.astro`.
 - [x] B2. Brave first for sport, news, transport and business (replaced "Brave earlier").
 - [x] B3. Brave `extra_snippets` + local results + infobox + rich sport data.
-- [ ] **B4. Prefer pages that render without JavaScript** (down-rank tfl.gov.uk status, store locators).
-- [~] B5. Wordings: business "opening times", news "BBC" done. Sport "<team> result" still open.
+- [x] B4. Prefer pages that render without JavaScript: tfl.gov.uk status pages and store locators
+  (`evidence.needs_javascript`) are downloaded last and get no page-text bonus. Their place in the ranking of results is
+  unchanged on purpose: their snippets can hold the answer (Brave's local results carry the opening hours).
+- [x] B5. Wordings: business "opening times", news "BBC", sport "<team> result" (questions about a result only, not
+  the next match or the table; after the existing wordings, before the cut-down one).
 - [x] B6a. **Hybrid** (`search_legacy_categories`, default `transport`): with ddgs_brave, the transport category
   still goes to OpenAI hosted search (all countries: trains, flights, metro), billed as before
   (`web_search_call`). Legacy answered Greater Anglia; neither backend answered the Elizabeth line.
@@ -150,14 +196,21 @@ Re-run the benchmark after each step and add the results to this file.
 - [x] B7. DDGS `auto` was the cause (see above): engines are now named.
 - [x] B8. Answer rules (`EVIDENCE_RULES`, ddgs_brave only): full price, not an instalment; official / census
   figure with its year for population and statistics.
-- [ ] **B9. Store-specific hours:** when Brave's local result names a different store (Express vs Extra), the model
-  should say so or search again with the store's street.
+- [x] B9. Store-specific hours: when a result names another store (Express vs Extra), the model marks its answer
+  `other_place` and suggests the store's street. The search goes on with that wording, and the other store's answer, which
+  says whose details they are, is used only if nothing better turns up. It is never cached.
 
 ### C. Checks and clean-up
 
 - [x] C1. BoE date: both say 17 Sep. Bucharest population: 2021 census after B8.
-- [ ] C2. Watch for the flaky test (timing-based tests); 84 tests now (plus tools/search_report.py's test).
-- [ ] C3. The answering call may finish up to ~2 s after the deadline.
+- [x] C2. The flaky test was `test_sites_that_refuse_us_or_keep_timing_out_are_skipped_for_a_while` (failed 2 of 3 runs
+  with all cores busy): its success step ran the first import of Trafilatura (about 2.4 s) inside the real 2.5 s page
+  budget. Now stubbed; the parser tests get a long budget, and the grace-period test checks what is waited for instead of
+  the wall clock. **The same import hit production:** the first page after a server start could fail and count against
+  the site. `extract.preload` now does these imports at server start when the backend is `ddgs_brave`.
+- [x] C3. The answering call now ends at the deadline (it had a 2 s minimum), and none starts with under 0.5 s left. The
+  search keeps 2.5 s back for this call and gives up at 6 s, so the first search of a turn does not get near the limit
+  unless earlier steps ran over; the case is a late second search or a search that ran over.
 - [ ] C4. Benchmark from the test server (datacenter bandwidth).
 - [ ] **C5.** In the Brave dashboard, check that `/web/rich` is billed as one request ($0.005), and whether failed
   requests are billed. The response headers show a monthly limit of "0", which probably means pay-as-you-go.
@@ -173,14 +226,16 @@ legacy_openai for transport only (live status), ddgs_brave for everything else.
 
 ## How to resume
 
+The search work is merged into master, so there is no branch to switch to; the 4 November changes are on
+`feature/launch-search` until they are merged.
+
 ```
-git switch feature/ddgs-brave-search
 cd server
-.venv\Scripts\python -m pytest -q tests/test_websearch.py      # 84 tests, mocked
-.venv\Scripts\python tools/search_bench.py --legacy             # real, ~10 min, ~$0.37 legacy + ~$0.11 ddgs_brave
+.venv\Scripts\python -m pytest -q tests/test_websearch.py      # 133 tests, mocked
+.venv\Scripts\python tools/search_bench.py --legacy             # real and paid, ~10 min, ~$0.37 legacy + ~$0.11 ddgs_brave: owner's approval first
 ```
 
 The Brave key is in `server/.env` (`BUDDYAI_BRAVE_API_KEY`). To try the backend locally, set
 `BUDDYAI_SEARCH_BACKEND=ddgs_brave` and restart the server. To roll back, remove that line or set it to
-`legacy_openai`. `BUDDYAI_WEATHER_SOURCE=` (empty) switches the MET Norway weather source off;
+`legacy_openai` (in production: the Coolify variable). `BUDDYAI_WEATHER_SOURCE=` (empty) switches the MET Norway weather source off;
 `BUDDYAI_DDGS_BACKENDS=auto` restores the old DDGS behaviour.
