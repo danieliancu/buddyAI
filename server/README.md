@@ -61,9 +61,9 @@ is chosen by `BUDDYAI_SEARCH_BACKEND`:
 | Value | What runs |
 |---|---|
 | `legacy_openai` (default) | OpenAI hosted web search (billed per search call). One search per turn, one retry after "not found". |
-| `ddgs_brave` | `app/websearch`: DDGS first (no per-request charge), Brave Search API as fallback, Trafilatura reads the best pages, one small call on the profile's default chat model answers from that evidence. No fixed number of searches: it keeps reformulating until the evidence answers or `BUDDYAI_SEARCH_TOTAL_DEADLINE_S` (12 s, shared by the turn) runs out. |
+| `ddgs_brave` | `app/websearch`: weather from MET Norway; Brave Search API first for sport, news and business, DDGS first (no per-request charge) with Brave as fallback for the rest; transport stays on OpenAI hosted search (`BUDDYAI_SEARCH_LEGACY_CATEGORIES`). Trafilatura reads the best pages when the snippets do not answer, one small call on the profile's default chat model answers from that evidence. No fixed number of searches: it keeps reformulating until the evidence answers, `BUDDYAI_SEARCH_GIVE_UP_S` (6 s per search) passes or `BUDDYAI_SEARCH_TOTAL_DEADLINE_S` (12 s, shared by the turn) runs out. |
 
-To try `ddgs_brave` (test environment only):
+Production runs `ddgs_brave` (set in Coolify; the code default is still `legacy_openai`). To select it elsewhere:
 
 ```
 BUDDYAI_SEARCH_BACKEND=ddgs_brave
@@ -72,7 +72,8 @@ BUDDYAI_BRAVE_MONTHLY_BUDGET_USD=5       # Brave is skipped for the rest of the 
 ```
 
 Other knobs (`app/config.py`): request / page timeouts, results per request, pages read, evidence size, the DDGS
-circuit breaker (threshold, cooldown), concurrency, `BUDDYAI_DDGS_REGION`. Costs are recorded per provider
+circuit breaker (threshold, cooldown), concurrency, `BUDDYAI_DDGS_REGION`, `BUDDYAI_SEARCH_SAY_CHECKING` (the
+"Let me check" said before a search, on by default, with either backend). Costs are recorded per provider
 (usage kind `search`) and shown in Finance > search > own. Real-search benchmark: `python tools/search_bench.py
 [--legacy] [--brave-only N]` (throwaway database, writes `out/search_bench_*.json`).
 
