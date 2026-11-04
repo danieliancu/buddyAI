@@ -697,11 +697,16 @@ export type AiProfile = "openai" | "qwen";
 
 export interface SystemInfo {
   version: string;
+  /** Git commit id of the running server, or "unknown". */
+  commit: string;
   device_ws_url: string;
   base_url: string;
   mdns_enabled: boolean;
   mock_providers: boolean;
   ai_profile?: AiProfile | string;
+  search_backend: string;
+  /** Categories still answered by hosted search; only used by the ddgs_brave backend. */
+  search_legacy_categories: string[];
   /** Deletion events waiting to be copied off-site (see deploy/README.md section 8.5). */
   deletion_ledger: { enabled: boolean; pending: number; oldest_pending_s: number };
   keys: Partial<Record<KeyName, string>>;

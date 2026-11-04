@@ -8,7 +8,7 @@ import socket
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app import accounts, deletion_log, languages, usage_ops
+from app import accounts, deletion_log, languages, usage_ops, version
 from app.config import get_settings
 from app.db.session import session_scope
 from app.device_settings import DeviceSettings
@@ -46,12 +46,15 @@ def info() -> dict:
         ledger = deletion_log.status(db)
     return {
         "deletion_ledger": ledger,
-        "version": "0.1.0",
+        "version": version.VERSION,
+        "commit": version.commit(),
         "device_ws_url": base_url().replace("http", "ws", 1) + "/ws/device",
         "base_url": base_url(),
         "mdns_enabled": s.mdns_enabled,
         "mock_providers": s.mock_providers,
         "ai_profile": s.ai_profile,
+        "search_backend": s.search_backend,
+        "search_legacy_categories": [c.strip() for c in s.search_legacy_categories.split(",") if c.strip()],
         "keys": {k: (s.provider_key(k) if k == "azure_speech_region" else _mask(s.provider_key(k))) for k in KEY_NAMES},
     }
 
