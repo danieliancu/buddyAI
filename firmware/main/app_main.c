@@ -709,6 +709,11 @@ static void test_console_poll(void)
                 ui_show_wifi(line[4] ? line + 5 : NULL);
             } else if (sscanf(line, "drop %d", &secs) == 1 && secs > 0) {
                 net_wifi_test_drop(secs);
+            } else if (sscanf(line, "note %d", &secs) == 1 && secs > 0) {
+                ui_wake();
+                proto_note_session(true, secs);     /* the edit mic of note <secs> */
+            } else if (strcmp(line, "noteend") == 0) {
+                proto_note_session(false, 0);
             }
         }
     }
