@@ -12,6 +12,22 @@ case "$interval" in
 esac
 [ "$interval" -ge 60 ] || interval=60
 
+# Deletion events go off-site far more often than dumps (server/app/deletion_log.py).
+sync_interval=${DELETION_SYNC_INTERVAL_S:-300}
+case "$sync_interval" in
+    '' | *[!0-9]*) sync_interval=300 ;;
+esac
+if [ -n "${BACKUP_RCLONE_REMOTE:-}" ] && [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
+    (
+        while true; do
+            /usr/local/bin/sync_deletions.sh
+            sleep "$sync_interval"
+        done
+    ) &
+else
+    echo "deletion ledger off: it needs BACKUP_RCLONE_REMOTE and BACKUP_AGE_RECIPIENT" >&2
+fi
+
 while true; do
     if /usr/local/bin/backup.sh; then
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) backup run finished OK, next in ${interval}s"

@@ -1,13 +1,13 @@
 // /llms.txt: a plain summary of the site for AI search engines and assistants (llmstxt.org).
 import type { APIRoute } from "astro";
-import { config, prices, formatPrice, shipCountryNames } from "../config";
+import { config, prices, formatPrice } from "../config";
 import { languageCount } from "../lib/languages";
 
 export const GET: APIRoute = ({ site }) => {
   const u = (p: string) => new URL(p, site).href;
   const body = `# ${config.siteName}
 
-> olácompanion is a wearable AI companion with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in the UK and the EU. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
+> olácompanion is a wearable AI companion with a built-in voice assistant, sold by ${config.companyName} (${config.address}) to customers in Great Britain. Tap the mic on the watch, speak naturally, and the assistant answers out loud.
 
 ## What it does
 - Natural voice conversation with an AI assistant; tap to talk, tap again to interrupt.
@@ -27,13 +27,13 @@ export const GET: APIRoute = ({ site }) => {
 - Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the olá servers). Offline, the clock and already loaded notes and reminders stay visible.
 
 ## Price
-- olácompanion: ${formatPrice(prices.watch.GBP, "GBP")} / ${formatPrice(prices.watch.EUR, "EUR")}, one-off. The price shown is the total price; delivery costs are shown at checkout.
-- olácare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} / ${formatPrice(prices.care.EUR, "EUR")} a month after a free ${prices.trialDays}-day trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olácare before the trial ends). Cancel anytime from the account ("Manage billing").
+- olácompanion: ${formatPrice(prices.watch.GBP, "GBP")}, one-off. The price shown is the total price; delivery costs are shown at checkout.
+- olácare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} a month after a free ${prices.trialDays}-day trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olácare before the trial ends). Cancel anytime from the account ("Manage billing").
 - Unlimited AI interactions included with olácare, for all the account's watches; there is no usage limit and no extra usage to buy.
-- 14-day right to cancel; UK statutory rights and the EU 2-year legal guarantee.
+- 14-day right to cancel; UK statutory rights.
 
 ## Delivery
-- Ships to the United Kingdom and the 27 EU member states: ${shipCountryNames.join(", ")}.
+- Ships to Great Britain (England, Scotland and Wales) only.
 - ${config.shipping.note}
 
 ## Pages

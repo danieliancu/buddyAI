@@ -91,6 +91,15 @@ export default function SystemPage() {
               <code className="font-mono text-xs break-all">{i.base_url}</code>
             </Row>
             <Row label="mDNS discovery">{i.mdns_enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge>}</Row>
+            <Row label="Deletion ledger">
+              {!i.deletion_ledger.enabled ? (
+                <Badge>no off-site copy</Badge>
+              ) : i.deletion_ledger.oldest_pending_s > 900 ? (
+                <Badge tone="danger">{i.deletion_ledger.pending} waiting</Badge>
+              ) : (
+                <Badge tone="ok">up to date</Badge>
+              )}
+            </Row>
             <Row label="Providers">{i.mock_providers ? <Badge tone="warn">mock</Badge> : <Badge tone="ok">real</Badge>}</Row>
             <Row label="Active AI profile">
               <span className="inline-flex flex-wrap items-center gap-2">

@@ -8,7 +8,7 @@ Internet ──► Caddy (HTTPS, ports 80/443)
                ├─ www.example.com  → marketing site (static) + /api/shop/* → server
                ├─ app.example.com  → customer app + operator app (/admin) + REST API + Stripe webhook
                └─ api.example.com  → watches: /ws/device (WebSocket) and /fw/* (firmware downloads)
-            server (FastAPI) ──► PostgreSQL        backup (daily pg_dump → deploy/backups, encrypted off-site)
+            server (FastAPI) ──► PostgreSQL        backup (daily pg_dump → deploy/backups, encrypted)
 ```
 
 ## 1. Rent the server
@@ -99,13 +99,13 @@ the watch is paired to the customer's account.
 
 1. **Account:** create it, then complete your business details and bank account.
 2. **Products** (Product catalogue):
-   - **"ola Watch"**: a *one-off* price in GBP (currently the sale price, **£79.99**) and one in EUR. The
-     regular £99.99 shown struck through on the site is display only (`site/src/config.ts`).
-   - **"ola Care"**: a *recurring monthly* price in GBP (£7.99) and one in EUR. The server reads its
+   - **"ola Watch"**: a *one-off* price in GBP (**£79.99**). The launch market is Great Britain, so no EUR price is
+     needed yet (leave the `_EUR` ids empty).
+   - **"ola Care"**: a *recurring monthly* price in GBP (£7.99). The server reads its
      amount to write the consent text, and adds the trial (`BUDDYAI_CARE_TRIAL_DAYS`) when the watch is paired.
    - Copy the four `price_…` ids into `deploy/.env` (`BUDDYAI_STRIPE_PRICE_WATCH_GBP/EUR`,
      `BUDDYAI_STRIPE_PRICE_CARE_GBP/EUR`).
-3. **Tax:** enable Stripe Tax and add your registrations: UK VAT, and **EU OSS** for EU consumers.
+3. **Tax:** enable Stripe Tax if you are VAT-registered and add the UK registration (the site says the company is not VAT-registered; keep them in step).
    Mark prices as tax-inclusive or exclusive, consistently with the website.
 4. **Shipping:** create shipping rates (e.g. "UK standard", "EU standard") in GBP and EUR and put
    their `shr_…` ids in `.env`.
@@ -219,6 +219,10 @@ protect against losing the server: set up 8.1 and 8.2 before selling.
 
 ### 8.1 Encryption key (age), generated offline
 
+**In use:** this is how backups are protected (decision: `docs/compliance/backup-and-recovery.md`). On Windows, install
+it with `winget install --id FiloSottile.age` and generate the key on removable media:
+`age-keygen -o E:\buddyai-backup-key.txt`. Never keep the key on the computer that holds the backup copies.
+
 Backups are encrypted with [age](https://age-encryption.org). Only the **public** key (recipient,
 `age1…`) is on the server; the private key (identity) never is, so a stolen backup or a compromised
 storage account reveals nothing.
@@ -232,9 +236,19 @@ storage account reveals nothing.
    (comma-separated) let a second key holder restore, and allow rotating keys: add the new key, wait until
    the old backups have expired, then remove the old one.
 
-### 8.2 Off-site copy (rclone)
+### 8.2 Off-site copy (rclone): not used
 
-Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
+**Decision, 3 November 2026:** no storage provider. Leave `BACKUP_RCLONE_REMOTE` empty and still set
+`BACKUP_AGE_RECIPIENT`. The business owner copies the encrypted `.age` and `.sha256` files from `deploy/backups`
+(Coolify: the `backupdata` volume) to their own computer and manages this themselves, including deleting copies
+within 14 days of the backup, which the privacy notice promises. See `docs/compliance/backup-and-recovery.md`.
+
+After setting `BACKUP_AGE_RECIPIENT` and redeploying, check it in the backup container: run `backup.sh`, then
+`ls -la /backups` must show a new `.dump.age` and `.sha256` and no new plain `.dump`. On the computer, check the key:
+`age -d -i E:\buddyai-backup-key.txt -o test.dump <file>.dump.age`, then delete `test.dump` at once. Older unencrypted
+backups stay on the server until they expire; do not copy them.
+
+The rest of this section applies only if a provider is ever used. Any [rclone](https://rclone.org) backend works, e.g. a Hetzner Storage Box (SFTP, in another location
 than the server) or an S3 bucket. Use credentials that can reach only the backup directory. Give the
 container the rclone configuration in one of three ways (never commit it):
 
@@ -268,7 +282,7 @@ then unpack into the volume while the server is stopped.
 
 ### 8.4 Monthly restore test (separate database)
 
-Once a month, and after any change to the backup setup, restore the latest off-site backup into a
+Once a month, and after any change to the backup setup, restore the latest backup copy into a
 **separate** database and record the date and result. `restore.sh` decrypts, checks the `.sha256` and the
 archive, refuses the production database (unless `--force-production`), refuses a non-empty target
 (unless `--clean`) and restores in one transaction. There is no default target.
@@ -276,7 +290,7 @@ archive, refuses the production database (unless `--force-production`), refuses 
 On a trusted machine that holds the identity file (not the server):
 
 ```bash
-rclone copy offsite:buddyai-backups ./restore-test --include 'buddyai-YYYYMMDD-HHMM.dump*'
+# put the buddyai-YYYYMMDD-HHMM.dump.age and .sha256 copies in ./restore-test
 docker build -t buddyai-backup deploy/backup
 docker build -f deploy/postgres.Dockerfile -t buddyai-postgres .          # same database image (pgvector)
 docker network create restore-test
@@ -296,38 +310,45 @@ An unencrypted local dump can be tested on the server the same way, into a new d
 
 ### 8.5 Disaster recovery and deleted data
 
-Restoring a backup brings back everything that was deleted after it was taken: deleted accounts,
-erased conversation history. Those deletions must be applied again **before** the restored database
-goes live.
+Restoring a backup would bring back everything deleted after it was taken: accounts, conversation history,
+notes, reminders and memories. Every such deletion writes an event in the same database transaction
+(`server/app/deletion_log.py`), and `sync_deletions.sh` copies new events, encrypted, to
+`<BACKUP_RCLONE_REMOTE>/deletions/` every 5 minutes **if a remote is configured; today none is (§8.2)**. Then set `BUDDYAI_DELETION_LEDGER_ENABLED=true` once the
+remote is configured: events waiting over 15 minutes then alert the operators and show on the System page.
 
-1. Stop the server (`docker compose … stop server`) so nothing changes meanwhile.
-2. Note the backup time (`restore.sh` prints `archive created at`).
-3. If the old production database is still readable, export the deletions recorded after that time
-   **before** overwriting it:
+`restore.sh` leaves a marker, and **the server refuses to start on that database** until step 3 is done.
 
-   ```sql
-   \copy (select id, created_at, actor, action, account_id, device_id from audit_log
-          where created_at >= '<backup time>' and action in ('account.delete', 'history.delete')
-          order by id) to 'deletions.csv' csv header
+1. Stop the server (`docker compose … stop server`), and if the old production database is still readable, keep
+   its events, including any not yet copied off-site:
+
+   ```sh
+   docker compose … exec postgres psql -U buddyai -d buddyai -Atc "select row_to_json(e) from (select uid, kind, account_id, device_id, target, occurred_at from deletion_events) e" > deletions-old-db.jsonl
    ```
 
-   If it is gone, collect the deletions from the server's JSON logs and support records instead.
-4. Restore (into a new database, or `--clean --force-production` into the old one).
-5. Re-apply every deletion through the application's own deletion code, not hand-written SQL:
-   `account.delete` → delete that account again (`app.accounts.delete_account`); `history.delete` →
-   delete that device's conversation history again (operator app, or `ConversationRepo.delete_device_history`).
-   A follow-up script can automate this step; it does not exist yet.
-6. Only then start the server and Caddy.
+2. Restore (into a new database, or `--clean --force-production` into the old one). On a machine holding the
+   private age key, download `<remote>/deletions/` and decrypt each file (`age -d -i key.txt -o x.jsonl x.jsonl.age`).
+3. Put the `.jsonl` files where the server container can read them and apply them through the application's own
+   deletion code. Check with `--dry-run` first. Running it twice is safe: an applied event is stored under its id.
 
-Note: operator history deletion writes `history.delete` today; check that customer self-service deletions
-(account, history) also write their audit events before relying on step 3. Data deleted on request
-otherwise stays only in backups until they expire (local 14 days, off-site 30 days by default): use the
-same periods in the privacy notice.
+   ```sh
+   docker compose … run --rm server python -m app.cli reconcile-deletions /path/to/ledger --dry-run
+   docker compose … run --rm server python -m app.cli reconcile-deletions /path/to/ledger
+   ```
+
+   If no ledger and no old database exist, `reconcile-deletions --no-ledger` lifts the block and records that
+   decision in the audit log. Deletions made after the backup then stay undone: treat that as a personal data
+   incident and work out what you can from support records.
+4. Start the server and Caddy.
+
+**Limit:** with no remote there is no ledger away from the server, so protection depends on the old database
+staying readable (step 1). If the whole server is lost, restore the newest copy and use `--no-ledger`: whatever
+customers deleted after that copy comes back and must be handled as described in step 3.
+
+Data deleted on request stays in backups until they expire (14 days, including the business owner's copies).
 
 ### 8.6 Coolify
 
-Same service, same variables (set them in Coolify's Environment Variables; use
-`BACKUP_RCLONE_CONFIG_B64` for the rclone configuration). Local backups are in the `backupdata` volume.
+Same service, same variables (set them in Coolify's Environment Variables). Local backups are in the `backupdata` volume.
 Coolify also has its own scheduled database backups to S3; check in your Coolify version whether they cover
 a PostgreSQL that runs inside a compose stack like this one before relying on them instead.
 
@@ -405,7 +426,7 @@ memory text) and `GET /api/diagnostics` → `memory` (job queue and failures).
 - [ ] Measured battery life, published on the site.
 - [ ] Firmware release image built with the production signing key (keep the key offline, with a backup).
 - [ ] Secure Boot + flash encryption enabled on **production units only** (see `firmware/README.md`).
-- [ ] Backups encrypted and copied off-site (section 8.1–8.2), the age key stored offline in two places,
+- [ ] Backups encrypted, copies on the business owner's computer (section 8.1–8.2; owner-managed), the age key stored offline in two places,
       and a restore test into a separate database done and recorded (8.4).
 - [ ] Test purchase end-to-end in Stripe test mode, then one real purchase with live keys and a refund.
 - [ ] Beta with 2–3 friendly customers before the public launch.

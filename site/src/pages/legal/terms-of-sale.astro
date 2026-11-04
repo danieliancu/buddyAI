@@ -19,7 +19,7 @@ import { config, prices, formatPrice } from "../../config";
 
   <h2>2. Prices and payment</h2>
   <p>
-    The watch costs {formatPrice(prices.watch.GBP, "GBP")} (UK) or {formatPrice(prices.watch.EUR, "EUR")} (EU).
+    The watch costs {formatPrice(prices.watch.GBP, "GBP")}.
     The price shown is the total price you pay for the watch. Delivery options, shipping costs and estimated delivery times are shown at checkout before you pay. Payment is taken by our payment
     provider, Stripe, when you place your order.
   </p>
@@ -32,7 +32,7 @@ import { config, prices, formatPrice } from "../../config";
 
   <h2>4. Delivery</h2>
   <p>
-    We deliver to the United Kingdom and all 27 EU member states. {config.shipping.note} Unless agreed otherwise, we deliver within 30 days of the order confirmation. We email tracking details when your order ships.
+    We deliver to Great Britain (England, Scotland and Wales) only. We don't deliver to Northern Ireland yet. {config.shipping.note} Unless agreed otherwise, we deliver within 30 days of the order confirmation. We email tracking details when your order ships.
   </p>
 
   <h2>5. Your right to cancel</h2>
@@ -43,8 +43,7 @@ import { config, prices, formatPrice } from "../../config";
 
   <h2>6. If something is wrong</h2>
   <p>
-    You have legal rights if the watch is faulty or not as described: in the UK under the Consumer Rights Act 2015, and
-    in the EU a legal guarantee of conformity of at least 2 years. See <a href="/legal/warranty/">guarantee &amp;
+    You have legal rights if the watch is faulty or not as described: under the Consumer Rights Act 2015. See <a href="/legal/warranty/">guarantee &amp;
     warranty</a>.
   </p>
 
@@ -64,7 +63,7 @@ import { config, prices, formatPrice } from "../../config";
   <h2>9. Complaints and disputes</h2>
   <p>
     Please contact us first at <a href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>. These terms are
-    governed by the law of England and Wales. If you live in Scotland, Northern Ireland or the EU, you can also bring
-    proceedings in your local courts and you keep the protection of the mandatory consumer law of your country.
+    governed by the law of England and Wales. If you live in Scotland, you can also bring
+    proceedings in the Scottish courts and you keep the protection of the mandatory consumer law that applies there.
   </p>
 </Legal>

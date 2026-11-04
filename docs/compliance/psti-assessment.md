@@ -1,6 +1,6 @@
 # UK PSTI assessment (Product Security and Telecommunications Infrastructure Act 2022, security requirements regulations 2023)
 
-Prepared 12 October 2026 from the firmware on branch `feature/uk-compliance`. Engineering assessment, not legal advice. **The draft statement below is not approved, not signed and must not be published or supplied until completed and approved.**
+Prepared 12 October 2026 from the firmware on 12 October 2026. Engineering assessment, not legal advice. **The draft statement below is not approved, not signed and must not be published or supplied until completed and approved.**
 
 ## Scope
 
@@ -10,7 +10,7 @@ The olácompanion watch connects to the internet (Wi-Fi) and is a consumer conne
 
 | Check | Finding | Evidence | Status |
 |---|---|---|---|
-| Wi-Fi setup network password | random 8 characters (31-symbol alphabet) per device from the hardware RNG, no modulo bias; shown only on the watch screen; replaced after each successful setup; erased by factory reset; setup refuses to start without a valid password (no fixed fallback) | `components/prov_util`, `settings.c:517-538`, `net_portal.c:266,397,408`, `app_main.c:484` | IMPLEMENTED_AND_VERIFIED (code review) |
+| Wi-Fi setup network password | random 8 characters (31-symbol alphabet) per device from the hardware RNG, no modulo bias; shown only on the watch screen; replaced after each successful setup; erased by factory reset; setup refuses to start without a valid password (no fixed fallback) | `components/prov_util`, `settings.c` (setup password), `net_portal.c:266,397,408`, `app_main.c:484` | IMPLEMENTED_AND_VERIFIED (code review) |
 | Bluetooth setup (Android) | ESP-IDF protocomm Security 2 (SRP6a + AES-256-GCM), proof of possession = the per-device setup password; pause after 3 failures | `ble_prov.c`, `sdkconfig.defaults:73-75` | IMPLEMENTED (code review) |
 | Hardcoded credentials | none found in `main/` and `components/` | review | IMPLEMENTED_NOT_VERIFIED (no automated scan) |
 | Device identifier as secret | `device_id` (from MAC) is an identifier only; access uses a server-issued token (only its hash is kept server-side); pairing uses a random 6-digit code valid 5 minutes | `protocol_client.c:366,486,941`, `server/app/security.py` | IMPLEMENTED |
@@ -18,8 +18,8 @@ The olácompanion watch connects to the internet (Wi-Fi) and is a consumer conne
 
 ## Requirement 2 — how to report security issues
 
-Published on this branch: `/security/` page and `/.well-known/security.txt`, contact **ola@olacompanion.com** (decided 12 Oct 2026). Acknowledgement target: 5 working days.
-Status: IMPLEMENTED on branch; becomes effective when the site is deployed. Mailbox monitoring is an operational duty (owner: business owner).
+In the repository: `/security/` page and `/.well-known/security.txt`, contact **ola@olacompanion.com** (decided 12 Oct 2026). Acknowledgement target: 5 working days.
+Status: IMPLEMENTED; effective once the site is deployed (not verified here). Mailbox monitoring is an operational duty (owner: business owner).
 
 ## Requirement 3 — minimum security update period
 
@@ -29,7 +29,7 @@ Open points (legal review): PSTI expects the period to be clear to the customer,
 ## Related device-security findings (not PSTI requirements)
 
 - Release firmware: wss-only with CA-bundle verification; signed OTA (RSA-3072) over HTTPS, SHA-256 check, rollback (`sdkconfig.release`). **Not yet on units.**
-- Secure Boot V2, flash encryption, NVS encryption, Secure Download Mode: production overlay `firmware/sdkconfig.production` (branch) — not enabled; requires spare-unit testing (irreversible eFuses).
+- Secure Boot V2, flash encryption, NVS encryption, Secure Download Mode: production overlay `firmware/sdkconfig.production` — not enabled; requires spare-unit testing (irreversible eFuses).
 - OTA downgrade is not blocked by firmware (only identical version is ignored) — MEDIUM; recommend a monotonic version check or Secure Boot anti-rollback in a later firmware release.
 - Wi-Fi and token are stored unencrypted in NVS until NVS encryption is enabled — HIGH before sale.
 

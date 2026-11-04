@@ -74,7 +74,7 @@ export default function Layout({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const nav = NAV.map((g) => ({ ...g, items: g.items.filter((i) => role === "admin" || !i.adminOnly) })).filter((g) => g.items.length);
+  const nav = NAV.map((g) => ({ ...g, items: g.items.filter((i) => role !== "support" || !i.adminOnly) })).filter((g) => g.items.length);
   const { pathname } = useLocation();
   const { connected } = useLive(() => undefined);
   const current = ALL.find((n) => pathname === n.to || pathname.startsWith(n.to + "/"));

@@ -54,7 +54,7 @@ function plan(kind: MyPlan["status"]["kind"] = "none", extra: Partial<MyPlan["st
     enforced: true,
     status: { kind, ...extra },
     usage: { used: 0, unlimited: true, period_start: "", reset_at: "" },
-    prices: { currency: "GBP", care_price_pence: 790 },
+    prices: { currency: "GBP", care_price_pence: 799 },
     can_subscribe: false,
     can_manage_billing: true,
     care_activation: null,
@@ -304,7 +304,7 @@ describe("order, account and olá Care states", () => {
   it("before pairing: the trial starts with the watch, not before", async () => {
     me.onboarding.mockResolvedValue(onboarding({ platform: "iphone" }));
     renderSetup();
-    expect((await screen.findByTestId("care-pending-pairing")).textContent).toMatch(/starts when the watch is paired.*£7\.90 a month/s);
+    expect((await screen.findByTestId("care-pending-pairing")).textContent).toMatch(/starts when the watch is paired.*£7\.99 a month/s);
   });
 
   it("paired and trial running: end date, price and how billing continues", async () => {
@@ -313,7 +313,7 @@ describe("order, account and olá Care states", () => {
     renderSetup();
     const t = await screen.findByTestId("care-trial-active");
     expect(t.textContent).toMatch(/5 Jan 2027/);
-    expect(t.textContent).toMatch(/£7\.90 a month/);
+    expect(t.textContent).toMatch(/£7\.99 a month/);
     expect(t.textContent).toMatch(/until you cancel/);
   });
 

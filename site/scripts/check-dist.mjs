@@ -10,7 +10,7 @@ const dist = join(root, "dist");
 const SITE = "https://www.olacompanion.com";
 const APP = "https://app.olacompanion.com";
 // The UK and the 27 EU member states.
-const COUNTRIES = "GB AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split(" ");
+const COUNTRIES = ["GB"]; // keep in step with src/config.ts: Great Britain only for launch
 
 const errors = [];
 const fail = (file, msg) => errors.push(`${file}: ${msg}`);
@@ -105,15 +105,15 @@ for (const f of pages) {
       }
       if (item["@type"] === "Organization") {
         const area = item.contactPoint?.areaServed ?? [];
-        if (!sameSet(area, COUNTRIES)) fail(rel(f), "Organization areaServed is not the 28 countries");
+        if (!sameSet(area, COUNTRIES)) fail(rel(f), "Organization areaServed differs from the shipping countries");
       }
       if (item["@type"] !== "Product") continue;
       for (const offer of item.offers ?? []) {
         const countries = offer.hasMerchantReturnPolicy?.applicableCountry ?? [];
         if (new Set(countries).size !== countries.length) fail(rel(f), "duplicate return-policy countries");
-        if (!sameSet(countries, COUNTRIES)) fail(rel(f), `return-policy countries differ from the 28: ${countries}`);
+        if (!sameSet(countries, COUNTRIES)) fail(rel(f), `return-policy countries differ from the shipping countries: ${countries}`);
         if (offer.availability) fail(rel(f), "static availability (it must follow the live shop status)");
-        if (!(Number(offer.price) > 0) || !["GBP", "EUR"].includes(offer.priceCurrency)) fail(rel(f), "bad offer price");
+        if (!(Number(offer.price) > 0) || offer.priceCurrency !== "GBP") fail(rel(f), "bad offer price");
         const visible = offer.priceCurrency === "GBP" ? `£${Number(offer.price).toFixed(2)}` : `€${Number(offer.price).toFixed(2)}`;
         if (!s.includes(visible)) fail(rel(f), `offer price ${visible} is not shown on the page`);
       }

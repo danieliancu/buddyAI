@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Timer } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, Timer } from "lucide-react";
 import type { Conversation, ConversationTurn } from "../api";
 import { fmtDate, fmtDateTime, fmtMoney, fmtMs, fmtTime, KIND_LABEL, langName, langNative, UNIT_LABEL } from "../format";
 import { useLanguages } from "../languages";
@@ -37,17 +37,19 @@ function Highlight({ text, query }: { text: string; query?: string }) {
 
 /** Chat-style rendering of a watch's conversations. `technical` adds TTFA, status, type and cost (operator);
  * `newestFirst` lists the conversations and their turns newest first (latest at the top); `highlight` marks the
- * words searched for. */
+ * words searched for; `onReveal` (principal operator) offers exceptional access to one conversation. */
 export default function ConversationList({
   conversations,
   technical,
   newestFirst,
   highlight,
+  onReveal,
 }: {
   conversations: Conversation[];
   technical?: boolean;
   newestFirst?: boolean;
   highlight?: string;
+  onReveal?: (conversation: Conversation) => void;
 }) {
   const langs = useLanguages();
   return (
@@ -67,6 +69,11 @@ export default function ConversationList({
                 {technical && <> · last activity {fmtTime(c.last_activity_at)}</>}
                 {technical && c.turns.some((t) => t.usage) && <> · £{totalCost(c.turns).toFixed(2)}</>}
               </span>
+              {onReveal && c.turns.some((t) => t.content_hidden) && (
+                <button type="button" className="link ml-2 text-xs" onClick={() => onReveal(c)}>
+                  Open with a reason
+                </button>
+              )}
             </span>
           }
           bodyClassName="space-y-4"
@@ -74,6 +81,12 @@ export default function ConversationList({
           {c.turns.length === 0 && <p className="text-sm text-muted">No turns.</p>}
           {(newestFirst ? [...c.turns].reverse() : c.turns).map((t) => (
             <div key={t.id} className="space-y-1.5">
+              {t.content_hidden ? (
+                <p className="inline-flex items-center gap-1.5 text-xs text-muted italic">
+                  <EyeOff className="size-3.5" /> Content hidden
+                </p>
+              ) : (
+              <>
               <div className="flex flex-col items-end">
                 <div
                   className={cx(
@@ -96,6 +109,8 @@ export default function ConversationList({
                     <Highlight text={t.assistant_text} query={highlight} />
                   </div>
                 </div>
+              )}
+              </>
               )}
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
                 <span>{fmtTime(t.created_at)}</span>

@@ -11,16 +11,16 @@ const { class: cls = "" } = Astro.props;
   <li class="flex gap-3">
     <Icon name="undo" size={20} class="mt-0.5 shrink-0 text-violet" />
     <span><strong class="text-fg">14-day right to cancel</strong> after delivery — change your mind for any reason
-      (UK/EU distance-selling rules). <a class="link" href="/legal/returns/">Returns</a></span>
+      (UK distance-selling rules). <a class="link" href="/legal/returns/">Returns</a></span>
   </li>
   <li class="flex gap-3">
     <Icon name="shield" size={20} class="mt-0.5 shrink-0 text-violet" />
-    <span><strong class="text-fg">Your legal rights</strong>: UK statutory rights, and a 2-year legal guarantee in
-      the EU. <a class="link" href="/legal/warranty/">Guarantee</a></span>
+    <span><strong class="text-fg">Your legal rights</strong>: your UK statutory rights.
+      <a class="link" href="/legal/warranty/">Guarantee</a></span>
   </li>
   <li class="flex gap-3">
     <Icon name="truck" size={20} class="mt-0.5 shrink-0 text-violet" />
-    <span><strong class="text-fg">Ships to the UK and EU</strong>. {config.shipping.note}
+    <span><strong class="text-fg">Ships within Great Britain</strong>. {config.shipping.note}
       {config.freeReturns ? " Free returns." : ""}</span>
   </li>
   <li class="flex gap-3">

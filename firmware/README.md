@@ -204,9 +204,19 @@ idf.py -B build-release -D SDKCONFIG=build-release/sdkconfig -p COM5 flash monit
 2. Upload `build-release/buddyai_watch.bin` (signed) to an **https** URL.
 3. Offer it from the server (`ota_available` with `version`, `url`, `sha256` of the *signed* .bin, `size`).
 4. The watch downloads, checks size + SHA-256, then `esp_ota_end()` verifies the signature against the
-   key that signed the **running** firmware. Unsigned or foreign-key images are rejected. After the
-   reboot the new image is confirmed once it reaches a server session; otherwise the bootloader rolls
-   back to the previous image.
+   key that signed the **running** firmware. Unsigned or foreign-key images are rejected.
+5. After the reboot the new image is on probation. It is confirmed only when the display and audio started,
+   the server answered on an authenticated session, and it then ran for 60 seconds with enough free memory.
+   A failed check, or 5 failed sessions with Wi-Fi up, rolls back at once and the watch reports which check
+   failed. So does any restart during probation (the bootloader's rule); a reset from switching off is not
+   counted against the release. Without Wi-Fi the image simply waits. A server outage during probation can
+   therefore roll back a good image; it is offered again later.
+
+Automatic rollout (server: `BUDDYAI_OTA_AUTO_ENABLED`, Firmware page): a release moves by explicit approval
+through development, pilot (chosen watches), 10 %, 25 %, 50 %, 100 %. See `protocol/PROTOCOL.md` §3.4.
+Release-channel uploads need `BUDDYAI_FIRMWARE_SIGNING_PUBKEY` on the server (the **public** key only:
+`openssl rsa -in keys/buddyai_signing_key.pem -pubout`), and the tests below must be recorded before a release
+leaves the development stage.
 
 Note: a watch running a *development* (unsigned) build does not check signatures. The first release
 image has to be flashed over USB (or OTA'd from a dev build); from then on only images signed with the
@@ -317,7 +327,10 @@ with §8.2. Record date, firmware version, unit MAC and result for each line.
       development image.
 - [ ] **Rollback**: offer a correctly signed image that cannot reach a server session (e.g. a test build
       whose built-in server URL points nowhere). After it restarts and fails to connect, reset it: the
-      bootloader goes back to the previous image, which then connects normally.
+      bootloader goes back to the previous image, which then connects normally. With a local check forced
+      to fail, or with the server unreachable and Wi-Fi up, it rolls back by itself and reports why.
+- [ ] **Modified image rejected**: change one byte of a correctly signed image and offer it. Refused as above.
+- [ ] **Good image without Wi-Fi**: switch Wi-Fi off during probation. No rollback; it confirms once Wi-Fi returns.
 - [ ] **Secure Boot active** (production unit): the first-boot log shows Secure Boot being enabled; every
       later boot the app logs `secure boot ON, flash encryption ON`. An image signed with another key,
       offered by OTA, is rejected as above.

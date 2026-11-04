@@ -787,6 +787,12 @@ static void app_loop(void)
 }
 
 
+/* The new image passed its checks: the protocol task tells the server (or the next hello does). */
+static void on_ota_confirmed(ota_state_t state, int pct, void *ctx)
+{
+    proto_ota_confirmed();
+}
+
 void app_main(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
@@ -800,6 +806,7 @@ void app_main(void)
     s_app_q = xQueueCreate(16, sizeof(app_ev_t));
 
     ESP_ERROR_CHECK(settings_init());
+    ota_boot_init(on_ota_confirmed, NULL);
     ESP_ERROR_CHECK(board_init());
     board_pm_init();    /* frequency scaling in standby; logs and runs at full speed if unavailable */
 
@@ -830,6 +837,7 @@ void app_main(void)
     lv_display_t *disp = board_display_init();
     if (!disp) {
         ESP_LOGE(TAG, "display init failed - continuing headless");
+        ota_health_local("display", false);
     } else {
         const ui_callbacks_t ui_cb = {
             .on_mic_tap = ui_mic_tap,
@@ -865,6 +873,7 @@ void app_main(void)
         s_audio_ready = true;
     } else {
         ESP_LOGE(TAG, "audio init failed");
+        ota_health_local("audio", false);
     }
 
     settings_add_listener(on_settings, NULL);

@@ -500,6 +500,10 @@ async def _watch_order_paid(db: Session, cs: dict[str, Any], fetch_payment_inten
         return
     _revenue(db, cs["id"], acc.id, "watch", order.amount_total, order.currency, order.amount_tax)
     accounts.audit(db, "system", "order.paid", acc.id, detail=f"order {order.id} (watch; ola Care starts at pairing)")
+    if str((order.shipping_address or {}).get("postal_code") or "").strip().upper().startswith("BT"):
+        # Stripe's "GB" includes Northern Ireland, where this product is not on sale yet: an operator must refund it.
+        log.warning("order %s has a Northern Ireland delivery address", order.id)
+        accounts.audit(db, "system", "order.outside_delivery_area", acc.id, detail=f"order {order.id}: BT postcode")
     if acc.status == "deleted":
         return
     if new_account or acc.password_hash is None:

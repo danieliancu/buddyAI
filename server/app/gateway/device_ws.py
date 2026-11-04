@@ -22,7 +22,7 @@ from app.db.session import session_scope
 from app.device_settings import DEVICE_EDITABLE, DeviceSettings, device_view
 from app.gateway.hub import DeviceHub, PairingError
 from app.incidents import events as diag_events, service as diagnostics
-from app import cost_monitor
+from app import cost_monitor, ota_rollout
 from app.interactions import counts_as_interaction
 from app.items import KINDS, device_full
 from app.voice_context import STORE
@@ -87,6 +87,7 @@ class DeviceConnection:
         self.downlink_rate = 16000
         self.ui_state = "idle"
         self.active: TurnContext | None = None
+        self.last_activity_s = 0.0  # time.monotonic() of the last turn's start or end (automatic updates wait)
         self.last_turn_id = 0
         self.recent: dict[int, TurnContext] = {}
         self.last_language: str | None = None  # last detected reply language in this session
@@ -315,6 +316,7 @@ class DeviceConnection:
             "playback_done": self._on_playback_done,
             "settings_changed": self._on_settings_changed,
             "status": self._on_status,
+            "ota_status": self._on_ota_status,
             "item_open": self._on_item_open,
             "item_delete": self._on_item_delete,
             "item_done": self._on_item_done,
@@ -348,8 +350,11 @@ class DeviceConnection:
                 else:
                     # The previous session's id: what a report from firmware 0.1.0 refers to (ola Diagnostics)
                     last_session = dev.last_session_id
+                    # Firmware without a channel keeps "" and gets no automatic updates.
+                    channel = str(msg.get("fw_channel") or "")[:16]
                     DeviceRepo(db).touch(dev.id, fw_version=fw, hw_model=hw, last_ip=self._client_ip(),
-                                         last_session_id=new_session)
+                                         last_session_id=new_session, fw_channel=channel)
+                    ota_rollout.on_hello(db, dev.id, fw, msg, self.hub)
                     settings, version = SettingsRepo(db).ensure(dev.id)
                     account_id = dev.account_id
                     chat_title = PersonaRepo(db).chat_title(settings.persona_id, account_id)
@@ -386,6 +391,7 @@ class DeviceConnection:
             if account_id is not None:
                 await self.hub.push_items(account_id, only=self)
                 await deliver_due(self.hub, account_id)  # reminders that came due while offline
+            await ota_rollout.consider(self.hub, self)
             return
         if is_valid_pairing_code(code):
             try:
@@ -536,6 +542,7 @@ class DeviceConnection:
                 turn.db_id, turn.conversation_id = row.id, conv.id
         self._decoder = OpusDecoder(16000)
         self.active = turn
+        self.last_activity_s = time.monotonic()
         self.recent[turn_id] = turn
         for old in sorted(self.recent)[:-MAX_RECENT_TURNS]:
             del self.recent[old]
@@ -801,6 +808,7 @@ class DeviceConnection:
                 **turn.marks.as_db_fields(),
             }
         )
+        self.last_activity_s = time.monotonic()
 
     def _schedule_learning(self, turn: TurnContext, result: TurnResult) -> None:
         """Opt-in memory learning: after a completed chat turn, the conversation is (re)scheduled to be read
@@ -953,6 +961,11 @@ class DeviceConnection:
         with session_scope() as db:
             DeviceRepo(db).touch(self.device_id, **{k: v for k, v in fields.items() if v is not None})
         self.hub.publish({"type": "device_status", "device_id": self.device_id, **fields})
+        await ota_rollout.consider(self.hub, self)
+
+    async def _on_ota_status(self, msg: dict[str, Any]) -> None:
+        with session_scope() as db:
+            ota_rollout.on_status(db, self.device_id, msg, self.hub)
 
 
 class _Close(Exception):

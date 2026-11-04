@@ -1,7 +1,9 @@
 # Web search (ddgs_brave): status and TODO
 
-Branch `feature/ddgs-brave-search` (based on master `95e0707`). Not merged, not deployed. The default stays
-`BUDDYAI_SEARCH_BACKEND=legacy_openai`, so production behaves as before.
+**Update 4 November 2026:** the branch is merged into master, and production runs `ddgs_brave`: the owner read
+`BUDDYAI_SEARCH_BACKEND=ddgs_brave` in Coolify. The code default stays `legacy_openai`, so that Coolify variable is
+what selects the backend. Statements below that it is not deployed or not to be switched on are out of date; the
+targets in section D are still not all met.
 
 ## Where we are (benchmark 31 October 2026, 12:51: after A7, B8 and A2 / B11 / B12)
 

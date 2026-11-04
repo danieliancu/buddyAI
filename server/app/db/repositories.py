@@ -9,6 +9,7 @@ from sqlalchemy import delete as sa_delete, func, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
+from app import deletion_log
 from app.db.models import (
     AdminUser,
     Conversation,
@@ -328,6 +329,7 @@ class ConversationRepo:
             self.s.delete(t)
         for c in self.s.exec(select(Conversation).where(Conversation.device_id == device_id)).all():
             self.s.delete(c)
+        deletion_log.record(self.s, deletion_log.DEVICE_HISTORY, device_id=device_id)
         if commit:
             self.s.commit()
         else:
@@ -876,6 +878,7 @@ class ItemRepo:
         return self.create(src.account_id, src.kind, op=op, **fields)
 
     def delete(self, it: Item) -> None:
+        deletion_log.record(self.s, deletion_log.ITEM, it.account_id, target=it.uid)
         self.s.delete(it)
         self.s.commit()
 
@@ -892,6 +895,8 @@ class ItemRepo:
         if missing or changed:
             self.s.rollback()
             raise ItemConflictError(missing=missing, changed=changed)
+        for uid, _ in targets:
+            deletion_log.record(self.s, deletion_log.ITEM, account_id, target=uid)
         if op is not None:
             self.s.add(op)
         self.s.commit()

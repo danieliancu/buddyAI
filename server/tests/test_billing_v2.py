@@ -354,7 +354,7 @@ def test_customer_plan_api_hides_costs(enforce):
     assert body["status"]["kind"] == "complimentary" and body["enforced"] is True
     u = body["usage"]
     assert u["used"] == 520 and u["unlimited"] is True and "limit" not in u and "remaining" not in u
-    assert body["prices"] == {"currency": "GBP", "care_price_pence": 790}
+    assert body["prices"] == {"currency": "GBP", "care_price_pence": 799}
     assert "topup_available" not in body and "thresholds" not in body
     def walk(node):
         if isinstance(node, dict):

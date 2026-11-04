@@ -36,6 +36,9 @@ class PairingError(Exception):
     pass
 
 
+CONTENT_FIELDS = ("user_text", "assistant_text")
+
+
 class DeviceHub:
     def __init__(self, pairing_ttl_s: int = 300) -> None:
         self.pairing_ttl_s = pairing_ttl_s
@@ -89,12 +92,14 @@ class DeviceHub:
     def publish(self, event: dict[str, Any], operator_only: bool = False) -> None:
         event.setdefault("at", int(time.time() * 1000))
         owner = event["account_id"] if "account_id" in event else self._owner_of(event.get("device_id"))
+        # Operators never get what a customer and the assistant said over the live feed (see /reveal in api/devices.py).
+        for_operators = {k: v for k, v in event.items() if k not in CONTENT_FIELDS}
         for q, account_id in list(self._listeners.items()):
             if account_id is not None and (operator_only or account_id != owner):
                 continue
             if q.full():
                 continue  # slow browser tab: drop instead of blocking the device path
-            q.put_nowait(event)
+            q.put_nowait(for_operators if account_id is None else event)
 
     def _owner_of(self, device_id: str | None) -> int | None:
         if not device_id:

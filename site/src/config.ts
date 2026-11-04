@@ -5,6 +5,8 @@
 
 export type Currency = "GBP" | "EUR";
 
+// The launch market is Great Britain only: pages show pounds. The euro figures stay for a later EU launch, once
+// conformity, VAT and logistics for the EU are documented.
 // Prices are set in pounds; euro prices are converted at GBP_TO_EUR and rounded to clean figures.
 // Must match the Stripe prices (products "olacompanion" and "olacare", GBP + EUR, trial length):
 // STRIPE_PRICE_WATCH_GBP/EUR and STRIPE_PRICE_CARE_GBP/EUR in server/.env. After changing a price or
@@ -13,7 +15,7 @@ export type Currency = "GBP" | "EUR";
 // watch = what checkout charges (the Stripe watch price); watchWas = the regular price shown struck through
 // while the sale runs (set it equal to `watch`, or remove the line, when the sale ends). A "was" price must
 // be a price the watch was genuinely sold at (UK/EU price-reduction rules).
-const PRICE_GBP = { watch: 79.99, watchWas: 99.99 as number | null, care: 7.99 };
+const PRICE_GBP = { watch: 79.99, watchWas: null as number | null, care: 7.99 };
 
 // Review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
 export const GBP_TO_EUR = 1.17;
@@ -87,17 +89,12 @@ export function formatDate(iso: string): string {
 }
 
 /**
- * Where we ship, and where the returns policy applies: the UK and the 27 EU member states (ISO 3166-1 alpha-2).
+ * Where we ship (ISO 3166-1 alpha-2): Great Britain only for now. "GB" also covers Northern Ireland at Stripe, which has
+ * no per-postcode rule; the server flags BT postcodes on paid orders (billing.py).
  * Keep in step with BUDDYAI_SHIP_COUNTRIES (server/app/config.py), the Stripe checkout's allowed countries.
  */
 export const shipCountries = [
-  ["GB", "United Kingdom"],
-  ["AT", "Austria"], ["BE", "Belgium"], ["BG", "Bulgaria"], ["HR", "Croatia"], ["CY", "Cyprus"],
-  ["CZ", "Czechia"], ["DK", "Denmark"], ["EE", "Estonia"], ["FI", "Finland"], ["FR", "France"],
-  ["DE", "Germany"], ["GR", "Greece"], ["HU", "Hungary"], ["IE", "Ireland"], ["IT", "Italy"],
-  ["LV", "Latvia"], ["LT", "Lithuania"], ["LU", "Luxembourg"], ["MT", "Malta"], ["NL", "Netherlands"],
-  ["PL", "Poland"], ["PT", "Portugal"], ["RO", "Romania"], ["SK", "Slovakia"], ["SI", "Slovenia"],
-  ["ES", "Spain"], ["SE", "Sweden"],
+  ["GB", "Great Britain"],
 ] as const;
 export const shipCountryCodes: string[] = shipCountries.map(([code]) => code);
 export const shipCountryNames: string[] = shipCountries.map(([, name]) => name);

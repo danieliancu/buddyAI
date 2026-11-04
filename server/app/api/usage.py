@@ -12,6 +12,7 @@ from sqlmodel import Session
 from app import accounts
 from app.db.models import utcnow
 from app.db.models import PricingRule
+from app.api.common import operator_error
 from app.db.repositories import PricingRepo, TurnRepo, UsageRepo
 from app.db.session import get_session
 from app.pipeline.metrics import percentile
@@ -113,7 +114,7 @@ def diagnostics(days: int = Query(7, ge=1, le=90), device_id: str | None = None,
                 "llm_first_token_ms": t.llm_first_token_ms,
                 "tts_first_audio_ms": t.tts_first_audio_ms,
                 "ttfa_ms": ttfa(t),
-                "error": t.error,
+                "error": operator_error(t),
             }
             for t in turns[-50:][::-1]
         ],

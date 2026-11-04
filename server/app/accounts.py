@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
+from app import deletion_log
 from app.config import get_settings
 from app.account_lock import lock_account
 from app.db.models import (
@@ -315,7 +316,7 @@ def _export_billing(db: Session, account: Account) -> dict[str, Any]:
     }
 
 
-def delete_account(db: Session, account: Account, detail: str = "self-service") -> list[str]:
+def delete_account(db: Session, account: Account, detail: str = "self-service", cancel_stripe: bool = True) -> list[str]:
     """Erase personal data. Returns the unpaired device ids (the caller disconnects them).
 
     Runs in one transaction under the account lock. Live ola Care subscriptions are cancelled in Stripe
@@ -337,7 +338,8 @@ def delete_account(db: Session, account: Account, detail: str = "self-service") 
     from sqlalchemy import delete as sa_delete
 
     lock_account(db, account.id)
-    billing.cancel_all_for_account(db, account)  # raises before anything is deleted
+    if cancel_stripe:
+        billing.cancel_all_for_account(db, account)  # raises before anything is deleted
     device_ids = [d.id for d in db.exec(select(Device).where(Device.account_id == account.id)).all()]
     turns = db.exec(select(Turn).where(Turn.account_id == account.id)).all()
     turn_ids = [t.id for t in turns]
@@ -377,6 +379,7 @@ def delete_account(db: Session, account: Account, detail: str = "self-service") 
     # Audited in the same transaction (not with audit(), which commits on its own): the entry exists exactly
     # when the deletion does.
     db.add(AuditLog(actor=f"account:{account.id}", action="account.delete", account_id=account.id, detail=detail))
+    deletion_log.record(db, deletion_log.ACCOUNT, account.id)
     account.status = "deleted"
     account.email = f"deleted-{account.id}@deleted.invalid"
     account.name = ""

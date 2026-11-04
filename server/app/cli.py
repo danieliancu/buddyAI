@@ -1,11 +1,13 @@
 """Server administration commands.
 
-    python -m app.cli create-operator <username> [--role admin|support]   # asks for the password
+    python -m app.cli create-operator <username> [--role admin|support|principal]   # asks for the password
     python -m app.cli reset-operator-password <username>
-    python -m app.cli set-operator-role <username> <admin|support>
+    python -m app.cli set-operator-role <username> <admin|support|principal>
     python -m app.cli reset-operator-mfa <username>      # turns two-factor authentication off (lost phone)
     python -m app.cli disable-operator <username>
     python -m app.cli enable-operator <username>
+    python -m app.cli reconcile-deletions <ledger file or folder>... [--dry-run]   # after restoring a backup
+    python -m app.cli reconcile-deletions --no-ledger   # no ledger exists: records that decision in the audit log
 
 Every change except create-operator signs the operator out everywhere (session_version) and is audited.
 """
@@ -14,11 +16,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import sys
+from pathlib import Path
 
 from sqlmodel import Session
 
-from app import accounts
+from app import accounts, deletion_log
 from app.db.models import AdminUser
 from app.db.repositories import AdminRepo
 from app.db.session import run_migrations, session_scope
@@ -97,6 +101,24 @@ def set_disabled(db: Session, username: str, disabled: bool) -> None:
     _save(db, user, "operator.disabled" if disabled else "operator.enabled")
 
 
+def _reconcile_deletions(db: Session, ledger: list[Path], dry_run: bool, no_ledger: bool) -> int:
+    if no_ledger == bool(ledger):
+        print("Give the decrypted ledger files or folders, or --no-ledger if none exists.")
+        return 2
+    result = deletion_log.reconcile(db, deletion_log.load_ledger(ledger), dry_run=dry_run)
+    print(json.dumps(result, indent=2))
+    if dry_run:
+        return 0
+    if result["failed"]:
+        print("Some deletions could not be applied: the server stays blocked. Fix them and run this again.")
+        return 1
+    deletion_log.clear_required(db)
+    accounts.audit(db, "system", "deletions.reconciled",
+                   detail="no ledger available" if no_ledger else f"{result['applied']} applied")
+    print("Done. The server can start on this database.")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -109,10 +131,16 @@ def main() -> None:
     p.add_argument("role", choices=ROLES)
     for name in ("reset-operator-mfa", "disable-operator", "enable-operator"):
         sub.add_parser(name).add_argument("username")
+    p = sub.add_parser("reconcile-deletions")
+    p.add_argument("ledger", nargs="*", type=Path)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-ledger", action="store_true")
     args = parser.parse_args()
     run_migrations()
     with session_scope() as db:
         try:
+            if args.cmd == "reconcile-deletions":
+                sys.exit(_reconcile_deletions(db, args.ledger, args.dry_run, args.no_ledger))
             if args.cmd == "create-operator":
                 if AdminRepo(db).get(args.username):
                     raise OperatorError(f"Operator {args.username!r} already exists.")
