@@ -5,11 +5,12 @@ import { fmtDate } from "../../format";
 import { Button, Card, ErrorBox, Toggle, useAsync } from "../../components/ui";
 
 /**
- * Per watch: who wears it, and whether olá may search its earlier conversations. Saved at once and apart from the
- * watch settings (the server keeps it away from them: it never reaches the watch). Hidden while the feature is not
- * available for the account. A watch someone else wears stays off: the account holder cannot agree for the wearer.
+ * On the Memory page, per watch: who wears it, and whether olá may search its earlier conversations. On by default,
+ * and the watch counts as worn by its owner until they say otherwise. Saved at once and apart from the watch settings
+ * (the server keeps it away from them: it never reaches the watch). Hidden while the feature is not available for the
+ * account. A watch someone else wears stays off: the account holder cannot agree for the wearer.
  */
-export default function SearchPastConversations({ id }: { id: string }) {
+export default function SearchPastConversations({ id, name }: { id: string; name?: string }) {
   const state = useAsync(() => api.me.devices.conversationSearch(id), [id]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -30,7 +31,7 @@ export default function SearchPastConversations({ id }: { id: string }) {
   };
 
   return (
-    <Card title="Search Past Conversations" icon={<History />}>
+    <Card title={name ? `Search Past Conversations: ${name}` : "Search Past Conversations"} icon={<History />}>
       <div className="space-y-4">
         <div>
           <p className="text-sm font-medium">Who uses this watch?</p>
@@ -53,7 +54,8 @@ export default function SearchPastConversations({ id }: { id: string }) {
             <p className="mt-1 pl-14 text-xs text-muted">
               When you ask about something discussed earlier, olá looks through this watch’s conversations. To make that
               possible, their text is sent to our AI provider (OpenAI, which may process it outside the UK) to create
-              searchable representations, stored with your account. Only this watch can search them.
+              searchable representations, stored with your account. Only this watch can search them. This is on by
+              default for a watch you wear yourself, and you can switch it off at any time.
             </p>
             <p className="mt-1 pl-14 text-xs text-muted">
               {d.enabled
