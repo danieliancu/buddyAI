@@ -2,6 +2,7 @@
  * ola - development only: the current screen as an image over Wi-Fi.
  *
  *   GET http://<watch-ip>:8080/snap  ->  image/bmp, 410 x 502, 24 bit
+ *   GET http://<watch-ip>:8080/diag  ->  USB port and light sleep counters, as text
  *
  * Used to compare the watch with the web app's preview and to check layouts
  * without a camera. Never built into release firmware (CONFIG_BUDDYAI_RELEASE_BUILD).
@@ -11,7 +12,10 @@
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
 
 #include <string.h>
+#include <stdio.h>
+#include "driver/usb_serial_jtag.h"
 #include "esp_http_server.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include "board.h"
@@ -72,6 +76,16 @@ static esp_err_t snap_get(httpd_req_t *req)
     return err;
 }
 
+static esp_err_t diag_get(httpd_req_t *req)
+{
+    char text[80];
+    int n = snprintf(text, sizeof(text), "up_s %lld\nusb_connected %d\nlight_sleeps %lu\n",
+                     (long long)(esp_timer_get_time() / 1000000), usb_serial_jtag_is_connected(),
+                     (unsigned long)board_pm_light_sleeps());
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_send(req, text, n);
+}
+
 void debug_snap_start(void)
 {
     if (s_httpd) {
@@ -88,6 +102,8 @@ void debug_snap_start(void)
     }
     static const httpd_uri_t uri = { .uri = "/snap", .method = HTTP_GET, .handler = snap_get };
     httpd_register_uri_handler(s_httpd, &uri);
+    static const httpd_uri_t diag = { .uri = "/diag", .method = HTTP_GET, .handler = diag_get };
+    httpd_register_uri_handler(s_httpd, &diag);
     ESP_LOGI(TAG, "screen snapshots: http://<watch-ip>:8080/snap (development build)");
 }
 

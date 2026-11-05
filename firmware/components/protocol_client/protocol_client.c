@@ -203,6 +203,8 @@ static SemaphoreHandle_t s_turn_lock;
 static uint32_t         s_turn_counter;     /* last turn id issued this session */
 static volatile uint32_t s_active_turn;
 static volatile bool    s_turn_live;        /* active turn not aborted/finished */
+static bool send_ota_status(const char *state, const char *reason, int pct);
+static const char      *s_ota_unsent_failure;  /* the update failed and the server was not told: sent with the next session */
 static char             s_ota_attempt[33];  /* the server's id of the update offered last ("": a manual, untracked one) */
 static volatile bool    s_first_audio_seen;
 static volatile proto_conv_state_t s_conv = PROTO_CONV_IDLE;
@@ -1206,6 +1208,9 @@ static void on_hello_ack(const cJSON *j)
         settings_apply_local(s_pending_changes);
         send_settings_changes();
     }
+    if (s_ota_unsent_failure && send_ota_status("failed", s_ota_unsent_failure, -1)) {
+        s_ota_unsent_failure = NULL;
+    }
     send_status();
 }
 
@@ -1299,10 +1304,10 @@ static void on_ota_status(ota_state_t state, int pct, void *ctx)
     post(&m);
 }
 
-static void send_ota_status(const char *state, const char *reason, int pct)
+static bool send_ota_status(const char *state, const char *reason, int pct)
 {
     if (!s_ota_attempt[0] || s_conn != CONN_SESSION) {
-        return;
+        return false;
     }
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "attempt_id", s_ota_attempt);
@@ -1313,7 +1318,7 @@ static void send_ota_status(const char *state, const char *reason, int pct)
     if (pct >= 0) {
         cJSON_AddNumberToObject(m, "progress", pct);
     }
-    send_json(m, "ota_status", false, 0);
+    return send_json(m, "ota_status", false, 0) == ESP_OK;
 }
 
 /* Why a server-chosen update must wait (NULL: go on). The server checks too; this watch knows it first-hand. */
@@ -1387,6 +1392,7 @@ static void handle_text(const char *txt)
         const char *ver = json_str(j, "version");
         const char *attempt = json_str(j, "attempt_id");
         strlcpy(s_ota_attempt, attempt ? attempt : "", sizeof(s_ota_attempt));
+        s_ota_unsent_failure = NULL;
         const char *refused = attempt ? ota_refusal(j) : NULL;
 #if CONFIG_BUDDYAI_RELEASE_BUILD
         if (!refused && ota_version_older(ver, s_cfg.fw_version)) {
@@ -2199,7 +2205,9 @@ static void handle_msg(msg_t *m)
             send_ota_status("rebooting", NULL, -1);
             break;
         default:
-            send_ota_status("failed", ota_last_failure(), -1);
+            /* A download that fails often takes the connection with it. The server would wait 30 minutes, then
+             * record "no report" instead of the reason. ota_last_failure() returns a string constant. */
+            s_ota_unsent_failure = send_ota_status("failed", ota_last_failure(), -1) ? NULL : ota_last_failure();
             break;
         }
         emit(PROTO_EVT_OTA, m->a == OTA_STATE_FAILED ? -1 : m->b, NULL);

@@ -78,6 +78,8 @@ void      board_display_standby(bool on, bool keep_panel);
 /* Development: touch interrupts seen in standby (the light-sleep exit check counts separately, board_pm_diag). */
 void      board_touch_diag(uint32_t *wake_irqs);
 void      board_pm_diag(uint32_t *gpio_wakes);
+uint32_t  board_pm_light_sleeps(void);     /* light sleeps since start */
+void      board_pm_usb_guard_poll(uint32_t now_ms);  /* app loop: no light sleep while a computer is attached */
 bool      board_display_lock(uint32_t timeout_ms);
 void      board_display_unlock(void);
 
