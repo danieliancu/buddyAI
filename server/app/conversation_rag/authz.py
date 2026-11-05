@@ -3,9 +3,10 @@
 A watch's earlier conversations are searched only when all of these hold:
 - the server switch is on and the account is allowed (Settings.conversation_rag_on_for);
 - the watch belongs to that account now;
-- its owner declared they wear it themselves and switched the feature on (conversation_rag_authorizations).
+- it is treated as worn by its owner and the feature is on, unless the owner said otherwise
+  (conversation_rag_authorizations; the row is created with those defaults the first time it is needed).
 
-Someone else's watch stays off: the account holder cannot consent for the wearer (no approved wearer
+Someone else's watch stays off once declared: the account holder cannot consent for the wearer (no approved wearer
 authorisation exists yet), and the database refuses that state too. Every change of state, wearer or owner bumps
 `generation`; work started under an older generation is neither stored nor returned.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import delete as sa_delete
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import get_settings
@@ -41,12 +43,30 @@ def _row(db: Session, device_id: str, lock: bool = False) -> ConversationRagAuth
     return db.exec(q).first()
 
 
+def _row_or_default(db: Session, account_id: int, device_id: str) -> ConversationRagAuthorization | None:
+    """The watch's row. A watch of this account without one gets the default: its owner wears it, feature on."""
+    row = _row(db, device_id)
+    if row is not None:
+        return row
+    dev = db.get(Device, device_id)
+    if dev is None or dev.account_id != account_id or dev.revoked_at is not None:
+        return None
+    try:
+        with db.begin_nested():
+            db.add(ConversationRagAuthorization(device_id=device_id, account_id=account_id, wearer="self", state="on",
+                                                authorized_at=utcnow(), notice_version=NOTICE_VERSION, method="default"))
+        db.commit()
+    except IntegrityError:  # another connection of the same watch created it first
+        pass
+    return _row(db, device_id)
+
+
 def access(db: Session, account_id: int | None, device_id: str) -> Access:
     """The watch's access now (at connect, and again before a search returns or its result is stored)."""
     if not get_settings().conversation_rag_on_for(account_id):
         return OFF
+    row = _row_or_default(db, account_id, device_id)
     dev = db.get(Device, device_id)
-    row = _row(db, device_id)
     if dev is None or dev.account_id != account_id or dev.revoked_at is not None or row is None:
         return OFF
     if row.account_id != account_id or row.wearer != "self" or row.state != "on":
@@ -61,10 +81,11 @@ def still_allowed(db: Session, account_id: int | None, device_id: str, generatio
 
 def view(db: Session, account_id: int, device_id: str) -> dict:
     """The customer's view of the setting (no internal ids, no indexing state)."""
-    row = _row(db, device_id)
+    available = get_settings().conversation_rag_on_for(account_id)
+    row = _row_or_default(db, account_id, device_id) if available else _row(db, device_id)
     mine = row is not None and row.account_id == account_id
     return {
-        "available": get_settings().conversation_rag_on_for(account_id),
+        "available": available,
         "wearer": row.wearer if mine else None,
         "enabled": bool(mine and row.state == "on" and row.wearer == "self"),
         "authorized_at": row.authorized_at.isoformat() if mine and row.authorized_at else None,

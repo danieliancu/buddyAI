@@ -159,7 +159,11 @@ def test_a_new_owner_starts_without_the_previous_choice_or_vectors(how):
     assert _count(ConversationRagAuthorization, device_id=dev) == 0
     assert _count(ConversationRagEmbedding, device_id=dev) == 0
     with session_scope() as db:
-        assert not authz.access(db, other, dev).on and not authz.access(db, acc, dev).on
+        assert not authz.access(db, acc, dev).on  # the previous owner has no way back in
+        # The new owner starts from the default, not from the previous owner's choice.
+        assert authz.access(db, other, dev).on is (how != "unassign")
+    if how == "unassign":
+        assert _count(ConversationRagAuthorization, device_id=dev) == 0
 
 
 def test_account_deletion_removes_choices_and_vectors():
@@ -176,20 +180,39 @@ def test_account_deletion_removes_choices_and_vectors():
 # --- authorisation -----------------------------------------------------------------------------------------
 
 
-def test_off_until_the_owner_declares_and_opts_in():
+def test_on_by_default_until_the_owner_says_otherwise():
     acc = _account()
     dev = _device(acc)
     with session_scope() as db:
-        assert authz.access(db, acc, dev) == authz.OFF  # existing watch: no row
-        assert authz.view(db, acc, dev)["wearer"] is None
+        a = authz.access(db, acc, dev)  # existing watch: no row yet
+        v = authz.view(db, acc, dev)
+        method = db.get(ConversationRagAuthorization, dev).method
+    assert a.on and v["enabled"] and v["wearer"] == "self" and v["authorized_at"] and method == "default"
     _opt_in(acc, dev, enabled=False)
     with session_scope() as db:
-        assert not authz.access(db, acc, dev).on
+        assert not authz.access(db, acc, dev).on  # a switch-off stays: the default is not applied again
+        assert authz.view(db, acc, dev)["enabled"] is False
     _opt_in(acc, dev)
     with session_scope() as db:
-        a = authz.access(db, acc, dev)
-        v = authz.view(db, acc, dev)
-    assert a.on and v["enabled"] and v["wearer"] == "self" and v["authorized_at"]
+        assert authz.access(db, acc, dev).on
+
+
+def test_a_watch_declared_as_someone_elses_stays_off():
+    acc = _account()
+    dev = _device(acc)
+    with session_scope() as db:
+        authz.set_choice(db, acc, dev, "other", False)
+        db.commit()
+    with session_scope() as db:
+        assert not authz.access(db, acc, dev).on and authz.view(db, acc, dev)["wearer"] == "other"
+
+
+def test_the_default_is_never_created_for_a_watch_of_another_account():
+    acc, other = _account(), _account()
+    dev = _device(acc)
+    with session_scope() as db:
+        assert not authz.access(db, other, dev).on
+    assert _count(ConversationRagAuthorization, device_id=dev) == 0
 
 
 def test_someone_elses_watch_cannot_be_switched_on():

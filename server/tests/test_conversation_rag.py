@@ -816,7 +816,7 @@ def test_customer_api_controls_only_their_own_watch(customers):
     c, me = customers()
     dev = _give_watch(me["id"])
     url = f"/api/me/devices/{dev}/conversation-search"
-    assert c.get(url).json()["enabled"] is False and c.get(url).json()["wearer"] is None
+    assert c.get(url).json()["enabled"] is True and c.get(url).json()["wearer"] == "self"  # the default
     assert c.put(url, json={"wearer": "other", "enabled": True}).status_code == 422  # someone else's watch
     r = c.put(url, json={"wearer": "self", "enabled": True})
     assert r.status_code == 200 and r.json()["enabled"] is True and r.json()["authorized_at"]

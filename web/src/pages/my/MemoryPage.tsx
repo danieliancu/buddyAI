@@ -3,6 +3,7 @@ import { Brain, Check, History, Pencil, Plus, ShieldAlert, Trash2, X } from "luc
 import { api, ApiError, type MemoryItem, type MemoryKind, type MemorySettings } from "../../api";
 import { fmtDate } from "../../format";
 import { Badge, Button, Card, ConfirmDialog, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Select, Spinner, Toggle, useAsync, PasswordInput } from "../../components/ui";
+import SearchPastConversations from "./SearchPastConversations";
 
 const KIND_LABEL: Record<MemoryKind, string> = {
   profile: "About you",
@@ -17,6 +18,7 @@ const KIND_LABEL: Record<MemoryKind, string> = {
 /** /my/memory: what ola remembers, with correct / confirm / forget, and the two switches. */
 export default function MemoryPage() {
   const data = useAsync(api.me.memories.list, []);
+  const watches = useAsync(api.me.devices.list, []);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
   const [forgetting, setForgetting] = useState<MemoryItem | null>(null);
@@ -127,6 +129,10 @@ export default function MemoryPage() {
           </ul>
         </section>
       )}
+
+      {(watches.data ?? []).map((w) => (
+        <SearchPastConversations key={w.id} id={w.id} name={w.name} />
+      ))}
 
       <section>
         <h2 className="mb-2 text-sm font-semibold">

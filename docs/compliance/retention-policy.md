@@ -6,7 +6,7 @@ The periods below are **proposals that need business and legal approval**. They 
 |---|---|---|---|---|---|
 | Conversations (turns) | `CONVERSATION_RETENTION_DAYS` | 0 = until the user deletes them or the account | keep 0, or an automatic limit (e.g. 2 years) once agreed | `retention.run_retention_once` | `tests/test_retention.py` |
 | Long-term memory | — | until forgotten / cleared / account deleted | keep | memory API, `delete_account` | `test_memory.py` |
-| Conversation vectors (`conversation_rag_embeddings`), if the feature is enabled | — | as long as their turn, and only while the watch is opted in | keep | ON DELETE CASCADE from `turns`; `authz.set_choice` on switch-off | `test_conversation_rag_schema.py`, `tests/pg/` |
+| Conversation vectors (`conversation_rag_embeddings`) | — | as long as their turn, and only while the feature is on for the watch | keep | ON DELETE CASCADE from `turns`; `authz.set_choice` on switch-off | `test_conversation_rag_schema.py`, `tests/pg/` |
 | Replies built from earlier conversations | `CONVERSATION_RETENTION_DAYS` | when retention deletes a source, the later reply is emptied (question and marker stay; History says why) | keep | `context.redact_dependents` | `test_conversation_rag_safety.py`, `tests/pg/` |
 | Superseded memory versions | `MEMORY_SUPERSEDED_DAYS` | 90 days | keep | `memory/jobs.py` housekeeping | `test_retention.py` |
 | Finished memory jobs | `MEMORY_JOBS_DAYS` | 7 days | keep | `memory/jobs.py` | `test_retention.py` |

@@ -1,6 +1,6 @@
 # Conversation RAG (on demand) — spec amendments and design
 
-Status: in development on `feature/conversation-rag-on-demand`. Not merged, not deployed, off by default.
+Status: in `master`. On by default per watch since 5 November 2026 (owner's decision, one test watch, not yet on sale). The Coolify compose file switches it on; the code default stays off, for tests and local runs.
 
 The task specification ("BuddyAI — On-Demand Conversation RAG (Production-Ready MVP)", 30 sections) applies in
 full. This document closes the points it left open and records the design chosen against the actual code.
@@ -190,19 +190,16 @@ not found, and the watch's screen froze once around those attempts until a USB r
 
 ## Deployment
 
-Nothing here is enabled by deploying the code. **Before enabling for anyone:**
+Deploying `deploy/docker-compose.coolify.yml` switches this on. **Before selling to anyone:**
 
-1. Sign the OpenAI DPA and complete the transfer assessment (`docs/compliance/processor-register.md`), and the DPIA with the questions in `docs/compliance/data-inventory.md`. Legal review has not happened.
-2. Check in Coolify: the database runs `deploy/postgres.Dockerfile` (`SELECT extversion FROM pg_extension WHERE extname = 'vector'`), and migration 0022 has run. Not verified from here: no access to Coolify or production.
-3. Back up the database, deploy server and website, and let migration 0037 run. It only adds tables and columns.
-4. Deploy the site's privacy text together with the rollout, not before.
+1. Sign the OpenAI DPA and complete the transfer assessment (`docs/compliance/processor-register.md`), and the DPIA with the questions in `docs/compliance/data-inventory.md`. The adviser must confirm that on by default is lawful; if not, it becomes an explicit choice at setup.
+2. Check first audio on the watch against the "Real watch" figures.
 
-**Rollout**, with `BUDDYAI_OPENAI_API_KEY` set (required even under the `qwen` profile, which does not send this text to DashScope):
+**In production:**
 
-1. `BUDDYAI_CONVERSATION_RAG_ACCOUNTS=<your account id>`, `BUDDYAI_CONVERSATION_RAG_ENABLED=true`, `BUDDYAI_CONVERSATION_RAG_INDEXING_ENABLED=true`.
-2. On the watch's Settings page: "I wear this watch", then switch on. A connected watch needs no restart. Ask about an old topic, and compare first audio with the "Real watch" figures.
-3. Watch `GET /api/diagnostics` → `conversation_rag`, usage kind `embedding`, and the log lines `conversation_rag …` (never content).
-4. Empty `BUDDYAI_CONVERSATION_RAG_ACCOUNTS` opens it to every account, once the checks above are done.
+1. A watch gets its row (worn by its owner, on) when it connects or when its owner opens the Memory page. Indexing then runs in the background. A connected watch needs no restart to follow a switch-off.
+2. Watch `GET /api/diagnostics` → `conversation_rag`, usage kind `embedding`, and the log lines `conversation_rag …` (never content).
+3. `BUDDYAI_CONVERSATION_RAG_ACCOUNTS=<ids>` limits it to those accounts. Empty means every account.
 
 Cost: one vector costs about 30 tokens at $0.02 per million, roughly £0.0005 per 1,000 turns, plus about 2 KB of storage each; a question adds one more vector. On a question that searches, the real cost is the extra model round.
 
