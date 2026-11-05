@@ -103,6 +103,7 @@ def diagnostics(days: int = Query(7, ge=1, le=90), device_id: str | None = None,
         "by_provider": {k: stats(v) for k, v in by_provider.items()},
         "status_counts": status_counts,
         "memory": _memory_stats(db),
+        "conversation_rag": _conversation_rag_stats(db),
         "recent": [
             {
                 "id": t.id,
@@ -119,6 +120,16 @@ def diagnostics(days: int = Query(7, ge=1, le=90), device_id: str | None = None,
             for t in turns[-50:][::-1]
         ],
     }
+
+
+def _conversation_rag_stats(db: Session) -> dict:
+    from app.config import get_settings
+    from app.conversation_rag.embed import provider
+    from app.conversation_rag.index import counts
+
+    s = get_settings()
+    return {"enabled": s.conversation_rag_enabled, "indexing": s.conversation_rag_indexing_enabled,
+            "provider_ready": provider() is not None, **counts(db)}
 
 
 def _memory_stats(db: Session) -> dict:

@@ -269,4 +269,6 @@ def delete_history(device_id: str, body: ContentAccessBody, request: Request,
         raise HTTPException(404, "device not found")
     reason = _content_access(request, db, user, body, device_id, dev.account_id, "whole history (delete)")
     accounts.audit(db, user.username, "history.delete", dev.account_id, device_id, reason)
-    return {"deleted_turns": ConversationRepo(db).delete_device_history(device_id)}
+    deleted = ConversationRepo(db).delete_device_history(device_id)  # vectors and references go by cascade
+    hub_of(request).clear_rag_context(device_id)
+    return {"deleted_turns": deleted}

@@ -13,7 +13,19 @@ import pytest
 from sqlmodel import select
 
 from app import cli
-from app.db.models import AuditLog, Conversation, Item, Memory, SearchCache, Turn, VoiceOperation, utcnow
+from app.db.models import (
+    AuditLog,
+    Conversation,
+    ConversationRagAuthorization,
+    ConversationRagEmbedding,
+    ConversationRagSource,
+    Item,
+    Memory,
+    SearchCache,
+    Turn,
+    VoiceOperation,
+    utcnow,
+)
 from app.db.session import session_scope
 from app.gateway.hub import DeviceHub
 from app.main import app
@@ -52,6 +64,14 @@ def _seed() -> tuple[int, str, int]:
                            answer=MARKER, expires_at=utcnow() + timedelta(days=1)))
         db.add(VoiceOperation(op_key=secrets.token_hex(16), account_id=me["id"], device_id=dev, session_id="s", turn_id=1,
                               tool="note_create", summary=f"note_create: {MARKER}"))
+        db.commit()
+        # Conversation search: a reply built from an earlier turn, and that turn's vector.
+        first, second = db.exec(select(Turn.id).where(Turn.device_id == dev).order_by(Turn.turn_no)).all()
+        db.add(ConversationRagAuthorization(device_id=dev, account_id=me["id"], wearer="self", state="on"))
+        db.add(ConversationRagEmbedding(turn_id=first, account_id=me["id"], device_id=dev, model_key="m", dims=3,
+                                        text_hash="h", embedding=[0.1, 0.2, 0.3]))
+        db.add(ConversationRagSource(consumer_turn_id=second, source_turn_id=first))
+        db.get(Turn, second).rag_derived = True
         db.commit()
         return me["id"], dev, conv.id
 
@@ -99,6 +119,13 @@ def test_no_operator_read_route_returns_customer_content(role):
     assert f"/api/accounts/{account_id}" in checked and f"/api/accounts/{account_id}/audit" in checked
     # Routes that take another id must not return conversations: they are about incidents, orders or settings rows.
     assert all(re.search(r"incident|persona|pricing|order|firmware", p) for p in skipped), skipped
+
+
+def test_operator_list_hides_a_reply_built_from_earlier_conversations():
+    _, dev, _ = _seed()
+    c, _ = _signed_in("admin")
+    turns = [t for g in c.get(f"/api/devices/{dev}/conversations").json() for t in g["turns"]]
+    assert len(turns) == 2 and all(t["content_hidden"] and not t["assistant_text"] for t in turns)
 
 
 def test_operator_list_keeps_metadata_only():

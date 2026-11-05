@@ -6,7 +6,7 @@ Audit of every path by which an operator could read what a customer said, and th
 
 ## Evidence
 
-`server/tests/test_content_access.py` seeds a marker into turns, notes, memories, the search cache and voice operations, then requests every operator GET route in the OpenAPI schema as `support`, `admin` and `principal`. It fails if the marker appears. Routes with other id parameters (incidents, orders and similar) are not requested with real ids; they are covered by reading the code below.
+`server/tests/test_content_access.py` seeds a marker into turns, notes, memories, the search cache and voice operations (with conversation search data on the same turns), then requests every operator GET route in the OpenAPI schema as `support`, `admin` and `principal`. It fails if the marker appears. Routes with other id parameters (incidents, orders and similar) are not requested with real ids; they are covered by reading the code below.
 
 ## Paths
 
@@ -22,6 +22,7 @@ Audit of every path by which an operator could read what a customer said, and th
 | `Memory`, `Item` (notes, reminders) | customer routes only; operator routes return counts | no change | tested |
 | `SearchCache.query`, `.answer` | no API route reads them | no change | tested |
 | `VoiceOperation.summary` | no API route reads it; it holds up to 250 characters of tool arguments | no change; removed by the retention job | tested; direct database access still sees it |
+| `ConversationRagEmbedding`, `ConversationRagSource`, `ConversationRagAuthorization` (search in past conversations) | no operator route reads them; vectors and references hold no text, and a reply built from earlier conversations is an ordinary turn | no change; such a reply is hidden like any other turn, and only `/reveal` opens it | tested; a vector is derived from the words and direct database access still sees it |
 | `Turn.search_note`, `Turn.error` | see first and diagnostics rows | hidden | tested |
 | Account export `GET /api/me/export` | the account owner only; no operator variant exists | no change | checked by reading |
 | Application logs | designed not to log content: searches log length, tools log argument shape, note and reminder errors log the type only | no change | see open points |

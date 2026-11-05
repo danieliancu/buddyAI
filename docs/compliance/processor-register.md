@@ -16,3 +16,10 @@ Prepared from the code (12 October 2026); web search providers added on 4 Novemb
 | **Off-site backup storage** | not used (decided 3 Nov 2026): encrypted copies stay on the business owner's computer, so no processor | — | — | — | — | — | 14 days | none; add a row and a DPA if a provider is ever used |
 | **Delivery carriers** | ship the watch | name, address, phone/email if given | UK | carrier terms | n/a | — | carrier | record which carriers are used |
 | **Alibaba Model Studio (Qwen), Azure Speech** | alternative AI profile in code | — | Singapore / West Europe | n/a | n/a | — | — | **not used in production**; must be added here and to the privacy notice before enabling |
+
+## Search Past Conversations (Conversation RAG) — not yet live
+
+Off by default (`BUDDYAI_CONVERSATION_RAG_ENABLED=false`) and opt-in per watch; design in `docs/CONVERSATION_RAG.md`.
+
+- **New processing by OpenAI, if enabled:** the text of a watch's completed chat turns (what the user said and the reply; only the question when the reply came from a web search) is sent to the embeddings API (`text-embedding-3-small`), and so is each search question. OpenAI is the only provider allowed for this, whatever the AI profile: `qwen` does not send this text to DashScope, and a missing key stops the feature instead of falling back.
+- **Before enabling:** the OpenAI DPA above must be signed. This processing makes it more pressing, because it adds older conversations of users who opted in. Check OpenAI's retention terms for embedding requests and record them here; they have not been verified.

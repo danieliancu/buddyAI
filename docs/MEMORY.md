@@ -59,6 +59,13 @@ check), IBANs, passwords / PINs / codes, secret keys, identity document numbers.
 a header that says they are data and never instructions. The cached system prompt and the history stay
 byte-identical.
 
+## Memory and Conversation RAG
+
+Separate features, separate data. Memory keeps facts about the user. Conversation RAG (`docs/CONVERSATION_RAG.md`)
+finds passages of earlier conversations on request, and has its own vectors and a per-watch opt-in. Learning skips
+turns built from earlier conversations (`Turn.rag_derived`), so a passage found by a search does not become a fact.
+A fact saved earlier stays when its conversation is deleted, as it always has.
+
 ## Switches (environment)
 
 | Variable | Default | Effect |

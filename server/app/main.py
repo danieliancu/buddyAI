@@ -68,6 +68,10 @@ async def lifespan(app: FastAPI):
     from app.memory.jobs import job_loop
 
     memory_jobs = asyncio.create_task(job_loop(app.state.router), name="memory-jobs")
+    # Conversation RAG: vectors for opted-in watches (idle unless BUDDYAI_CONVERSATION_RAG_INDEXING_ENABLED).
+    from app.conversation_rag.index import index_loop
+
+    rag_index = asyncio.create_task(index_loop(app.state.hub), name="conversation-rag-index")
     # ola Care trials waiting for a retry (failed, or stuck after a crash while activating).
     from app import care_activation
 
@@ -106,6 +110,7 @@ async def lifespan(app: FastAPI):
     reminders.cancel()
     usage_maint.cancel()
     memory_jobs.cancel()
+    rag_index.cancel()
     care_recovery.cancel()
     diag_maint.cancel()
     retention_task.cancel()

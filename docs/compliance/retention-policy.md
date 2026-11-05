@@ -6,6 +6,8 @@ The periods below are **proposals that need business and legal approval**. They 
 |---|---|---|---|---|---|
 | Conversations (turns) | `CONVERSATION_RETENTION_DAYS` | 0 = until the user deletes them or the account | keep 0, or an automatic limit (e.g. 2 years) once agreed | `retention.run_retention_once` | `tests/test_retention.py` |
 | Long-term memory | — | until forgotten / cleared / account deleted | keep | memory API, `delete_account` | `test_memory.py` |
+| Conversation vectors (`conversation_rag_embeddings`), if the feature is enabled | — | as long as their turn, and only while the watch is opted in | keep | ON DELETE CASCADE from `turns`; `authz.set_choice` on switch-off | `test_conversation_rag_schema.py`, `tests/pg/` |
+| Replies built from earlier conversations | `CONVERSATION_RETENTION_DAYS` | when retention deletes a source, the later reply is emptied (question and marker stay; History says why) | keep | `context.redact_dependents` | `test_conversation_rag_safety.py`, `tests/pg/` |
 | Superseded memory versions | `MEMORY_SUPERSEDED_DAYS` | 90 days | keep | `memory/jobs.py` housekeeping | `test_retention.py` |
 | Finished memory jobs | `MEMORY_JOBS_DAYS` | 7 days | keep | `memory/jobs.py` | `test_retention.py` |
 | Notes & reminders | — | until deleted | keep | items API, `delete_account` | existing tests |
@@ -29,10 +31,17 @@ The periods below are **proposals that need business and legal approval**. They 
 4. Keeps billing records (above). Webhooks no longer email deleted accounts.
 Data remains in backups until they expire (14 days); after any restore, deletions made after the backup must be re-applied (deploy/README.md §8.5).
 
+## Search Past Conversations: what deletion does and does not reach
+
+- **Switched off for a watch:** searching stops at once, unfinished indexing stores nothing, vectors are deleted, the watch's live session forgets its follow-up context. The conversations stay until deleted separately.
+- **Operator kill switch (`BUDDYAI_CONVERSATION_RAG_ENABLED=false`):** only stops the feature. It does not delete vectors or choices, so it is not a withdrawal.
+- **History deleted, watch removed or moved to another owner, account deleted:** turns go, and vectors and references go with them at database level. A new owner starts with no choice.
+- **Not reached, by design:** memories saved independently of the conversation (they have their own controls; automatic learning skips replies built from earlier conversations), notes and reminders the user created, emails already sent, exports already downloaded, audio already heard. Copies held by OpenAI under its terms are not verified (processor register). Backups as above.
+
 ## Data subject requests
 
 - **Self-service:** download data (`GET /api/me/export`, now including orders, subscriptions, consents, top-ups, monthly usage and the account's events; audited `account.export`), delete history, memory controls (switch off, forget, clear — audited `memory.clear`), edit profile, delete account.
 - **By email** (ola@olacompanion.com): verify identity (reply from the account email or confirm a code sent to it), log the request, respond **within one month** (extendable by two months for complex requests, with notice). Record each stage with `POST /api/accounts/{id}/requests` (`kind`: access/erasure/rectification/restriction/objection/portability/other; `stage`: received/identity_verified/completed/refused/extended; short note without personal data) — written to the account's audit trail as `dsar.<kind>.<stage>` (test: `test_support_records_a_data_subject_request_in_the_audit_trail`). Exceptions to explain: billing records under legal retention, backups until expiry.
 - **Rectification:** profile edit; other corrections by email.
-- **Objection / restriction / withdrawal of consent:** memory can be switched off; other requests handled manually and logged.
+- **Objection / restriction / withdrawal of consent:** memory can be switched off; Search Past Conversations can be switched off per watch; other requests handled manually and logged.
 - Children: the service is for adults; requests from parents handled case by case.

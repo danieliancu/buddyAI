@@ -25,6 +25,7 @@ from app.db.repositories import ItemRepo, ItemTextError
 from app.items import AssistantTools, device_full
 from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
+from app.conversation_rag import context as rag_context, tool as rag_tool
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_SAY_CHECKING, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
@@ -139,7 +140,13 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
             else []
         )
         persona_prompt = persona.system_prompt if persona else "You are a helpful voice assistant."
-        past = [(t.user_text, t.assistant_text, t.search_note) for t in history]
+        past = [(t.user_text, t.assistant_text, t.search_note) for t in history if t.rag_redacted_at is None]
+        # A reply built from earlier conversations is in this prompt, so this reply may repeat it: it depends on the
+        # same sources. Only such conversations run this query; an ordinary turn just read the flag.
+        derived = [t.id for t in history if t.rag_derived and t.rag_redacted_at is None]
+        if derived:
+            turn.rag_sources.extend(rag_context.sources_of(db, derived))
+            turn.rag_derived = True
     now = datetime.now(ZoneInfo(s.timezone))
     lang = languages.display_name(turn.language)
     if turn.auto_language:
@@ -558,7 +565,9 @@ class ConversationPipeline:
             searcher = WebSearch(run_search, web_search.get("cache_ttl_s"), provider=llm.name, model=model)
             turn.searcher, turn.search_city = searcher, city
         messages = self.messages_builder(turn, turn.user_text)
+        history_search = rag_tool.offered(turn)  # in-memory checks only: nothing for an ordinary turn
         tool_defs = (self.tools.definitions(turn.account_id) if self.tools else []) + ([SEARCH_TOOL] if searcher else [])
+        tool_defs = [*tool_defs, rag_tool.TOOL] if history_search else tool_defs
         tool_defs = tool_defs or None
         # server state goes right before the user's sentence (the cached system prompt stays identical)
         extra_msgs = [{"role": "system", "content": facts}] if facts else self._context_messages(turn)
@@ -568,6 +577,14 @@ class ConversationPipeline:
             recalled = (await recall(self.router, turn.account_id, turn.device_id, turn.user_text, turn.usage)).message()
             if recalled:
                 extra_msgs = [recalled, *extra_msgs]
+        if not facts and history_search and rag_context.active(turn.rag_context, turn.conversation_id):
+            # a follow-up after a search: its sources, re-read (references only were kept)
+            earlier, used = await asyncio.to_thread(rag_context.load, turn.account_id, turn.device_id,
+                                                    turn.rag.generation, turn.rag_context, s.timezone)
+            if earlier:
+                extra_msgs = [earlier, *extra_msgs]
+                turn.rag_sources.extend(used)
+                turn.rag_derived = True
         if facts:
             tool_defs = None
         if extra_msgs and messages:
@@ -577,6 +594,8 @@ class ConversationPipeline:
             extra_rules.append(SEARCH_SAY_CHECKING)
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
+        if history_search and tool_defs:
+            extra_rules.append(rag_tool.RULE)
         if extra_rules and messages and messages[0]["role"] == "system":
             messages[0] = {**messages[0], "content": "\n".join([messages[0]["content"], *extra_rules])}
         request = LLMRequest(
@@ -1007,6 +1026,11 @@ class ConversationPipeline:
             log.info("web_search(%s) -> %s ok=%s", args_shape(call.arguments),
                      "cache hit" if outcome.cache_hit else "searched", result_ok(outcome.result))
             return outcome.result
+        if call.name == rag_tool.NAME:
+            # earlier conversations: account and watch come from the session, never from the arguments
+            result = await rag_tool.run(turn, call.arguments)
+            log.info("conversation_search(%s) -> status=%s", args_shape(call.arguments), json.loads(result).get("status"))
+            return result
         assert self.tools is not None
         call_ctx = self._call_ctx(turn) if turn.account_id is not None else None
         out = await asyncio.to_thread(

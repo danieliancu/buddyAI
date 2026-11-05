@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app import accounts, cli, deletion_log
+from app.db.models import ConversationRagAuthorization, ConversationRagEmbedding, ConversationRagSource, Device
 from app.db.models import Account, Conversation, DeletionEvent, DeletionReconcileRequired, Item, Memory, Turn, utcnow
 from app.db.repositories import ConversationRepo, ItemRepo
 from app.db.session import session_scope
@@ -160,6 +161,80 @@ def test_restored_data_is_deleted_again_and_a_second_run_changes_nothing():
     with session_scope() as db:
         second = deletion_log.reconcile(db, ledger)
     assert second["applied"] == 0 and second["already_in_database"] == 1 and _turns(dev) == 1
+
+
+def _bring_back_search_data(device_id: str, account_id: int) -> None:
+    """A restored conversation search state: two turns, a vector, a reply built from the earlier turn."""
+    _bring_back_history(device_id, account_id)
+    _bring_back_history(device_id, account_id)
+    with session_scope() as db:
+        first, second = db.exec(select(Turn.id).where(Turn.device_id == device_id).order_by(Turn.id)).all()
+        if db.get(ConversationRagAuthorization, device_id) is None:
+            db.add(ConversationRagAuthorization(device_id=device_id, account_id=account_id, wearer="self", state="on"))
+        db.add(ConversationRagEmbedding(turn_id=first, account_id=account_id, device_id=device_id, model_key="m", dims=3,
+                                        text_hash="h", embedding=[0.1, 0.2, 0.3]))
+        db.add(ConversationRagSource(consumer_turn_id=second, source_turn_id=first))
+        db.commit()
+
+
+def _search_rows(device_id: str) -> tuple[int, int]:
+    with session_scope() as db:
+        turn_ids = list(db.exec(select(Turn.id).where(Turn.device_id == device_id)).all())
+        vectors = db.exec(select(ConversationRagEmbedding).where(ConversationRagEmbedding.device_id == device_id)).all()
+        sources = db.exec(select(ConversationRagSource).where(ConversationRagSource.source_turn_id.in_(turn_ids))).all()
+        return len(vectors), len(sources)
+
+
+def test_a_replayed_history_deletion_removes_vectors_and_source_references():
+    _, me = _customer()
+    dev = _give_watch(me["id"], with_history=False)
+    with session_scope() as db:
+        ConversationRepo(db).delete_device_history(dev)
+    rows = _events(device_id=dev)
+    ledger = _as_ledger(rows)
+    _forget_events(rows)
+    _bring_back_search_data(dev, me["id"])
+    assert _turns(dev) == 2 and _search_rows(dev) == (1, 1)
+
+    with session_scope() as db:
+        result = deletion_log.reconcile(db, ledger)
+    assert result["applied"] == 1 and result["failed"] == []
+    with session_scope() as db:
+        vectors = db.exec(select(ConversationRagEmbedding).where(ConversationRagEmbedding.device_id == dev)).all()
+        sources = db.exec(select(ConversationRagSource)).all()
+        live = set(db.exec(select(Turn.id)).all())
+    assert _turns(dev) == 0 and not vectors
+    assert all(s.consumer_turn_id in live and s.source_turn_id in live for s in sources)
+
+
+def test_a_replayed_account_deletion_removes_the_choice_and_the_vectors():
+    _, me = _customer()
+    dev = _give_watch(me["id"], with_history=False)
+    with session_scope() as db:
+        accounts.delete_account(db, db.get(Account, me["id"]))
+    rows = _events(account_id=me["id"], kind=deletion_log.ACCOUNT)
+    ledger = _as_ledger(rows)
+    _forget_events(rows)
+    with session_scope() as db:  # the backup holds the account as it was
+        acc = db.get(Account, me["id"])
+        acc.status = "active"
+        db.add(acc)
+        db.commit()
+    with session_scope() as db:
+        device = db.get(Device, dev)
+        if device is not None:
+            device.account_id = me["id"]
+            db.add(device)
+            db.commit()
+    _bring_back_search_data(dev, me["id"])
+
+    with session_scope() as db:
+        result = deletion_log.reconcile(db, ledger)
+    assert result["applied"] == 1 and result["failed"] == []
+    with session_scope() as db:
+        assert db.get(ConversationRagAuthorization, dev) is None
+        assert not db.exec(select(ConversationRagEmbedding).where(ConversationRagEmbedding.account_id == me["id"])).all()
+    assert _turns(dev) == 0
 
 
 def test_a_deletion_the_backup_already_holds_is_not_applied_to_newer_data():

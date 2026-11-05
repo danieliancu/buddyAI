@@ -29,6 +29,10 @@ ALLOWED = {
     ("memory/retrieve.py", "_recall"): "watch turn: admitted (query embedding, usage on the turn)",
     ("memory/jobs.py", "run_embed"): "memory vectors: recorded as a non-billable 'memory' operation (tiny cost)",
     ("memory/extract.py", "run_extract"): "memory learning: admitted against the account (kind memory, s:memx:<job>)",
+    ("conversation_rag/search.py", "search"): "watch turn: admitted (query embedding of conversation_search, usage on "
+    "the turn)",
+    ("conversation_rag/index.py", "index_once"): "conversation vectors: recorded as a non-billable 'conversation_rag' "
+    "operation (tiny cost), background only",
 }
 
 

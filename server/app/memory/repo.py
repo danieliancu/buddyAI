@@ -1,7 +1,7 @@
 """Memory storage. Every method takes the owning account and filters on it: there is no way to read,
 change or delete another account's memory through this class.
 
-Foreign keys have no ON DELETE rules in this schema (all cascades are explicit), so deleting a memory
+Memory foreign keys have no ON DELETE rules (all cascades are explicit), so deleting a memory
 also deletes its vectors and jobs, and links from other memories / to turns are cleared first.
 """
 

@@ -144,6 +144,8 @@ def _turn_out(t: Turn, usage: dict[int, list[UsageRecord]], details: bool, conte
     }
     if not content:
         out["content_hidden"] = True
+    if t.rag_redacted_at is not None:
+        out["redacted"] = True  # the reply was removed: its source conversation was deleted
     if not details:
         return out
     records = usage.get(t.id or 0, [])

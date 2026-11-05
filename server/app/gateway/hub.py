@@ -209,6 +209,20 @@ class DeviceHub:
         conn.settings = settings
         await conn.send_json("settings_update", settings=device_view(settings, title), settings_version=version)
 
+    def set_rag(self, device_id: str, access) -> None:
+        """Conversation RAG changed for the watch (switched on/off, wearer declared): its live session offers the
+        tool or not from the next turn, and forgets any follow-up context. Server-side only: nothing is sent to
+        the watch."""
+        conn = self.connections.get(device_id)
+        if conn is not None:
+            conn.rag, conn.rag_context = access, None
+
+    def clear_rag_context(self, device_id: str) -> None:
+        """The watch's history was deleted: no follow-up may refer to it."""
+        conn = self.connections.get(device_id)
+        if conn is not None:
+            conn.rag_context = None
+
     async def refresh_chat_titles(self, account_id: int | None = None) -> None:
         """A persona was renamed / deleted / made default: resend the settings (dialog title) to the
         online watches of the account (None: every watch)."""

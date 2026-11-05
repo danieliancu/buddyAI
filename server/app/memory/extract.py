@@ -91,8 +91,10 @@ def _material(job: MemoryJob) -> dict[str, Any] | None:
         dev = db.get(Device, conv.device_id)
         if dev is None or dev.account_id != job.account_id:  # the watch changed owner meanwhile
             return None
+        # Not rag_derived turns: what they repeat from earlier conversations must not become a new fact, one that
+        # would survive deleting those conversations (docs/CONVERSATION_RAG.md).
         q = select(Turn).where(Turn.conversation_id == conv.id, Turn.account_id == job.account_id,
-                               Turn.status == "completed")
+                               Turn.status == "completed", col(Turn.rag_derived).is_(False))
         if job.upto_turn_id:
             q = q.where(col(Turn.id) <= job.upto_turn_id)
         turns = db.exec(q.order_by(col(Turn.id).desc()).limit(TURNS_MAX)).all()[::-1]

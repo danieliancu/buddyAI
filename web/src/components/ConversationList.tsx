@@ -103,6 +103,13 @@ export default function ConversationList({
                   )}
                 </div>
               </div>
+              {t.redacted && (
+                <div className="flex flex-col items-start">
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-dashed border-border px-3.5 py-2 text-sm text-muted italic">
+                    Response removed because its source conversation was deleted.
+                  </div>
+                </div>
+              )}
               {t.assistant_text && (
                 <div className="flex flex-col items-start">
                   <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-surface-2 px-3.5 py-2 text-sm break-words whitespace-pre-line">

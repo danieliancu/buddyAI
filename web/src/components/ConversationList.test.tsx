@@ -27,6 +27,13 @@ describe("History search (My watch → History)", () => {
     expect(marks).toEqual(["Ștefan", "Ștefan"]);
   });
 
+  it("says why a reply was removed, without any internal detail", () => {
+    const turn = { ...conv.turns[0], assistant_text: "", redacted: true };
+    const { container } = render(<ConversationList conversations={[{ ...conv, turns: [turn] }]} />);
+    expect(container.textContent).toContain("Response removed because its source conversation was deleted.");
+    expect(container.textContent).toContain("Șterge nota");
+  });
+
   it("marks nothing without a search", () => {
     const { container } = render(<ConversationList conversations={[conv]} />);
     expect(container.querySelector("mark")).toBeNull();
