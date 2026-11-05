@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_sleep.h"
 #include "sdkconfig.h"
 #include "board.h"
@@ -38,6 +39,7 @@ void board_wake_from_isr(void)
 
 static volatile bool     s_standby;
 static volatile uint32_t s_gpio_wakes;
+static volatile uint32_t s_light_sleeps;
 
 /* The FT3168 reports a touch with a short INT pulse. It is enough to wake the chip from light sleep, but by the
  * time the CPU runs again the pulse is often over, so the level interrupt never fires and the screen stayed dark
@@ -46,6 +48,7 @@ static volatile uint32_t s_gpio_wakes;
 #if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
 static esp_err_t light_sleep_exit_cb(int64_t sleep_time_us, void *arg)
 {
+    s_light_sleeps++;
     if (s_standby && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
         s_gpio_wakes++;
         board_wake_from_isr();
@@ -63,6 +66,57 @@ void board_pm_diag(uint32_t *gpio_wakes)
 static esp_pm_lock_handle_t s_awake_lock;
 static bool s_awake = true;     /* board_pm_init() takes the lock: the screen starts awake */
 #endif
+
+uint32_t board_pm_light_sleeps(void)
+{
+    return s_light_sleeps;
+}
+
+#if CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+/* One light sleep kills the USB port until the cable is pulled out, and ESP-IDF's connection monitor is not enough to
+ * prevent it: it counts a port as gone after 3 ms without a start-of-frame and releases its lock at once. Measured on
+ * the watch: 3 such false disconnections in the first minute with a computer attached, one light sleep in one of them,
+ * and no more logs or flashing from there. So a port only counts as gone when it stays gone for this long. A charger
+ * has no USB host: the first light sleep comes this much later, nothing else changes. */
+#define USB_GONE_MS  5000
+
+static esp_pm_lock_handle_t s_usb_lock;
+static bool s_usb_held;
+
+static void usb_guard_start(void)
+{
+    if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "usb_guard", &s_usb_lock) != ESP_OK) {
+        ESP_LOGW(TAG, "USB guard lock not created: the USB port may stop after a light sleep");
+        return;
+    }
+    esp_pm_lock_acquire(s_usb_lock);
+    s_usb_held = true;
+}
+#endif
+
+/* From the app loop, never a tick hook: usb_serial_jtag_is_connected() is in flash, so calling it from an interrupt
+ * panics during a flash write. The monitor's own lock covers a real reconnection until the next call here. */
+void board_pm_usb_guard_poll(uint32_t now_ms)
+{
+#if CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+    static uint32_t last_seen_ms;
+    if (!s_usb_lock) {
+        return;
+    }
+    if (usb_serial_jtag_is_connected()) {
+        last_seen_ms = now_ms;
+        if (!s_usb_held) {
+            s_usb_held = true;
+            esp_pm_lock_acquire(s_usb_lock);
+        }
+    } else if (s_usb_held && now_ms - last_seen_ms >= USB_GONE_MS) {
+        s_usb_held = false;
+        esp_pm_lock_release(s_usb_lock);
+    }
+#else
+    (void)now_ms;
+#endif
+}
 
 esp_err_t board_pm_init(void)
 {
@@ -82,6 +136,9 @@ esp_err_t board_pm_init(void)
         return err;
     }
     esp_pm_lock_acquire(s_awake_lock);
+#if CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION
+    usb_guard_start();      /* before light sleep is allowed */
+#endif
     err = esp_pm_configure(&cfg);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "esp_pm_configure: %s - running at full speed", esp_err_to_name(err));

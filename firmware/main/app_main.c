@@ -768,6 +768,7 @@ static void app_loop(void)
             ui_wake();
         }
         poll_factory_reset_button(now);
+        board_pm_usb_guard_poll(now);
 #if !CONFIG_BUDDYAI_RELEASE_BUILD
         power_log(now);
         touch_diag_log();
