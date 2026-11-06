@@ -65,6 +65,29 @@
   color-scheme: dark;
 }
 
+/* The customer area's top bar is the website's header (site/src/components/Header.astro): the website's own
+ * palette and font, so the two look the same. The site has no dark theme; in dark mode the bar uses the
+ * account's dark surfaces and the logo's light variant (Logo.astro `light`). */
+.site-header {
+  --sh-bg: rgb(255 255 255 / 0.9);
+  --sh-line: #e6e9f5;
+  --sh-fg: #0f1533;
+  --sh-accent: #5b4cf0;
+  --sh-hover: #f4f6ff;
+  --sh-ok: #059669;
+  --sh-leaf-cut: #ffffff;
+  font-family: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+:root[data-theme="dark"] .site-header {
+  --sh-bg: rgb(18 26 46 / 0.9);
+  --sh-line: #25304d;
+  --sh-fg: #e8edf8;
+  --sh-accent: #a5b4fc;
+  --sh-hover: #1a2440;
+  --sh-ok: #34d399;
+  --sh-leaf-cut: #0b1028;
+}
+
 /* Operator area (components/Layout.tsx): always light and neutral - a grey sidebar, a white content
  * panel, thin borders, status pills with a coloured dot. The customer area keeps the tokens above. */
 .admin-ui {
