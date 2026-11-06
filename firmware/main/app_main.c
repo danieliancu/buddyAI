@@ -42,7 +42,6 @@
 #include "ble_prov.h"
 #include "protocol_client.h"
 #include "ota.h"
-#include "dialog_clips.h"
 
 static const char *TAG = "app";
 
@@ -399,6 +398,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_NOTE_SESSION:
         ui_note_session(ev->num != 0);
         break;
+    case PROTO_EVT_DIALOG:
+        ui_set_dialog(ev->num != 0);
+        break;
     case PROTO_EVT_NOTE_STATE:
         ui_note_state(ev->num == PROTO_CONV_LISTENING  ? UI_CONV_LISTENING
                       : ev->num == PROTO_CONV_THINKING ? UI_CONV_THINKING
@@ -417,18 +419,10 @@ static void ui_mic_tap(void)
     proto_mic_tap();
 }
 
-/* The mic button held: dialog mode, announced in the watch's language (English when it has no clip). */
+/* The mic button held: dialog mode (silent: the ring around the mic shows it). */
 static void ui_mic_hold(void)
 {
-    const char *lang = ui_language();
-    const proto_clip_t *clip = &DIALOG_CLIPS[0].clip;
-    for (size_t i = 0; i < sizeof(DIALOG_CLIPS) / sizeof(DIALOG_CLIPS[0]); i++) {
-        if (strcmp(DIALOG_CLIPS[i].lang, lang) == 0) {
-            clip = &DIALOG_CLIPS[i].clip;
-            break;
-        }
-    }
-    proto_dialog_start(s_audio_ready ? clip : NULL);
+    proto_dialog_start();
 }
 
 static void ui_settings_change(const cJSON *changes)
@@ -675,6 +669,7 @@ static void power_log(uint32_t now)
  * receive FIFO by the app loop: no driver, no task, no RAM (internal RAM is too tight for either).
  *   ask       a recorded question (test_question.h) instead of the mic
  *   tap       the mic button
+ *   dialog    the mic button held (dialog mode)
  *   wifi [N]  the Wi-Fi screen (N: the password screen for network N)
  *   drop N    Wi-Fi off for N seconds (a lost link), then it reconnects */
 static void test_console_poll(void)
@@ -704,6 +699,10 @@ static void test_console_poll(void)
             } else if (strcmp(line, "tap") == 0) {
                 ESP_LOGW(TAG, "test: tap");
                 boot_tap();
+            } else if (strcmp(line, "dialog") == 0) {
+                ESP_LOGW(TAG, "test: dialog (the mic button held)");
+                ui_wake();
+                proto_dialog_start();
             } else if (strncmp(line, "wifi", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) {
                 ui_wake();
                 ui_show_wifi(line[4] ? line + 5 : NULL);

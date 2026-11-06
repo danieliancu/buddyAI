@@ -26,6 +26,7 @@ ui_callbacks_t   g_ui_cb;
 #define MIC_CY              256
 #define RING_BASE_SIZE      164
 #define SPINNER_SIZE        176
+#define DIALOG_RING_SIZE    198     /* dialog mode: just outside the halo (HALO_R) around the mic */
 #define HERO_Y              158     /* pre-rendered art (halo, wave, mic circle): full width, y 158..419 */
 #define HERO_H              262
 #define WAVE_BLUE           0x4F8CFF /* the blue theme's accent: the greeting prompt's tint */
@@ -80,6 +81,9 @@ static lv_obj_t *s_lbl_caption;
 static lv_obj_t *s_btn_mic;
 static lv_obj_t *s_lbl_mic;
 static lv_obj_t *s_ring;
+static lv_obj_t *s_dialog_ring;         /* dialog mode on: around the mic */
+static lv_obj_t *s_hold_arc;            /* fills while the mic is held (dialog mode after MIC_HOLD_MS) */
+static bool      s_dialog;
 static lv_obj_t *s_spinner;
 static lv_timer_t *s_anim_timer;
 static lv_obj_t *s_bars_box;
@@ -208,20 +212,71 @@ void ui_spinner_show(lv_obj_t *spinner, bool show, uint32_t ms, uint32_t arc)
 
 #define MIC_HOLD_MS     2000
 
-bool ui_mic_hold_track(lv_event_code_t code)
+#define HOLD_SHOW_MS    250     /* the hold arc appears only after this: a tap never flashes it */
+
+bool ui_mic_hold_track(lv_event_code_t code, lv_obj_t *arc)
 {
     static uint32_t down_ms;
     static bool held;
     if (code == LV_EVENT_PRESSED) {
         down_ms = lv_tick_get();
         held = false;
-    } else if (code == LV_EVENT_PRESSING && !held && lv_tick_elaps(down_ms) >= MIC_HOLD_MS) {
-        held = true;
-        if (g_ui_cb.on_mic_hold) {
-            g_ui_cb.on_mic_hold();
+        if (arc) {
+            lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
         }
+    } else if (code == LV_EVENT_PRESSING && !held) {
+        uint32_t el = lv_tick_elaps(down_ms);
+        if (el >= MIC_HOLD_MS) {
+            held = true;
+            if (arc) {
+                lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);   /* the dialog ring takes over */
+            }
+            if (g_ui_cb.on_mic_hold) {
+                g_ui_cb.on_mic_hold();
+            }
+        } else if (arc && el >= HOLD_SHOW_MS) {
+            lv_arc_set_value(arc, (int32_t)((el - HOLD_SHOW_MS) * 100 / (MIC_HOLD_MS - HOLD_SHOW_MS)));
+            lv_obj_remove_flag(arc, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && arc) {
+        lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
     }
     return held;
+}
+
+lv_obj_t *ui_make_hold_arc(lv_obj_t *parent, int32_t size, int32_t width)
+{
+    lv_obj_t *arc = lv_arc_create(parent);
+    lv_obj_set_size(arc, size, size);
+    lv_arc_set_rotation(arc, 270);          /* fills clockwise from the top */
+    lv_arc_set_bg_angles(arc, 0, 360);
+    lv_arc_set_range(arc, 0, 100);
+    lv_arc_set_value(arc, 0);
+    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, width, LV_PART_INDICATOR);
+    lv_obj_add_style(arc, &s_st_accent_border, LV_PART_INDICATOR);
+    lv_obj_remove_flag(arc, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
+    return arc;
+}
+
+/* Dialog mode: a thin ring and a fainter one just outside it (border + outline of one object). */
+lv_obj_t *ui_make_dialog_ring(lv_obj_t *parent, int32_t size)
+{
+    lv_obj_t *r = lv_obj_create(parent);
+    lv_obj_remove_style_all(r);
+    lv_obj_add_style(r, &s_st_accent_border, 0);
+    lv_obj_set_size(r, size, size);
+    lv_obj_set_style_radius(r, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(r, 3, 0);
+    lv_obj_set_style_border_opa(r, LV_OPA_80, 0);
+    lv_obj_set_style_outline_width(r, 2, 0);
+    lv_obj_set_style_outline_pad(r, 4, 0);
+    lv_obj_set_style_outline_opa(r, LV_OPA_40, 0);
+    lv_obj_remove_flag(r, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(r, LV_OBJ_FLAG_HIDDEN);
+    return r;
 }
 
 bool ui_consume_wake_tap(void)
@@ -766,13 +821,15 @@ static void mic_event_cb(lv_event_t *e)
     if (code == LV_EVENT_PRESSED) {
         /* A tap on a dimmed / dark screen only wakes it. */
         s_swallow_click = (s_power != POWER_ON);
-        ui_mic_hold_track(code);
+        ui_mic_hold_track(code, s_swallow_click ? NULL : s_hold_arc);
     } else if (code == LV_EVENT_PRESSING) {
         if (!s_swallow_click) {
-            ui_mic_hold_track(code);
+            ui_mic_hold_track(code, s_hold_arc);
         }
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        ui_mic_hold_track(code, s_hold_arc);
     } else if (code == LV_EVENT_CLICKED) {
-        if (ui_consume_wake_tap() || ui_mic_hold_track(code)) {
+        if (ui_consume_wake_tap() || ui_mic_hold_track(code, NULL)) {
             return;     /* a wake tap, or the release of a hold (dialog mode started) */
         }
         if (g_ui_cb.on_mic_tap) {
@@ -1058,6 +1115,7 @@ static void theme_styles_apply(void)
     lv_style_set_text_color(&s_st_accent_bg, ui_on_color(g_ui_theme.accent));
     lv_style_set_border_color(&s_st_accent_border, g_ui_theme.accent);
     lv_style_set_arc_color(&s_st_accent_border, g_ui_theme.accent);
+    lv_style_set_outline_color(&s_st_accent_border, g_ui_theme.accent);   /* the dialog ring's outer ring */
 
     mic_render();
     shortcuts_render();
@@ -1385,6 +1443,8 @@ static void build_watchface(void)
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_btn_mic, mic_event_cb, LV_EVENT_PRESS_LOST, NULL);
     hero_render();
 
     s_lbl_mic = lv_label_create(s_btn_mic);
@@ -1426,6 +1486,11 @@ static void build_watchface(void)
     lv_obj_align_to(s_ring, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
 
+    /* Dialog mode: just outside the halo drawn in the art */
+    s_dialog_ring = ui_make_dialog_ring(s_content, DIALOG_RING_SIZE);
+    lv_obj_align_to(s_dialog_ring, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_flag(s_dialog_ring, LV_OBJ_FLAG_HIDDEN, !s_dialog);
+
     /* Thinking spinner around the button */
     s_spinner = lv_spinner_create(s_content);
     lv_spinner_set_anim_params(s_spinner, SPINNER_MS, SPINNER_ARC);
@@ -1437,6 +1502,9 @@ static void build_watchface(void)
     lv_obj_remove_flag(s_spinner, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align_to(s_spinner, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
     ui_spinner_show(s_spinner, false, SPINNER_MS, SPINNER_ARC);
+
+    s_hold_arc = ui_make_hold_arc(s_content, SPINNER_SIZE, 6);
+    lv_obj_align_to(s_hold_arc, s_btn_mic, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_move_foreground(s_shortcuts);     /* above the art, which reaches down to them */
     lv_obj_move_foreground(s_btn_mic);
@@ -1690,6 +1758,17 @@ void ui_set_conv_state(ui_conv_t st)
         notice_schedule();          /* a waiting notice shows once the conversation is over */
         apply_conv_visuals();
     }
+    UNLOCK();
+}
+
+void ui_set_dialog(bool on)
+{
+    LOCK();
+    s_dialog = on;
+    if (s_dialog_ring) {
+        lv_obj_set_flag(s_dialog_ring, LV_OBJ_FLAG_HIDDEN, !on);
+    }
+    ui_chat_set_dialog(on);
     UNLOCK();
 }
 

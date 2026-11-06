@@ -227,9 +227,14 @@ bool        ui_i18n_set_language(const char *lang);
 bool        ui_i18n_set_reply_language(const char *lang);
 
 /* The mic buttons (watch face, conversation): pass their PRESSED / PRESSING events (only presses that are not
- * just waking the screen). Held MIC_HOLD_MS: on_mic_hold. True from then until the next press, so the CLICKED of
- * that release is ignored. */
-bool        ui_mic_hold_track(lv_event_code_t code);
+ * just waking the screen) and their RELEASED / PRESS_LOST. Held MIC_HOLD_MS: on_mic_hold. True from then until the
+ * next press, so the CLICKED of that release is ignored. `arc` (ui_make_hold_arc): fills while the button is held,
+ * so the user sees when dialog mode will start. */
+bool        ui_mic_hold_track(lv_event_code_t code, lv_obj_t *arc);
+/* Around a mic button: the hold progress arc and the dialog-mode ring (hidden; both follow the theme accent). */
+lv_obj_t   *ui_make_hold_arc(lv_obj_t *parent, int32_t size, int32_t width);
+lv_obj_t   *ui_make_dialog_ring(lv_obj_t *parent, int32_t size);
+void        ui_chat_set_dialog(bool on);
 
 /* ---- shared theme state ---- */
 typedef struct {

@@ -35,6 +35,16 @@ ASK_RULE = (
     "you answer yourself. Do not end replies with a generic 'anything else?'."
 )
 
+DIALOG_ON, DIALOG_OFF = "dialog:on", "dialog:off"  # [[dialog:on]] / [[dialog:off]]: dialog mode by voice
+DIALOG_RULE = (
+    "Dialog mode rule: in dialog mode the watch opens its microphone again after every reply, so the user can keep "
+    "talking without touching it. Add [[dialog:on]] only when the user explicitly asks to turn dialog mode "
+    "(conversation mode, keep listening) on. Add [[dialog:off]] when they ask to turn it off, or while it is on they "
+    "clearly end the conversation (goodbye, that's all, stop listening). Say a short natural confirmation with the "
+    "tag, in the reply's language. Never add either tag for anything else: an ordinary question in dialog mode "
+    "gets no tag."
+)
+
 # Questions that ask for a value: digits / arithmetic, or "how many / what time / cât costă ..." (no diacritics).
 _VALUE_QUESTION = re.compile(
     r"\d\s*[-+*/x×÷]\s*\d|\b(plus|minus|times|divided|ori|impartit|"
@@ -147,7 +157,8 @@ class DisplayTagFilter:
 
     A tag later in the reply ("high tide is at [[17:39]] today") keeps its value in the text without
     the brackets; the first value found this way is still shown large if the reply had none.
-    [[?]] anywhere (ASK_RULE) is removed and sets `asks`."""
+    [[?]] anywhere (ASK_RULE) is removed and sets `asks`; [[dialog:on]] / [[dialog:off]] (DIALOG_RULE) is removed
+    and sets `dialog`."""
 
     def __init__(self) -> None:
         self._buf = ""
@@ -156,6 +167,7 @@ class DisplayTagFilter:
         self._trim = False
         self.value: str | None = None
         self.asks = False
+        self.dialog: str | None = None  # "on" / "off": the user turned dialog mode on or off by voice
 
     def feed(self, delta: str) -> str:
         """Text to pass on (possibly empty while the start of the reply is still undecided)."""
@@ -206,6 +218,9 @@ class DisplayTagFilter:
         if inner.strip() == ASK_TAG:
             self.asks = True
             return
+        if _dialog_tag(inner):
+            self.dialog = _dialog_tag(inner)
+            return
         if self.value is None:
             value = to_display(inner.strip())
             if value and len(value) <= MAX_VALUE:
@@ -236,12 +251,17 @@ class DisplayTagFilter:
                 text = text[end + 2 :]
                 continue
             self._capture(inner)
-            if inner.strip() == ASK_TAG:
+            if inner.strip() == ASK_TAG or _dialog_tag(inner):
                 out[-1] = out[-1].rstrip()  # "What time? [[?]]": no space left behind
             else:
                 out.append(inner.strip())
             text = text[end + 2 :]
         return "".join(out)
+
+
+def _dialog_tag(inner: str) -> str | None:
+    s = inner.strip().lower().replace(" ", "")
+    return "on" if s == DIALOG_ON else "off" if s == DIALOG_OFF else None
 
 
 def _letters(text: str) -> str:
