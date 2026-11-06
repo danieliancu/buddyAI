@@ -28,6 +28,7 @@ from app.memory.retrieve import recall
 from app.conversation_rag import context as rag_context, tool as rag_tool
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_SAY_CHECKING, SEARCH_TOOL, WebSearch, search_instructions
+from app.search_fallback import CHECKING_DELAY_S, checking_phrase, search_more_phrase, with_hosted_fallback
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.lang_tag import LANGUAGE_RULE, LangSwitch, LanguageTagFilter
 from app.pipeline.spoken import for_speech
@@ -536,6 +537,7 @@ class ConversationPipeline:
         tts_sel = self.router.tts(turn.language, s)
         web_search = self.router.web_search(s, llm)
         searcher = None
+        wait_phrase = {"said": False}  # a phrase was said while a search runs ("let me check" / "a bit more"): no second
         backend = search_backend(self.router)
         if web_search is not None and backend == "ddgs_brave":
             # our own search (app/websearch); the answering call uses the profile's cheapest chat model
@@ -548,25 +550,42 @@ class ConversationPipeline:
                 llm_provider=search_llm.name, llm_model=search_model,
             )
             search_fn = run.search
-            legacy = {c.strip() for c in getattr(router_settings(self.router), "search_legacy_categories", "").split(",")
-                      if c.strip()}
-            if legacy and hasattr(llm, "web_search"):
-                hosted = self.router.hosted_search_tool(web_search)
+            conf = router_settings(self.router)
+            legacy = {c.strip() for c in getattr(conf, "search_legacy_categories", "").split(",") if c.strip()}
+            hosted = self.router.hosted_search_tool(web_search) if hasattr(llm, "web_search") else None
+
+            async def hosted_search(query: str, location: str, language: str, category: str = "other",
+                                    local_query: str = ""):
+                """OpenAI hosted search, accounted as legacy search."""
+                answer, tin, tout, searches, *more = await llm.web_search(  # type: ignore[attr-defined]
+                    query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
+                    instructions=search_instructions(s.timezone), timezone_name=s.timezone,
+                )
+                complete = bool(more[0]) if more else True
+                usage = [UsageItem("llm", llm.name, model, "input_token", tin),
+                         UsageItem("llm", llm.name, model, "output_token", tout),
+                         UsageItem("llm", llm.name, model, "web_search_call", max(1, searches) if answer else searches)]
+                return answer, tin, tout, searches, complete, usage
+
+            if legacy and hosted is not None:
 
                 async def search_fn(query: str, location: str, language: str, category: str = "other",
                                     local_query: str = ""):
-                    if category not in legacy:
-                        return await run.search(query, location, language, category=category, local_query=local_query)
-                    # hybrid: OpenAI hosted search for these categories, accounted as legacy search
-                    answer, tin, tout, searches, *more = await llm.web_search(  # type: ignore[attr-defined]
-                        query, location, language, model=model, tool=hosted, params=self.router.llm_params(),
-                        instructions=search_instructions(s.timezone), timezone_name=s.timezone,
-                    )
-                    complete = bool(more[0]) if more else True
-                    usage = [UsageItem("llm", llm.name, model, "input_token", tin),
-                             UsageItem("llm", llm.name, model, "output_token", tout),
-                             UsageItem("llm", llm.name, model, "web_search_call", max(1, searches) if answer else searches)]
-                    return answer, tin, tout, searches, complete, usage
+                    if category in legacy:  # hybrid: OpenAI hosted search for these categories
+                        return await hosted_search(query, location, language, category=category)
+                    return await run.search(query, location, language, category=category, local_query=local_query)
+
+            if hosted is not None and getattr(conf, "search_hosted_fallback", True):
+                # Our search found nothing: "I'll look a bit more and get back to you", then the hosted search
+                # (app/search_fallback.py). The phrase is part of the reply (screen and history too).
+                async def say_search_more() -> None:
+                    wait_phrase["said"] = True
+                    phrase = search_more_phrase(self._edit_lang(turn))
+                    sep = " " if reply_parts and not reply_parts[-1].endswith(" ") else ""
+                    await emit_text(sep + phrase + " ")
+                    await deltas.put(SPEAK_NOW)  # said now, not after the answer
+
+                search_fn = with_hosted_fallback(search_fn, hosted_search, say_search_more, frozenset(legacy))
 
             searcher = WebSearch(search_fn, web_search.get("cache_ttl_s"), provider=search_llm.name,
                                  model=search_model, max_attempts=None, pass_category=True)
@@ -646,6 +665,15 @@ class ConversationPipeline:
         async def emit_text(delta: str) -> None:
             await emit_items(passages.feed(delta))
 
+        async def say_checking_later() -> None:
+            await asyncio.sleep(CHECKING_DELAY_S)
+            if wait_phrase["said"]:
+                return
+            wait_phrase["said"] = True
+            sep = " " if reply_parts and not reply_parts[-1].endswith(" ") else ""
+            await emit_text(sep + checking_phrase(self._edit_lang(turn)) + " ")
+            await deltas.put(SPEAK_NOW)  # heard now, not after the answer
+
         async def keep_speaking() -> None:
             """The watch ends a "speaking" turn 20 s after its last news (SPEAKING_IDLE_MS; 45 s while "thinking"): while
             a search runs after a spoken "Let me check", tell it the reply is still coming."""
@@ -721,7 +749,14 @@ class ConversationPipeline:
                     )
                     # notes / reminders / settings: no large value on screen (a search answer may have one)
                     tools_used = tools_used or any(c.name != SEARCH_TOOL["name"] for c in calls)
-                    keep_alive = asyncio.create_task(keep_speaking()) if searching and said else None
+                    # (also without a spoken "let me check": the fallback phrase may start the audio mid-search)
+                    keep_alive = asyncio.create_task(keep_speaking()) if searching else None
+                    # Nothing said yet and the search is not over in CHECKING_DELAY_S: "Let me check" from the server
+                    # (the model often calls the tool without it). A quick answer comes without the phrase.
+                    checking = None
+                    if searching and not said and not round_text and getattr(router_settings(self.router),
+                                                                              "search_say_checking", True):
+                        checking = asyncio.create_task(say_checking_later())
                     try:
                         for c in calls:
                             msgs.append(
@@ -730,6 +765,8 @@ class ConversationPipeline:
                     finally:
                         if keep_alive is not None:
                             keep_alive.cancel()
+                        if checking is not None:
+                            checking.cancel()
                 rest = display.flush()
                 if rest:
                     await emit_text(rest)

@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # ddgs_brave: categories still answered by OpenAI hosted search (comma list; "" = none). Live transport status
     # is rendered by JavaScript, which our page reader cannot see.
     search_legacy_categories: str = "transport"
+    # ddgs_brave found nothing: "I'll look a bit more and get back to you", then OpenAI hosted search once
+    # (app/search_fallback.py; billed per such question only). false: "couldn't find it" at once.
+    search_hosted_fallback: bool = True
 
     # Cost display: stored costs are USD; shown as display_currency (editable in the web app)
     display_currency: str = "GBP"
