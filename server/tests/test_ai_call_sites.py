@@ -33,6 +33,8 @@ ALLOWED = {
     "the turn)",
     ("conversation_rag/index.py", "index_once"): "conversation vectors: recorded as a non-billable 'conversation_rag' "
     "operation (tiny cost), background only",
+    ("dialog_clip.py", "_speak"): "the 'Dialog mode on' clip: made once per language and voice (about 20 characters, "
+    "a few takes at most), stored and shared by every watch - operator cost, logged, never per turn",
 }
 
 
