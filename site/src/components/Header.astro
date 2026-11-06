@@ -3,6 +3,13 @@ import Icon from "./Icon.astro";
 import Logo from "./Logo.astro";
 import { config } from "../config";
 
+interface Props {
+  /** Over a black page top (the home page): black while the black part is under it, then white as on every other
+   * page (data-dark, switched by the page; colours in global.css, .site-head). */
+  dark?: boolean;
+}
+const { dark = false } = Astro.props;
+
 const nav = [
   { href: "/", label: "Home" },
   { href: "/features/", label: "Features" },
@@ -17,10 +24,11 @@ const mobileExtra = [
 const path = Astro.url.pathname.replace(/\/?$/, "/");
 const isActive = (href: string) => path === href;
 ---
-<header class="sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-md">
+<header class="site-head sticky top-0 z-40 border-b border-line bg-white/90 backdrop-blur-md" data-dark={dark ? "1" : undefined}>
   <div class="container-x flex h-16 items-center justify-between gap-4">
     <a href="/" class="flex items-center gap-2 rounded-lg" aria-label="olá home">
-      <Logo />
+      <span class="logo-on-light"><Logo /></span>
+      {dark && <span class="logo-on-dark"><Logo light /></span>}
     </a>
 
     <nav aria-label="Main" class="hidden lg:block">
@@ -33,6 +41,7 @@ const isActive = (href: string) => path === href;
                 "rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:text-accent",
                 isActive(item.href) ? "text-accent" : "text-fg",
               ]}
+              data-head-link
               aria-current={isActive(item.href) ? "page" : undefined}
             >
               {item.label}
@@ -46,6 +55,7 @@ const isActive = (href: string) => path === href;
       <a
         href={config.appUrl}
         class="grid h-10 w-10 place-items-center rounded-full text-fg hover:bg-bg-2"
+        data-head-btn
         aria-label="Sign in to your olá account"
         title="Sign in"
         data-account-out
@@ -55,6 +65,7 @@ const isActive = (href: string) => path === href;
       <a
         href={`${config.appUrl}/my`}
         class="hidden max-w-56 items-center gap-1.5 rounded-lg px-1.5 py-1 text-fg hover:bg-bg-2"
+        data-head-btn
         title="Your olá account (signed in)"
         data-account-in
       >

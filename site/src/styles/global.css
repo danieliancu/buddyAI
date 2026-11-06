@@ -137,6 +137,21 @@ h3 {
   .btn-ghost:hover {
     background: var(--bg-2);
   }
+  /* On a black background (the home page hero) */
+  .btn-ghost-dark {
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    background: transparent;
+  }
+  .btn-ghost-dark:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .text-gradient-dark {
+    background: linear-gradient(90deg, #3b82f6 0%, #6d5cff 50%, #a855f7 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   .icon-tile {
     display: inline-grid;
     place-items: center;
@@ -234,4 +249,38 @@ main:has(> section:last-child.bg-bg-2) + .site-footer {
 html[data-customer="1"] [data-when="guest"],
 html:not([data-customer="1"]) [data-when="customer"] {
   display: none !important;
+}
+
+/* The header over the home page's black top (Header.astro `dark`): black while the black part is under it, white
+ * after it (the page sets data-dark="0"), the same as on every other page. */
+.site-head {
+  transition: background-color 0.25s, border-color 0.25s;
+}
+.site-head .logo-on-dark {
+  display: none;
+}
+.site-head[data-dark="1"] {
+  background-color: #000;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.site-head[data-dark="1"] .logo-on-light {
+  display: none;
+}
+.site-head[data-dark="1"] .logo-on-dark {
+  display: inline;
+}
+.site-head[data-dark="1"] [data-head-link],
+.site-head[data-dark="1"] [data-head-btn],
+.site-head[data-dark="1"] [data-nav-toggle] {
+  color: #fff;
+}
+.site-head[data-dark="1"] [data-head-link]:hover,
+.site-head[data-dark="1"] [data-head-link][aria-current="page"] {
+  color: #8b7bff;
+}
+.site-head[data-dark="1"] [data-head-btn]:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+.site-head[data-dark="1"] [data-nav-toggle] {
+  border-color: rgba(255, 255, 255, 0.25);
 }

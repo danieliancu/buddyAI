@@ -12,7 +12,6 @@ import Testimonials from "../components/Testimonials.astro";
 import BuyBox from "../components/BuyBox.astro";
 import { languageCount } from "../lib/languages";
 import { config, prices, formatPrice, shipCountryCodes } from "../config";
-import heroBg from "../assets/home/hero-bg.png";
 import heroWatch from "../assets/home/hero-watch.png";
 import watchBox from "../assets/home/watch-box.png";
 
@@ -57,34 +56,30 @@ const jsonLd = [
   },
 ];
 ---
-<Base title="AI companion with a built-in voice assistant" description={description} jsonLd={jsonLd}>
+<Base title="AI companion with a built-in voice assistant" description={description} jsonLd={jsonLd} dark>
+  <!-- Black top: the hero (and, on desktop, the six features) down to the bottom of the screen (script at the end) -->
+  <div class="relative isolate flex flex-col overflow-hidden bg-black lg:min-h-[calc(100svh-4.1rem)]" data-hero-wrap>
   <!-- Hero -->
-  <section class="relative isolate overflow-hidden" aria-labelledby="hero-title">
-    <Image
-      src={heroBg}
-      alt=""
-      widths={[768, 1280, 2000]}
-      sizes="100vw"
-      loading="eager"
-      class="absolute inset-0 -z-10 h-full w-full object-cover"
-    />
-    <div class="absolute inset-0 -z-10 bg-gradient-to-r from-white/85 via-white/55 to-white/10" aria-hidden="true"></div>
+  <section class="relative flex-1 text-white max-sm:overflow-hidden lg:flex lg:items-center" aria-labelledby="hero-title">
     <!-- phones: the hero is stretched (by the script at the end) to the bottom of the screen; the watch fills what's left under the buttons -->
-    <div class="container-x relative grid items-center gap-3 pb-10 pt-6 max-sm:pb-2 max-sm:flex max-sm:flex-col max-sm:items-stretch sm:gap-6 sm:pt-10 lg:grid-cols-[1.15fr_1fr] lg:pb-14 lg:pt-12" data-hero>
+    <div class="container-x relative grid w-full items-center gap-3 pb-10 pt-6 max-sm:pb-2 max-sm:flex max-sm:flex-col max-sm:items-stretch sm:gap-6 sm:pt-10 lg:grid-cols-[1.15fr_1fr] lg:pb-6 lg:pt-10" data-hero>
       <div>
-        <h1 id="hero-title" style="--fit-em: 10.2" class="fit-title font-extrabold leading-[1.08] tracking-tight text-fg sm:text-5xl lg:text-[3.4rem]">
-          <span class="whitespace-nowrap">Your AI companion,</span><br /><span class="text-gradient whitespace-nowrap">now on your wrist.</span>
+        <h1 id="hero-title" style="--fit-em: 10.2" class="fit-title font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.4rem]">
+          <span class="whitespace-nowrap">Your AI companion,</span><br /><span class="text-gradient-dark whitespace-nowrap">now on your wrist.</span>
         </h1>
-        <p class="mt-3 max-w-xl text-base text-[#39415a] sm:mt-5 sm:text-lg">
+        <p class="mt-3 max-w-xl text-base text-white/80 sm:mt-5 sm:text-lg">
           Talk naturally. Get reminders, take notes, get live answers and more. <Brand name="watch" /> is a wearable AI companion designed to
           make everyday life easier, in {languageCount} languages.
         </p>
         <div class="mt-5 grid gap-3 sm:mt-7 sm:w-fit sm:grid-cols-2">
           <a href="#buy" class="btn btn-primary text-base sm:min-w-48"><span data-when="guest">Buy Now</span><span data-when="customer">Buy again</span> <Icon name="arrow" size={18} /></a>
-          <a href="/how-it-works/" class="btn btn-ghost hidden text-base sm:inline-flex sm:min-w-48"><Icon name="play" size={20} class="text-accent" /> How It Works</a>
+          <a href="/how-it-works/" class="btn btn-ghost-dark hidden text-base sm:inline-flex sm:min-w-48"><Icon name="play" size={20} class="text-[#8b7bff]" /> How It Works</a>
         </div>
       </div>
-      <div class="relative mx-auto w-fit max-sm:mx-0 max-sm:min-h-64 max-sm:w-full max-sm:flex-1 lg:-my-6 xl:-ml-16">
+      <div class="relative mx-auto w-fit max-sm:mx-0 max-sm:min-h-64 max-sm:w-full max-sm:flex-1 lg:-my-6 xl:-ml-28">
+        <!-- a violet glow behind the watch and its reflection on the "floor" -->
+        <div class="pointer-events-none absolute left-1/2 top-1/2 -z-10 aspect-square w-[115%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(124,92,255,.42),rgba(47,107,255,.14)_55%,transparent)] blur-2xl max-sm:w-[95%]" aria-hidden="true"></div>
+        <div class="pointer-events-none absolute bottom-[1%] left-1/2 -z-10 h-12 w-[78%] -translate-x-1/2 rounded-[50%] bg-[radial-gradient(closest-side,rgba(139,123,255,.45),transparent)] blur-md" aria-hidden="true"></div>
         <Image
           src={heroWatch}
           alt="The olácompanion (illustration)"
@@ -92,7 +87,7 @@ const jsonLd = [
           sizes="(min-width: 1024px) 440px, 80vw"
           loading="eager"
           fetchpriority="high"
-          class="w-64 drop-shadow-[0_30px_40px_rgba(30,40,90,.35)] max-sm:absolute max-sm:bottom-0 max-sm:left-1/2 max-sm:h-full max-sm:max-h-[115vw] max-sm:max-w-none max-sm:w-auto max-sm:-translate-x-1/2 sm:w-80 lg:w-[27rem]"
+          class="w-64 drop-shadow-[0_24px_40px_rgba(91,76,240,.35)] max-sm:absolute max-sm:bottom-0 max-sm:left-1/2 max-sm:h-full max-sm:max-h-[115vw] max-sm:max-w-none max-sm:w-auto max-sm:-translate-x-1/2 sm:w-80 lg:w-[30rem] 2xl:w-[34rem]"
         />
         <!-- phones: a corner ribbon on the watch picture, flush with the screen's right edge (the top bar is hidden here) -->
         <div class="pointer-events-none absolute -right-4 top-0 size-44 overflow-hidden sm:hidden" aria-hidden="true">
@@ -102,17 +97,19 @@ const jsonLd = [
         </div>
         <p class="sr-only sm:hidden">Free {prices.trialDays}-day subscription</p>
       </div>
-      <HeroChat class="z-10 hidden xl:absolute xl:bottom-0 xl:top-10 xl:-right-24 xl:block xl:w-[21rem]" />
+      <!-- the example conversation: only where it fits beside the watch (1440 px and wider), 4-5 bubbles high -->
+      <HeroChat class="z-10 hidden min-[1440px]:absolute min-[1440px]:top-1/2 min-[1440px]:h-[19rem] min-[1440px]:-translate-y-1/2 min-[1440px]:-right-24 min-[1440px]:block min-[1440px]:w-[21rem] min-[1760px]:-right-32" />
     </div>
   </section>
 
-  <!-- Features -->
-  <section class="bg-gradient-to-b from-[#f7f8ff] to-white pb-12 pt-6" aria-labelledby="features-title">
+  <!-- Features: on the black top on desktop, on white on phones and tablets -->
+  <section class="bg-gradient-to-b from-[#f7f8ff] to-white pb-12 pt-6 lg:bg-none lg:bg-transparent lg:pb-8 lg:pt-0" aria-labelledby="features-title">
     <div class="container-x">
       <h2 id="features-title" class="sr-only">Features</h2>
       <Highlights />
     </div>
   </section>
+  </div>
 
   <!-- How it works -->
   <section class="bg-bg-2 py-10" aria-labelledby="how-title">
@@ -231,12 +228,38 @@ const jsonLd = [
   // Phones: on load the hero is stretched to the bottom of the screen; the watch, which fills the space
   // under the buttons, grows with it. Measured once on load, again only when the width changes (a
   // rotation), so the hero doesn't jump as the phone's address bar shows/hides.
+  // Desktop: the black top (hero + the six features) reaches the bottom of the screen the same way.
   const hero = document.querySelector<HTMLElement>("[data-hero]");
+  const wrap = document.querySelector<HTMLElement>("[data-hero-wrap]");
   const phone = matchMedia("(max-width: 639.98px)");
+  const desktop = matchMedia("(min-width: 1024px)");
+
+  // The header is black over the black top, white once the page has scrolled past it (as on every other page). The
+  // black part: on desktop the hero and the six features; on phones and tablets the hero only (the features are on
+  // white there).
+  const head = document.querySelector<HTMLElement>("header[data-dark]");
+  const heroSection = hero?.closest("section");
+  if (head && wrap && heroSection) {
+    let io: IntersectionObserver | null = null;
+    const watch = () => {
+      io?.disconnect();
+      io = new IntersectionObserver(([e]) => (head.dataset.dark = e.isIntersecting ? "1" : "0"), {
+        rootMargin: `-${head.offsetHeight}px 0px 0px 0px`,
+      });
+      io.observe(desktop.matches ? wrap : heroSection);
+    };
+    watch();
+    desktop.addEventListener("change", watch);
+  }
 
   if (hero) {
     const stretch = () => {
       hero.style.minHeight = "";
+      if (wrap) wrap.style.minHeight = "";
+      if (desktop.matches && wrap) {
+        const top = wrap.getBoundingClientRect().top + scrollY;
+        wrap.style.minHeight = `${Math.max(0, innerHeight - top)}px`;
+      }
       if (!phone.matches) return;
       const top = hero.getBoundingClientRect().top + scrollY;
       hero.style.minHeight = `${Math.max(0, innerHeight - top)}px`;
