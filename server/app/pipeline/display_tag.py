@@ -13,6 +13,8 @@ import unicodedata
 
 from pylatexenc.latex2text import LatexNodes2Text
 
+from app.pipeline.lang_tag import is_lang_tag
+
 DISPLAY_RULE = (
     "Watch screen rule: when the user asks for a specific piece of information and one short value IS the "
     "answer (a calculation, how many, how much, what time, a temperature, a price, a distance, a score, a "
@@ -171,6 +173,8 @@ class DisplayTagFilter:
         end = s.find("]]")
         if end < 0:
             return "" if len(s) < _MAX_WAIT else self._release()
+        if is_lang_tag(s[2:end]):
+            return self._release()  # a foreign passage starts the reply (lang_tag.py): not a value
         self._done = True
         self._capture(s[2:end])
         rest = s[end + 2 :].lstrip()
@@ -227,6 +231,10 @@ class DisplayTagFilter:
                     out.append(text[start:])  # not a tag after all
                 break
             inner = text[start + 2 : end]
+            if is_lang_tag(inner):  # left for LanguageTagFilter, brackets included
+                out.append(text[start : end + 2])
+                text = text[end + 2 :]
+                continue
             self._capture(inner)
             if inner.strip() == ASK_TAG:
                 out[-1] = out[-1].rstrip()  # "What time? [[?]]": no space left behind
