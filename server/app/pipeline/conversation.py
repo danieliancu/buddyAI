@@ -48,6 +48,7 @@ from app.voice_tools import (
 )
 from app.pipeline.display_tag import (
     ASK_RULE,
+    DIALOG_RULE,
     DISPLAY_RULE,
     DisplayTagFilter,
     RepeatFilter,
@@ -91,6 +92,9 @@ UPLINK_STALL_S = 3.0  # how often a watch that stopped sending audio (e.g. Wi-Fi
 # again as a new turn (listen_start `replaces`), which stops this one uncounted.
 UPLINK_LOST_S = 9.0
 PREROLL_MS = 500  # audio kept from before the detected first word, so its start is not clipped
+# A gated watch (listen_start "gated") sends nothing before the first word: every GATED_TICK_S without audio counts as
+# that much silence, so the wait for speech (no_speech_timeout) runs on the clock as before.
+GATED_TICK_S = 0.5
 # The end of speech is detected after END_SILENCE_MS of silence (700 ms by default). The first
 # SILENCE_SEND_MS of a pause still go to the STT (word endings); the rest is held back and only sent
 # if the user speaks again, so the silence that merely confirms the end is never billed.
@@ -105,6 +109,7 @@ SPEAK_NOW = ""  # in the reply's text queue: a long pause follows, say what is b
 SPEAKING_KEEPALIVE_S = 8.0  # how often the watch hears that the reply goes on while a search runs after "Let me check"
 MAX_TOOL_ROUNDS = 5  # LLM calls that may end in tool calls; the next one gets no tools and must answer (3 finds + a delete fit)
 NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
+DIALOG_WAIT_S = 10  # dialog mode: the user has just heard the reply, so a shorter wait for the next words
 NOTE_SENTENCE_S = 30  # note mode: the longest sentence
 NOTE_MAX_TOKENS = 300
 
@@ -171,6 +176,7 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 "as words.",
                 DISPLAY_RULE,
                 ASK_RULE,
+                DIALOG_RULE,
                 LANGUAGE_RULE,
                 s.custom_instructions.strip(),
             ],
@@ -185,7 +191,10 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
         messages += [{"role": "user", "content": u}, {"role": "assistant", "content": a}]
         if found:  # what the search found, not only what was said aloud ("... in the UEFA Nations League")
             messages.append({"role": "system", "content": f"Web search behind that reply: {found}"})
-    messages.append({"role": "system", "content": f"Now: {now:%A %Y-%m-%d %H:%M} ({s.timezone})."})
+    now_note = f"Now: {now:%A %Y-%m-%d %H:%M} ({s.timezone})."
+    if getattr(turn, "dialog", False):
+        now_note += " Dialog mode is on: the watch listens again after your reply."
+    messages.append({"role": "system", "content": now_note})
     messages.append({"role": "user", "content": user_text})
     return messages
 
@@ -408,7 +417,8 @@ class ConversationPipeline:
             sensitivity=s.vad_sensitivity,
             # Note mode: the watch starts the next sentence right away, so a quiet stretch just ends
             # this (free) turn; one sentence is at most NOTE_SENTENCE_S long.
-            no_speech_timeout_ms=(NOTE_WAIT_S if note else s.wait_for_speech_s) * 1000,
+            no_speech_timeout_ms=(NOTE_WAIT_S if note else min(DIALOG_WAIT_S, s.wait_for_speech_s) if turn.dialog
+                                  else s.wait_for_speech_s) * 1000,
             max_duration_ms=(NOTE_SENTENCE_S if note else s.max_listen_s) * 1000,
             unfinished=lambda: looks_unfinished(heard, langs),
         )
@@ -431,14 +441,18 @@ class ConversationPipeline:
         stalled_s = 0.0
         try:
             while True:
+                waiting = turn.uplink_gated and not detector.speech_started  # silence is not sent
                 try:
-                    item = await asyncio.wait_for(turn.audio_in.get(), UPLINK_STALL_S)
+                    item = await asyncio.wait_for(turn.audio_in.get(), GATED_TICK_S if waiting else UPLINK_STALL_S)
                     stalled_s = 0.0
                 except asyncio.TimeoutError:
-                    stalled_s += UPLINK_STALL_S
-                    if not turn.cancelled and stalled_s < UPLINK_LOST_S:
-                        continue
-                    item = None
+                    if waiting and not turn.cancelled:
+                        item = (bytes(int(UPLINK_RATE * GATED_TICK_S) * 2), mono_ms())  # the silence not sent
+                    else:
+                        stalled_s += UPLINK_STALL_S
+                        if not turn.cancelled and stalled_s < UPLINK_LOST_S:
+                            continue
+                        item = None
                 if turn.cancelled:
                     raise asyncio.CancelledError()
                 if item is None:  # uplink stalled, or the watch's stop button (listen_end)
@@ -799,7 +813,10 @@ class ConversationPipeline:
             billed = speech.usage or {(tts_sel.provider.name, tts_sel.provider.model): 0}
             for (name, tts_model), chars in billed.items():
                 turn.usage.append(UsageItem("tts", name, tts_model, "character", chars))
-        if not reply_parts:
+        turn.dialog_set = display.dialog or turn.dialog_set  # [[dialog:on]] / [[dialog:off]]: by voice
+        if turn.dialog_set == ("on" if turn.dialog else "off"):
+            turn.dialog_set = None  # already so: nothing to change on the watch
+        if not reply_parts and not turn.dialog_set:  # only the tag is still an answer: the mode changes
             raise ProviderError("llm", "empty reply")
         turn.expect_reply |= display.asks  # the reply ended with [[?]]: the watch listens for the answer
         if display.value is None and not tools_used and asks_for_value(turn.user_text):

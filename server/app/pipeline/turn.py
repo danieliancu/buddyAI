@@ -56,6 +56,11 @@ class TurnContext:
     changed_line: int | None = None  # note mode: line to highlight on the watch
     abort_reason: str | None = None  # why the turn was cancelled: user_tap | timeout | error | connection_lost
     expect_reply: bool = False  # the reply asked something the operation needs: the watch listens again
+    # listen_start "gated": the watch sends no audio until it hears a voice (then ~300 ms before it and everything
+    # after): until the first word, missing audio is silence, not a lost link
+    uplink_gated: bool = False
+    dialog: bool = False  # the watch is in dialog mode (listen_start "dialog"): it listens again after every reply
+    dialog_set: str | None = None  # "on" / "off": the user turned dialog mode on or off by voice (turn_end "dialog")
     edit_uid: str | None = None  # edit modes: the stable id of the item being edited (bound by the gateway)
     pending_uid: str | None = None  # uid of the item in pending_open (the gateway remembers what it showed)
     edit_outcome: str = ""  # edit modes: "ignored" (not meant for the item) | "other" (about another item)

@@ -70,6 +70,7 @@ typedef enum {
     PROTO_EVT_STILL_THINKING,       /* num = 1: the link dropped mid-turn, the watch waits (THINKING); 0: over */
     PROTO_EVT_REPLY_RESET,          /* the answer shown so far is dropped: after the drop it comes again whole */
     PROTO_EVT_ITEM_EMAILED,         /* num = note number, str = sent | unverified | limit | failed | missing | offline */
+    PROTO_EVT_DIALOG,               /* num = 1 dialog mode on, 0 off (the ring around the mic) */
 } proto_event_type_t;
 
 typedef struct {
@@ -104,17 +105,11 @@ void proto_network_down(void);
 /* The big mic button: start a turn, or interrupt/cancel the current one. */
 void proto_mic_tap(void);
 
-/* A clip the watch plays itself: 60 ms Opus packets at the speaker's rate, in flash. */
-typedef struct {
-    const uint8_t  *opus;
-    const uint16_t *lens;
-    size_t          count;
-} proto_clip_t;
-
-/* The mic button held: dialog mode. `clip` ("Dialog mode on", may be NULL) plays first, then the mic opens, and
- * opens again after every reply. It ends when a question gets no speech (the usual listening timeout), a tap
- * cancels the listening, the conversation screen is left or a turn fails. */
-void proto_dialog_start(const proto_clip_t *clip);
+/* The mic button held: dialog mode (no sound; PROTO_EVT_DIALOG shows it). The mic opens at once and again after
+ * every reply. It can also be turned on and off by voice (turn_end "dialog"). It ends when a question gets no
+ * speech, a tap cancels the listening, the conversation screen is left, the user says so, or two turns in a row
+ * fail. */
+void proto_dialog_start(void);
 
 /* User changed settings on the watch (subset of PROTOCOL.md section 5). The
  * change is applied locally at once and sent as settings_changed. */

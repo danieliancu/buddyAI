@@ -345,9 +345,11 @@ class FakeWatch:
                 target = start + (off + n) / UPLINK_RATE * 1000
                 await asyncio.sleep(max(0.0, (target - now_ms()) / 1000))
 
-    async def ask(self, pcm: np.ndarray, language: str | None, realtime: bool = True) -> TurnLog:
+    async def ask(self, pcm: np.ndarray, language: str | None, realtime: bool = True, dialog: bool = False) -> TurnLog:
         tl = self.new_turn()
         extra: dict[str, Any] = {"language": language} if language else {}
+        if dialog:  # dialog mode (the mic button held): the watch listens again after every reply
+            extra["dialog"] = True
         if not self.legacy:  # like the firmware: a new random id per new turn
             self.last_request_id = uuid.uuid4().hex
             extra["request_id"] = self.last_request_id

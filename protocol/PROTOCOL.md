@@ -44,7 +44,7 @@ Message-specific fields sit at the top level next to the envelope fields.
 | type | Fields | Meaning |
 |---|---|---|
 | `hello` | `device_id`, `fw_version`, `hw_model`, `token?`, `pairing_code?`, `audio: {uplink_rate, downlink_rates[]}`, `boot?`, `link?` | First message. `token` for a paired device, `pairing_code` (6 digits) for an unpaired one. Diagnostic reports (token hello only, repeated until a `hello_ack`; admin **ola Diagnostics**, see §3.1.1): `boot: {reset_reason, prev_uptime_s?, …}` on the first session after a restart (`reset_reason`: `power_on`\|`software`\|`panic`\|`int_wdt`\|`task_wdt`\|`wdt`\|`brownout`\|`usb`\|…; `prev_uptime_s` when it survived the restart), `link: {drop, offline_ms, mid_turn, wifi_reason?, rssi?, session_s?, …}` when the previous session ended or connecting failed (`drop`: `wifi_lost`\|`pong_timeout`\|`ws_error`\|`ws_disconnected`\|`ws_closed`\|`reconnect`\|`reboot`\|`connect_failed`\|`hello_timeout`). |
-| `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `replaces?`: the `request_id` of a question the watch sends again after a dropped connection (§6.1); the server stops that first attempt if it is still running, uncounted. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply; "delete this note" deletes it and `items_open` opens the notes list - the watch goes to the watchface when it was the last note); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. |
+| `listen_start` | `turn_id`, `request_id?`, `language?`, `mode?`, `note?`, `reminder?` | User tapped the mic; uplink audio for `turn_id` follows. `request_id`: a fresh random id (16-64 characters `[0-9A-Za-z_-]`, the firmware sends 32 hex) for this new turn. The server admits and charges one request id at most once. A resent `listen_start` with an id it already answered gets `turn_end {status, duplicate: true}` (no new turn, no cost); one still running gets `error duplicate`. The watch never re-sends an id automatically: a retry by the user is a new turn with a new id. Older firmware omits it (identified by session + `turn_id`). `replaces?`: the `request_id` of a question the watch sends again after a dropped connection (§6.1); the server stops that first attempt if it is still running, uncounted. `language`: `"auto"` or an ISO 639-1 code. `mode: "note"` + `note` (number): note edit mode - the sentence only edits that note (line operations, low-cost model, no spoken reply; "delete this note" deletes it and `items_open` opens the notes list - the watch goes to the watchface when it was the last note); the watch starts the next `listen_start` itself while its mic stays open. `mode: "reminder"` + `reminder` (number): reminder edit mode, the same for one reminder (change its time, end, advance notice, place, people, text or completed state, delete it, undo; after a change `item_show` shows it again, after a delete `items_open` opens the list). A turn with no speech in either mode is not stored or billed. `dialog: true` (chat mode): the watch is in dialog mode (§3.5) - the server waits a shorter time for the first word and the reply may turn the mode off. `gated: true`: the watch sends no audio until it hears a voice (§3.5); until the first word, time without audio counts as silence, not as a lost uplink. |
 | `listen_end` | `turn_id` | The user stopped listening (note mode's stop button, or the end of a question resent after a dropped connection, §6.1): end the sentence now and process what was said - unlike `abort`, which discards it. |
 | `resume` | `turn_id`, `request_id` | After a dropped connection (§6.1): the reply to the question sent with `request_id` in the previous session, as the new turn `turn_id`. |
 | `abort` | `turn_id`, `reason` (`user_tap`\|`timeout`\|`error`) | Cancel the given turn (tap-to-interrupt). |
@@ -87,7 +87,7 @@ reports.
 |---|---|---|
 | `pairing_pending` | `expires_in_s` | Unpaired device registered its code; waiting for the admin. |
 | `paired` | `device_token` | Admin accepted the code. Device stores the token and sends a new `hello` with `token`. |
-| `hello_ack` | `session_id`, `server_time`, `settings`, `settings_version`, `downlink_rate` | Session established. |
+| `hello_ack` | `session_id`, `server_time`, `settings`, `settings_version`, `downlink_rate`, `uplink_gate?` | Session established. `uplink_gate: true`: the server accepts gated turns (`listen_start` `gated`, §3.5); without it the watch streams every frame as before. |
 | `listen_stop` | `turn_id`, `reason` (`vad`\|`max_duration`\|`no_speech`) | Server detected end of speech; device stops the uplink. |
 | `state` | `turn_id`, `state` (`idle`\|`listening`\|`thinking`\|`speaking`) | UI state hint. |
 | `stt_result` | `turn_id`, `text`, `final`, `language?` | Transcript (partials optional). The final result carries the language used for the reply (detected when `auto`). |
@@ -95,7 +95,7 @@ reports.
 | `llm_display` | `turn_id`, `text` | Optional, before the first `llm_text`: the answer's key value (≤ 16 chars, e.g. `21°C`, `14:30`, `£3.50`). The watch shows only this, in large type, while the full reply is spoken. |
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. A passage in another language inside the reply ("how do you say it in French?") is spoken in its own language by the server; the watch sees one audio stream and the reply language, as before. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |
-| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?`, `resume?` | Server finished the turn. `resume: "missing"` (with `status: error`): the answer to a `resume` - nothing to resume (unknown or expired request, or the question was not heard in full); the watch shows "try again". `expect_reply: true` (chat mode): the reply asked something and waits for the answer ("which one?", "delete it?", "what time?", a yes / no to an offer) - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). |
+| `turn_end` | `turn_id`, `status` (`completed`\|`aborted`\|`error`), `expect_reply?`, `resume?` | Server finished the turn. `resume: "missing"` (with `status: error`): the answer to a `resume` - nothing to resume (unknown or expired request, or the question was not heard in full); the watch shows "try again". `expect_reply: true` (chat mode): the reply asked something and waits for the answer ("which one?", "delete it?", "what time?", a yes / no to an offer) - the watch listens again once the reply has been played. Every such question sets it again, so a clarification followed by a confirmation keeps the mic coming back; a turn without it (done, cancelled, nothing heard) or a tap ends that. Older firmware ignores it (the user taps the mic to answer). `dialog?` (`on`\|`off`, chat mode, `completed` only): the user turned dialog mode on or off by voice (§3.5). |
 | `item_emailed` | `number`, `status` (`sent`\|`unverified`\|`limit`\|`failed`\|`missing`) | Answer to `item_email`: the watch shows "Sent" or why not. |
 | `settings_update` | `settings`, `settings_version` | Full device-facing settings (§5). |
 | `ota_available` | `version`, `url`, `sha256`, `size`, `attempt_id?`, `hw_model?`, `signature?` | Firmware update offer. `attempt_id`: the server's id of this try, echoed in `ota_status` and kept across the restart. Older firmware ignores it. See §3.4. |
@@ -156,6 +156,29 @@ Device to server, `ota_status`: `attempt_id`, `state`, `reason?`, `progress?`.
 | `refused` | `reason`: `in_conversation`, `battery`, `older_version`, `same_version`, `wrong_model`. Tried again later, not counted. |
 
 A failure the watch could not send (no session, or the send failed) is sent again when the next session starts, unless a new offer arrived. Silence or a disconnect is never a failure: after 30 minutes the attempt becomes `unknown` and is tried again. Rollback checks: `display`, `audio`, `memory`, `server_session`; empty means the bootloader rolled back after a reset, with `reset_reason` `panic`, `watchdog`, `brownout`, `software`, `other`, or `power_on` / `usb` (the watch was switched off: not counted).
+
+### 3.5 Dialog mode and the uplink gate (firmware 0.1.8)
+
+**Dialog mode**: the mic opens again after every reply, so the user can talk without touching the watch. It starts
+when the mic button is held for 2 s (an arc fills around the mic while it is held; no sound) or by voice ("turn on
+dialog mode", in any language: the reply carries `turn_end` `dialog: "on"`). While it is on, a thin double ring
+around the mic shows it on the watch face and on the conversation screen, and every chat `listen_start` carries
+`dialog: true`; the server then waits 10 s (at most `wait_for_speech_s`) for the first word. It ends, and the ring
+goes, when:
+
+- the user says so ("stop dialog mode", "that's all, bye": `turn_end` `dialog: "off"`, decided by the reply model
+  in any language with `[[dialog:off]]`, which never reaches the screen or the history);
+- a question gets no speech (`turn_end` `no_speech`), a tap cancels the listening, the conversation screen is left, or
+  the turn times out on the watch;
+- two turns in a row fail (`error`): the first failure only shows its message and the mic opens again.
+
+A note's or reminder's edit mode takes the mic and ends dialog mode.
+
+**Uplink gate**: with `hello_ack` `uplink_gate: true` the watch sends nothing of a turn until it hears a voice
+(the level clearly above the room for 120 ms), then the ~300 ms before it and every frame after, pauses included (the
+server's end-of-speech detection needs them). `listen_start` (and a question sent again after a drop) carries
+`gated: true`; the server counts each 0.5 s without audio before the first word as silence, so the wait for speech
+ends on time. Offline (a held question) the watch does not gate.
 
 ## 4. Binary audio frames
 

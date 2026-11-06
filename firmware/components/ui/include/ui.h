@@ -86,6 +86,8 @@ esp_err_t ui_init(lv_display_t *disp, const ui_callbacks_t *cb);
 void ui_apply_settings(const buddy_settings_t *s);
 void ui_show_watchface(void);
 void ui_set_conv_state(ui_conv_t st);
+/* Dialog mode on / off: a thin double ring around the mic (watch face and conversation screen). */
+void ui_set_dialog(bool on);
 /* Conversation screen (opens when a turn starts): this turn's transcript
  * (partial or final, replaces the user bubble) and reply text as it streams. */
 void ui_chat_user(const char *text);

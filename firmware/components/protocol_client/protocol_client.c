@@ -76,7 +76,7 @@ typedef enum {
     MSG_FIRST_AUDIO,        /* a = turn id, t = receive time ms */
     MSG_PLAYBACK_DONE,      /* a = turn id */
     MSG_TAP,
-    MSG_DIALOG,             /* ptr = the clip to say first (proto_clip_t), or NULL */
+    MSG_DIALOG,             /* the mic button held: dialog mode on */
     MSG_SETTINGS_CHANGED,   /* str = JSON changes (owned) */
     MSG_OTA_STATUS,         /* a = state, b = pct */
     MSG_END_CONVERSATION,   /* user left the conversation screen */
@@ -148,13 +148,13 @@ static int              s_status_rssi;
  * a confirmation keeps the mic coming back; it stops when a turn ends without it (done, cancelled, no
  * answer heard) or the user taps. */
 static bool             s_expect_reply;
-/* Dialog mode (mic button held): the mic opens again after every reply; s_dialog_clip: "Dialog mode on" is playing,
- * the mic opens when it ends. */
+/* Dialog mode (mic button held, or turned on by voice): the mic opens again after every reply. Changed only through
+ * set_dialog (the UI shows it as a ring around the mic). s_dialog_errors: failed turns in a row - one is
+ * forgiven (the mic opens again), the second ends dialog mode. */
 static bool             s_dialog;
+static int              s_dialog_errors;
 static int64_t          s_listen_ms;            /* this turn's listen_start (the log of its first words) */
 static bool             s_heard_logged;
-static bool             s_dialog_clip;
-#define DIALOG_CLIP_TURN        0xFFFFFFF0u     /* playback id of the clip: never a real turn */
 /* Hand-off from the chat to an item's screen: the user's words fit several places inside one note /
  * reminder ("the milk" on two lines). The server opens the item with `listen` and a question; once the chat
  * reply has been played, the item's edit mode starts with the question shown (its own logic continues). */
@@ -290,6 +290,18 @@ static void emit(proto_event_type_t type, int num, const char *str)
     }
 }
 
+/* Dialog mode on / off (`why` for the log); the UI is told only when it changes. */
+static void set_dialog(bool on, const char *why)
+{
+    if (on == s_dialog) {
+        return;
+    }
+    s_dialog = on;
+    s_dialog_errors = 0;
+    ESP_LOGI(TAG, "dialog mode %s: %s", on ? "on" : "off", why);
+    emit(PROTO_EVT_DIALOG, on, NULL);
+}
+
 static void post(const msg_t *m)
 {
     if (xQueueSend(s_q, m, pdMS_TO_TICKS(100)) != pdTRUE) {
@@ -356,6 +368,24 @@ static void local_stop_turn(void);
 
 /* Development builds: proto_test_ask() - a turn fed from a recording instead of the mic. */
 static bool             s_test_no_mic;
+
+/* Uplink gate (hello_ack "uplink_gate"): until the first word of a turn nothing is sent - the mic keeps its silence
+ * to itself (no Wi-Fi traffic in the pauses of dialog mode). The last GATE_PREROLL frames are kept; when the level
+ * rises clearly above the room (GATE_OPEN_FRAMES loud frames in a row) they go first, then everything else as before
+ * (pauses within the question too: the server's end-of-speech detection needs them). The server counts the time
+ * without audio as silence (listen_start "gated"). Not used offline (a held question is sent whole). */
+#define GATE_PREROLL        5       /* 60 ms frames: ~300 ms before the voice */
+#define GATE_FRAME_MAX      512     /* a bigger frame (never at 32 kb/s) opens the gate */
+#define GATE_MIN_LEVEL      28      /* audio level 0..100 = -60..0 dBFS: about -43 dBFS */
+#define GATE_ABOVE_FLOOR    14      /* about 8 dB above the room's level */
+#define GATE_OPEN_FRAMES    2
+#define GATE_START_FLOOR    18
+static bool             s_server_gate;          /* the server knows gated turns */
+static volatile bool    s_gate_closed;          /* this turn: waiting for a voice */
+static uint8_t          s_gate_buf[GATE_PREROLL][GATE_FRAME_MAX];
+static uint16_t         s_gate_len[GATE_PREROLL];
+static int              s_gate_head, s_gate_count, s_gate_loud, s_gate_floor, s_gate_peak;
+static uint32_t         s_gate_frames;          /* frames kept back this turn (for the log) */
 static const uint8_t   *s_test_opus;
 static const uint16_t  *s_test_lens;
 static size_t           s_test_count;
@@ -791,11 +821,8 @@ static void uplink_drain(void)
     }
 }
 
-static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
+static void uplink_frame(const uint8_t *opus, size_t len)
 {
-    if (turn_id != s_capture_turn || !s_turn_live || s_conv != PROTO_CONV_LISTENING || len > 1500) {
-        return;
-    }
     xSemaphoreTake(s_turn_lock, portMAX_DELAY);
     up_append(opus, len);
     /* Kept in the buffer: uplink_pump (or the replay) sends it. Not kept (past the buffer):
@@ -812,6 +839,53 @@ static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus
     } else if (wake) {
         uplink_wake();
     }
+}
+
+/* Gate closed: true while the frame is only kept (the audio task; level = this frame's). */
+static bool gate_hold(const uint8_t *opus, size_t len)
+{
+    const int lvl = audio_capture_level();
+    s_gate_peak = lvl > s_gate_peak ? lvl : s_gate_peak;
+    const int limit = s_gate_floor + GATE_ABOVE_FLOOR > GATE_MIN_LEVEL ? s_gate_floor + GATE_ABOVE_FLOOR : GATE_MIN_LEVEL;
+    if (lvl >= limit) {
+        s_gate_loud++;
+    } else {
+        s_gate_loud = 0;
+        /* the room: follows a quieter level at once, a louder one slowly (a voice must not raise it) */
+        s_gate_floor = lvl < s_gate_floor ? lvl : s_gate_floor + (lvl - s_gate_floor + 15) / 16;
+    }
+    if (s_gate_loud < GATE_OPEN_FRAMES && len <= GATE_FRAME_MAX) {
+        int slot = (s_gate_head + s_gate_count) % GATE_PREROLL;
+        if (s_gate_count == GATE_PREROLL) {
+            s_gate_head = (s_gate_head + 1) % GATE_PREROLL;     /* the oldest goes */
+        } else {
+            s_gate_count++;
+        }
+        memcpy(s_gate_buf[slot], opus, len);
+        s_gate_len[slot] = (uint16_t)len;
+        s_gate_frames++;
+        return true;
+    }
+    s_gate_closed = false;
+    ESP_LOGI(TAG, "voice heard (level %d, room %d): sending, %lu silent frames kept back", lvl, s_gate_floor,
+             (unsigned long)(s_gate_frames > (uint32_t)s_gate_count ? s_gate_frames - s_gate_count : 0));
+    for (int i = 0; i < s_gate_count; i++) {
+        int slot = (s_gate_head + i) % GATE_PREROLL;
+        uplink_frame(s_gate_buf[slot], s_gate_len[slot]);    /* ~300 ms before the voice, so the word is whole */
+    }
+    s_gate_count = 0;
+    return false;
+}
+
+static void capture_cb(uint32_t turn_id, uint32_t frame_seq, const uint8_t *opus, size_t len, void *ctx)
+{
+    if (turn_id != s_capture_turn || !s_turn_live || s_conv != PROTO_CONV_LISTENING || len > 1500) {
+        return;
+    }
+    if (s_gate_closed && gate_hold(opus, len)) {
+        return;
+    }
+    uplink_frame(opus, len);
 }
 
 static void playback_done_cb(uint32_t turn_id, void *ctx)
@@ -893,10 +967,16 @@ static void start_turn(void)
     uint32_t turn = next_turn_locked_reset();
     s_capture_turn = turn;
     s_resume_pending = false;
-    s_dialog_clip = false;
     s_listen_ms = now_ms();
     s_heard_logged = false;
     s_turn_note = s_note_open && !s_test_no_mic;
+    if (s_gate_closed && s_gate_frames) {
+        ESP_LOGI(TAG, "no voice heard (loudest %d, room %d)", s_gate_peak, s_gate_floor);
+    }
+    s_gate_closed = s_server_gate && s_conn == CONN_SESSION && !s_test_no_mic;
+    s_gate_head = s_gate_count = s_gate_loud = s_gate_peak = 0;
+    s_gate_floor = GATE_START_FLOOR;
+    s_gate_frames = 0;
     ESP_LOGI(TAG, "listen_start turn %lu%s", (unsigned long)turn,
              s_turn_note ? (s_note_reminder ? " (reminder)" : " (note)") : "");
     new_request_id(s_req_id);
@@ -906,6 +986,11 @@ static void start_turn(void)
     if (s_turn_note) {
         cJSON_AddStringToObject(m, "mode", s_note_reminder ? "reminder" : "note");
         cJSON_AddNumberToObject(m, s_note_reminder ? "reminder" : "note", s_note_number);
+    } else if (s_dialog) {
+        cJSON_AddTrueToObject(m, "dialog");     /* the server waits less for the next words, knows "stop" */
+    }
+    if (s_gate_closed) {
+        cJSON_AddTrueToObject(m, "gated");      /* silence before the first word is not sent */
     }
     send_json(m, "listen_start", true, turn);
 
@@ -946,7 +1031,7 @@ static void note_open(int number, bool reminder)
         abort_turn("user_tap");
         set_conv(PROTO_CONV_IDLE);
     }
-    s_dialog = s_dialog_clip = false;     /* the item's own edit mode takes the mic */
+    set_dialog(false, "note");              /* the item's own edit mode takes the mic */
     s_note_open = true;
     s_note_number = number;
     s_note_reminder = reminder;
@@ -991,10 +1076,7 @@ static void handle_tap(void)
         break;
     case PROTO_CONV_LISTENING:
         /* Tap while listening cancels the turn (and dialog mode). */
-        if (s_dialog) {
-            ESP_LOGI(TAG, "dialog mode off: tap");
-        }
-        s_dialog = false;
+        set_dialog(false, "tap");
         abort_turn("user_tap");
         set_conv(PROTO_CONV_IDLE);
         break;
@@ -1041,6 +1123,9 @@ static void resume_after_drop(void)
     cJSON_AddStringToObject(m, "language", st.language);
     cJSON_AddStringToObject(m, "request_id", s_req_id);
     cJSON_AddStringToObject(m, "replaces", old_id);
+    if (s_gate_closed) {
+        cJSON_AddTrueToObject(m, "gated");
+    }
     send_json(m, "listen_start", true, turn);
     size_t pos = 0, packets = 0;
     for (;;) {
@@ -1104,8 +1189,8 @@ static void listen_again_if_asked(void)
     }
 }
 
-/* The mic button held: dialog mode, announced by a clip played on the watch, then the mic opens. */
-static void dialog_start(const proto_clip_t *clip)
+/* The mic button held: dialog mode on (shown by the ring around the mic, no sound), the mic opens at once. */
+static void dialog_start(void)
 {
     if (s_conn != CONN_SESSION) {
         handle_tap();           /* offline: what a tap does (a held question, or the error) */
@@ -1117,21 +1202,8 @@ static void dialog_start(const proto_clip_t *clip)
     }
     end_hold(false);
     s_expect_reply = false;
-    s_dialog = true;
-    ESP_LOGI(TAG, "dialog mode on");
-    if (!clip || !clip->count) {
-        start_turn();
-        return;
-    }
-    audio_capture_stop();
-    audio_playback_begin(DIALOG_CLIP_TURN);
-    size_t pos = 0;
-    for (size_t i = 0; i < clip->count; i++) {
-        audio_playback_feed(DIALOG_CLIP_TURN, clip->opus + pos, clip->lens[i]);
-        pos += clip->lens[i];
-    }
-    audio_playback_end(DIALOG_CLIP_TURN);
-    s_dialog_clip = true;       /* MSG_PLAYBACK_DONE opens the mic */
+    set_dialog(true, "hold");
+    start_turn();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1163,6 +1235,7 @@ static void on_hello_ack(const cJSON *j)
     if (cJSON_IsObject(settings)) {
         settings_apply_server(settings, ver);
     }
+    s_server_gate = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "uplink_gate"));
     uint32_t dl = 0;
     if (json_uint32(j, "downlink_rate", &dl)) {
         ESP_LOGI(TAG, "downlink rate %lu Hz (decoded to %d Hz)", (unsigned long)dl, 16000);
@@ -1491,11 +1564,20 @@ static void handle_text(const char *txt)
         if (has_turn && turn == s_active_turn && s_turn_live) {
             s_turn_ended = true;
             bool completed = status && strcmp(status, "completed") == 0;
-            if (s_dialog && !completed) {
-                ESP_LOGI(TAG, "dialog mode off: turn %s", status ? status : "?");    /* no speech, error, abort */
-                s_dialog = false;
+            bool forgiven = false;      /* one failed turn in dialog mode: the mic opens again */
+            const char *voice = json_str(j, "dialog");     /* the user turned dialog mode on / off by voice */
+            if (completed && voice && !s_turn_note) {
+                set_dialog(strcmp(voice, "on") == 0, "voice");
             }
-            s_expect_reply = completed && !s_turn_note &&
+            if (completed) {
+                s_dialog_errors = 0;
+            } else if (s_dialog && status && strcmp(status, "error") == 0 && ++s_dialog_errors < 2) {
+                forgiven = true;
+                ESP_LOGW(TAG, "dialog mode: turn failed, listening again");
+            } else {
+                set_dialog(false, status ? status : "?");       /* no speech, aborted, a second failure */
+            }
+            s_expect_reply = (completed || forgiven) && !s_turn_note &&
                              (s_dialog || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "expect_reply")));
             if (!completed || (!s_first_audio_seen && !audio_playback_active())) {
                 finish_turn_idle();
@@ -2101,17 +2183,6 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_PLAYBACK_DONE:
-        if (m->a == DIALOG_CLIP_TURN) {
-            if (s_dialog_clip) {
-                s_dialog_clip = false;
-                if (s_dialog && s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
-                    start_turn();
-                } else {
-                    s_dialog = false;   /* the link dropped meanwhile: no dialog left to continue */
-                }
-            }
-            break;
-        }
         if (m->a == s_active_turn && s_turn_live) {
             send_turn_msg("playback_done", m->a, NULL);
             finish_turn_idle();
@@ -2119,7 +2190,7 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_END_CONVERSATION:
-        s_dialog = s_dialog_clip = false;
+        set_dialog(false, "screen left");
         end_hold(false);    /* the chat screen was left: no "try again" for a question given up */
         if (s_conv == PROTO_CONV_LISTENING) {
             abort_turn("user_tap");
@@ -2132,7 +2203,7 @@ static void handle_msg(msg_t *m)
         break;
     case MSG_DIALOG:
         note_close(false);
-        dialog_start(m->ptr);
+        dialog_start();
         break;
     case MSG_NOTE_SESSION:
         if (m->b & 1) {
@@ -2339,7 +2410,7 @@ static void handle_timers(void)
                 s_turn_deadline_ms = now + 1000;    /* still playing */
             } else {
                 ESP_LOGW(TAG, "turn %lu timed out in state %d", (unsigned long)s_active_turn, s_conv);
-                s_dialog = false;
+                set_dialog(false, "timeout");
                 abort_turn("timeout");
                 set_conv(PROTO_CONV_IDLE);
                 emit(PROTO_EVT_ERROR, PROTO_ERR_NO_ANSWER, NULL);  /* no answer in time (the link is up) */
@@ -2440,9 +2511,9 @@ void proto_mic_tap(void)
     post(&m);
 }
 
-void proto_dialog_start(const proto_clip_t *clip)
+void proto_dialog_start(void)
 {
-    msg_t m = { .type = MSG_DIALOG, .ptr = clip };
+    msg_t m = { .type = MSG_DIALOG };
     post(&m);
 }
 

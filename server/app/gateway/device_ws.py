@@ -392,6 +392,7 @@ class DeviceConnection:
                 settings=device_view(settings, chat_title),
                 settings_version=version,
                 downlink_rate=self.downlink_rate,
+                uplink_gate=True,  # the watch may keep the mic's silence to itself before the first word
             )
             await self.send_json("languages", items=languages.watch_languages())  # the watch's language picker
             if account_id is not None:
@@ -532,10 +533,12 @@ class DeviceConnection:
             account_id=self.account_id,
             rag=self.rag,
         )
+        turn.uplink_gated = msg.get("gated") is True
         if note_mode:
             # Stored only if something was said (_finish_turn), and outside the chat history.
             turn.mode, turn.note_number, turn.edit_uid = edit_kind, note_number, edit_uid
         else:
+            turn.dialog = msg.get("dialog") is True  # the watch listens again after every reply
             with session_scope() as db:
                 conv = ConversationRepo(db).current(self.device_id, get_settings().conversation_idle_minutes)
                 row = TurnRepo(db).create(
@@ -759,6 +762,8 @@ class DeviceConnection:
         # reply asked something the operation needs (which one? confirm?) - the watch listens again.
         status = "completed" if result.notified else result.status
         extra = {"expect_reply": True} if turn.expect_reply and turn.mode == "chat" and status == "completed" and live else {}
+        if turn.dialog_set and turn.mode == "chat" and status == "completed" and live:
+            extra["dialog"] = turn.dialog_set  # the user turned dialog mode on / off by voice
         await self._turn_out(turn, "turn_end", status=status, **extra)
         turn.final_status = status
         turn.finished_at = time.monotonic()

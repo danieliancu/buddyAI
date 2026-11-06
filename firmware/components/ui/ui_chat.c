@@ -35,6 +35,7 @@
 #define MIC_TOUCH_TOP       20          /* ... less above it: stays in the 26 px gap under the list */
 #define RING_BASE           (MIC_SIZE + 14)
 #define SPINNER_SIZE        (MIC_SIZE + 16)
+#define DIALOG_RING_SIZE    (MIC_SIZE + 30)     /* dialog mode, outside the listening ring's resting size */
 #define PILL_BG             0x252b36
 #define REPLY_BG            0x1f2530
 #define DOT_SIZE            10          /* typing indicator: three bouncing dots, no bubble */
@@ -58,6 +59,8 @@ static lv_obj_t  *s_mic;
 static lv_obj_t  *s_mic_lbl;
 static lv_obj_t  *s_ring;
 static lv_obj_t  *s_spinner;
+static lv_obj_t  *s_dialog_ring;    /* dialog mode on */
+static lv_obj_t  *s_hold_arc;       /* fills while the mic is held */
 static lv_obj_t  *s_cur_user;       /* label of this turn's user bubble (NULL until words arrive) */
 static lv_obj_t  *s_typing;         /* bouncing dots: the user's side while listening (before the first
                                      * words), ola's side while the answer is awaited */
@@ -284,10 +287,12 @@ static void mic_cb(lv_event_t *e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_PRESSED) {
         s_mic_swallow = !ui_screen_awake();     /* a tap on a dim screen only wakes it */
-        ui_mic_hold_track(code);
+        ui_mic_hold_track(code, s_mic_swallow ? NULL : s_hold_arc);
     } else if (code == LV_EVENT_PRESSING && !s_mic_swallow) {
-        ui_mic_hold_track(code);
-    } else if (code == LV_EVENT_CLICKED && !s_mic_swallow && !ui_mic_hold_track(code) && g_ui_cb.on_mic_tap) {
+        ui_mic_hold_track(code, s_hold_arc);
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        ui_mic_hold_track(code, s_hold_arc);
+    } else if (code == LV_EVENT_CLICKED && !s_mic_swallow && !ui_mic_hold_track(code, NULL) && g_ui_cb.on_mic_tap) {
         g_ui_cb.on_mic_tap();
     }
 }
@@ -389,6 +394,11 @@ void ui_chat_init(void)
     lv_obj_align(s_spinner, LV_ALIGN_BOTTOM_MID, 0, -(MIC_BOTTOM - (SPINNER_SIZE - MIC_SIZE) / 2));
     ui_spinner_show(s_spinner, false, CHAT_SPINNER_MS, CHAT_SPINNER_ARC);
 
+    s_dialog_ring = ui_make_dialog_ring(s_scr, DIALOG_RING_SIZE);
+    lv_obj_align(s_dialog_ring, LV_ALIGN_BOTTOM_MID, 0, -(MIC_BOTTOM - (DIALOG_RING_SIZE - MIC_SIZE) / 2));
+    s_hold_arc = ui_make_hold_arc(s_scr, SPINNER_SIZE, 5);
+    lv_obj_align(s_hold_arc, LV_ALIGN_BOTTOM_MID, 0, -(MIC_BOTTOM - (SPINNER_SIZE - MIC_SIZE) / 2));
+
     s_mic = lv_button_create(s_scr);
     lv_obj_remove_style_all(s_mic);
     lv_obj_add_style(s_mic, ui_style_accent_bg(), 0);
@@ -406,6 +416,8 @@ void ui_chat_init(void)
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_mic, mic_cb, LV_EVENT_PRESS_LOST, NULL);
     s_mic_lbl = lv_label_create(s_mic);
     lv_obj_set_style_text_font(s_mic_lbl, &buddy_font_28, 0);    /* colour: from the accent style */
     lv_obj_center(s_mic_lbl);
@@ -702,6 +714,14 @@ void ui_chat_display(const char *text)
         scroll_to_end();
     }
     UNLOCK();
+}
+
+/* Caller holds the lock. */
+void ui_chat_set_dialog(bool on)
+{
+    if (s_dialog_ring) {
+        lv_obj_set_flag(s_dialog_ring, LV_OBJ_FLAG_HIDDEN, !on);
+    }
 }
 
 bool ui_chat_is_active(void)
