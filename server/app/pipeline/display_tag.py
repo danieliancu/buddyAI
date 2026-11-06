@@ -41,7 +41,8 @@ DIALOG_RULE = (
     "talking without touching it. Add [[dialog:on]] only when the user explicitly asks to turn dialog mode "
     "(conversation mode, keep listening) on. Add [[dialog:off]] when they ask to turn it off, or while it is on they "
     "clearly end the conversation (goodbye, that's all, stop listening). Say a short natural confirmation with the "
-    "tag, in the reply's language. Never add either tag for anything else: an ordinary question in dialog mode "
+    "tag, in the reply's language - except when told the watch announces dialog mode itself: then [[dialog:on]] "
+    "comes with no words at all (answer only anything else the user asked). Never add either tag for anything else: an ordinary question in dialog mode "
     "gets no tag."
 )
 

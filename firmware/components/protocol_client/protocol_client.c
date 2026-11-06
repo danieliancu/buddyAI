@@ -20,6 +20,8 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_websocket_client.h"
+#include "mbedtls/base64.h"
+#include "nvs.h"
 #include "esp_crt_bundle.h"
 #include "sdkconfig.h"
 #include "audio.h"
@@ -153,6 +155,20 @@ static bool             s_expect_reply;
  * forgiven (the mic opens again), the second ends dialog mode. */
 static bool             s_dialog;
 static int              s_dialog_errors;
+/* "Dialog mode on", in the watch's language and the reply voice: sent by the server (dialog_clip) when the watch does
+ * not hold the right one, kept in NVS (namespace "dlgclip") and in PSRAM, played by the watch itself whenever dialog
+ * mode starts. s_dialog_clip: it is playing, the mic opens when it ends. s_dialog_announce: dialog mode was turned
+ * on by voice - the announcement comes before the mic opens. */
+#define DIALOG_CLIP_TURN        0xFFFFFFF0u     /* playback id of the clip: never a real turn */
+#define CLIP_MAX_BYTES          16000
+#define CLIP_MAX_PACKETS        400
+#define CLIP_NS                 "dlgclip"
+static char             s_clip_id[24];
+static uint8_t         *s_clip_opus;            /* PSRAM */
+static uint16_t        *s_clip_lens;            /* PSRAM */
+static size_t           s_clip_count;
+static bool             s_dialog_clip;
+static bool             s_dialog_announce;
 static int64_t          s_listen_ms;            /* this turn's listen_start (the log of its first words) */
 static bool             s_heard_logged;
 /* Hand-off from the chat to an item's screen: the user's words fit several places inside one note /
@@ -298,8 +314,134 @@ static void set_dialog(bool on, const char *why)
     }
     s_dialog = on;
     s_dialog_errors = 0;
+    if (!on) {
+        s_dialog_announce = false;
+    }
     ESP_LOGI(TAG, "dialog mode %s: %s", on ? "on" : "off", why);
     emit(PROTO_EVT_DIALOG, on, NULL);
+}
+
+/* Keep a clip in PSRAM: `blob` = u16 count, u16 lens[count], the Opus packets. False if it does not add up. */
+static bool clip_take(const char *id, const uint8_t *blob, size_t size)
+{
+    if (size < 2) {
+        return false;
+    }
+    size_t count = (size_t)blob[0] | ((size_t)blob[1] << 8);
+    if (!count || count > CLIP_MAX_PACKETS || size < 2 + 2 * count) {
+        return false;
+    }
+    size_t total = 0;
+    for (size_t i = 0; i < count; i++) {
+        total += (size_t)blob[2 + 2 * i] | ((size_t)blob[3 + 2 * i] << 8);
+    }
+    if (total > CLIP_MAX_BYTES || size != 2 + 2 * count + total) {
+        return false;
+    }
+    uint8_t *opus = heap_caps_malloc(total, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint16_t *lens = heap_caps_malloc(count * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!opus || !lens) {
+        free(opus);
+        free(lens);
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        lens[i] = (uint16_t)(blob[2 + 2 * i] | (blob[3 + 2 * i] << 8));
+    }
+    memcpy(opus, blob + 2 + 2 * count, total);
+    free(s_clip_opus);
+    free(s_clip_lens);
+    s_clip_opus = opus;
+    s_clip_lens = lens;
+    s_clip_count = count;
+    strlcpy(s_clip_id, id, sizeof(s_clip_id));
+    return true;
+}
+
+static void clip_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(CLIP_NS, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    char id[sizeof(s_clip_id)] = "";
+    size_t idlen = sizeof(id), size = 0;
+    uint8_t *blob = NULL;
+    if (nvs_get_str(h, "id", id, &idlen) == ESP_OK && nvs_get_blob(h, "data", NULL, &size) == ESP_OK && size &&
+        (blob = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) != NULL &&
+        nvs_get_blob(h, "data", blob, &size) == ESP_OK && clip_take(id, blob, size)) {
+        ESP_LOGI(TAG, "dialog clip %s (%u packets)", s_clip_id, (unsigned)s_clip_count);
+    }
+    free(blob);
+    nvs_close(h);
+}
+
+/* dialog_clip from the server: {id, language, lens[], opus (base64)}. */
+static void on_dialog_clip(const cJSON *j)
+{
+    const char *id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(j, "id"));
+    const char *b64 = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(j, "opus"));
+    const cJSON *lens = cJSON_GetObjectItemCaseSensitive(j, "lens");
+    int count = cJSON_GetArraySize(lens);
+    if (!id || !id[0] || strlen(id) >= sizeof(s_clip_id) || !b64 || !cJSON_IsArray(lens) || count <= 0 ||
+        count > CLIP_MAX_PACKETS) {
+        ESP_LOGW(TAG, "dialog clip: bad message");
+        return;
+    }
+    size_t cap = 2 + 2 * (size_t)count + CLIP_MAX_BYTES, olen = 0;
+    uint8_t *blob = heap_caps_malloc(cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!blob) {
+        return;
+    }
+    blob[0] = (uint8_t)count;
+    blob[1] = (uint8_t)(count >> 8);
+    int i = 0;
+    const cJSON *len;
+    cJSON_ArrayForEach(len, lens) {
+        int v = cJSON_IsNumber(len) ? len->valueint : -1;
+        if (v <= 0 || v > 1500) {
+            i = -1;
+            break;
+        }
+        blob[2 + 2 * i] = (uint8_t)v;
+        blob[3 + 2 * i] = (uint8_t)(v >> 8);
+        i++;
+    }
+    size_t head = 2 + 2 * (size_t)count;
+    if (i == count && mbedtls_base64_decode(blob + head, cap - head, &olen, (const unsigned char *)b64, strlen(b64)) == 0 &&
+        clip_take(id, blob, head + olen)) {
+        nvs_handle_t h;
+        if (nvs_open(CLIP_NS, NVS_READWRITE, &h) == ESP_OK) {
+            nvs_set_blob(h, "data", blob, head + olen);
+            nvs_set_str(h, "id", id);
+            nvs_commit(h);
+            nvs_close(h);
+        }
+        ESP_LOGI(TAG, "dialog clip %s stored (%d packets, %u bytes)", id, count, (unsigned)olen);
+    } else {
+        ESP_LOGW(TAG, "dialog clip: does not add up, ignored");
+    }
+    free(blob);
+}
+
+/* Dialog mode has just started: "Dialog mode on" (when the watch holds it), then the mic opens (MSG_PLAYBACK_DONE). */
+static void start_turn(void);
+static void dialog_listen(void)
+{
+    s_dialog_announce = false;
+    if (!s_clip_count) {
+        start_turn();
+        return;
+    }
+    audio_capture_stop();
+    audio_playback_begin(DIALOG_CLIP_TURN);
+    size_t pos = 0;
+    for (size_t i = 0; i < s_clip_count; i++) {
+        audio_playback_feed(DIALOG_CLIP_TURN, s_clip_opus + pos, s_clip_lens[i]);
+        pos += s_clip_lens[i];
+    }
+    audio_playback_end(DIALOG_CLIP_TURN);
+    s_dialog_clip = true;
 }
 
 static void post(const msg_t *m)
@@ -376,8 +518,8 @@ static bool             s_test_no_mic;
  * without audio as silence (listen_start "gated"). Not used offline (a held question is sent whole). */
 #define GATE_PREROLL        5       /* 60 ms frames: ~300 ms before the voice */
 #define GATE_FRAME_MAX      512     /* a bigger frame (never at 32 kb/s) opens the gate */
-#define GATE_MIN_LEVEL      28      /* audio level 0..100 = -60..0 dBFS: about -43 dBFS */
-#define GATE_ABOVE_FLOOR    14      /* about 8 dB above the room's level */
+#define GATE_MIN_LEVEL      18      /* audio level 0..100 = -60..0 dBFS: about -49 dBFS (a voice: 23..46 here) */
+#define GATE_ABOVE_FLOOR    12      /* about 7 dB above the room's level */
 #define GATE_OPEN_FRAMES    2
 #define GATE_START_FLOOR    18
 static bool             s_server_gate;          /* the server knows gated turns */
@@ -642,6 +784,7 @@ static void send_hello(void)
         cJSON_AddStringToObject(m, "pairing_code", s_pairing_code);
         s_paired_token = false;
     }
+    cJSON_AddStringToObject(m, "dialog_clip", s_clip_id);
     cJSON *audio = cJSON_AddObjectToObject(m, "audio");
     cJSON_AddNumberToObject(audio, "uplink_rate", AUDIO_UPLINK_SAMPLE_RATE);
     cJSON *rates = cJSON_AddArrayToObject(audio, "downlink_rates");
@@ -850,9 +993,12 @@ static bool gate_hold(const uint8_t *opus, size_t len)
     if (lvl >= limit) {
         s_gate_loud++;
     } else {
-        s_gate_loud = 0;
-        /* the room: follows a quieter level at once, a louder one slowly (a voice must not raise it) */
-        s_gate_floor = lvl < s_gate_floor ? lvl : s_gate_floor + (lvl - s_gate_floor + 15) / 16;
+        if (s_gate_loud > 0) {
+            s_gate_loud--;      /* a quiet frame between two syllables does not start over */
+        } else {
+            /* the room: follows a quieter level at once, a louder one slowly (a voice must not raise it) */
+            s_gate_floor = lvl < s_gate_floor ? lvl : s_gate_floor + (lvl - s_gate_floor + 15) / 16;
+        }
     }
     if (s_gate_loud < GATE_OPEN_FRAMES && len <= GATE_FRAME_MAX) {
         int slot = (s_gate_head + s_gate_count) % GATE_PREROLL;
@@ -967,6 +1113,7 @@ static void start_turn(void)
     uint32_t turn = next_turn_locked_reset();
     s_capture_turn = turn;
     s_resume_pending = false;
+    s_dialog_clip = false;
     s_listen_ms = now_ms();
     s_heard_logged = false;
     s_turn_note = s_note_open && !s_test_no_mic;
@@ -1185,7 +1332,11 @@ static void listen_again_if_asked(void)
     }
     s_expect_reply = false;
     if (s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
-        start_turn();
+        if (s_dialog && s_dialog_announce) {
+            dialog_listen();    /* turned on by voice: the announcement, then the mic */
+        } else {
+            start_turn();
+        }
     }
 }
 
@@ -1203,7 +1354,7 @@ static void dialog_start(void)
     end_hold(false);
     s_expect_reply = false;
     set_dialog(true, "hold");
-    start_turn();
+    dialog_listen();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1434,6 +1585,10 @@ static void handle_text(const char *txt)
         on_hello_ack(j);
         goto out;
     }
+    if (strcmp(type, "dialog_clip") == 0) {
+        on_dialog_clip(j);
+        goto out;
+    }
     if (strcmp(type, "pairing_pending") == 0) {
         uint32_t exp = 300;
         json_uint32(j, "expires_in_s", &exp);
@@ -1561,13 +1716,16 @@ static void handle_text(const char *txt)
         /* Bookkeeping is allowed for any turn (section 6.1). */
         const char *status = json_str(j, "status");
         ESP_LOGI(TAG, "turn_end %lu: %s", (unsigned long)turn, status ? status : "?");
-        if (has_turn && turn == s_active_turn && s_turn_live) {
-            s_turn_ended = true;
-            bool completed = status && strcmp(status, "completed") == 0;
-            bool forgiven = false;      /* one failed turn in dialog mode: the mic opens again */
+        /* Dialog mode follows every end of the active turn, also one the watch already closed: before a turn_end
+         * with no speech or an error the server says "idle", which ends the turn here. */
+        bool completed = status && strcmp(status, "completed") == 0;
+        bool forgiven = false;          /* one failed turn in dialog mode: the mic opens again */
+        if (has_turn && turn == s_active_turn && !s_turn_note) {
             const char *voice = json_str(j, "dialog");     /* the user turned dialog mode on / off by voice */
-            if (completed && voice && !s_turn_note) {
-                set_dialog(strcmp(voice, "on") == 0, "voice");
+            if (completed && voice) {
+                bool on = strcmp(voice, "on") == 0;
+                s_dialog_announce = on && !s_dialog;
+                set_dialog(on, "voice");
             }
             if (completed) {
                 s_dialog_errors = 0;
@@ -1577,12 +1735,19 @@ static void handle_text(const char *txt)
             } else {
                 set_dialog(false, status ? status : "?");       /* no speech, aborted, a second failure */
             }
+        }
+        if (has_turn && turn == s_active_turn && s_turn_live) {
+            s_turn_ended = true;
             s_expect_reply = (completed || forgiven) && !s_turn_note &&
                              (s_dialog || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "expect_reply")));
             if (!completed || (!s_first_audio_seen && !audio_playback_active())) {
                 finish_turn_idle();
                 listen_again_if_asked();
             }
+        } else if (has_turn && turn == s_active_turn && (completed || forgiven) && s_dialog && !s_turn_note &&
+                   s_conv == PROTO_CONV_IDLE && !audio_playback_active()) {
+            s_expect_reply = true;      /* closed here already (idle, or the reply played out first) */
+            listen_again_if_asked();
         }
         const char *resume = json_str(j, "resume");
         if (has_turn && turn == s_active_turn && resume && strcmp(resume, "missing") == 0) {
@@ -2183,6 +2348,17 @@ static void handle_msg(msg_t *m)
         }
         break;
     case MSG_PLAYBACK_DONE:
+        if (m->a == DIALOG_CLIP_TURN) {
+            if (s_dialog_clip) {
+                s_dialog_clip = false;
+                if (s_dialog && s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
+                    start_turn();
+                } else {
+                    set_dialog(false, "link lost");     /* nothing left to continue */
+                }
+            }
+            break;
+        }
         if (m->a == s_active_turn && s_turn_live) {
             send_turn_msg("playback_done", m->a, NULL);
             finish_turn_idle();
@@ -2191,6 +2367,7 @@ static void handle_msg(msg_t *m)
         break;
     case MSG_END_CONVERSATION:
         set_dialog(false, "screen left");
+        s_dialog_clip = false;
         end_hold(false);    /* the chat screen was left: no "try again" for a question given up */
         if (s_conv == PROTO_CONV_LISTENING) {
             abort_turn("user_tap");
@@ -2451,6 +2628,7 @@ void proto_ota_confirmed(void)
 
 esp_err_t proto_init(const proto_config_t *cfg)
 {
+    clip_load();
     s_cfg = *cfg;
     if (diag_rtc_valid(&s_rtc)) {           /* survived the restart: crash, watchdog, software */
         s_prev_uptime_s = s_rtc.uptime_s;

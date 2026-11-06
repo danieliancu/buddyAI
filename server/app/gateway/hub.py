@@ -208,6 +208,7 @@ class DeviceHub:
             title = PersonaRepo(db).chat_title(settings.persona_id, conn.account_id)
         conn.settings = settings
         await conn.send_json("settings_update", settings=device_view(settings, title), settings_version=version)
+        conn.offer_dialog_clip()  # the language or the voice may have changed
 
     def set_rag(self, device_id: str, access) -> None:
         """Conversation RAG changed for the watch (switched on/off, wearer declared): its live session offers the

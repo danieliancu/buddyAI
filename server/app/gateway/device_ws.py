@@ -92,6 +92,11 @@ class DeviceConnection:
         self.last_turn_id = 0
         self.recent: dict[int, TurnContext] = {}
         self.last_language: str | None = None  # last detected reply language in this session
+        # The "Dialog mode on" clip the watch holds (hello `dialog_clip`, then what was sent; None: the firmware
+        # has no such clip and announces nothing) and the one it should hold (app/dialog_clip.py).
+        self.watch_clip: str | None = None
+        self.clip_wanted: str | None = None
+        self._clip_task: asyncio.Task | None = None
         self.account_id: int | None = None  # owner of this watch
         # Conversation RAG: the watch's access (read at connect, updated by the hub) and the follow-up context
         self.rag = rag_authz.OFF
@@ -373,6 +378,8 @@ class DeviceConnection:
                 raise _Close()
             self.account_id = account_id
             self.settings = settings
+            held = msg.get("dialog_clip")
+            self.watch_clip = held if isinstance(held, str) else None
             self.rag, self.rag_context = rag_access, None
             self.authenticated = True
             # A new session: nothing from an earlier one, except a deletion still waiting for its yes (an old
@@ -395,6 +402,7 @@ class DeviceConnection:
                 uplink_gate=True,  # the watch may keep the mic's silence to itself before the first word
             )
             await self.send_json("languages", items=languages.watch_languages())  # the watch's language picker
+            self.offer_dialog_clip()
             if account_id is not None:
                 await self.hub.push_items(account_id, only=self)
                 await deliver_due(self.hub, account_id)  # reminders that came due while offline
@@ -534,6 +542,8 @@ class DeviceConnection:
             rag=self.rag,
         )
         turn.uplink_gated = msg.get("gated") is True
+        # the watch plays its own "Dialog mode on": a reply that turns it on says nothing about it
+        turn.dialog_announced = self.watch_clip is not None and self.watch_clip == self.clip_wanted
         if note_mode:
             # Stored only if something was said (_finish_turn), and outside the chat history.
             turn.mode, turn.note_number, turn.edit_uid = edit_kind, note_number, edit_uid
@@ -733,6 +743,9 @@ class DeviceConnection:
     async def _finish_turn(self, turn: TurnContext, result: TurnResult) -> None:
         live = self._is_live(turn)
         if turn.language != languages.AUTO and turn.user_text:
+            if turn.language != self.last_language and self.settings.language == languages.AUTO:
+                self.last_language = turn.language
+                self.offer_dialog_clip()  # "auto": the announcement follows the language spoken
             self.last_language = turn.language
         if result.error_code and live and not result.notified:
             # Provider/internal failures (e.g. no provider credit, timeouts) never reach the user with
@@ -888,6 +901,29 @@ class DeviceConnection:
         self.hub.publish({"type": "playback_done", "device_id": self.device_id, "turn_id": msg.get("turn_id")})
 
     # --- settings / status ----------------------------------------------------------------
+
+    def offer_dialog_clip(self) -> None:
+        """Send the watch its "Dialog mode on" clip if it does not hold the right one (language or voice changed).
+        Generated once per language and voice, in the background (PROTOCOL.md 3.5)."""
+        if self.watch_clip is None or not self.authenticated:
+            return  # firmware without the clip
+        if self._clip_task and not self._clip_task.done():
+            self._clip_task.cancel()
+        self._clip_task = asyncio.create_task(self._send_dialog_clip(), name=f"dialog-clip-{self.device_id}")
+
+    async def _send_dialog_clip(self) -> None:
+        from app import dialog_clip
+
+        try:
+            clip = await dialog_clip.get(self.pipeline.router, self.settings, self.last_language)
+            self.clip_wanted = clip.id
+            if clip.id != self.watch_clip:
+                await self.send_json("dialog_clip", **clip.message())
+                self.watch_clip = clip.id
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - no announcement is not worth a failed session (or a closed one)
+            log.exception("dialog clip for %s", self.device_id)
 
     async def _on_settings_changed(self, msg: dict[str, Any]) -> None:
         changes = {k: v for k, v in (msg.get("changes") or {}).items() if k in DEVICE_EDITABLE}

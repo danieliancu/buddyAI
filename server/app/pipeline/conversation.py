@@ -194,6 +194,8 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
     now_note = f"Now: {now:%A %Y-%m-%d %H:%M} ({s.timezone})."
     if getattr(turn, "dialog", False):
         now_note += " Dialog mode is on: the watch listens again after your reply."
+    if getattr(turn, "dialog_announced", False):
+        now_note += " The watch announces dialog mode itself, so never mention dialog mode when you add [[dialog:on]]; still answer every other question in the message aloud, in words, as usual."
     messages.append({"role": "system", "content": now_note})
     messages.append({"role": "user", "content": user_text})
     return messages

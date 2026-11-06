@@ -61,6 +61,7 @@ class TurnContext:
     uplink_gated: bool = False
     dialog: bool = False  # the watch is in dialog mode (listen_start "dialog"): it listens again after every reply
     dialog_set: str | None = None  # "on" / "off": the user turned dialog mode on or off by voice (turn_end "dialog")
+    dialog_announced: bool = False  # the watch holds its "Dialog mode on" clip: the reply need not say it
     edit_uid: str | None = None  # edit modes: the stable id of the item being edited (bound by the gateway)
     pending_uid: str | None = None  # uid of the item in pending_open (the gateway remembers what it showed)
     edit_outcome: str = ""  # edit modes: "ignored" (not meant for the item) | "other" (about another item)

@@ -219,7 +219,7 @@ class FakeWatch:
             if msg["type"] == "error" and msg.get("turn_id") is None:
                 raise RuntimeError(f"server error: {msg.get('code')}: {msg.get('message')}")
 
-    async def hello_token(self, token: str) -> dict:
+    async def hello_token(self, token: str, **extra: Any) -> dict:
         await self.send(
             "hello",
             device_id=self.device_id,
@@ -227,6 +227,7 @@ class FakeWatch:
             hw_model="fake_watch",
             token=token,
             audio={"uplink_rate": UPLINK_RATE, "downlink_rates": [16000, 24000]},
+            **extra,  # e.g. dialog_clip: the "Dialog mode on" clip this watch holds
         )
         ack = await self.expect("hello_ack")
         self.session_id = ack["session_id"]

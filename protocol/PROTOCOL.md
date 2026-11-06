@@ -160,8 +160,9 @@ A failure the watch could not send (no session, or the send failed) is sent agai
 ### 3.5 Dialog mode and the uplink gate (firmware 0.1.8)
 
 **Dialog mode**: the mic opens again after every reply, so the user can talk without touching the watch. It starts
-when the mic button is held for 2 s (an arc fills around the mic while it is held; no sound) or by voice ("turn on
-dialog mode", in any language: the reply carries `turn_end` `dialog: "on"`). While it is on, a thin double ring
+when the mic button is held for 2 s (an arc fills around the mic while it is held) or by voice ("turn on dialog
+mode", in any language: the reply carries `turn_end` `dialog: "on"`). Either way the watch says "Dialog mode on"
+itself, then opens the mic; turning it off says nothing. While it is on, a thin double ring
 around the mic shows it on the watch face and on the conversation screen, and every chat `listen_start` carries
 `dialog: true`; the server then waits 10 s (at most `wait_for_speech_s`) for the first word. It ends, and the ring
 goes, when:
@@ -173,6 +174,14 @@ goes, when:
 - two turns in a row fail (`error`): the first failure only shows its message and the mic opens again.
 
 A note's or reminder's edit mode takes the mic and ends dialog mode.
+
+**The announcement** (server 2026-11): `hello` carries `dialog_clip` - the id of the clip the watch holds (`""`: none;
+older firmware leaves the key out and gets nothing). When it is not the clip for the watch's language and reply voice,
+the server sends `dialog_clip` {`id`, `language`, `lens` (packet lengths), `opus` (the 60 ms Opus packets at 16 kHz,
+concatenated, base64)} - about 6-8 KB, again only when the language or the voice changes. The watch keeps it in NVS
+and plays it locally (no round trip, offline too). The clip is made once per language and voice with the reply voice
+and shared by every watch (`server/app/dialog_clip.py`); only the languages the profile declares have one, others get
+English. A watch that holds its clip gets replies that do not confirm "dialog mode on" in words.
 
 **Uplink gate**: with `hello_ack` `uplink_gate: true` the watch sends nothing of a turn until it hears a voice
 (the level clearly above the room for 120 ms), then the ~300 ms before it and every frame after, pauses included (the

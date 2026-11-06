@@ -250,3 +250,91 @@ def test_dialog_on_and_off_by_voice_over_the_protocol(server, monkeypatch) -> No
     finally:
         mock.MOCK_TRANSCRIPTS.clear()
         mock.MOCK_TRANSCRIPTS.update(saved)
+
+
+# --- the "Dialog mode on" clip the watch plays itself -------------------------------------------------------
+
+
+def test_clip_language_is_limited_to_the_declared_languages() -> None:
+    from app import dialog_clip
+
+    assert dialog_clip.clip_language(DeviceSettings(language="ro"), None) == "ro"
+    assert dialog_clip.clip_language(DeviceSettings(language="bg"), None) == "bg"
+    assert dialog_clip.clip_language(DeviceSettings(language="ja"), None) == "en"  # not declared by the profile
+    assert dialog_clip.clip_language(DeviceSettings(language="auto"), "hu") == "hu"  # "auto": the language spoken
+    assert dialog_clip.clip_language(DeviceSettings(language="auto", preferred_language="de"), None) == "de"
+    assert dialog_clip.clip_language(DeviceSettings(language="auto"), None) == "en"
+
+
+def test_every_declared_language_has_a_phrase() -> None:
+    import json
+
+    from app import dialog_clip
+    from app.config import SERVER_DIR
+
+    for name in ("openai", "qwen"):
+        declared = json.loads((SERVER_DIR / "config" / f"providers.{name}.json").read_text("utf-8"))["supported_languages"]
+        assert set(declared) <= set(dialog_clip.PHRASES), name
+
+
+def test_clip_is_made_once_and_shared(tmp_path, monkeypatch) -> None:
+    from app import dialog_clip
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "data_dir", tmp_path)
+    made: list[str] = []
+    real = dialog_clip._speak
+
+    async def counting(*a, **kw):
+        made.append(a[2])
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(dialog_clip, "_speak", counting)
+    router = ProviderRouter()
+    one = asyncio.run(dialog_clip.get(router, DeviceSettings(language="ro")))
+    two = asyncio.run(dialog_clip.get(router, DeviceSettings(language="ro")))
+    other = asyncio.run(dialog_clip.get(router, DeviceSettings(language="de")))
+    assert one.id == two.id != other.id and made == ["ro", "de"]  # the second "ro" came from disk
+    msg = one.message()
+    import base64
+
+    assert sum(msg["lens"]) == len(base64.b64decode(msg["opus"])) <= dialog_clip.MAX_BYTES
+    assert msg["language"] == "ro" and msg["id"] == one.id
+
+
+async def _clip_scenario(host: str, acc: int) -> None:
+    import httpx
+
+    async with httpx.AsyncClient(base_url=f"http://{host}") as http:
+        r = await http.get("/api/auth/status")
+        if r.json()["needs_setup"]:
+            await http.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        else:
+            await http.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+        w = FakeWatch(f"ws://{host}/ws/device", "e2e-clip")
+        await w.connect()
+        await w.send("hello", device_id="e2e-clip", fw_version="t", hw_model="t", pairing_code="838383")
+        await w.expect("pairing_pending")
+        assert (await http.post("/api/devices/pair", json={"code": "838383", "name": "t", "account_id": acc})).status_code == 200
+        token = (await w.expect("paired"))["device_token"]
+        await w.close()
+
+    async def connect(**hello) -> list[dict]:
+        w = FakeWatch(f"ws://{host}/ws/device", "e2e-clip")
+        await w.connect()
+        await w.hello_token(token, **hello)
+        await asyncio.sleep(1.5)  # the clip is made in the background
+        msgs = []
+        while not w.inbox.empty():
+            msgs.append(w.inbox.get_nowait())
+        await w.close()
+        return [m for m in msgs if m["type"] == "dialog_clip"]
+
+    assert await connect() == []  # older firmware (no dialog_clip in hello): nothing sent
+    sent = await connect(dialog_clip="")  # the watch holds none: it gets one
+    assert len(sent) == 1 and sent[0]["id"] and sent[0]["lens"] and sent[0]["opus"]
+    assert await connect(dialog_clip=sent[0]["id"]) == []  # it holds the right one: nothing again
+
+
+def test_watch_gets_its_clip_only_when_it_lacks_it(server, tmp_path, monkeypatch) -> None:  # noqa: F811
+    asyncio.run(_clip_scenario(server, _account()))
