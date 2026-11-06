@@ -52,6 +52,16 @@
         "verse"
       ],
       "default_voice": "marin",
+      "voice_genders": {
+        "marin": "f",
+        "cedar": "m",
+        "coral": "f",
+        "nova": "f",
+        "alloy": "f",
+        "ash": "m",
+        "sage": "f",
+        "verse": "m"
+      },
       "instructions": "Speak the text in its own language with a natural native accent and intonation. Warm, friendly, relaxed conversational pace."
     },
     "by_language": {}

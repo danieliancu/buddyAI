@@ -48,7 +48,13 @@
         "Serena",
         "Chelsie"
       ],
-      "default_voice": "Cherry"
+      "default_voice": "Cherry",
+      "voice_genders": {
+        "Cherry": "f",
+        "Ethan": "m",
+        "Serena": "f",
+        "Chelsie": "f"
+      }
     },
     "by_language": {
       "ro": {
@@ -58,7 +64,11 @@
           "ro-RO-AlinaNeural",
           "ro-RO-EmilNeural"
         ],
-        "default_voice": "ro-RO-AlinaNeural"
+        "default_voice": "ro-RO-AlinaNeural",
+        "voice_genders": {
+          "ro-RO-AlinaNeural": "f",
+          "ro-RO-EmilNeural": "m"
+        }
       }
     }
   },

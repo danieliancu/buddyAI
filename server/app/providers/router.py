@@ -7,13 +7,16 @@ used. The pipeline only receives interfaces; no vendor specifics leak upward.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.config import Settings, get_settings, load_providers_config
 from app.device_settings import DeviceSettings
 from app.providers.llm.base import LLMProvider
 from app.providers.stt.base import STTProvider
 from app.providers.tts.base import TTSProvider
+
+if TYPE_CHECKING:
+    from app.providers.tts.multilang import Route
 
 
 STAGES = {
@@ -205,3 +208,43 @@ class ProviderRouter:
         wanted = voice or settings.tts_voice_overrides.get(language) or settings.tts_voice
         voice = wanted if wanted in sel["voices"] else sel["default_voice"]
         return TTSSelection(self._build(sel["provider"], sel["model"]), voice, sel.get("instructions", ""))
+
+    def tts_gender(self, language: str, voice: str) -> str:
+        """"f" or "m" for a voice of the profile (unknown: "f")."""
+        return self._tts_entry(language).get("voice_genders", {}).get(voice, "f")
+
+    def azure_configured(self) -> bool:
+        return self.settings.mock_providers or bool(self.settings.provider_key("azure_speech_key"))
+
+    def tts_passage_routes(self, language: str, settings: DeviceSettings, main_language: str) -> list[Route]:
+        """Voices for a passage in `language` inside a reply in `main_language`, best first (pipeline/lang_tag.py).
+        MultiLangTTS adds the reply's own voice as the last resort (what was heard before passages existed).
+
+        1. the reply's own voice, when its provider speaks that language (OpenAI: any; Qwen: its languages):
+           the listener hears the same voice;
+        2. the profile's own voice for that language (Qwen profile: Romanian on Azure);
+        3. Azure's native voice for the language, of the same gender as the reply's voice."""
+        from app import languages
+        from app.providers.tts.multilang import Route  # noqa: F811 - runtime import (cycle-free)
+
+        main =self.tts(main_language, settings)
+        main_entry = self._tts_entry(main_language)
+        gender = self.tts_gender(main_language, main.voice)
+        lang = languages.get(language)
+        routes: list[Route] = []
+        provider = main_entry["provider"]
+        if provider == "openai_tts" or (provider == "qwen_tts" and lang is not None and lang.qwen_language_type):
+            routes.append(Route(main.provider, main.voice, language, main.instructions))
+        own = self.config["tts"].get("by_language", {}).get(language)
+        if own and own is not main_entry:
+            sel = self.tts(language, settings)
+            if language not in settings.tts_voice_overrides:  # no choice of the owner: match the reply voice's gender
+                same = [v for v in own["voices"] if own.get("voice_genders", {}).get(v, "f") == gender]
+                sel = TTSSelection(sel.provider, same[0] if same else sel.voice, sel.instructions)
+            if own["provider"] != "azure_tts" or self.azure_configured():
+                routes.append(Route(sel.provider, sel.voice, language, sel.instructions))
+        if lang is not None and lang.azure_voice_f and self.azure_configured():
+            voice = (lang.azure_voice_m if gender == "m" else lang.azure_voice_f) or lang.azure_voice_f
+            if not any(r.provider.name == "azure_tts" for r in routes):  # Azure is already there for it
+                routes.append(Route(self._build("azure_tts", "azure-neural"), voice, language))
+        return routes

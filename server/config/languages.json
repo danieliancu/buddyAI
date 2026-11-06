@@ -7,7 +7,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "af-ZA"
+   "azure_locale": "af-ZA",
+   "azure_voice_f": "af-ZA-AdriNeural",
+   "azure_voice_m": "af-ZA-WillemNeural"
   },
   {
    "code": "ar",
@@ -16,7 +18,9 @@
    "script": "arabic",
    "rtl": true,
    "captions": false,
-   "azure_locale": "ar-SA"
+   "azure_locale": "ar-SA",
+   "azure_voice_f": "ar-SA-ZariyahNeural",
+   "azure_voice_m": "ar-SA-HamedNeural"
   },
   {
    "code": "hy",
@@ -25,7 +29,9 @@
    "script": "armenian",
    "rtl": false,
    "captions": false,
-   "azure_locale": "hy-AM"
+   "azure_locale": "hy-AM",
+   "azure_voice_f": "hy-AM-AnahitNeural",
+   "azure_voice_m": "hy-AM-HaykNeural"
   },
   {
    "code": "az",
@@ -34,7 +40,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "az-AZ"
+   "azure_locale": "az-AZ",
+   "azure_voice_f": "az-AZ-BanuNeural",
+   "azure_voice_m": "az-AZ-BabekNeural"
   },
   {
    "code": "be",
@@ -51,7 +59,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "bs-BA"
+   "azure_locale": "bs-BA",
+   "azure_voice_f": "bs-BA-VesnaNeural",
+   "azure_voice_m": "bs-BA-GoranNeural"
   },
   {
    "code": "bg",
@@ -60,7 +70,9 @@
    "script": "cyrillic",
    "rtl": false,
    "captions": true,
-   "azure_locale": "bg-BG"
+   "azure_locale": "bg-BG",
+   "azure_voice_f": "bg-BG-KalinaNeural",
+   "azure_voice_m": "bg-BG-BorislavNeural"
   },
   {
    "code": "ca",
@@ -69,7 +81,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "ca-ES"
+   "azure_locale": "ca-ES",
+   "azure_voice_f": "ca-ES-JoanaNeural",
+   "azure_voice_m": "ca-ES-EnricNeural"
   },
   {
    "code": "zh",
@@ -79,6 +93,8 @@
    "rtl": false,
    "captions": false,
    "azure_locale": "zh-CN",
+   "azure_voice_f": "zh-CN-XiaoxiaoNeural",
+   "azure_voice_m": "zh-CN-YunxiNeural",
    "qwen_language_type": "Chinese"
   },
   {
@@ -88,7 +104,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "hr-HR"
+   "azure_locale": "hr-HR",
+   "azure_voice_f": "hr-HR-GabrijelaNeural",
+   "azure_voice_m": "hr-HR-SreckoNeural"
   },
   {
    "code": "cs",
@@ -97,7 +115,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "cs-CZ"
+   "azure_locale": "cs-CZ",
+   "azure_voice_f": "cs-CZ-VlastaNeural",
+   "azure_voice_m": "cs-CZ-AntoninNeural"
   },
   {
    "code": "da",
@@ -106,7 +126,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "da-DK"
+   "azure_locale": "da-DK",
+   "azure_voice_f": "da-DK-ChristelNeural",
+   "azure_voice_m": "da-DK-JeppeNeural"
   },
   {
    "code": "nl",
@@ -116,6 +138,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "nl-NL",
+   "azure_voice_f": "nl-NL-FennaNeural",
+   "azure_voice_m": "nl-NL-MaartenNeural",
    "abbreviations": [
     "dhr",
     "mevr",
@@ -140,6 +164,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "en-GB",
+   "azure_voice_f": "en-GB-SoniaNeural",
+   "azure_voice_m": "en-GB-RyanNeural",
    "qwen_language_type": "English",
    "abbreviations": [
     "mr",
@@ -169,7 +195,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "et-EE"
+   "azure_locale": "et-EE",
+   "azure_voice_f": "et-EE-AnuNeural",
+   "azure_voice_m": "et-EE-KertNeural"
   },
   {
    "code": "fi",
@@ -178,7 +206,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "fi-FI"
+   "azure_locale": "fi-FI",
+   "azure_voice_f": "fi-FI-SelmaNeural",
+   "azure_voice_m": "fi-FI-HarriNeural"
   },
   {
    "code": "fr",
@@ -188,6 +218,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "fr-FR",
+   "azure_voice_f": "fr-FR-DeniseNeural",
+   "azure_voice_m": "fr-FR-HenriNeural",
    "qwen_language_type": "French",
    "abbreviations": [
     "m",
@@ -213,7 +245,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "gl-ES"
+   "azure_locale": "gl-ES",
+   "azure_voice_f": "gl-ES-SabelaNeural",
+   "azure_voice_m": "gl-ES-RoiNeural"
   },
   {
    "code": "de",
@@ -223,6 +257,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "de-DE",
+   "azure_voice_f": "de-DE-KatjaNeural",
+   "azure_voice_m": "de-DE-ConradNeural",
    "qwen_language_type": "German",
    "abbreviations": [
     "dr",
@@ -251,7 +287,9 @@
    "script": "greek",
    "rtl": false,
    "captions": true,
-   "azure_locale": "el-GR"
+   "azure_locale": "el-GR",
+   "azure_voice_f": "el-GR-AthinaNeural",
+   "azure_voice_m": "el-GR-NestorasNeural"
   },
   {
    "code": "he",
@@ -260,7 +298,9 @@
    "script": "hebrew",
    "rtl": true,
    "captions": false,
-   "azure_locale": "he-IL"
+   "azure_locale": "he-IL",
+   "azure_voice_f": "he-IL-HilaNeural",
+   "azure_voice_m": "he-IL-AvriNeural"
   },
   {
    "code": "hi",
@@ -269,7 +309,9 @@
    "script": "devanagari",
    "rtl": false,
    "captions": false,
-   "azure_locale": "hi-IN"
+   "azure_locale": "hi-IN",
+   "azure_voice_f": "hi-IN-AartiNeural",
+   "azure_voice_m": "hi-IN-ArjunNeural"
   },
   {
    "code": "hu",
@@ -278,7 +320,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "hu-HU"
+   "azure_locale": "hu-HU",
+   "azure_voice_f": "hu-HU-NoemiNeural",
+   "azure_voice_m": "hu-HU-TamasNeural"
   },
   {
    "code": "is",
@@ -287,7 +331,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "is-IS"
+   "azure_locale": "is-IS",
+   "azure_voice_f": "is-IS-GudrunNeural",
+   "azure_voice_m": "is-IS-GunnarNeural"
   },
   {
    "code": "id",
@@ -296,7 +342,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "id-ID"
+   "azure_locale": "id-ID",
+   "azure_voice_f": "id-ID-GadisNeural",
+   "azure_voice_m": "id-ID-ArdiNeural"
   },
   {
    "code": "it",
@@ -306,6 +354,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "it-IT",
+   "azure_voice_f": "it-IT-ElsaNeural",
+   "azure_voice_m": "it-IT-DiegoNeural",
    "qwen_language_type": "Italian",
    "abbreviations": [
     "sig",
@@ -331,6 +381,8 @@
    "rtl": false,
    "captions": false,
    "azure_locale": "ja-JP",
+   "azure_voice_f": "ja-JP-NanamiNeural",
+   "azure_voice_m": "ja-JP-KeitaNeural",
    "qwen_language_type": "Japanese"
   },
   {
@@ -340,7 +392,9 @@
    "script": "kannada",
    "rtl": false,
    "captions": false,
-   "azure_locale": "kn-IN"
+   "azure_locale": "kn-IN",
+   "azure_voice_f": "kn-IN-SapnaNeural",
+   "azure_voice_m": "kn-IN-GaganNeural"
   },
   {
    "code": "kk",
@@ -349,7 +403,9 @@
    "script": "cyrillic",
    "rtl": false,
    "captions": true,
-   "azure_locale": "kk-KZ"
+   "azure_locale": "kk-KZ",
+   "azure_voice_f": "kk-KZ-AigulNeural",
+   "azure_voice_m": "kk-KZ-DauletNeural"
   },
   {
    "code": "ko",
@@ -359,6 +415,8 @@
    "rtl": false,
    "captions": false,
    "azure_locale": "ko-KR",
+   "azure_voice_f": "ko-KR-SunHiNeural",
+   "azure_voice_m": "ko-KR-InJoonNeural",
    "qwen_language_type": "Korean"
   },
   {
@@ -368,7 +426,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "lv-LV"
+   "azure_locale": "lv-LV",
+   "azure_voice_f": "lv-LV-EveritaNeural",
+   "azure_voice_m": "lv-LV-NilsNeural"
   },
   {
    "code": "lt",
@@ -377,7 +437,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "lt-LT"
+   "azure_locale": "lt-LT",
+   "azure_voice_f": "lt-LT-OnaNeural",
+   "azure_voice_m": "lt-LT-LeonasNeural"
   },
   {
    "code": "mk",
@@ -386,7 +448,9 @@
    "script": "cyrillic",
    "rtl": false,
    "captions": true,
-   "azure_locale": "mk-MK"
+   "azure_locale": "mk-MK",
+   "azure_voice_f": "mk-MK-MarijaNeural",
+   "azure_voice_m": "mk-MK-AleksandarNeural"
   },
   {
    "code": "ms",
@@ -395,7 +459,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "ms-MY"
+   "azure_locale": "ms-MY",
+   "azure_voice_f": "ms-MY-YasminNeural",
+   "azure_voice_m": "ms-MY-OsmanNeural"
   },
   {
    "code": "mi",
@@ -412,7 +478,9 @@
    "script": "devanagari",
    "rtl": false,
    "captions": false,
-   "azure_locale": "mr-IN"
+   "azure_locale": "mr-IN",
+   "azure_voice_f": "mr-IN-AarohiNeural",
+   "azure_voice_m": "mr-IN-ManoharNeural"
   },
   {
    "code": "ne",
@@ -421,7 +489,9 @@
    "script": "devanagari",
    "rtl": false,
    "captions": false,
-   "azure_locale": "ne-NP"
+   "azure_locale": "ne-NP",
+   "azure_voice_f": "ne-NP-HemkalaNeural",
+   "azure_voice_m": "ne-NP-SagarNeural"
   },
   {
    "code": "no",
@@ -430,7 +500,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "nb-NO"
+   "azure_locale": "nb-NO",
+   "azure_voice_f": "nb-NO-PernilleNeural",
+   "azure_voice_m": "nb-NO-FinnNeural"
   },
   {
    "code": "fa",
@@ -439,7 +511,9 @@
    "script": "arabic",
    "rtl": true,
    "captions": false,
-   "azure_locale": "fa-IR"
+   "azure_locale": "fa-IR",
+   "azure_voice_f": "fa-IR-DilaraNeural",
+   "azure_voice_m": "fa-IR-FaridNeural"
   },
   {
    "code": "pl",
@@ -449,6 +523,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "pl-PL",
+   "azure_voice_f": "pl-PL-AgnieszkaNeural",
+   "azure_voice_m": "pl-PL-MarekNeural",
    "abbreviations": [
     "p",
     "dr",
@@ -475,6 +551,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "pt-PT",
+   "azure_voice_f": "pt-PT-RaquelNeural",
+   "azure_voice_m": "pt-PT-DuarteNeural",
    "qwen_language_type": "Portuguese",
    "abbreviations": [
     "sr",
@@ -499,6 +577,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "ro-RO",
+   "azure_voice_f": "ro-RO-AlinaNeural",
+   "azure_voice_m": "ro-RO-EmilNeural",
    "abbreviations": [
     "dl",
     "dna",
@@ -530,6 +610,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "ru-RU",
+   "azure_voice_f": "ru-RU-SvetlanaNeural",
+   "azure_voice_m": "ru-RU-DmitryNeural",
    "qwen_language_type": "Russian"
   },
   {
@@ -539,7 +621,9 @@
    "script": "cyrillic",
    "rtl": false,
    "captions": true,
-   "azure_locale": "sr-RS"
+   "azure_locale": "sr-RS",
+   "azure_voice_f": "sr-RS-SophieNeural",
+   "azure_voice_m": "sr-RS-NicholasNeural"
   },
   {
    "code": "sk",
@@ -548,7 +632,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "sk-SK"
+   "azure_locale": "sk-SK",
+   "azure_voice_f": "sk-SK-ViktoriaNeural",
+   "azure_voice_m": "sk-SK-LukasNeural"
   },
   {
    "code": "sl",
@@ -557,7 +643,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "sl-SI"
+   "azure_locale": "sl-SI",
+   "azure_voice_f": "sl-SI-PetraNeural",
+   "azure_voice_m": "sl-SI-RokNeural"
   },
   {
    "code": "es",
@@ -567,6 +655,8 @@
    "rtl": false,
    "captions": true,
    "azure_locale": "es-ES",
+   "azure_voice_f": "es-ES-ElviraNeural",
+   "azure_voice_m": "es-ES-AlvaroNeural",
    "qwen_language_type": "Spanish",
    "abbreviations": [
     "sr",
@@ -592,7 +682,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "sw-KE"
+   "azure_locale": "sw-KE",
+   "azure_voice_f": "sw-KE-ZuriNeural",
+   "azure_voice_m": "sw-KE-RafikiNeural"
   },
   {
    "code": "sv",
@@ -601,7 +693,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "sv-SE"
+   "azure_locale": "sv-SE",
+   "azure_voice_f": "sv-SE-SofieNeural",
+   "azure_voice_m": "sv-SE-MattiasNeural"
   },
   {
    "code": "tl",
@@ -610,7 +704,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "fil-PH"
+   "azure_locale": "fil-PH",
+   "azure_voice_f": "fil-PH-BlessicaNeural",
+   "azure_voice_m": "fil-PH-AngeloNeural"
   },
   {
    "code": "ta",
@@ -619,7 +715,9 @@
    "script": "tamil",
    "rtl": false,
    "captions": false,
-   "azure_locale": "ta-IN"
+   "azure_locale": "ta-IN",
+   "azure_voice_f": "ta-IN-PallaviNeural",
+   "azure_voice_m": "ta-IN-ValluvarNeural"
   },
   {
    "code": "th",
@@ -628,7 +726,9 @@
    "script": "thai",
    "rtl": false,
    "captions": false,
-   "azure_locale": "th-TH"
+   "azure_locale": "th-TH",
+   "azure_voice_f": "th-TH-PremwadeeNeural",
+   "azure_voice_m": "th-TH-NiwatNeural"
   },
   {
    "code": "tr",
@@ -637,7 +737,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "tr-TR"
+   "azure_locale": "tr-TR",
+   "azure_voice_f": "tr-TR-EmelNeural",
+   "azure_voice_m": "tr-TR-AhmetNeural"
   },
   {
    "code": "uk",
@@ -646,7 +748,9 @@
    "script": "cyrillic",
    "rtl": false,
    "captions": true,
-   "azure_locale": "uk-UA"
+   "azure_locale": "uk-UA",
+   "azure_voice_f": "uk-UA-PolinaNeural",
+   "azure_voice_m": "uk-UA-OstapNeural"
   },
   {
    "code": "ur",
@@ -655,7 +759,9 @@
    "script": "arabic",
    "rtl": true,
    "captions": false,
-   "azure_locale": "ur-PK"
+   "azure_locale": "ur-PK",
+   "azure_voice_f": "ur-PK-UzmaNeural",
+   "azure_voice_m": "ur-PK-AsadNeural"
   },
   {
    "code": "vi",
@@ -664,7 +770,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "vi-VN"
+   "azure_locale": "vi-VN",
+   "azure_voice_f": "vi-VN-HoaiMyNeural",
+   "azure_voice_m": "vi-VN-NamMinhNeural"
   },
   {
    "code": "cy",
@@ -673,7 +781,9 @@
    "script": "latin",
    "rtl": false,
    "captions": true,
-   "azure_locale": "cy-GB"
+   "azure_locale": "cy-GB",
+   "azure_voice_f": "cy-GB-NiaNeural",
+   "azure_voice_m": "cy-GB-AledNeural"
   }
  ]
 }

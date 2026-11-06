@@ -29,6 +29,7 @@ from app.conversation_rag import context as rag_context, tool as rag_tool
 from app import notes_edit, reminder_edit
 from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_SAY_CHECKING, SEARCH_TOOL, WebSearch, search_instructions
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
+from app.pipeline.lang_tag import LANGUAGE_RULE, LangSwitch, LanguageTagFilter
 from app.pipeline.spoken import for_speech
 from app import edit_texts
 from app.confirm_words import classify_answer, rest_after_yes
@@ -63,6 +64,7 @@ from app.providers.llm.base import LLMRequest, ToolCall
 from app.providers.router import ProviderRouter
 from app.providers.stt.base import STTSession
 from app.providers.tts.base import TTSRequest
+from app.providers.tts.multilang import MultiLangTTS, Route
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +171,7 @@ def build_messages_from_db(turn: TurnContext, user_text: str) -> list[dict[str, 
                 "as words.",
                 DISPLAY_RULE,
                 ASK_RULE,
+                LANGUAGE_RULE,
                 s.custom_instructions.strip(),
             ],
         )
@@ -605,20 +608,27 @@ class ConversationPipeline:
             params=self.router.llm_params(),
             web_search=None,  # searching goes through the web_search tool (app/search.py)
         )
-        deltas: asyncio.Queue[str | None] = asyncio.Queue()
-        fragments: asyncio.Queue[str | None] = asyncio.Queue()
+        deltas: asyncio.Queue[str | LangSwitch | None] = asyncio.Queue()
+        fragments: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         reply_parts: list[str] = []
-        tts_chars = 0
 
         display = DisplayTagFilter()
+        passages = LanguageTagFilter(turn.language)  # [[lang:fr]]...[[/lang]]: read in its own language
         tools_used = False
 
+        async def emit_items(items: list[str | LangSwitch]) -> None:
+            for item in items:
+                if isinstance(item, LangSwitch):
+                    await deltas.put(item)
+                    continue
+                reply_parts.append(item)  # screen, history and search never see the language tags
+                caption = strip_emoji(item)
+                if caption:
+                    await io.send(turn, "llm_text", delta=caption)
+                await deltas.put(item)
+
         async def emit_text(delta: str) -> None:
-            reply_parts.append(delta)
-            caption = strip_emoji(delta)
-            if caption:
-                await io.send(turn, "llm_text", delta=caption)
-            await deltas.put(delta)
+            await emit_items(passages.feed(delta))
 
         async def keep_speaking() -> None:
             """The watch ends a "speaking" turn 20 s after its last news (SPEAKING_IDLE_MS; 45 s while "thinking"): while
@@ -707,6 +717,7 @@ class ConversationPipeline:
                 rest = display.flush()
                 if rest:
                     await emit_text(rest)
+                await emit_items(passages.flush())
             finally:
                 turn.usage.append(UsageItem("llm", llm.name, model, "input_token", usage_in - usage_cached))
                 turn.usage.append(UsageItem("llm", llm.name, model, "cached_input_token", usage_cached))
@@ -716,13 +727,14 @@ class ConversationPipeline:
                 await deltas.put(None)
 
         async def chunk_text() -> None:
-            nonlocal tts_chars
             chunker = SemanticSpeechChunker(turn.language, self.chunker_config)
+            language = turn.language  # of the text in the chunker; a passage switches it
             try:
                 while True:
                     deadline = chunker.next_deadline_ms()
                     timeout = None if deadline is None else max(0.0, (deadline - mono_ms()) / 1000)
                     finished = False
+                    switch_to: str | None = None
                     try:
                         delta = await asyncio.wait_for(deltas.get(), timeout)
                     except asyncio.TimeoutError:
@@ -730,6 +742,9 @@ class ConversationPipeline:
                     else:
                         if delta is None:
                             out, finished = chunker.finish(), True
+                        elif isinstance(delta, LangSwitch):
+                            out = chunker.finish()  # a fragment never mixes two languages
+                            switch_to = delta.code or turn.language
                         elif delta == SPEAK_NOW:
                             out = chunker.flush()
                         else:
@@ -737,22 +752,24 @@ class ConversationPipeline:
                     for frag in out:
                         if turn.marks.tts_first_text is None:
                             turn.marks.tts_first_text = mono_ms()
-                        tts_chars += len(frag)
-                        await fragments.put(frag)
+                        await fragments.put((language, frag))
+                    if switch_to is not None:
+                        language = switch_to
                     if finished:
                         return
             finally:
                 await fragments.put(None)
 
-        async def fragment_iter() -> AsyncIterator[str]:
+        async def fragment_iter() -> AsyncIterator[tuple[str, str]]:
             while (frag := await fragments.get()) is not None:
-                yield for_speech(frag, turn.language)   # times in words where the voice needs it (screen keeps digits)
+                yield frag  # MultiLangTTS says times in words where the voice needs it (screen keeps digits)
 
-        sent_chars = 0  # characters actually sent to the TTS provider (hedged twins included)
-
-        def on_tts_request(chars: int) -> None:
-            nonlocal sent_chars
-            sent_chars += chars
+        # The reply's voice; a passage in another language gets its own (lang_tag.py), and falls back to this one.
+        speech = MultiLangTTS(
+            Route(tts_sel.provider, tts_sel.voice, turn.language, tts_sel.instructions),
+            lambda language: self.router.tts_passage_routes(language, s, turn.language),
+            speech_rate=s.speech_rate,
+        )
 
         encoder = OpusEncoder(turn.downlink_rate, bitrate=self.downlink_bitrate)
         started = False
@@ -761,11 +778,7 @@ class ConversationPipeline:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(pump_llm())
                 tg.create_task(chunk_text())
-                tts_request = TTSRequest(
-                    voice=tts_sel.voice, language=turn.language, speech_rate=s.speech_rate, instructions=tts_sel.instructions,
-                    on_request=on_tts_request,
-                )
-                async for pcm in tts_sel.provider.stream(fragment_iter(), tts_request):
+                async for pcm in speech.stream(fragment_iter()):
                     if turn.marks.tts_first_pcm is None:
                         turn.marks.tts_first_pcm = mono_ms()
                     for packet in encoder.encode(apply_gain(pcm.pcm, gain), pcm.sample_rate):
@@ -780,10 +793,12 @@ class ConversationPipeline:
             raise _first_error(eg) from None
         finally:
             turn.assistant_text = clean_for_speech("".join(reply_parts))
-            # Providers that report their requests are billed on what was really sent (an aborted reply
-            # is not charged for text never synthesized; a hedged twin request is). Others: text queued.
-            billed = sent_chars if getattr(tts_sel.provider, "reports_requests", False) else tts_chars
-            turn.usage.append(UsageItem("tts", tts_sel.provider.name, tts_sel.provider.model, "character", billed))
+            # Each voice provider used is billed for its part: providers that report their requests on what was
+            # really sent (an aborted reply is not charged for text never synthesized; a hedged twin request is),
+            # the others on the text they were given.
+            billed = speech.usage or {(tts_sel.provider.name, tts_sel.provider.model): 0}
+            for (name, tts_model), chars in billed.items():
+                turn.usage.append(UsageItem("tts", name, tts_model, "character", chars))
         if not reply_parts:
             raise ProviderError("llm", "empty reply")
         turn.expect_reply |= display.asks  # the reply ended with [[?]]: the watch listens for the answer

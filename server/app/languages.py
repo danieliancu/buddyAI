@@ -76,6 +76,8 @@ class Language:
     rtl: bool
     captions: bool
     azure_locale: str | None = None
+    azure_voice_f: str | None = None  # native Azure voices of the locale (a passage in this language)
+    azure_voice_m: str | None = None
     qwen_language_type: str | None = None
     abbreviations: tuple[str, ...] = ()
 
