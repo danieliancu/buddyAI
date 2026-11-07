@@ -97,6 +97,10 @@ void ui_chat_display(const char *text);
 /* The link dropped while the answer was awaited: "Still thinking…" next to ola's dots at once (false: only after
  * the usual 2 s of thinking). */
 void ui_chat_still_thinking(bool on);
+/* A web search runs (server wait_hint): next to ola's dots, in place of "Still thinking…", in the watch's language.
+ * kind: UI_WAIT_CHECKING ("Looking now…") or UI_WAIT_SEARCH_MORE ("Searching further…"); gone with the thinking. */
+typedef enum { UI_WAIT_NONE, UI_WAIT_CHECKING, UI_WAIT_SEARCH_MORE } ui_wait_hint_t;
+void ui_chat_wait_hint(ui_wait_hint_t kind);
 /* The answer shown so far is dropped (after a drop it comes again whole): ola's dots instead. */
 void ui_chat_reply_reset(void);
 /* No answer came: a line in the conversation if it is on display (true), else nothing (false). */

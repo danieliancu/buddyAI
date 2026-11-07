@@ -58,6 +58,8 @@ LANGS = {
             "LISTENING": "Listening…",
             "THINKING": "Thinking…",
             "STILL_THINKING": "Still thinking…",
+            "WAIT_CHECKING": "Looking now…",
+            "WAIT_SEARCH_MORE": "Searching further…",
             "EMAIL_SENT": "Sent to your email",
             "EMAIL_FAILED": "Not sent. Try again later.",
             "ALL_DAY": "All day",

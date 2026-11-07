@@ -73,7 +73,7 @@ BUDDYAI_BRAVE_MONTHLY_BUDGET_USD=5       # Brave is skipped for the rest of the 
 
 Other knobs (`app/config.py`): request / page timeouts, results per request, pages read, evidence size, the DDGS
 circuit breaker (threshold, cooldown), concurrency, `BUDDYAI_DDGS_REGION`, `BUDDYAI_SEARCH_SAY_CHECKING` (the
-"Let me check" said before a search, on by default, with either backend). Costs are recorded per provider
+"checking…" the watch writes - never says - while a search runs, on by default, with either backend). Costs are recorded per provider
 (usage kind `search`) and shown in Finance > search > own. Real-search benchmark: `python tools/search_bench.py
 [--legacy] [--brave-only N]` (throwaway database, writes `out/search_bench_*.json`).
 

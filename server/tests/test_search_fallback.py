@@ -1,14 +1,12 @@
-"""Our search finds nothing -> "I'll look a bit more and get back to you" -> OpenAI hosted search, in the same turn."""
+"""Our search finds nothing -> "looking further…" on the watch -> OpenAI hosted search, in the same turn."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 
-from app.config import SERVER_DIR
 from app.providers.base import UsageItem
 from app.search import NOT_FOUND
-from app.search_fallback import SEARCH_MORE, search_more_phrase, with_hosted_fallback
+from app.search_fallback import with_hosted_fallback
 
 
 def fn(answer: str, unit: str, log: list):
@@ -44,7 +42,7 @@ def test_our_answer_is_used_without_the_fallback() -> None:
 
 def test_not_found_says_the_phrase_then_asks_the_hosted_search() -> None:
     out, steps = run(NOT_FOUND)
-    assert steps == ["ours", "said", "hosted"]  # the phrase comes before the slow call
+    assert steps == ["ours", "said", "hosted"]  # the watch's hint comes before the slow call
     assert out[0] == "17th in the 200m IM"
     assert out[1:4] == (20, 10, 2)  # tokens and searches of both
     assert [u.provider for u in out[5]] == ["ours", "hosted"]  # both are billed
@@ -70,20 +68,10 @@ def test_hosted_failure_keeps_our_not_found() -> None:
     assert steps == ["ours", "said", "hosted"] and out[0] == NOT_FOUND
 
 
-def test_the_phrase_exists_for_every_declared_language() -> None:
-    for name in ("openai", "qwen"):
-        declared = json.loads((SERVER_DIR / "config" / f"providers.{name}.json").read_text("utf-8"))["supported_languages"]
-        assert set(declared) <= set(SEARCH_MORE), name
-    assert search_more_phrase("ro") == "Mai caut și revin."
-    assert search_more_phrase("nb") == SEARCH_MORE["no"]
-    assert search_more_phrase("ja-JP") == SEARCH_MORE["ja"]
-    assert search_more_phrase("xx") == SEARCH_MORE["en"]  # not declared: English
+# --- "checking…" on the watch when a search takes a while: written, never spoken ------------------------------
 
 
-# --- "Let me check" from the server when a search takes a while -------------------------------------------
-
-
-def _search_turn(delay_s: float) -> str:
+def _search_turn(delay_s: float) -> tuple[str, list[str]]:
     from tests.test_cost_optimisation import SearchingLLM, _clear_cache, _pipeline, _turn
     from tests.test_items import FakeIO, _account
 
@@ -95,25 +83,19 @@ def _search_turn(delay_s: float) -> str:
     _clear_cache()
     io = FakeIO()
     asyncio.run(_pipeline(Slow())._reply(_turn(_account()), io))
-    return "".join(f["delta"] for t, f in io.sent if t == "llm_text")
+    text = "".join(f["delta"] for t, f in io.sent if t == "llm_text")
+    return text, [f["kind"] for t, f in io.sent if t == "wait_hint"]
 
 
-def test_a_slow_search_gets_let_me_check_from_the_server() -> None:
+def test_a_slow_search_shows_checking_on_the_watch_and_says_nothing() -> None:
     from app.search_fallback import CHECKING_DELAY_S
 
-    text = _search_turn(CHECKING_DELAY_S + 0.6)
-    assert text.startswith("Let me check.") and "14 degrees" in text
+    text, hints = _search_turn(CHECKING_DELAY_S + 0.6)
+    assert hints == ["checking"]
+    assert "14 degrees" in text
+    assert "check" not in text.casefold()  # nothing of it in the reply: not spoken, not in the history
 
 
-def test_a_quick_search_is_answered_without_the_phrase() -> None:
-    text = _search_turn(0.0)
-    assert "Let me check" not in text and "14 degrees" in text
-
-
-def test_checking_phrase_for_every_declared_language() -> None:
-    from app.search_fallback import CHECKING, checking_phrase
-
-    for name in ("openai", "qwen"):
-        declared = json.loads((SERVER_DIR / "config" / f"providers.{name}.json").read_text("utf-8"))["supported_languages"]
-        assert set(declared) <= set(CHECKING), name
-    assert checking_phrase("ro") == "Stai să verific." and checking_phrase("xx") == "Let me check."
+def test_a_quick_search_is_answered_without_the_hint() -> None:
+    text, hints = _search_turn(0.0)
+    assert hints == [] and "14 degrees" in text

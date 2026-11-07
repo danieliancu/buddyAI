@@ -319,6 +319,9 @@ static void on_proto_event(const proto_event_t *ev, void *ctx)
     case PROTO_EVT_STILL_THINKING:
         ui_chat_still_thinking(ev->num != 0);
         break;
+    case PROTO_EVT_WAIT_HINT:
+        ui_chat_wait_hint(ev->num == 2 ? UI_WAIT_SEARCH_MORE : UI_WAIT_CHECKING);
+        break;
     case PROTO_EVT_ITEM_EMAILED:
         ui_item_emailed(ev->num, ev->str && strcmp(ev->str, "sent") == 0);
         break;

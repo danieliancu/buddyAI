@@ -1359,17 +1359,67 @@ def test_let_me_check_is_said_once_over_two_searches(monkeypatch):
     assert len(ddgs.queries) == 2 and spoken == ["Let me check.", "It's 14 degrees."]
 
 
-def test_the_search_rule_asks_for_the_phrase_and_a_setting_switches_it_off(monkeypatch):
-    from app.search import SEARCH_SAY_CHECKING
+def test_the_search_rule_asks_for_nothing_before_the_call_whatever_the_setting(monkeypatch):
+    from app.search import SEARCH_NO_PREAMBLE
     from tests.test_cost_optimisation import _account, _turn
 
-    assert "Let me check" in SEARCH_SAY_CHECKING and "at most once" in SEARCH_SAY_CHECKING
-    for setting, expected in ((True, True), (False, False)):
+    assert "write nothing before the call" in SEARCH_NO_PREAMBLE
+    for setting in (True, False):  # the setting only switches the watch's written "checking…"
         _clear_cache()
         llm = _SaysItFirst((["It's 14 degrees."], None))
         pipeline = _speaking_pipeline(monkeypatch, llm, FakeProvider("ddgs", _CHECK_PAGE), lambda text: None, search_say_checking=setting)
         asyncio.run(pipeline._reply(_turn(_account(), "how warm is it"), _say_io()[1]))
-        assert (SEARCH_SAY_CHECKING in llm.requests[0].messages[0]["content"]) is expected
+        assert SEARCH_NO_PREAMBLE in llm.requests[0].messages[0]["content"]
+
+
+def test_a_silent_search_keeps_the_watch_thinking(monkeypatch):
+    """Nothing said before the search: the watch stays "thinking" (45 s limit), so the keep-alive says "thinking"."""
+    import app.pipeline.conversation as conversation
+    from tests.test_cost_optimisation import _account, _turn
+
+    _clear_cache()
+    monkeypatch.setattr(conversation, "SPEAKING_KEEPALIVE_S", 0.01)
+
+    async def scenario():
+        told = asyncio.Event()
+        sent = []
+
+        async def send(turn, type_, **fields):
+            sent.append((type_, fields))
+            if sum(1 for t, f in sent if t == "state" and f.get("state") == "thinking") >= 2:
+                told.set()
+            return True
+
+        from types import SimpleNamespace as NS
+
+        llm = _SaysItFirst(([], "chelmsford temperature today"), (["It's 14 degrees."], None))
+        pipeline = _speaking_pipeline(monkeypatch, llm, _WaitsToBeHeard(told, _CHECK_PAGE), lambda text: None)
+        turn = _turn(_account(), "how warm is it")
+        await pipeline._reply(turn, NS(send=send, send_audio=_noop_audio))
+        return sent, turn
+
+    sent, turn = asyncio.run(scenario())
+    assert sum(1 for t, f in sent if t == "state" and f.get("state") == "thinking") >= 2
+    assert not any(t == "state" and f.get("state") == "speaking" for t, f in sent[:2])  # no audio before the answer
+    assert turn.assistant_text == "It's 14 degrees."
+
+
+def test_our_search_finding_nothing_shows_looking_further_and_says_nothing(monkeypatch):
+    from tests.test_cost_optimisation import _account, _turn
+
+    class Hosted(_SaysItFirst):
+        async def web_search(self, query, location, language, **kw):
+            return "Chelmsford: 14°C, cloudy.", 100, 10, 1, True
+
+    _clear_cache()
+    spoken = []
+    llm = Hosted(([], "chelmsford temperature today"), (["It's 14 degrees."], None))
+    pipeline = _speaking_pipeline(monkeypatch, llm, FakeProvider("ddgs"), spoken.append)  # our search: no results
+    turn = _turn(_account(), "how warm is it")
+    sent, io = _say_io()
+    asyncio.run(pipeline._reply(turn, io))
+    assert ("wait_hint", {"kind": "search_more"}) in sent
+    assert spoken == ["It's 14 degrees."] and turn.assistant_text == "It's 14 degrees."
 
 
 def test_a_reply_without_a_search_is_not_changed(monkeypatch):

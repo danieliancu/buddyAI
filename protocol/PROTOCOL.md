@@ -92,6 +92,7 @@ reports.
 | `state` | `turn_id`, `state` (`idle`\|`listening`\|`thinking`\|`speaking`) | UI state hint. |
 | `stt_result` | `turn_id`, `text`, `final`, `language?` | Transcript (partials optional). The final result carries the language used for the reply (detected when `auto`). |
 | `llm_text` | `turn_id`, `delta` | Reply text as it streams (for on-screen caption). |
+| `wait_hint` | `turn_id`, `kind` | A web search runs (server 2026-11, firmware 0.1.8+): `checking` (the search has run 1 s and nothing was said) or `search_more` (our search found nothing, the hosted one follows). Written only - never spoken, not in the reply or the history: the watch shows it next to its thinking dots in its own language, in place of "Still thinking…". Older firmware ignores it. While a search runs the server also repeats `state` `thinking` (or `speaking` once audio started) every 8 s; firmware 0.1.8+ restarts its 45 s wait on it. |
 | `llm_display` | `turn_id`, `text` | Optional, before the first `llm_text`: the answer's key value (≤ 16 chars, e.g. `21°C`, `14:30`, `£3.50`). The watch shows only this, in large type, while the full reply is spoken. |
 | `tts_start` | `turn_id`, `sample_rate`, `language?` | Downlink audio for the turn follows; `language` = reply language. A passage in another language inside the reply ("how do you say it in French?") is spoken in its own language by the server; the watch sees one audio stream and the reply language, as before. |
 | `tts_end` | `turn_id` | No more downlink audio for the turn. |

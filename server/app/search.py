@@ -108,12 +108,11 @@ SEARCH_RULE = (
     "finds nothing either, say briefly that you couldn't find it - never guess."
 )
 
-# The conversation model says this before a search, so the user hears something while it runs (pipeline: _reply).
-SEARCH_SAY_CHECKING = (
-    "When you call web_search, write one very short phrase in the language of your reply before the call, in the same "
-    "response (e.g. 'Let me check.'): only that, with no facts, no guess at the answer and no [[value]] tag. Say it at "
-    "most once in a reply, and never without calling web_search. After the search result, start directly with the "
-    "answer (with its [[value]] tag when it has one)."
+# Nothing is said while a search runs: the watch shows "checking…" / "looking further…" in its own language
+# (wait_hint, pipeline: _reply), so a spoken "Let me check" before the call would only sound mechanical.
+SEARCH_NO_PREAMBLE = (
+    "When you call web_search, write nothing before the call (no 'Let me check'): the watch already shows that you are "
+    "searching. After the search result, start directly with the answer (with its [[value]] tag when it has one)."
 )
 
 SEARCH_LEAD = "Search the web and answer"

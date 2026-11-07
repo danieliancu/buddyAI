@@ -1812,6 +1812,8 @@ static void handle_text(const char *txt)
             audio_capture_stop();
             set_conv(PROTO_CONV_THINKING);
             s_turn_deadline_ms = now_ms() + THINKING_TIMEOUT_MS;
+        } else if (strcmp(st, "thinking") == 0 && s_conv == PROTO_CONV_THINKING) {
+            s_turn_deadline_ms = now_ms() + THINKING_TIMEOUT_MS;    /* a long search: the server is still on it */
         } else if (strcmp(st, "speaking") == 0 && s_conv != PROTO_CONV_LISTENING) {
             set_conv(PROTO_CONV_SPEAKING);
             s_turn_deadline_ms = now_ms() + SPEAKING_IDLE_MS;
@@ -1835,6 +1837,15 @@ static void handle_text(const char *txt)
         const char *lang = json_str(j, "language");     /* optional, detected language */
         if (lang && lang[0]) {
             emit(PROTO_EVT_REPLY_LANGUAGE, 0, lang);
+        }
+    } else if (strcmp(type, "wait_hint") == 0) {
+        /* written only, in the watch's own language (its UI tables), never spoken */
+        const char *kind = json_str(j, "kind");
+        if (kind && s_conv == PROTO_CONV_THINKING && !s_turn_note) {
+            int k = strcmp(kind, "checking") == 0 ? 1 : strcmp(kind, "search_more") == 0 ? 2 : 0;
+            if (k) {
+                emit(PROTO_EVT_WAIT_HINT, k, NULL);
+            }
         }
     } else if (strcmp(type, "llm_display") == 0) {
         const char *text = json_str(j, "text");

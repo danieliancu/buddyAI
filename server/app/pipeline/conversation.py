@@ -27,8 +27,8 @@ from app.memory import prefs as memory_prefs
 from app.memory.retrieve import recall
 from app.conversation_rag import context as rag_context, tool as rag_tool
 from app import notes_edit, reminder_edit
-from app.search import SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_SAY_CHECKING, SEARCH_TOOL, WebSearch, search_instructions
-from app.search_fallback import CHECKING_DELAY_S, checking_phrase, search_more_phrase, with_hosted_fallback
+from app.search import SEARCH_NO_PREAMBLE, SEARCH_RULE, SEARCH_RULE_SERVER, SEARCH_TOOL, WebSearch, search_instructions
+from app.search_fallback import CHECKING_DELAY_S, with_hosted_fallback
 from app.pipeline.chunker import ChunkerConfig, SemanticSpeechChunker, clean_for_speech, strip_emoji
 from app.pipeline.lang_tag import LANGUAGE_RULE, LangSwitch, LanguageTagFilter
 from app.pipeline.spoken import for_speech
@@ -107,7 +107,9 @@ SEARCH_NOTE_CHARS = 350  # search answer kept with a turn for the history
 HISTORY_REPLY_CHARS = 300  # older replies are trimmed in the prompt (the stored history is untouched)
 
 SPEAK_NOW = ""  # in the reply's text queue: a long pause follows, say what is buffered (never real text: empty)
-SPEAKING_KEEPALIVE_S = 8.0  # how often the watch hears that the reply goes on while a search runs after "Let me check"
+# How often the watch hears that the reply goes on while a search runs: "speaking" once audio has started (something
+# the model said before the call), otherwise "thinking" (firmware 0.1.8+ restarts its 45 s wait on it).
+SPEAKING_KEEPALIVE_S = 8.0
 MAX_TOOL_ROUNDS = 5  # LLM calls that may end in tool calls; the next one gets no tools and must answer (3 finds + a delete fit)
 NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
 # Dialog mode: the wait for the next words, whatever wait_for_speech_s says - the user is not to feel hurried. The
@@ -540,7 +542,7 @@ class ConversationPipeline:
         tts_sel = self.router.tts(turn.language, s)
         web_search = self.router.web_search(s, llm)
         searcher = None
-        wait_phrase = {"said": False}  # a phrase was said while a search runs ("let me check" / "a bit more"): no second
+        wait_phrase = {"said": False}  # "looking further" is on the watch: no "checking" after it
         backend = search_backend(self.router)
         if web_search is not None and backend == "ddgs_brave":
             # our own search (app/websearch); the answering call uses the profile's cheapest chat model
@@ -579,14 +581,11 @@ class ConversationPipeline:
                     return await run.search(query, location, language, category=category, local_query=local_query)
 
             if hosted is not None and getattr(conf, "search_hosted_fallback", True):
-                # Our search found nothing: "I'll look a bit more and get back to you", then the hosted search
-                # (app/search_fallback.py). The phrase is part of the reply (screen and history too).
+                # Our search found nothing: the hosted search follows (app/search_fallback.py), and the watch shows
+                # "looking further…" in its own language - written only, never spoken nor kept in the history.
                 async def say_search_more() -> None:
                     wait_phrase["said"] = True
-                    phrase = search_more_phrase(self._edit_lang(turn))
-                    sep = " " if reply_parts and not reply_parts[-1].endswith(" ") else ""
-                    await emit_text(sep + phrase + " ")
-                    await deltas.put(SPEAK_NOW)  # said now, not after the answer
+                    await io.send(turn, "wait_hint", kind="search_more")
 
                 search_fn = with_hosted_fallback(search_fn, hosted_search, say_search_more, frozenset(legacy))
 
@@ -631,8 +630,8 @@ class ConversationPipeline:
         if extra_msgs and messages:
             messages = [*messages[:-1], *extra_msgs, messages[-1]]
         extra_rules = [SEARCH_RULE_SERVER if backend == "ddgs_brave" else SEARCH_RULE] if searcher else []
-        if searcher and getattr(router_settings(self.router), "search_say_checking", True):
-            extra_rules.append(SEARCH_SAY_CHECKING)
+        if searcher:
+            extra_rules.append(SEARCH_NO_PREAMBLE)
         if self.tools:
             extra_rules += self.tools.rules(turn.account_id)
         if history_search and tool_defs:
@@ -673,17 +672,14 @@ class ConversationPipeline:
             if wait_phrase["said"]:
                 return
             wait_phrase["said"] = True
-            sep = " " if reply_parts and not reply_parts[-1].endswith(" ") else ""
-            await emit_text(sep + checking_phrase(self._edit_lang(turn)) + " ")
-            await deltas.put(SPEAK_NOW)  # heard now, not after the answer
+            await io.send(turn, "wait_hint", kind="checking")  # "checking…" on the watch, in its language
 
         async def keep_speaking() -> None:
             """The watch ends a "speaking" turn 20 s after its last news (SPEAKING_IDLE_MS; 45 s while "thinking"): while
-            a search runs after a spoken "Let me check", tell it the reply is still coming."""
+            a search runs, tell it the reply is still coming."""
             while True:
                 await asyncio.sleep(SPEAKING_KEEPALIVE_S)
-                if started:
-                    await io.send(turn, "state", state="speaking")
+                await io.send(turn, "state", state="speaking" if started else "thinking")
 
         async def pump_llm() -> None:
             turn.marks.llm_request = mono_ms()
@@ -754,8 +750,8 @@ class ConversationPipeline:
                     tools_used = tools_used or any(c.name != SEARCH_TOOL["name"] for c in calls)
                     # (also without a spoken "let me check": the fallback phrase may start the audio mid-search)
                     keep_alive = asyncio.create_task(keep_speaking()) if searching else None
-                    # Nothing said yet and the search is not over in CHECKING_DELAY_S: "Let me check" from the server
-                    # (the model often calls the tool without it). A quick answer comes without the phrase.
+                    # Nothing said yet and the search is not over in CHECKING_DELAY_S: "checking…" on the watch. A quick
+                    # answer comes without it.
                     checking = None
                     if searching and not said and not round_text and getattr(router_settings(self.router),
                                                                               "search_say_checking", True):

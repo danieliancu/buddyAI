@@ -71,6 +71,7 @@ typedef enum {
     PROTO_EVT_REPLY_RESET,          /* the answer shown so far is dropped: after the drop it comes again whole */
     PROTO_EVT_ITEM_EMAILED,         /* num = note number, str = sent | unverified | limit | failed | missing | offline */
     PROTO_EVT_DIALOG,               /* num = 1 dialog mode on, 0 off (the ring around the mic) */
+    PROTO_EVT_WAIT_HINT,            /* a web search runs (wait_hint): num = 1 checking, 2 looking further */
 } proto_event_type_t;
 
 typedef struct {

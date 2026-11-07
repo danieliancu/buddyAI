@@ -67,6 +67,7 @@ static lv_obj_t  *s_typing;         /* bouncing dots: the user's side while list
 static bool       s_typing_ai;      /* s_typing is on ola's side */
 static bool       s_still;          /* the link dropped: "Still thinking…" after ola's dots at once */
 static bool       s_still_slow;     /* thinking for STILL_AFTER_MS: the same text */
+static ui_wait_hint_t s_hint;       /* a web search runs: its text instead (server wait_hint), this thinking only */
 static lv_timer_t *s_still_timer;
 static lv_obj_t  *s_cur_reply;      /* label of this turn's reply bubble */
 static bool       s_cur_display;    /* the reply bubble shows a short value: ignore the text */
@@ -252,12 +253,13 @@ static void show_typing(bool ai)
         lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
         lv_anim_start(&a);
     }
-    if (ai && (s_still || s_still_slow)) {
+    if (ai && (s_still || s_still_slow || s_hint != UI_WAIT_NONE)) {
         lv_obj_t *l = lv_label_create(s_typing);
         lv_obj_set_style_text_font(l, &buddy_font_20, 0);
         lv_obj_set_style_text_opa(l, LV_OPA_70, 0);
         lv_obj_set_style_pad_left(l, 6, 0);
-        lv_label_set_text(l, ui_str(STR_STILL_THINKING));
+        lv_label_set_text(l, ui_str(s_hint == UI_WAIT_CHECKING ? STR_WAIT_CHECKING
+                                    : s_hint == UI_WAIT_SEARCH_MORE ? STR_WAIT_SEARCH_MORE : STR_STILL_THINKING));
     }
     trim_history();
 }
@@ -453,6 +455,7 @@ void ui_chat_set_state(ui_conv_t st)
     }
     if (st != UI_CONV_THINKING) {
         s_still = s_still_slow = false;
+        s_hint = UI_WAIT_NONE;
         if (s_still_timer) {
             lv_timer_pause(s_still_timer);
         }
@@ -547,6 +550,16 @@ void ui_chat_still_thinking(bool on)
         if (was != (s_still || s_still_slow)) {
             redraw_ai_typing();
         }
+    }
+    UNLOCK();
+}
+
+void ui_chat_wait_hint(ui_wait_hint_t kind)
+{
+    LOCK();
+    if (s_scr && s_state == UI_CONV_THINKING && kind != s_hint) {
+        s_hint = kind;
+        redraw_ai_typing();     /* only while ola's dots show: an answer already on screen keeps its bubble */
     }
     UNLOCK();
 }
