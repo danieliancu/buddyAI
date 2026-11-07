@@ -780,10 +780,15 @@ static void power_timer_cb(lv_timer_t *t)
 {
     uint32_t inactive = lv_display_get_inactive_time(s_disp);
     uint32_t timeout = (uint32_t)g_ui_settings.screen_timeout_s * 1000;
-    bool busy = s_conv != UI_CONV_IDLE || s_hold_awake;
+    /* Dialog mode waiting for the next words (up to a minute): the screen dims after its timeout, counted from the
+     * start of the listening, but never sleeps - standby closes the audio codecs, and the mic must stay open. */
+    bool dialog_wait = s_dialog && s_conv == UI_CONV_LISTENING && !s_hold_awake;
+    bool busy = (s_conv != UI_CONV_IDLE && !dialog_wait) || s_hold_awake;
     power_state_t want;
     if (busy || inactive < timeout) {
         want = POWER_ON;
+    } else if (dialog_wait) {
+        want = POWER_DIM;
     } else if ((ui_chat_is_active() || ui_items_is_active()) && inactive < CHAT_STANDBY_MS && s_power != POWER_OFF) {
         want = POWER_DIM;           /* an answer, a note or a reminder stays readable a while longer */
     } else {

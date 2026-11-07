@@ -110,7 +110,10 @@ SPEAK_NOW = ""  # in the reply's text queue: a long pause follows, say what is b
 SPEAKING_KEEPALIVE_S = 8.0  # how often the watch hears that the reply goes on while a search runs after "Let me check"
 MAX_TOOL_ROUNDS = 5  # LLM calls that may end in tool calls; the next one gets no tools and must answer (3 finds + a delete fit)
 NOTE_WAIT_S = 30  # note mode: a turn with no speech ends after this (the watch then listens again)
-DIALOG_WAIT_S = 10  # dialog mode: the user has just heard the reply, so a shorter wait for the next words
+# Dialog mode: the wait for the next words, whatever wait_for_speech_s says - the user is not to feel hurried. The
+# silence is free (a gated watch sends nothing, nothing reaches the STT); the watch waits as long (firmware
+# DIALOG_WAIT_MS) and dims its screen meanwhile.
+DIALOG_WAIT_S = 60
 NOTE_SENTENCE_S = 30  # note mode: the longest sentence
 NOTE_MAX_TOKENS = 300
 
@@ -420,7 +423,7 @@ class ConversationPipeline:
             sensitivity=s.vad_sensitivity,
             # Note mode: the watch starts the next sentence right away, so a quiet stretch just ends
             # this (free) turn; one sentence is at most NOTE_SENTENCE_S long.
-            no_speech_timeout_ms=(NOTE_WAIT_S if note else min(DIALOG_WAIT_S, s.wait_for_speech_s) if turn.dialog
+            no_speech_timeout_ms=(NOTE_WAIT_S if note else DIALOG_WAIT_S if turn.dialog
                                   else s.wait_for_speech_s) * 1000,
             max_duration_ms=(NOTE_SENTENCE_S if note else s.max_listen_s) * 1000,
             unfinished=lambda: looks_unfinished(heard, langs),

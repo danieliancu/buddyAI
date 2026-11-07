@@ -164,14 +164,17 @@ when the mic button is held for 2 s (an arc fills around the mic while it is hel
 mode", in any language: the reply carries `turn_end` `dialog: "on"`). Either way the watch says "Dialog mode on"
 itself, then opens the mic; turning it off says nothing. While it is on, a thin double ring
 around the mic shows it on the watch face and on the conversation screen, and every chat `listen_start` carries
-`dialog: true`; the server then waits 10 s (at most `wait_for_speech_s`) for the first word. It ends, and the ring
-goes, when:
+`dialog: true`; the server then waits 60 s for the first word, whatever `wait_for_speech_s` says, and the watch's
+own limit for that turn is a minute longer than usual. While a gated dialog turn waits for a voice the screen dims
+after its timeout (it never goes to standby: that would close the mic) and the radio is in power save until the
+gate opens. It ends, and the ring goes, when:
 
 - the user says so ("stop dialog mode", "that's all, bye": `turn_end` `dialog: "off"`, decided by the reply model
   in any language with `[[dialog:off]]`, which never reaches the screen or the history);
 - a question gets no speech (`turn_end` `no_speech`), a tap cancels the listening, the conversation screen is left, or
   the turn times out on the watch;
-- two turns in a row fail (`error`): the first failure only shows its message and the mic opens again.
+- two turns in a row fail (`error`): the first failure only shows its message and the mic opens again;
+- it has been on for 30 minutes: the reply that ends past that is said, then the mic stays closed.
 
 A note's or reminder's edit mode takes the mic and ends dialog mode.
 

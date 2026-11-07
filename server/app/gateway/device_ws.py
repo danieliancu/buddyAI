@@ -777,6 +777,8 @@ class DeviceConnection:
         extra = {"expect_reply": True} if turn.expect_reply and turn.mode == "chat" and status == "completed" and live else {}
         if turn.dialog_set and turn.mode == "chat" and status == "completed" and live:
             extra["dialog"] = turn.dialog_set  # the user turned dialog mode on / off by voice
+            # decided by the reply model: logged, so a dialog mode the user did not ask for can be traced to its turn
+            log.info("dialog mode %s by voice: device %s turn %s", turn.dialog_set, self.device_id, turn.turn_id)
         await self._turn_out(turn, "turn_end", status=status, **extra)
         turn.final_status = status
         turn.finished_at = time.monotonic()

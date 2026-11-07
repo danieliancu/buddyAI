@@ -90,6 +90,7 @@ typedef enum {
     MSG_ITEM_EMAIL,         /* a = note number: send it to the account's email */
     MSG_TEST_ASK,           /* development builds: proto_test_ask() */
     MSG_UPLINK,             /* mic audio waits in s_up_buf: uplink_pump */
+    MSG_GATE_OPEN,          /* a = turn id: a voice opened the uplink gate (the radio leaves power save) */
 } msg_type_t;
 
 typedef struct {
@@ -155,6 +156,12 @@ static bool             s_expect_reply;
  * forgiven (the mic opens again), the second ends dialog mode. */
 static bool             s_dialog;
 static int              s_dialog_errors;
+/* The server waits DIALOG_WAIT_MS for the first word in dialog mode (conversation.py DIALOG_WAIT_S). Dialog mode
+ * ends by itself DIALOG_MAX_MS after it started (at the next reply: never mid-turn), so a TV or a radio that keeps
+ * opening the mic cannot keep it going for hours. */
+#define DIALOG_WAIT_MS          60000
+#define DIALOG_MAX_MS           (30 * 60 * 1000)
+static int64_t          s_dialog_since_ms;
 /* "Dialog mode on", in the watch's language and the reply voice: sent by the server (dialog_clip) when the watch does
  * not hold the right one, kept in NVS (namespace "dlgclip") and in PSRAM, played by the watch itself whenever dialog
  * mode starts. s_dialog_clip: it is playing, the mic opens when it ends. s_dialog_announce: dialog mode was turned
@@ -314,7 +321,9 @@ static void set_dialog(bool on, const char *why)
     }
     s_dialog = on;
     s_dialog_errors = 0;
-    if (!on) {
+    if (on) {
+        s_dialog_since_ms = now_ms();
+    } else {
         s_dialog_announce = false;
     }
     ESP_LOGI(TAG, "dialog mode %s: %s", on ? "on" : "off", why);
@@ -1020,6 +1029,8 @@ static bool gate_hold(const uint8_t *opus, size_t len)
         uplink_frame(s_gate_buf[slot], s_gate_len[slot]);    /* ~300 ms before the voice, so the word is whole */
     }
     s_gate_count = 0;
+    msg_t m = { .type = MSG_GATE_OPEN, .a = s_capture_turn };
+    post(&m);
     return false;
 }
 
@@ -1134,7 +1145,7 @@ static void start_turn(void)
         cJSON_AddStringToObject(m, "mode", s_note_reminder ? "reminder" : "note");
         cJSON_AddNumberToObject(m, s_note_reminder ? "reminder" : "note", s_note_number);
     } else if (s_dialog) {
-        cJSON_AddTrueToObject(m, "dialog");     /* the server waits less for the next words, knows "stop" */
+        cJSON_AddTrueToObject(m, "dialog");     /* the server waits a minute for the next words, knows "stop" */
     }
     if (s_gate_closed) {
         cJSON_AddTrueToObject(m, "gated");      /* silence before the first word is not sent */
@@ -1142,7 +1153,12 @@ static void start_turn(void)
     send_json(m, "listen_start", true, turn);
 
     set_conv(PROTO_CONV_LISTENING);
-    s_turn_deadline_ms = now_ms() + (s_turn_note ? NOTE_TURN_LIMIT_MS : (int64_t)(st.max_listen_s + 2) * 1000);
+    if (s_gate_closed) {
+        net_wifi_set_power_save(true);  /* nothing to send until a voice (MSG_GATE_OPEN): the radio may doze */
+    }
+    /* max_listen_s = the server's wait for the first word + the longest question; dialog mode waits longer. */
+    s_turn_deadline_ms = now_ms() + (s_turn_note ? NOTE_TURN_LIMIT_MS
+                                     : (int64_t)(st.max_listen_s + 2) * 1000 + (s_dialog ? DIALOG_WAIT_MS : 0));
     if (!s_test_no_mic) {
         audio_capture_start(turn, capture_cb, NULL);
     }
@@ -1331,6 +1347,10 @@ static void listen_again_if_asked(void)
         return;
     }
     s_expect_reply = false;
+    if (s_dialog && now_ms() - s_dialog_since_ms >= DIALOG_MAX_MS) {
+        set_dialog(false, "30 minutes");    /* the reply has been said: the mic stays closed */
+        return;
+    }
     if (s_conn == CONN_SESSION && !s_note_open && s_conv == PROTO_CONV_IDLE) {
         if (s_dialog && s_dialog_announce) {
             dialog_listen();    /* turned on by voice: the announcement, then the mic */
@@ -2381,6 +2401,11 @@ static void handle_msg(msg_t *m)
     case MSG_DIALOG:
         note_close(false);
         dialog_start();
+        break;
+    case MSG_GATE_OPEN:
+        if (m->a == s_capture_turn && s_conv == PROTO_CONV_LISTENING) {
+            net_wifi_set_power_save(false);     /* the question goes out now: full radio speed */
+        }
         break;
     case MSG_NOTE_SESSION:
         if (m->b & 1) {
