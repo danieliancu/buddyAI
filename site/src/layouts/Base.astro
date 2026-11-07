@@ -21,7 +21,7 @@ const path = Astro.url.pathname === "/" ? "/" : Astro.url.pathname.replace(/\/?$
 const canonical = new URL(path, site).href;
 const fullTitle = path === "/" ? `${config.siteName} — ${title}` : `${title} | ${config.siteName}`;
 const ogImage = new URL("/og-image.png", site).href;
-const ogAlt = "olácompanion — the wearable AI companion with a voice assistant (illustration)";
+const ogAlt = "olácompanion — your AI companion & personal assistant on your wrist (illustration)";
 
 // Structured data on every page: the organisation, the website, and breadcrumbs on inner pages.
 const orgId = new URL("/#organization", site).href;

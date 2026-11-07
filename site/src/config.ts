@@ -41,7 +41,7 @@ export const prices = {
 
 export const config = {
   siteName: "olácompanion",
-  tagline: "Your AI companion, now on your wrist.",
+  tagline: "Your AI Companion & Personal Assistant",
 
   // Company details shown in the footer, contact page and legal pages.
   companyName: "Ola Technologies London Ltd",

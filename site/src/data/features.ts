@@ -2,7 +2,7 @@ import { languageCount, languageCountLabel } from "../lib/languages";
 
 export type IconName =
   | "mic" | "tap" | "globe" | "persona" | "palette" | "history" | "display" | "speaker" | "wifi" | "update"
-  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays" | "chat";
+  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays" | "chat" | "calendar" | "calendarCheck" | "mailSend";
 
 export interface Feature {
   icon: IconName;
@@ -42,6 +42,12 @@ export const features: Feature[] = [
     title: "Notes",
     short: "Create and edit notes just by talking.",
     long: "Dictate a note, then add, change, move or delete lines by voice. Send any note to your email, by voice or with a tap on the watch. Find, copy or delete notes and reminders just by asking; if several match, olá asks which one. Your notes and reminders are also in your olá account, where you can view and edit them.",
+  },
+  {
+    icon: "calendar",
+    title: "Google Calendar & Outlook",
+    short: "Hear what's next and add events to your calendar by voice.",
+    long: "Connect Google Calendar or Microsoft Outlook in your olá account, then just ask: \"What's on tomorrow?\", \"Am I free on Thursday afternoon?\" or \"Add lunch with Sam on Friday at 1\". olá reads your calendar only when you ask, and changes only the events created from your watch.",
   },
   {
     icon: "search",
@@ -85,12 +91,12 @@ export const hardware = [
 export const privacyLine =
   "Your voice is processed securely by our AI partners (OpenAI) to answer you. We never sell your data, and you can delete your history anytime.";
 
-// The six cards under the home page hero.
-export const highlights: { icon: IconName; tint?: "blue" | "green" | "teal"; title: string; text: string }[] = [
-  { icon: "mail", tint: "green", title: "Send to Email", text: "Dictate notes, then send any of them to your email." },
-  { icon: "mic", title: "Voice Assistant", text: "Natural conversations, just tap and talk." },
-  { icon: "bell", tint: "blue", title: "Smart Reminders", text: "Time, place, people and early alerts." },
-  { icon: "search", tint: "blue", title: "Live Answers", text: "Weather, news, opening hours and more." },
-  { icon: "tapRays", tint: "blue", title: "No App to Install", text: "Just connect it to Wi-Fi. No phone app needed." },
-  { icon: "globe", tint: "teal", title: `${languageCount} Languages`, text: "Or Auto: it answers in the language you speak." },
+// The six cards under the home page hero (the integrations link to their section of /integrations/).
+export const highlights: { icon: IconName; title: string; text: string; href?: string }[] = [
+  { icon: "mic", title: "Voice Assistant", text: "Natural conversations, just tap and talk.", href: "/features/" },
+  { icon: "calendar", title: "Google Calendar", text: "Ask what's next and add events by voice.", href: "/integrations/#google-calendar" },
+  { icon: "calendarCheck", title: "Microsoft Calendar", text: "Your Outlook calendar, right on your wrist.", href: "/integrations/#microsoft-calendar" },
+  { icon: "mailSend", title: "Note to Email", text: "Dictate a note, then send it to your inbox.", href: "/integrations/#note-to-email" },
+  { icon: "bell", title: "Smart Reminders", text: "Time, place, people and early alerts.", href: "/features/" },
+  { icon: "search", title: "Live Answers", text: "Weather, news, opening hours and more.", href: "/features/" },
 ];

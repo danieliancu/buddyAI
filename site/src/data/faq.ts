@@ -19,7 +19,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "What can olá do?",
-        a: `olá is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, hold the mic for 2 seconds to keep talking back and forth without tapping (dialog mode), talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It doesn't track steps or health, and it doesn't sync with a calendar.`,
+        a: `olá is a voice companion: tap the mic button, speak, and an AI assistant answers you out loud. You can interrupt it by tapping again, hold the mic for 2 seconds to keep talking back and forth without tapping (dialog mode), talk in ${languageCountLabel} languages (or choose Auto), set reminders and take notes by voice, get live answers (weather, news, opening hours), pick or write a persona for your assistant, and switch between a blue and a white theme. It also connects to <a href="/integrations/">Google Calendar and Microsoft Outlook</a>, and sends notes to your email. It doesn't track steps or health.`,
       },
       {
         q: "What's the battery life?",
@@ -39,7 +39,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What doesn't olácompanion do?",
-        a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. It doesn't sync with Google, Outlook or other calendars: reminders live in your olá account.",
+        a: "It has no GPS, no SIM card or mobile connection, and it can't make or take calls. It doesn't track steps, heart rate, sleep or any other health data. Calendars other than Google Calendar and Microsoft Outlook (for example Apple iCloud) aren't supported yet.",
       },
       {
         q: "What does the screen look like?",

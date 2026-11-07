@@ -1,0 +1,250 @@
+---
+// Integrations: Google Calendar, Microsoft Outlook calendar and Note to Email. Each has its own section (anchor
+// linked from the home page's six features), voice examples, how to connect, and what olá may and may not do.
+import Base from "../layouts/Base.astro";
+import PageHero from "../components/PageHero.astro";
+import Brand from "../components/Brand.astro";
+import SectionHeading from "../components/SectionHeading.astro";
+import FaqList from "../components/FaqList.astro";
+import Icon from "../components/Icon.astro";
+import type { Faq } from "../data/faq";
+import { config } from "../config";
+import { languageCount } from "../lib/languages";
+
+const site = Astro.site!;
+const pageUrl = new URL("/integrations/", site).href;
+
+type Integration = {
+  id: string;
+  icon: "calendar" | "calendarCheck" | "mailSend";
+  name: string;
+  title: string;
+  lead: string;
+  say: string[];
+  connect: string[];
+  points: string[];
+};
+
+const calendarPoints = [
+  "olá reads your calendar only when you ask, and only the days and details it needs to answer",
+  "It creates, changes and deletes only the events created from your watch: your other events are never touched",
+  "Your calendar events are not copied or stored on our servers",
+  "Disconnect anytime in your olá account; the access is removed at once",
+];
+
+const integrations: Integration[] = [
+  {
+    id: "google-calendar",
+    icon: "calendar",
+    name: "Google Calendar",
+    title: "Google Calendar on your wrist",
+    lead: "Connect your Google Calendar and talk to it. Ask what's coming up, check when you're free and add events by voice, without taking out your phone.",
+    say: [
+      "“What's on my calendar tomorrow?”",
+      "“When is my next meeting?”",
+      "“Am I free on Thursday afternoon?”",
+      "“Add lunch with Sam on Friday at 1 pm.”",
+      "“Move my dentist appointment to 4 o'clock.”",
+    ],
+    connect: [
+      `Sign in to your olá account in any web browser`,
+      `Open Integrations and choose “Connect Google Calendar”`,
+      `Sign in with Google and allow access`,
+      `That's it: ask your watch about your day`,
+    ],
+    points: calendarPoints,
+  },
+  {
+    id: "microsoft-calendar",
+    icon: "calendarCheck",
+    name: "Microsoft Outlook Calendar",
+    title: "Microsoft Outlook Calendar, by voice",
+    lead: "Works with Outlook.com, Hotmail and Microsoft 365 work or school accounts. Hear your agenda, find a free slot and add events to your Outlook calendar just by talking.",
+    say: [
+      "“What do I have on Monday?”",
+      "“Do I have anything at 3 today?”",
+      "“What's my first meeting tomorrow?”",
+      "“Put a call with the accountant on Wednesday at 10.”",
+      "“Cancel the event I added for Friday.”",
+    ],
+    connect: [
+      `Sign in to your olá account in any web browser`,
+      `Open Integrations and choose “Connect Microsoft Calendar”`,
+      `Sign in with your Microsoft account and allow access`,
+      `Done: your Outlook calendar is a question away`,
+    ],
+    points: calendarPoints,
+  },
+  {
+    id: "note-to-email",
+    icon: "mailSend",
+    name: "Note to Email",
+    title: "Note to Email: from your voice to your inbox",
+    lead: "Dictate a note on your watch, shape it line by line by voice, then send it to your email. Shopping lists, ideas, meeting notes and packing lists land in your inbox, ready to use or forward.",
+    say: [
+      "“Take a note: ideas for Mum's birthday.”",
+      "“Add oat milk to my shopping list.”",
+      "“Send my shopping list to my email.”",
+      "“Email me my packing list.”",
+    ],
+    connect: [
+      `Nothing to connect: it is included with every olá account`,
+      `Notes go to the email address of your olá account`,
+      `Send by voice, or with the send button on the note on your watch`,
+      `The watch tells you when the email has gone`,
+    ],
+    points: [
+      "Only to your own address: a note can't be sent to anyone else from the watch",
+      "Your notes are also in your olá account, where you can view and edit them",
+      `Works in all ${languageCount} languages`,
+    ],
+  },
+];
+
+const faq: Faq[] = [
+  {
+    q: "Does olácompanion work with Google Calendar?",
+    a: "Yes. Connect Google Calendar in your olá account, then ask your watch what's on, whether you're free, or to add an event. You can disconnect at any time.",
+  },
+  {
+    q: "Does olácompanion work with Outlook and Microsoft 365?",
+    a: "Yes. Microsoft Outlook calendars work with personal Microsoft accounts (Outlook.com, Hotmail, Live) and with Microsoft 365 work or school accounts, if your organisation allows it.",
+  },
+  {
+    q: "Can olá change or delete my existing calendar events?",
+    a: "No. olá reads your calendar to answer you, but it only creates, changes and deletes events that were created from your watch. Everything else in your calendar stays exactly as it is.",
+  },
+  {
+    q: "Is my calendar stored on olá's servers?",
+    a: `No. olá reads only what it needs to answer your question, when you ask it, and doesn't keep a copy of your calendar. See our <a href="/legal/privacy/">privacy policy</a>.`,
+  },
+  {
+    q: "Do I need a phone app to connect my calendar?",
+    a: `No. You connect it once in your <a href="${config.appUrl}">olá account</a> in any web browser. After that the watch works on its own over Wi-Fi.`,
+  },
+  {
+    q: "Can I connect both Google Calendar and Outlook?",
+    a: "Yes. Connect one or both; when you ask what's on, olá answers from the calendars you connected.",
+  },
+  {
+    q: "How do I send a note to my email?",
+    a: "Say “Send my shopping list to my email”, or open the note on your watch and tap the send button. The note goes to the email address of your olá account.",
+  },
+  {
+    q: "Which calendars aren't supported yet?",
+    a: "Apple iCloud Calendar and other calendars aren't supported yet. Google Calendar and Microsoft Outlook are.",
+  },
+];
+
+const description =
+  "Connect Google Calendar and Microsoft Outlook to olácompanion, the AI companion watch: check your agenda, find free time and add events by voice. Plus Note to Email: send any dictated note to your inbox.";
+
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": pageUrl,
+    url: pageUrl,
+    name: "Integrations: Google Calendar, Microsoft Outlook & Note to Email",
+    description,
+    inLanguage: "en-GB",
+    isPartOf: { "@id": new URL("/#website", site).href },
+    about: { "@id": new URL("/#product", site).href },
+    mainEntity: {
+      "@type": "ItemList",
+      itemListElement: integrations.map((i, n) => ({
+        "@type": "ListItem",
+        position: n + 1,
+        name: i.name,
+        description: i.lead,
+        url: `${pageUrl}#${i.id}`,
+      })),
+    },
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faq.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a.replace(/<[^>]+>/g, "") },
+    })),
+  },
+];
+---
+<Base
+  title="Integrations: Google Calendar, Outlook & Note to Email"
+  crumb="Integrations"
+  description={description}
+  jsonLd={jsonLd}
+>
+  <PageHero eyebrow="Integrations" title="Your calendar and inbox," gradient="one question away." fitEm={11.6}>
+    <p class="mt-5 max-w-2xl text-lg text-muted">
+      <Brand name="watch" /> works with <strong class="text-fg">Google Calendar</strong>, <strong class="text-fg">Microsoft Outlook Calendar</strong>
+      and your <strong class="text-fg">email</strong>. Ask about your day, add events and send notes to your inbox, just by talking to your watch.
+    </p>
+    <nav aria-label="Integrations on this page" class="mt-8">
+      <ul class="flex flex-wrap gap-3">
+        {integrations.map((i) => (
+          <li>
+            <a href={`#${i.id}`} class="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-sm font-semibold text-fg hover:border-accent hover:text-accent">
+              <Icon name={i.icon} size={18} class="text-accent" />{i.name}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </PageHero>
+
+  {integrations.map((i) => (
+    <section id={i.id} class="container-x mt-12 scroll-mt-24" aria-labelledby={`${i.id}-title`}>
+      <div class="glass p-6 sm:p-8">
+        <div class="flex items-start gap-4">
+          <span class="icon-tile shrink-0"><Icon name={i.icon} /></span>
+          <div>
+            <h2 id={`${i.id}-title`} class="text-2xl font-bold tracking-tight text-fg">{i.title}</h2>
+            <p class="mt-2 max-w-3xl text-muted">{i.lead}</p>
+          </div>
+        </div>
+        <div class="mt-6 grid gap-8 md:grid-cols-3">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-muted">Just say</h3>
+            <ul class="mt-3 space-y-2 text-sm text-fg">
+              {i.say.map((t) => <li class="flex gap-2"><Icon name="mic" size={16} class="mt-0.5 shrink-0 text-accent" />{t}</li>)}
+            </ul>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-muted">{i.id === "note-to-email" ? "How it works" : "How to connect"}</h3>
+            <ol class="mt-3 space-y-2 text-sm text-muted">
+              {i.connect.map((t, n) => (
+                <li class="flex gap-2"><span class="grid size-5 shrink-0 place-items-center rounded-full bg-accent/10 text-xs font-bold text-accent">{n + 1}</span>{t}</li>
+              ))}
+            </ol>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-muted">Your data</h3>
+            <ul class="mt-3 space-y-2 text-sm text-muted">
+              {i.points.map((t) => <li class="flex gap-2"><Icon name="check" size={16} class="mt-0.5 shrink-0 text-ok" />{t}</li>)}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  ))}
+
+  <section class="container-x mt-20" aria-labelledby="int-faq-title">
+    <SectionHeading id="int-faq-title" title="Integrations FAQ" subtitle="Google Calendar, Microsoft Outlook and Note to Email: the questions people ask." />
+    <div class="mt-8"><FaqList items={faq} /></div>
+  </section>
+
+  <section class="container-x mt-16 text-center">
+    <div class="flex flex-wrap justify-center gap-3">
+      <a href="/#buy" class="btn btn-primary">Buy now <Icon name="arrow" size={18} /></a>
+      <a href="/features/" class="btn btn-ghost">All features</a>
+    </div>
+    <p class="mx-auto mt-10 max-w-3xl text-xs text-muted">
+      Google Calendar is a trademark of Google LLC. Microsoft, Outlook and Microsoft 365 are trademarks of the Microsoft group of companies.
+      olácompanion is not affiliated with, endorsed or sponsored by Google or Microsoft.
+    </p>
+  </section>
+</Base>
