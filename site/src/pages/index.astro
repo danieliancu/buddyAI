@@ -77,10 +77,21 @@ const jsonLd = [
           <a href="/how-it-works/" class="btn btn-ghost-dark hidden text-base sm:inline-flex sm:min-w-48"><Icon name="play" size={20} class="text-[#8b7bff]" /> How It Works</a>
         </div>
       </div>
-      <div class="relative mx-auto w-fit max-sm:mx-0 max-sm:min-h-64 max-sm:w-full max-sm:flex-1 lg:-my-6 xl:-ml-28">
+      <div class="relative mx-auto w-fit max-sm:mx-0 max-sm:min-h-64 max-sm:w-full max-sm:flex-1 lg:-mt-6 lg:mb-8 xl:-ml-28">
         <!-- a violet glow behind the watch and its reflection on the "floor" -->
         <div class="pointer-events-none absolute left-1/2 top-1/2 -z-10 aspect-square w-[115%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(124,92,255,.42),rgba(47,107,255,.14)_55%,transparent)] blur-2xl max-sm:w-[95%]" aria-hidden="true"></div>
         <div class="pointer-events-none absolute bottom-[1%] left-1/2 -z-10 h-12 w-[78%] -translate-x-1/2 rounded-[50%] bg-[radial-gradient(closest-side,rgba(139,123,255,.45),transparent)] blur-md" aria-hidden="true"></div>
+        <!-- the watch mirrored under itself (not on phones: the watch fills the screen down to its bottom edge there). The flip also turns the mask, so "to top" fades downwards on screen. -->
+        <Image
+          src={heroWatch}
+          alt=""
+          widths={[360, 560, 760]}
+          sizes="(min-width: 1024px) 440px, 80vw"
+          loading="eager"
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 top-[94.5%] -z-10 w-full -scale-y-100 brightness-[1.8] max-sm:hidden"
+          style="-webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.6), transparent 15%); mask-image: linear-gradient(to top, rgba(0,0,0,.6), transparent 15%);"
+        />
         <Image
           src={heroWatch}
           alt="The olácompanion (illustration)"
