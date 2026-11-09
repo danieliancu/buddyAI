@@ -24,14 +24,17 @@ def run(ours_answer: str, hosted_answer: str = "17th in the 200m IM", category: 
     async def said():
         log.append(("said",))
 
-    hosted = fn(hosted_answer, "hosted", log)
-    if hosted_error:
-        async def hosted(*a, **kw):  # noqa: F811
-            log.append(("hosted", "boom"))
-            raise TimeoutError
+    async def failing_hosted(*a, **kw):
+        log.append(("hosted", "boom"))
+        raise TimeoutError
 
+    hosted = failing_hosted if hosted_error else fn(hosted_answer, "hosted", log)
     search = with_hosted_fallback(fn(ours_answer, "ours", log), hosted, said, skip)
-    out = asyncio.run(search("Patrick Iancu swimming Basildon results", "Chelmsford", "ro", category=category))
+
+    async def main():
+        return await search("Patrick Iancu swimming Basildon results", "Chelmsford", "ro", category=category)
+
+    out = asyncio.run(main())
     return out, [e[0] for e in log]
 
 

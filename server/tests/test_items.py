@@ -245,7 +245,7 @@ class FakeIO:
         self.sent.append((type_, fields))
         return True
 
-    async def send_audio(self, turn, packet):
+    async def send_audio(self, turn, opus_packet):
         return True
 
 

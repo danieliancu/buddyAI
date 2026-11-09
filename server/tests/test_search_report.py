@@ -14,7 +14,7 @@ from app.security import hash_device_token
 from tests.test_items import _account
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-import search_report  # noqa: E402
+import search_report  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 NOW = datetime.now(timezone.utc)
 
@@ -41,6 +41,7 @@ def test_report_tells_the_searches_apart_and_costs_them() -> None:
         db.add(conv)
         db.commit()
         db.refresh(conv)
+        assert conv.id is not None
         cid = conv.id
     since = NOW - timedelta(hours=1)
     old, new = since - timedelta(days=1), since + timedelta(minutes=5)

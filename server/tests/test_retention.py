@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlmodel import select
 
@@ -18,6 +19,13 @@ from app.security import hash_device_token
 from tests.test_items import _account
 
 NOW = datetime.now(timezone.utc)
+
+
+def _run(policy: RetentionPolicy) -> dict[str, Any]:
+    """Rows deleted per step (None only when another instance holds the lock, which a test run never has)."""
+    out = run_retention_once(policy)
+    assert out is not None
+    return out
 
 
 def test_defaults_equal_the_previous_behaviour() -> None:
@@ -91,6 +99,7 @@ def _history(acc: int, age_days: float) -> tuple[str, int, int, int]:
         db.add(usage)
         db.add(mem)
         db.commit()
+        assert turn.id is not None and usage.id is not None and mem.id is not None
         return dev, turn.id, usage.id, mem.id
 
 
@@ -105,13 +114,14 @@ def test_conversations_older_than_the_period_are_deleted_usage_and_memories_kept
     acc = _account()
     dev_old, old_turn, usage_id, mem_id = _history(acc, 40)
     _dev_new, new_turn, _u, _m = _history(acc, 5)
-    out = run_retention_once(RetentionPolicy(conversation_days=30))
+    out = _run(RetentionPolicy(conversation_days=30))
     assert out["conversations"] >= 1
     assert not _exists(Turn, id=old_turn) and _exists(Turn, id=new_turn)
     assert not _exists(Conversation, device_id=dev_old)
     with session_scope() as db:
-        assert db.get(UsageRecord, usage_id).turn_id is None  # accounting kept, link removed
-        assert db.get(Memory, mem_id).source_turn_id is None
+        usage, memory = db.get(UsageRecord, usage_id), db.get(Memory, mem_id)
+        assert usage is not None and usage.turn_id is None  # accounting kept, link removed
+        assert memory is not None and memory.source_turn_id is None
 
 
 def _audit(age_days: float) -> int:
@@ -120,6 +130,7 @@ def _audit(age_days: float) -> int:
         db.add(row)
         db.commit()
         db.refresh(row)
+        assert row.id is not None
         return row.id
 
 
@@ -138,9 +149,9 @@ def test_running_twice_is_idempotent() -> None:
     _cache_row(10)
     policy = RetentionPolicy(conversation_days=30)
     _history(acc, 60)
-    first = run_retention_once(policy)
+    first = _run(policy)
     assert first["voice_operations"] >= 1 and first["search_cache"] >= 1 and first["conversations"] >= 1
-    second = run_retention_once(policy)
+    second = _run(policy)
     assert second == {"voice_operations": 0, "search_cache": 0, "conversations": 0, "audit_log": 0, "deletion_events": 0, "email_outbox": 0}
 
 
@@ -153,7 +164,7 @@ def test_a_failing_step_does_not_stop_the_others(monkeypatch) -> None:
         raise RuntimeError("database hiccup")
 
     monkeypatch.setattr(retention, "prune_voice_ops", boom)
-    out = run_retention_once(RetentionPolicy())
+    out = _run(RetentionPolicy())
     assert out["voice_operations"] is None
     assert out["search_cache"] >= 1 and not _exists(SearchCache, key=gone)
     assert _exists(VoiceOperation, op_key=old)  # the failed step changed nothing
