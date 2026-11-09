@@ -68,7 +68,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Does it ask before deleting?",
-        a: "Yes, in a normal conversation: olá asks you to confirm, and deletes only after a clear yes. If you are already on a note's or reminder's own screen and ask to change it, the change — including removing a line — is applied straight away, and you can undo the last change. Deleting from the watch's Delete button needs two taps.",
+        a: "Yes, in a normal conversation: olá asks you to confirm, and deletes only after a clear yes. If you are already on a note's or reminder's own screen and ask to change it, the change — including removing a line — is applied straight away, and you can undo the last change. A reminder's Delete button on the watch needs two taps.",
       },
       {
         q: "Can you give some examples?",

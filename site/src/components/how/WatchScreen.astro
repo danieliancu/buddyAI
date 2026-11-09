@@ -9,6 +9,7 @@ import logo from "../../assets/how/watch-logo.png";
 import "@fontsource/noto-sans/500.css";
 import "@fontsource/noto-sans/700.css";
 import "./watch-screen.css";
+import { TEXT_TOOLS } from "./fa";
 
 const g = (cp: number) => String.fromCodePoint(cp);
 const I = {
@@ -64,7 +65,7 @@ const marks = Array.from({ length: 12 }, (_, i) => {
 
       <!-- conversation -->
       <section class="ws-view" data-view="chat" aria-label="Conversation">
-        <div class="ch-title">Olá!</div>
+        <Fragment set:html={TEXT_TOOLS} />
         <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
         <div class="ch-list" data-chat></div>
         <div class="ch-ring"></div>
@@ -75,9 +76,11 @@ const marks = Array.from({ length: 12 }, (_, i) => {
       <!-- notes / reminders: lists and details are rendered by the script -->
       <section class="ws-view" data-view="notes" aria-label="Notes">
         <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+        <Fragment set:html={TEXT_TOOLS} />
         <div class="ls-body" data-list="notes"></div>
       </section>
       <section class="ws-view" data-view="note" aria-label="Note">
+        <Fragment set:html={TEXT_TOOLS} />
         <div class="dt-head" data-note-head>Note #1</div>
         <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:notes">{I.close}</div>
         <div class="dt-body" data-note-body></div>
@@ -85,9 +88,11 @@ const marks = Array.from({ length: 12 }, (_, i) => {
       </section>
       <section class="ws-view" data-view="reminders" aria-label="Reminders">
         <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="home">{I.close}</div>
+        <Fragment set:html={TEXT_TOOLS} />
         <div class="ls-body" data-list="reminders"></div>
       </section>
       <section class="ws-view" data-view="reminder" aria-label="Reminder">
+        <Fragment set:html={TEXT_TOOLS} />
         <div class="dt-head" data-rem-head>Reminder #1</div>
         <div class="ws-x fa" role="button" tabindex="0" aria-label="Close" data-act="back:reminders">{I.close}</div>
         <div class="dt-body" data-rem-body></div>

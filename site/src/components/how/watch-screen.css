@@ -421,16 +421,34 @@
 }
 
 /* ---- chat ------------------------------------------------------------------------------------------------ */
-.ch-title {
+/* Aa and the speaker, top left of the text screens */
+.ws-tools {
   position: absolute;
-  left: 36px;
-  top: 20px;
-  width: 260px;
+  left: 22px;
+  top: 2px;
+  height: 72px;
+  display: flex;
   font-size: 28px;
   color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  z-index: 5;
+}
+.ws-aa {
+  position: relative;
+  width: 72px;
+}
+.ws-aa span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(calc(-50% - 8px), -50%);
+}
+.ws-aa span + span {
+  transform: translate(calc(-50% + 22px), calc(-50% - 1px));
+}
+.ws-spk {
+  width: 64px;
+  display: grid;
+  place-items: center;
 }
 .ch-list {
   position: absolute;
@@ -751,10 +769,10 @@
 .ls-body {
   position: absolute;
   left: 20px;
-  top: 0;
+  top: 84px;
   width: 370px;
-  height: 502px;
-  padding: 64px 0 20px;
+  height: 418px;
+  padding: 0 0 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -790,6 +808,36 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
+}
+/* a note row's badge is its Send by email button (the rest of the row opens the note) */
+.ls-badge[data-act]:active {
+  transform: scale(0.9);
+}
+/* the Send by email envelope (note rows and the note's bar) */
+.wd-mail {
+  width: 30px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* a short line over whatever screen is on, gone after a few seconds (ui_items.c toast) */
+.ws-toast {
+  position: absolute;
+  left: 50%;
+  top: 78px;
+  transform: translateX(-50%);
+  max-width: 340px;
+  width: max-content;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #2fbf71;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  z-index: 30;
 }
 .ls-bar {
   width: 4px;
@@ -856,11 +904,12 @@
 }
 
 /* ---- note / reminder detail ----------------------------------------------------------------------------- */
+/* the title sits between Aa / speaker and the X: centred in that gap, not on the screen */
 .dt-head {
   position: absolute;
-  left: 30px;
+  left: 162px;
   top: 12px;
-  width: 350px;
+  width: 150px;
   height: 48px;
   display: grid;
   place-items: center;
@@ -972,7 +1021,6 @@
   border-width: 3px;
   font-size: 34px;
 }
-.dt-btn.armed,
 .dt-btn.mic.rec {
   background: #e5534b;
   color: #fff;

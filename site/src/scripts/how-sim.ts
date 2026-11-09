@@ -1,6 +1,7 @@
 /* The "How it works" watch simulator: drives the HTML copy of the watch UI (components/how/WatchScreen.astro)
  * from the tabs and steps (components/how/tabs.ts), and lets people use it directly: tap the screen, swipe,
  * press the side buttons. Everything is scripted; nothing is sent anywhere. */
+import { MAIL_SVG } from "../components/how/fa";
 
 type View =
   | "watchface" | "chat" | "notes" | "note" | "reminders" | "reminder" | "settings"
@@ -45,6 +46,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 const fa = (glyph: string, cls = "") => el("span", `fa ${cls}`.trim(), glyph);
+function mailIcon() {
+  const t = document.createElement("template");
+  t.innerHTML = MAIL_SVG;
+  return t.content.firstElementChild!;
+}
 const dayDate = (offset: number) => new Date(Date.now() + offset * 86400000);
 const longDate = (d: Date) => `${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -271,14 +277,21 @@ function setup(root: HTMLElement) {
     const sorted = [...s.notes].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.n - b.n);
     sorted.forEach((n) => {
       const row = el("div", "ls-row");
-      if (n.pinned) row.style.setProperty("--c", "#2fbf71");   // pinned: a green pin, as on the watch
+      if (n.pinned) row.style.setProperty("--c", "#2fbf71");   // pinned: green, as on the watch
       row.dataset.act = `note:${n.n}`;
       row.setAttribute("role", "button");
       row.tabIndex = 0;
       const text = el("div", "ls-text");
       text.append(n.title);
       text.append(el("span", "ls-meta", n.lines.join(", ")));
-      row.append(badge(n.pinned ? FA.pin : FA.pen), el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
+      // the badge is the Send by email button (ui_items.c send_badge)
+      const send = el("div", "ls-badge");
+      send.append(mailIcon());
+      send.dataset.act = `note-send:${n.n}`;
+      send.setAttribute("role", "button");
+      send.setAttribute("aria-label", `Send ${n.title} by email`);
+      send.tabIndex = 0;
+      row.append(send, el("div", "ls-bar"), text, fa(FA.right, "ls-chev"));
       body.append(row);
     });
   }
@@ -313,20 +326,30 @@ function setup(root: HTMLElement) {
     body.replaceChildren(card);
     if (flash >= 0 || live) body.scrollTop = body.scrollHeight;
     const bar = q("[data-note-bar]");
-    const del = el("div", "dt-btn", "");
-    del.append(fa(FA.trash));
-    del.dataset.act = "note-del";
+    const send = el("div", "dt-btn");
+    send.append(mailIcon());
+    send.dataset.act = `note-send:${n.n}`;
     const mic = el("div", "dt-btn mic");
     mic.append(fa(FA.mic));
     mic.dataset.act = "note-mic";
     const pin = el("div", `dt-btn${n.pinned ? " pinned" : ""}`);
     pin.append(fa(FA.pin));
     pin.dataset.act = "note-pin";
-    [del, mic, pin].forEach((b) => (b.setAttribute("role", "button"), (b.tabIndex = 0)));
-    del.setAttribute("aria-label", "Delete note");
+    [send, mic, pin].forEach((b) => (b.setAttribute("role", "button"), (b.tabIndex = 0)));
+    send.setAttribute("aria-label", "Send by email");
     mic.setAttribute("aria-label", "Edit by voice");
     pin.setAttribute("aria-label", "Pin note");
-    bar.replaceChildren(del, mic, pin);
+    bar.replaceChildren(send, mic, pin);
+  }
+  const toastEl = el("div", "ws-toast");
+  toastEl.hidden = true;
+  screen.append(toastEl);
+  let toastTimer = 0;
+  function toast(text: string) {
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2500);
   }
   const noteMic = (on: boolean) => q("[data-note-bar] .mic").classList.toggle("rec", on);
 
@@ -756,17 +779,18 @@ function setup(root: HTMLElement) {
       await wait(900);
       n.pinned = !n.pinned;
       renderNote();
-      await wait(1200);
-      highlight("[data-note-bar] [data-act=note-del]");
-      await wait(700);
-      armDelete();
-      await wait(3000);
-      renderNote();
     },
     "notes:email": async () => {
       ensureOn();
       chat.replaceChildren();
       await turn("Send my shopping list to my email", "Done, your shopping list is in your email.");
+      await wait(1200);
+      show("notes");
+      await wait(600);
+      highlight(`[data-act="note-send:${s.notes.some((n) => n.n === 4) ? 4 : 2}"]`);
+      await wait(900);
+      clearHighlights();
+      toast("Sent to your email");
     },
     "rem:dictate": async () => {
       ensureOn();
@@ -983,14 +1007,6 @@ function setup(root: HTMLElement) {
     },
   };
 
-  function armDelete() {
-    const del = root.querySelector<HTMLElement>("[data-view=note] [data-act=note-del]");
-    if (!del) return;
-    del.classList.add("armed");
-    const live = el("div", "dt-live bad", "Tap again to delete");
-    q("[data-note-body] .dt-card").append(live);
-  }
-
   // ---- direct use of the simulated watch ---------------------------------------------------------------
   const DIRECT: Record<string, (arg?: string) => void> = {
     talk: () => void run(talk),
@@ -1006,21 +1022,7 @@ function setup(root: HTMLElement) {
     note: (n) => void run(async () => ((s.note = Number(n)), show("note"))),
     rem: (n) => void run(async () => ((s.rem = Number(n)), show("reminder"))),
     "note-pin": () => void run(async () => ((curNote().pinned = !curNote().pinned), renderNote())),
-    "note-del": () => {
-      const armed = root.querySelector("[data-act=note-del].armed");
-      if (armed) {
-        void run(async () => {
-          s.notes = s.notes.filter((n) => n.n !== s.note);
-          badges();
-          show("notes");
-        });
-      } else
-        void run(async () => {
-          armDelete();
-          await wait(3000);
-          renderNote();
-        });
-    },
+    "note-send": () => toast("Sent to your email"),
     "note-mic": () => {
       const rec = root.querySelector("[data-note-bar] .mic.rec");
       void run(async () => {

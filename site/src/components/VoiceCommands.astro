@@ -3,7 +3,7 @@
  * Choosing a command shows what the watch shows for it: the spoken sentence as a chat bubble, then the
  * result. Without JavaScript the first result stays on screen. */
 import WatchDemo from "./WatchDemo.astro";
-import { FA } from "./how/fa";
+import { TEXT_TOOLS, FA, MAIL_SVG } from "./how/fa";
 
 type Screen =
   | { kind: "rem"; date: string; time: string; text: string; notify?: number; flash?: "time" }
@@ -104,7 +104,7 @@ const examples: Example[] = [
 >
   <!-- the conversation: what the user says, before the result -->
   <section class="ws-view" data-view="chat">
-    <div class="ch-title">Olá!</div>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="ws-x fa">{FA.close}</div>
     <div class="ch-list"><div class="ch-b me vx-said" data-vx-said>{examples[0].said}</div></div>
     <div class="ch-ring"></div>
@@ -118,6 +118,7 @@ const examples: Example[] = [
       <section class:list={["ws-view", i === 0 && "is-on"]} data-view={`r${i}`}>
         {s.kind === "rem" && (
           <>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="dt-head">Reminder</div>
             <div class="ws-x fa">{FA.close}</div>
             <div class="dt-body">
@@ -150,6 +151,7 @@ const examples: Example[] = [
         )}
         {s.kind === "note" && (
           <>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="dt-head">Note</div>
             <div class="ws-x fa">{FA.close}</div>
             <div class="dt-body">
@@ -165,7 +167,7 @@ const examples: Example[] = [
               </div>
             </div>
             <div class="dt-bar">
-              <div class="dt-btn"><span class="fa">{FA.trash}</span></div>
+              <div class="dt-btn" set:html={MAIL_SVG} />
               <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
               <div class="dt-btn"><span class="fa">{FA.pin}</span></div>
             </div>
@@ -174,6 +176,7 @@ const examples: Example[] = [
         {s.kind === "day" && (
           <>
             <div class="ws-x fa">{FA.close}</div>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="ls-body">
               <div class="ls-day"><b>{s.day}</b></div>
               {s.rows.map((r) => (
@@ -190,10 +193,11 @@ const examples: Example[] = [
         {s.kind === "notes" && (
           <>
             <div class="ws-x fa">{FA.close}</div>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="ls-body">
               {s.rows.map((r) => (
                 <div class:list={["ls-row", r.flash && "vx-new"]}>
-                  <div class="ls-badge"><span class="fa">{FA.pen}</span></div>
+                  <div class="ls-badge" set:html={MAIL_SVG} />
                   <div class="ls-bar"></div>
                   <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
                   <span class="fa ls-chev">{FA.right}</span>
@@ -204,7 +208,7 @@ const examples: Example[] = [
         )}
         {s.kind === "ask" && (
           <>
-            <div class="ch-title">Olá!</div>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="ws-x fa">{FA.close}</div>
             <div class="ch-list">
               <div class="ch-b me">{ex.said}</div>
@@ -216,7 +220,7 @@ const examples: Example[] = [
         )}
         {s.kind === "reply" && (
           <>
-            <div class="ch-title">Olá!</div>
+            <Fragment set:html={TEXT_TOOLS} />
             <div class="ws-x fa">{FA.close}</div>
             <div class="ch-list">
               <div class="ch-b me">{ex.said}</div>

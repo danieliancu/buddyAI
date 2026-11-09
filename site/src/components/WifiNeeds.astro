@@ -4,7 +4,7 @@
  * icon is red (as on the watch with no Wi-Fi) on the offline screens and in the theme colour when connected.
  * Example screens only. Without JavaScript the first screen stays on. */
 import WatchDemo, { type DemoGroup } from "./WatchDemo.astro";
-import { FA } from "./how/fa";
+import { TEXT_TOOLS, FA, MAIL_SVG } from "./how/fa";
 import wave from "../assets/how/wave.png";
 
 const groups: DemoGroup[] = [
@@ -81,12 +81,13 @@ const notes = [
 
   <!-- 1. offline: the notes already on the watch -->
   <section class="ws-view" data-view="r1">
-    <span class="fa wd-net wd-off">{FA.wifi}</span>
+    <span class="fa wd-net wd-off wd-tools">{FA.wifi}</span>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="ws-x fa">{FA.close}</div>
     <div class="ls-body">
       {notes.map((r) => (
         <div class="ls-row" style={r.pinned ? "--c:#2fbf71" : undefined}>
-          <div class="ls-badge"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+          <div class="ls-badge" set:html={MAIL_SVG} />
           <div class="ls-bar"></div>
           <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
           <span class="fa ls-chev">{FA.right}</span>
@@ -97,8 +98,8 @@ const notes = [
 
   <!-- 2. online: a conversation with a live answer -->
   <section class="ws-view" data-view="r2">
-    <span class="fa wd-net">{FA.wifi}</span>
-    <div class="ch-title wd-title">Olá!</div>
+    <span class="fa wd-net wd-tools">{FA.wifi}</span>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="ws-x fa">{FA.close}</div>
     <div class="ch-list">
       <div class="ch-b me">Will it rain in London this afternoon?</div>
@@ -109,7 +110,7 @@ const notes = [
 
   <!-- 3. online: a reminder alert, sent by the server -->
   <section class="ws-view" data-view="r3">
-    <span class="fa wd-net">{FA.wifi}</span>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="dt-head">Reminder</div>
     <div class="ws-x fa">{FA.close}</div>
     <div class="dt-body">
@@ -141,7 +142,7 @@ const notes = [
 
   <!-- 4. online: a note opened in full -->
   <section class="ws-view" data-view="r4">
-    <span class="fa wd-net">{FA.wifi}</span>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="dt-head">Note</div>
     <div class="ws-x fa">{FA.close}</div>
     <div class="dt-body">
@@ -157,7 +158,7 @@ const notes = [
       </div>
     </div>
     <div class="dt-bar">
-      <div class="dt-btn"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+      <div class="dt-btn" set:html={MAIL_SVG} />
       <div class="dt-btn mic"><span class="fa">{FA.mic}</span></div>
       <div class="dt-btn"><span class="fa">{FA.pin}</span></div>
     </div>
@@ -165,12 +166,13 @@ const notes = [
 
   <!-- 5. online: a note added in the olá account arrives on the watch -->
   <section class="ws-view" data-view="r5">
-    <span class="fa wd-net">{FA.wifi}</span>
+    <span class="fa wd-net wd-tools">{FA.wifi}</span>
+    <Fragment set:html={TEXT_TOOLS} />
     <div class="ws-x fa">{FA.close}</div>
     <div class="ls-body">
       {[...notes, { title: "Gift ideas for Mum", meta: "Garden gloves, Tea set", isNew: true }].map((r) => (
         <div class:list={["ls-row", "isNew" in r && "wd-new"]} style={"pinned" in r ? "--c:#2fbf71" : undefined}>
-          <div class="ls-badge"><svg class="wd-mail" viewBox="0 0 32 24" aria-hidden="true"><rect x="1" y="1" width="30" height="22" rx="4" /><path d="M3 3l13 9.5L29 3" /></svg></div>
+          <div class="ls-badge" set:html={MAIL_SVG} />
           <div class="ls-bar"></div>
           <div class="ls-text">{r.title}<span class="ls-meta">{r.meta}</span></div>
           <span class="fa ls-chev">{FA.right}</span>
@@ -195,18 +197,9 @@ const notes = [
     color: #f44336;
     opacity: 0.7;
   }
-  .ch-title.wd-title {
-    left: 72px;
-  }
-  /* the Send by email envelope (note rows and the note's bar) */
-  .wd-mail {
-    width: 30px;
-    height: 23px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+  /* after Aa and the speaker */
+  .wd-net.wd-tools {
+    left: 166px;
   }
   /* the reminder's advance alert ("Starts in …"), in the theme colour */
   .wd-status {
