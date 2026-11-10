@@ -102,7 +102,9 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Do you use cookies or tracking?",
-        a: `This website uses no tracking cookies. ${config.plausibleDomain ? "We use cookieless, privacy-friendly analytics (Plausible) to count visits." : "If we add analytics, it will be cookieless."} See the <a href="/legal/cookies/">cookie notice</a>.`,
+        a: config.gtmId
+          ? `Only if you agree. This website asks before setting optional analytics and advertising cookies (Google), and works the same if you say no. You can change your choice at any time from “Cookie settings” at the bottom of every page. Your conversations, notes and account details are never used for advertising. See the <a href="/legal/cookies/">cookie notice</a>.`
+          : `This website uses no tracking cookies. ${config.plausibleDomain ? "We use cookieless, privacy-friendly analytics (Plausible) to count visits." : "If we add analytics, it will be cookieless."} See the <a href="/legal/cookies/">cookie notice</a>.`,
       },
     ],
   },

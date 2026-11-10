@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import CookieBanner from "../components/CookieBanner.astro";
 import { config, shipCountryCodes } from "../config";
 
 interface Props {
@@ -80,6 +81,37 @@ const allData = [...siteData, ...pageData];
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {config.gtmId && (
+      <script is:inline define:vars={{ gtmId: config.gtmId }}>
+        // Google Consent Mode v2: everything that sets tracking cookies starts denied. A choice saved by the
+        // cookie banner (localStorage "ola-consent": "granted" | "denied") is applied before GTM loads.
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        window.gtag = gtag;
+        var olaConsent = null;
+        try { olaConsent = localStorage.getItem("ola-consent"); } catch (e) {}
+        var olaState = olaConsent === "granted" ? "granted" : "denied";
+        gtag("consent", "default", {
+          ad_storage: olaState,
+          ad_user_data: olaState,
+          ad_personalization: olaState,
+          analytics_storage: olaState,
+          functionality_storage: "granted",
+          security_storage: "granted",
+          wait_for_update: 500,
+        });
+        gtag("set", "ads_data_redaction", true);
+        // Official GTM loader.
+        (function (w, d, s, l, i) {
+          w[l] = w[l] || [];
+          w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
+          var f = d.getElementsByTagName(s)[0], j = d.createElement(s), dl = l != "dataLayer" ? "&l=" + l : "";
+          j.async = true;
+          j.src = "https://www.googletagmanager.com/gtm.js?id=" + i + dl;
+          f.parentNode.insertBefore(j, f);
+        })(window, document, "script", "dataLayer", gtmId);
+      </script>
+    )}
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
@@ -135,5 +167,6 @@ const allData = [...siteData, ...pageData];
       <slot />
     </main>
     <Footer />
+    {config.gtmId && <CookieBanner />}
   </body>
 </html>

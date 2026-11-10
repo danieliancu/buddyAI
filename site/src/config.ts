@@ -67,6 +67,10 @@ export const config = {
   plausibleDomain: "",
   plausibleSrc: "https://plausible.io/js/script.js",
 
+  // Google Tag Manager container. Empty string = GTM off (no banner either). Runs under Google Consent Mode v2:
+  // analytics and advertising storage stay denied until the visitor accepts in the cookie banner (CookieBanner.astro).
+  gtmId: "GTM-K34ZWR45",
+
   // Optional newsletter form endpoint. Empty = the footer shows a "sales open soon" note
   // instead of an email field (nothing is collected).
   newsletterAction: "",
@@ -82,7 +86,7 @@ export function formatPrice(amount: number, currency: Currency): string {
 }
 
 /** Date of the last content update of the legal pages (set by hand when their text changes). */
-export const legalLastUpdated = "2026-10-31";
+export const legalLastUpdated = "2026-11-10";
 
 export function formatDate(iso: string): string {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });

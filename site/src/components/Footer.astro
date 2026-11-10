@@ -55,6 +55,9 @@ const cols = [
           {col.links.map((l) => (
             <li><a href={l.href} class="text-sm hover:text-white">{l.label}</a></li>
           ))}
+          {col.title === "Legal" && config.gtmId && (
+            <li><button type="button" data-cookie-settings class="text-left text-sm hover:text-white">Cookie settings</button></li>
+          )}
         </ul>
       </nav>
     ))}

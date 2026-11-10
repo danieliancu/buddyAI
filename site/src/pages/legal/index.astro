@@ -10,7 +10,9 @@ const policies = [
   { href: "/legal/returns/", title: "Returns & cancellation", text: "Your 14-day right to cancel, how to return the watch and how refunds work, with a model cancellation form." },
   { href: "/legal/warranty/", title: "Guarantee & warranty", text: "Your legal rights if the watch is faulty: your UK statutory rights." },
   { href: "/legal/privacy/", title: "Privacy notice", text: "What personal data we collect, why, who we share it with, and your rights." },
-  { href: "/legal/cookies/", title: "Cookie notice", text: "This website uses no tracking cookies. What is stored on your device, and why." },
+  { href: "/legal/cookies/", title: "Cookie notice", text: config.gtmId
+    ? "Optional analytics and advertising cookies, only with your consent. What is stored on your device, and why."
+    : "This website uses no tracking cookies. What is stored on your device, and why." },
 ];
 ---
 <Base

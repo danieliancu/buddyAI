@@ -68,7 +68,17 @@ import { privacyLine } from "../../data/features";
       <strong>Application logs</strong> — operational records our servers keep to run the service and protect it. We are
       working to remove personal content from them. Legal basis: legitimate interests (security and operations).
     </li>
-    <li><strong>Website analytics</strong> — {config.plausibleDomain ? "cookieless, aggregated statistics (Plausible); no personal profiles." : "none at present."} Legal basis: legitimate interests.</li>
+    {config.gtmId ? (
+      <li>
+        <strong>Website analytics and advert measurement</strong> — only if you accept optional cookies on our website:
+        how you use the site (pages visited, how you found us, device and browser type, approximate location from your IP
+        address) and whether you arrived from one of our adverts, collected through Google Tag Manager, Google Analytics
+        and Google Ads. Legal basis: consent, which you can withdraw at any time from "Cookie settings" at the bottom of
+        every page. See the <a href="/legal/cookies/">cookie notice</a>.
+      </li>
+    ) : (
+      <li><strong>Website analytics</strong> — {config.plausibleDomain ? "cookieless, aggregated statistics (Plausible); no personal profiles." : "none at present."} Legal basis: legitimate interests.</li>
+    )}
   </ul>
 
   <h2>3. Who we share it with</h2>
@@ -79,17 +89,23 @@ import { privacyLine } from "../../data/features";
     <li>Our email delivery provider — account and service emails.</li>
     <li>Our hosting provider — the servers that run olá.</li>
     <li>Delivery carriers — name, address and contact details needed to deliver your order.</li>
+    {config.gtmId && (
+      <li>Google — website analytics and advert measurement, only if you accept optional cookies on our website.</li>
+    )}
   </ul>
   <p>
     To answer web questions, the search question (or, for weather, the town) is also sent to independent search and
     data services: Brave Search, DuckDuckGo, Yahoo, MET Norway and OpenStreetMap (Nominatim). They receive it from our
     servers, not from your watch, and never with your name or account details.
   </p>
-  <p>We never sell your data and we don't use it for advertising.</p>
+  <p>
+    We never sell your data. Your conversations, memories, notes, reminders and account details are never used for
+    advertising.{config.gtmId && " If you accept optional cookies on our website, Google helps us measure our own adverts, as described above."}
+  </p>
 
   <h2>4. International transfers</h2>
   <p>
-    Some providers may process data outside the UK, for example OpenAI in the United States. Where your data is
+    Some providers may process data outside the UK, for example OpenAI{config.gtmId && " and Google"} in the United States. Where your data is
     transferred outside the UK, we use safeguards recognised under UK data protection law, such as the International
     Data Transfer Agreement or the UK Addendum to the EU Standard Contractual Clauses, or rely on UK adequacy
     regulations where they apply.
@@ -122,6 +138,9 @@ import { privacyLine } from "../../data/features";
       agreed.
     </li>
     <li><strong>Usage counts</strong> (how many interactions were used, without any content): as long as we need them for billing.</li>
+    {config.gtmId && (
+      <li><strong>Website analytics</strong> (only with your consent): at most 14 months in Google Analytics; cookie lifetimes are listed in the <a href="/legal/cookies/">cookie notice</a>.</li>
+    )}
   </ul>
 
   <h2>6. Deleting your account</h2>

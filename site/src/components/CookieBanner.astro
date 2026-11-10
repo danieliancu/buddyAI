@@ -1,0 +1,88 @@
+---
+/**
+ * Cookie consent banner for Google Tag Manager (Consent Mode v2, see Base.astro).
+ * Shown until the visitor chooses; "Accept" and "Reject" carry equal weight (ICO guidance).
+ * The choice is kept in localStorage ("ola-consent") and can be changed from any
+ * element with [data-cookie-settings] (the footer's "Cookie settings" link).
+ */
+---
+<div
+  id="cookie-banner"
+  role="dialog"
+  aria-modal="false"
+  aria-labelledby="cookie-banner-title"
+  aria-describedby="cookie-banner-text"
+  hidden
+  class="fixed inset-x-0 bottom-0 z-50 p-4 sm:p-6"
+>
+  <div class="mx-auto max-w-3xl rounded-2xl border border-[var(--border-strong)] bg-white p-5 shadow-[0_12px_40px_rgba(11,16,40,0.18)] sm:p-6">
+    <h2 id="cookie-banner-title" class="text-base font-bold text-fg">Cookies on olácompanion</h2>
+    <p id="cookie-banner-text" class="mt-2 text-sm text-muted">
+      We'd like to use optional analytics and advertising cookies (Google) to understand how the site is used and to
+      measure our ads. They are only set if you accept. You can change your mind at any time from “Cookie settings” at
+      the bottom of every page. <a class="link" href="/legal/cookies/">Cookie notice</a>
+    </p>
+    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+      <button type="button" class="btn btn-ghost" data-consent="denied">Reject all</button>
+      <button type="button" class="btn btn-ghost" data-consent="granted">Accept all</button>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  (function () {
+    var KEY = "ola-consent";
+    var banner = document.getElementById("cookie-banner");
+    if (!banner) return;
+
+    function read() {
+      try { return localStorage.getItem(KEY); } catch (e) { return null; }
+    }
+
+    // Remove Google analytics/ads cookies already set, when consent is withdrawn.
+    function clearGoogleCookies() {
+      var host = location.hostname;
+      var parts = host.split(".");
+      var domains = ["", host];
+      for (var i = 1; i < parts.length - 1; i++) domains.push("." + parts.slice(i).join("."));
+      document.cookie.split(";").forEach(function (c) {
+        var name = c.split("=")[0].trim();
+        if (!/^(_ga|_gid|_gat|_gcl|_fbp|_uet|IDE|_scid)/.test(name)) return;
+        domains.forEach(function (d) {
+          document.cookie = name + "=; Max-Age=0; path=/" + (d ? "; domain=" + d : "");
+        });
+      });
+    }
+
+    function apply(choice) {
+      var state = choice === "granted" ? "granted" : "denied";
+      try { localStorage.setItem(KEY, state); } catch (e) {}
+      if (typeof window.gtag === "function") {
+        window.gtag("consent", "update", {
+          ad_storage: state,
+          ad_user_data: state,
+          ad_personalization: state,
+          analytics_storage: state,
+        });
+        window.dataLayer.push({ event: "consent_update", consent: state });
+      }
+      if (state === "denied") clearGoogleCookies();
+      banner.hidden = true;
+    }
+
+    banner.querySelectorAll("[data-consent]").forEach(function (b) {
+      b.addEventListener("click", function () { apply(b.getAttribute("data-consent")); });
+    });
+
+    document.addEventListener("click", function (e) {
+      var t = e.target && e.target.closest ? e.target.closest("[data-cookie-settings]") : null;
+      if (!t) return;
+      e.preventDefault();
+      banner.hidden = false;
+      var first = banner.querySelector("[data-consent]");
+      if (first) first.focus();
+    });
+
+    if (!read()) banner.hidden = false;
+  })();
+</script>
