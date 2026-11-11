@@ -7,10 +7,12 @@ import { highlights } from "../data/features";
 <ul class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
   {highlights.map((f) => (
     <li class="text-center">
-      <a href={f.href} class="group block rounded-2xl p-5">
+      <a href={f.href} class="group block rounded-2xl px-1 py-5 sm:p-5 xl:px-2">
         <Icon name={f.icon} size={44} class="mx-auto block text-accent transition-transform group-hover:-translate-y-0.5 lg:text-[#8b7bff]" />
-        <h3 class="mt-4 text-sm font-bold text-fg group-hover:underline lg:text-white">{f.title}</h3>
-        <p class="mt-1.5 text-xs leading-relaxed text-muted lg:text-white/65">{f.text}</p>
+        <h3 class="mt-4 whitespace-nowrap text-sm font-bold text-fg group-hover:underline lg:text-white">{f.title}</h3>
+        <p class="mt-1.5 whitespace-nowrap text-xs leading-relaxed text-muted lg:text-white/65">
+          <span class="block">{f.text[0]}</span><span class="block">{f.text[1]}</span>
+        </p>
       </a>
     </li>
   ))}

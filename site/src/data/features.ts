@@ -2,7 +2,7 @@ import { languageCount, languageCountLabel } from "../lib/languages";
 
 export type IconName =
   | "mic" | "tap" | "globe" | "persona" | "palette" | "history" | "display" | "speaker" | "wifi" | "update"
-  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays" | "chat" | "calendar" | "calendarCheck" | "mailSend";
+  | "bell" | "note" | "search" | "lock" | "mail" | "tapRays" | "chat" | "calendar" | "calendarCheck" | "mailSend" | "clock";
 
 export interface Feature {
   icon: IconName;
@@ -92,11 +92,12 @@ export const privacyLine =
   "Your voice is processed securely by our AI partners (OpenAI) to answer you. We never sell your data, and you can delete your history anytime.";
 
 // The six cards under the home page hero (the integrations link to their section of /integrations/).
-export const highlights: { icon: IconName; title: string; text: string; href?: string }[] = [
-  { icon: "mic", title: "Voice Assistant", text: "Natural conversations, just tap and talk.", href: "/features/" },
-  { icon: "calendar", title: "Google Calendar", text: "Ask what's next and add events by voice.", href: "/integrations/#google-calendar" },
-  { icon: "calendarCheck", title: "Microsoft Calendar", text: "Your Outlook calendar, right on your wrist.", href: "/integrations/#microsoft-calendar" },
-  { icon: "mailSend", title: "Note to Email", text: "Dictate a note, then send it to your inbox.", href: "/integrations/#note-to-email" },
-  { icon: "bell", title: "Smart Reminders", text: "Time, place, people and early alerts.", href: "/features/" },
-  { icon: "search", title: "Live Answers", text: "Weather, news, opening hours and more.", href: "/features/" },
+// Each card: one title line and exactly two text lines (each line short enough for phone width).
+export const highlights: { icon: IconName; title: string; text: [string, string]; href?: string }[] = [
+  { icon: "mic", title: "Voice Assistant", text: ["Natural conversations,", "just tap and talk."], href: "/features/" },
+  { icon: "calendar", title: "Calendar", text: ["Works with Google", "and Outlook Calendar."], href: "/integrations/" },
+  { icon: "clock", title: "Long-term Memory", text: ["Remembers everything", "you talk about."], href: "/features/" },
+  { icon: "mailSend", title: "Note to Email", text: ["Dictate a note, then", "send it to your inbox."], href: "/integrations/#note-to-email" },
+  { icon: "bell", title: "Smart Reminders", text: ["Time, place, people", "and early alerts."], href: "/features/" },
+  { icon: "search", title: "Live Answers", text: ["Weather, news, opening", "hours and more."], href: "/features/" },
 ];
