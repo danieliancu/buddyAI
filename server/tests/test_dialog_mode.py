@@ -56,6 +56,13 @@ def test_the_rule_names_both_tags() -> None:
     assert "[[dialog:on]]" in DIALOG_RULE and "[[dialog:off]]" in DIALOG_RULE
 
 
+def test_the_rule_keeps_ordinary_talk_out() -> None:
+    # The looser rule turned dialog mode on for about 1 in 3 ordinary messages ("hai să vorbim", "let's talk",
+    # "Salut!"): only naming the setting may switch it on, and wanting to talk is an ordinary message.
+    for words in ("'dialog mode'", "'modul dialog'", "'let's talk'", "greetings", "When unsure, do not add it"):
+        assert words in DIALOG_RULE
+
+
 class Words(LLMProvider):
     name = "words"
 

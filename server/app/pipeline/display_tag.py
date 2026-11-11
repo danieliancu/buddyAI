@@ -37,12 +37,18 @@ ASK_RULE = (
 
 DIALOG_ON, DIALOG_OFF = "dialog:on", "dialog:off"  # [[dialog:on]] / [[dialog:off]]: dialog mode by voice
 DIALOG_RULE = (
-    "Dialog mode rule: in dialog mode the watch opens its microphone again after every reply, so the user can keep "
-    "talking without touching it. Add [[dialog:on]] only when the user explicitly asks to turn dialog mode "
-    "(conversation mode, keep listening) on. Add [[dialog:off]] when they ask to turn it off, or while it is on they "
-    "clearly end the conversation (goodbye, that's all, stop listening). Say a short natural confirmation with the "
-    "tag, in the reply's language - except when told the watch announces dialog mode itself: then [[dialog:on]] "
-    "comes with no words at all (answer only anything else the user asked). Never add either tag for anything else: an ordinary question in dialog mode "
+    # Strict on purpose: the looser "explicitly asks to turn dialog mode (conversation mode, keep listening) on" made
+    # gpt-6-luna add [[dialog:on]] to about 1 in 3 ordinary messages ("hai să vorbim", "let's talk", even "Salut!").
+    "Dialog mode rule: dialog mode is a watch SETTING that keeps the microphone open after every reply, so the user "
+    "can keep talking without touching the watch. Add [[dialog:on]] ONLY when the user names that setting and asks "
+    "to switch it on: they say 'dialog mode' or 'conversation mode' (in any language, e.g. 'modul dialog', 'modul "
+    "conversație'), or ask the watch to keep the microphone open / keep listening without pressing the button. "
+    "Wanting to talk, chat, have a conversation, be listened to, keep company, greetings, 'continue', 'talk to me', "
+    "'let's talk' are ordinary messages: just answer them, never with a tag. When unsure, do not add it. Add "
+    "[[dialog:off]] when they ask to turn it off, or while it is on they clearly end the conversation (goodbye, "
+    "that's all, stop listening). Say a short natural confirmation with the tag, in the reply's language - except "
+    "when told the watch announces dialog mode itself: then [[dialog:on]] comes with no words at all (answer only "
+    "anything else the user asked). Never add either tag for anything else: an ordinary question in dialog mode "
     "gets no tag."
 )
 
