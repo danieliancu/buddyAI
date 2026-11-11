@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>olácompanion – in-box leaflet</title>
+<style>
+@font-face { font-family: "Inter"; src: url("assets/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Inter"; src: url("assets/inter-latin-ext-wght-normal.woff2") format("woff2"); font-weight: 100 900; unicode-range: U+0100-024F, U+1E00-1EFF; }
+@font-face { font-family: "Montserrat"; src: url("assets/montserrat-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+@page { size: A4; margin: 0; }
+:root {
+  --ink: #0f1533; --muted: #5b6378; --accent: #5b4cf0; --violet: #7c3aed; --blue: #2f6bff;
+  --bg2: #f4f6ff; --line: #e6e9f5; --dark: #0a0f1f; --lilac: #a5b4fc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #9aa0b4; }
+body { font-family: "Inter", sans-serif; color: var(--ink); font-size: 8.5pt; line-height: 1.38;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 210mm; height: 297mm; background: #fff; position: relative; overflow: hidden; margin: 0 auto; page-break-after: always; }
+@media screen { .page { margin: 8mm auto; box-shadow: 0 2mm 8mm rgba(0,0,0,.25); } }
+h1, h2, h3 { font-family: "Montserrat", sans-serif; letter-spacing: -0.01em; }
+h2 { font-size: 13pt; font-weight: 800; margin-bottom: 2.5mm; }
+h2 .k { color: var(--accent); }
+h3 { font-size: 9pt; font-weight: 700; margin-bottom: 0.8mm; }
+.muted { color: var(--muted); }
+.todo { background: #ffe94d; color: #000; font-weight: 700; padding: 0 1mm; border-radius: 0.6mm; white-space: nowrap; }
+svg.i { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- side 1 ---------- */
+.hero { height: 118mm; background: radial-gradient(120mm 90mm at 78% 42%, #2a2f8f 0%, rgba(42,47,143,0) 70%), linear-gradient(160deg, #0b1028 0%, #0a0f1f 60%, #111a44 100%); color: #fff; padding: 12mm 12mm 0 12mm; position: relative; overflow: hidden; }
+.logo { display: flex; align-items: center; gap: 2.2mm; }
+.logo .word { font-family: "Montserrat", sans-serif; font-weight: 800; font-size: 17pt; letter-spacing: -0.02em; }
+.logo .word .c { color: var(--lilac); }
+.hero h1 { margin-top: 14mm; font-size: 27pt; line-height: 1.05; font-weight: 800; max-width: 100mm; }
+.hero h1 .g { background: linear-gradient(90deg, #8b7bff, #4ea3ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero .lead { margin-top: 5mm; font-size: 10.5pt; line-height: 1.45; color: #c9cdf0; max-width: 92mm; }
+.hero .tag { margin-top: 7mm; display: flex; gap: 1.6mm; flex-wrap: nowrap; position: relative; z-index: 1; }
+.pill { border: 0.3mm solid rgba(165,180,252,.45); background: rgba(10,15,31,.55); color: #dfe3ff; border-radius: 10mm; padding: 1mm 2.6mm; font-size: 7.6pt; font-weight: 600; white-space: nowrap; }
+.hero img { position: absolute; right: -6mm; top: 10mm; width: 108mm; filter: drop-shadow(0 4mm 8mm rgba(0,0,0,.5)); }
+
+.feat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm 6mm; padding: 9mm 12mm 0; }
+.feat .f { display: flex; gap: 3mm; align-items: flex-start; }
+.feat .ic { flex: 0 0 9mm; height: 9mm; border-radius: 2.5mm; background: var(--bg2); color: var(--accent); padding: 1.8mm; }
+.feat p { font-size: 8pt; color: var(--muted); }
+
+.row { display: grid; gap: 6mm; padding: 0 12mm; }
+.start { margin-top: 8mm; grid-template-columns: 1fr 44mm; }
+.steps { counter-reset: s; list-style: none; display: grid; gap: 2.4mm; }
+.steps li { counter-increment: s; position: relative; padding-left: 9mm; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: -0.3mm; width: 6mm; height: 6mm; border-radius: 50%; background: linear-gradient(135deg, #5b4cf0, #6d5cff); color: #fff; font-weight: 800; font-family: "Montserrat"; font-size: 8.5pt; display: grid; place-items: center; }
+.steps b { font-weight: 700; }
+.qr { background: var(--bg2); border-radius: 4mm; padding: 4mm; text-align: center; align-self: start; }
+.qr img { width: 30mm; height: 30mm; display: block; margin: 0 auto 2mm; background: #fff; padding: 2mm; border-radius: 1.5mm; }
+.qr b { display: block; font-size: 8.5pt; }
+.qr span { font-size: 7.5pt; color: var(--muted); }
+
+.boxes { margin-top: 7mm; grid-template-columns: 1fr 1fr; }
+.card { border: 0.3mm solid var(--line); border-radius: 4mm; padding: 4mm 5mm; }
+.card ul { list-style: none; display: grid; gap: 1.2mm; }
+.card li { padding-left: 4.5mm; position: relative; }
+.card li::before { content: ""; position: absolute; left: 0; top: 1.5mm; width: 1.6mm; height: 1.6mm; border-radius: 50%; background: var(--accent); }
+
+.privacy { margin-top: 6mm; grid-template-columns: 8mm 1fr; gap: 3mm; align-items: center; font-size: 8pt; color: var(--muted); }
+.privacy b { color: var(--ink); }
+.pv-ic { width: 8mm; height: 8mm; color: var(--accent); }
+.foot1 { position: absolute; left: 0; right: 0; bottom: 0; height: 15mm; background: var(--bg2); display: flex; align-items: center; justify-content: space-between; padding: 0 12mm; font-size: 8pt; }
+.foot1 b { color: var(--accent); }
+
+/* ---------- side 2 ---------- */
+.p2 { padding: 11mm 12mm 0; }
+.top2 { display: flex; justify-content: space-between; align-items: center; padding-bottom: 3.5mm; border-bottom: 0.3mm solid var(--line); margin-bottom: 5mm; }
+.top2 .logo .word { color: var(--ink); font-size: 13pt; }
+.top2 .logo .word .c { color: var(--accent); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; }
+.use { display: grid; grid-template-columns: 1fr; gap: 1.6mm; }
+.use .u { display: flex; gap: 2.5mm; }
+.use .ic { flex: 0 0 6mm; height: 6mm; color: var(--accent); }
+.spec { width: 100%; border-collapse: collapse; font-size: 8pt; }
+.spec td { padding: 1.1mm 0; border-bottom: 0.25mm solid var(--line); vertical-align: top; }
+.spec td:first-child { color: var(--muted); width: 27mm; padding-right: 2mm; }
+.note { font-size: 7.5pt; color: var(--muted); margin-top: 1.5mm; }
+.care { margin-top: 5mm; border-radius: 4mm; padding: 4mm 5mm; background: linear-gradient(135deg, #5b4cf0, #7c3aed); color: #fff; }
+.care h3 { color: #fff; font-size: 10pt; }
+.care p { font-size: 8pt; color: #e8e6ff; }
+.rights { margin-top: 5mm; border: 0.4mm solid var(--accent); border-radius: 4mm; padding: 4.5mm 5mm; }
+.rights .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 2mm 0 3mm; }
+.rights .n { font-family: "Montserrat"; font-weight: 800; font-size: 15pt; color: var(--accent); line-height: 1; }
+.rights .grid p { font-size: 7.8pt; margin-top: 1mm; }
+.rights .small { font-size: 7.8pt; }
+.rights .two { display: grid; grid-template-columns: 1.6fr 1fr; gap: 5mm; margin-top: 2.5mm; padding-top: 2.5mm; border-top: 0.25mm solid var(--line); }
+.safety { margin-top: 5mm; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3mm 6mm; font-size: 7.5pt; }
+.safety .todo { white-space: normal; }
+.marks svg { flex: 0 0 8mm; }
+.safety h3 { font-size: 8.5pt; }
+.marks { display: flex; gap: 3mm; align-items: center; margin-top: 1.5mm; }
+.marks svg { width: 9mm; height: 11mm; }
+.legal { position: absolute; left: 0; right: 0; bottom: 0; background: var(--dark); color: #b9bed6; font-size: 7.5pt; padding: 4.5mm 12mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; line-height: 1.6; }
+.legal .r { text-align: right; }
+.legal b { color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- ===================== SIDE 1 ===================== -->
+<section class="page">
+  <div class="hero">
+    <div class="logo">
+      <svg width="30" height="30" viewBox="0 0 32 32"><defs><linearGradient id="lg1" x1="0" x2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#4ea3ff"/></linearGradient></defs><g stroke="url(#lg1)" stroke-width="3.2" stroke-linecap="round"><path d="M4 13v6M10 9v14M16 5v22M22 9v14M28 13v6"/></g></svg>
+      <span class="word">olá<span class="c">companion</span></span>
+    </div>
+    <h1>Your AI Companion &amp; <span class="g">Personal Assistant</span></h1>
+    <p class="lead">Tap the mic and just talk. olá answers out loud, remembers what matters to you, and takes care of reminders, notes and your calendar, right on your wrist.</p>
+    <div class="tag"><span class="pill">No app to install</span><span class="pill">31 languages + Auto</span><span class="pill">Free updates over Wi-Fi</span></div>
+    <img src="assets/hero-watch.png" alt="">
+  </div>
+
+  <div class="feat">
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/><path d="M8 21h8"/></svg></div><div><h3>Voice Assistant</h3><p>Natural conversations: just tap and talk.</p></div></div>
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M7.5 14h.01M12 14h.01M16.5 14h.01M7.5 17.5h.01M12 17.5h.01"/></svg></div><div><h3>Calendar</h3><p>Works with Google Calendar and Outlook Calendar.</p></div></div>
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><h3>Long-term Memory</h3><p>Remembers what you talk about together.</p></div></div>
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8"/><path d="M3 7l9 6 9-6"/><path d="M16 19h6"/><path d="M19 16l3 3-3 3"/></svg></div><div><h3>Note to Email</h3><p>Dictate a note, then send it to your inbox.</p></div></div>
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></div><div><h3>Smart Reminders</h3><p>Time, place, people and early alerts.</p></div></div>
+    <div class="f"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></div><div><h3>Live Answers</h3><p>Weather, news, opening hours and more.</p></div></div>
+  </div>
+
+  <div class="row start">
+    <div>
+      <h2>Get started <span class="k">in about 5 minutes</span></h2>
+      <ol class="steps">
+        <li><b>Charge and turn on.</b> Hold the bottom button for about a second. A new watch opens on its Wi-Fi setup screen.</li>
+        <li><b>Open your olá account</b> on your phone at <b>app.olacompanion.com</b> (scan the code) and sign up or sign in.</li>
+        <li><b>Connect the watch to Wi-Fi.</b> Android: tap “Connect to watch” in Chrome and type the password the watch shows. iPhone: scan the code on the watch with the Camera, choose your home Wi-Fi (2.4 GHz) and tap Save.</li>
+        <li><b>Pair.</b> The watch restarts and shows a 6-digit code. Enter it in your account under Add watch within 5 minutes.</li>
+        <li><b>Say hello.</b> Press the top button, or tap the big mic, and just speak.</li>
+      </ol>
+    </div>
+    <div class="qr">
+      <img src="assets/qr-app.svg" alt="QR code: app.olacompanion.com">
+      <b>app.olacompanion.com</b>
+      <span>Scan to set up your watch</span>
+    </div>
+  </div>
+
+  <div class="row boxes">
+    <div class="card">
+      <h3>In the box</h3>
+      <ul>
+        <li>olácompanion watch with strap</li>
+        <li><span class="todo">[TO COMPLETE: charging cable type]</span></li>
+        <li>This leaflet</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What you need</h3>
+      <ul>
+        <li>2.4 GHz Wi-Fi with internet access</li>
+        <li>A phone or computer for setup</li>
+        <li>olácare subscription after the free 30-day trial</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="row privacy">
+    <div class="pv-ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+    <p><b>Your privacy.</b> Your voice is processed securely by our AI partner (OpenAI) to answer you. We never sell your data. You can search, export or delete your history, and switch memory off, in your olá account at any time.</p>
+  </div>
+
+  <div class="foot1">
+    <span>Help and guides: <b>olacompanion.com/how-it-works</b></span>
+    <span>Support: <b>ola@olacompanion.com</b></span>
+  </div>
+</section>
+
+<!-- ===================== SIDE 2 ===================== -->
+<section class="page">
+  <div class="p2">
+    <div class="top2">
+      <div class="logo">
+        <svg width="22" height="22" viewBox="0 0 32 32"><defs><linearGradient id="lg2" x1="0" x2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#4ea3ff"/></linearGradient></defs><g stroke="url(#lg2)" stroke-width="3.2" stroke-linecap="round"><path d="M4 13v6M10 9v14M16 5v22M22 9v14M28 13v6"/></g></svg>
+        <span class="word">olá<span class="c">companion</span></span>
+      </div>
+      <span class="muted">Quick guide · Specifications · Your rights · Safety</span>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h2>Using <span class="k">olá</span></h2>
+        <div class="use">
+          <div class="u"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/></svg></div><div><h3>Talk</h3>Tap the big mic or press the top button and speak. No wake word.</div></div>
+          <div class="u"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10"/><path d="M12 9.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.2a6 6 0 0 1-4.6-2.2L3.6 15.6a1.6 1.6 0 0 1 2.3-2.2L9 16"/></svg></div><div><h3>Interrupt</h3>Tap again while olá is speaking to cut in.</div></div>
+          <div class="u"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg></div><div><h3>Dialog mode</h3>Hold the mic for 2 seconds: the mic reopens after every reply. A tap ends it.</div></div>
+          <div class="u"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></div><div><h3>Wake and power</h3>Press the bottom button to wake the screen. Hold it for 2 seconds to turn off.</div></div>
+          <div class="u"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div><div><h3>Make it yours</h3>Tap the gear for theme, brightness, volume and language. Persona, voice and history are in your olá account.</div></div>
+        </div>
+      </div>
+      <div>
+        <h2>Specifications</h2>
+        <table class="spec">
+          <tr><td>Display</td><td>AMOLED touch screen, 410 × 502 px</td></tr>
+          <tr><td>Processor</td><td>ESP32-S3 · 8 MB PSRAM · 32 MB flash</td></tr>
+          <tr><td>Audio</td><td>2 microphones, built-in speaker</td></tr>
+          <tr><td>Connectivity</td><td>Wi-Fi 2.4 GHz; Bluetooth LE for setup only</td></tr>
+          <tr><td>Battery</td><td>Li-polymer 320 mAh, 3.7 V</td></tr>
+          <tr><td>Battery life</td><td><span class="todo">[TO COMPLETE: measured]</span></td></tr>
+          <tr><td>Charging</td><td><span class="todo">[TO COMPLETE: connector, time]</span></td></tr>
+          <tr><td>Size / weight</td><td><span class="todo">[TO COMPLETE]</span></td></tr>
+          <tr><td>Water resistance</td><td><span class="todo">[TO COMPLETE]</span></td></tr>
+          <tr><td>Languages</td><td>31, plus Auto</td></tr>
+        </table>
+        <p class="note">No GPS, no SIM or calls, and no health tracking.</p>
+      </div>
+    </div>
+
+    <div class="care">
+      <h3>olácare subscription</h3>
+      <p>Your first 30 days are free, starting when you pair the watch. Then £7.99 a month, renewing monthly: unlimited AI conversations, history, personas and updates. Cancel anytime in your account (Account › Manage billing). Without an active subscription the assistant does not answer; your notes and reminders stay in your account.</p>
+    </div>
+
+    <div class="rights">
+      <h2>Your rights &amp; <span class="k">warranty</span></h2>
+      <p class="small">Under the Consumer Rights Act 2015 your watch must be of satisfactory quality, fit for purpose and as described. If it isn't:</p>
+      <div class="grid">
+        <div><div class="n">30 days</div><p>Reject it for a full refund.</p></div>
+        <div><div class="n">6 months</div><p>We repair or replace it. If that fails, a refund or price reduction.</p></div>
+        <div><div class="n">6 years</div><p>You can claim for up to 6 years (5 in Scotland).</p></div>
+      </div>
+      <p class="small"><b>How to claim:</b> email ola@olacompanion.com with your order number and a short description. We cover the cost of returning a faulty watch. Not covered: normal wear and tear, accidental damage, misuse or unauthorised repair. We do not offer an extra commercial warranty; nothing here limits your legal rights.</p>
+      <div class="two">
+        <p class="small"><b>Changed your mind?</b> You can cancel within 14 days after the day you receive the watch, without giving a reason: email us with your order number, then send the watch back within 14 days. Unless it is faulty, you pay the cost of returning it. Cancelling the watch also cancels olácare.</p>
+        <p class="small"><b>Security updates</b> are provided for at least 2 years from the date you buy the watch. Full terms: <b>olacompanion.com/legal</b></p>
+      </div>
+    </div>
+
+    <div class="safety">
+      <div>
+        <h3>Battery and charging</h3>
+        <p>Contains a lithium-polymer battery. Do not open, puncture, crush or heat the watch, or leave it in direct sun or a hot car. Charge only with the supplied cable and a compliant USB power adapter. Stop using it if it swells, gets hot or smells.</p>
+      </div>
+      <div>
+        <h3>Good to know</h3>
+        <p>Water: <span class="todo">[TO COMPLETE]</span>. For adults (18+). olá's answers are generated by AI and can be wrong: do not rely on them for medical, legal, financial or emergency decisions.</p>
+      </div>
+      <div>
+        <h3>Recycling</h3>
+        <div class="marks">
+          <svg viewBox="0 0 36 44" fill="none" stroke="#0f1533" stroke-width="2"><path d="M8 10h20l-2 26H10z"/><path d="M5 10h26"/><path d="M14 6h8v4"/><circle cx="12" cy="38" r="2"/><circle cx="24" cy="38" r="2"/><path d="M3 4l30 36M33 4L3 40"/><path d="M4 43h28" stroke-width="3"/></svg>
+          <p>Do not put the watch or its battery in household waste. Take it to an electrical recycling point.</p>
+        </div>
+      </div>
+      <div>
+        <h3>Conformity</h3>
+        <p><span class="todo">[TO COMPLETE: UKCA / CE marks + Declaration of Conformity link]</span></p>
+      </div>
+      <div>
+        <h3>Looking after your watch</h3>
+        <p>Clean the screen and strap with a soft, dry cloth. Keep it away from magnets, solvents and extreme heat or cold. Updates arrive over Wi-Fi.</p>
+      </div>
+      <div>
+        <h3>Need help?</h3>
+        <p>Guides and answers at <b>olacompanion.com/faq</b>, or email <b>ola@olacompanion.com</b>. We reply within <span class="todo">[TO COMPLETE]</span>.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="legal">
+    <span><b>Ola Technologies London Ltd</b><br>Registered office: <span class="todo">[TO COMPLETE]</span> · Company no. <span class="todo">[TO COMPLETE]</span></span>
+    <span class="r"><b>olacompanion.com</b> · ola@olacompanion.com<br>Leaflet v2 · November 2026</span>
+  </div>
+</section>
+<script>
+  // Preview helper: ?page=N shows only that side, edge to edge (used by render.ps1 for the PNG previews).
+  const n = new URLSearchParams(location.search).get("page");
+  if (n) {
+    document.querySelectorAll(".page").forEach((p, i) => { p.style.display = i + 1 == n ? "" : "none"; p.style.margin = "0"; p.style.boxShadow = "none"; });
+  }
+</script>
+</body>
+</html>
