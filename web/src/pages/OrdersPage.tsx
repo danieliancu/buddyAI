@@ -78,6 +78,11 @@ export default function OrdersPage() {
                   <td>{o.country ?? "—"}</td>
                   <td className="tabular text-right">
                     {fmtMinor(o.amount_total, o.currency)}
+                    {o.amount_discount > 0 && (
+                      <span className="block text-xs text-muted">
+                        {o.discount_code || "Discount"} −{fmtMinor(o.amount_discount, o.currency)}
+                      </span>
+                    )}
                     {o.amount_refunded > 0 && <span className="block text-xs text-muted">{fmtMinor(o.amount_refunded, o.currency)} refunded</span>}
                   </td>
                   <td>

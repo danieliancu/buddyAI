@@ -77,6 +77,8 @@ class Order(SQLModel, table=True):
     amount_total: int  # minor units (pence / cents), including tax and shipping
     amount_tax: int = 0
     amount_shipping: int = 0
+    amount_discount: int = 0  # minor units taken off by a discount code (amount_total is after it)
+    discount_code: str = Field(default="", max_length=40)  # the promotion code typed at Checkout, e.g. "VIP"
     # paid | shipped | delivered | partial_refund | refunded | cancelled | payment_pending | payment_failed
     status: str = Field(default="paid", max_length=16)
     amount_refunded: int = 0  # minor units, Stripe's running total for the charge (stays after a later "shipped")

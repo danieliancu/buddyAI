@@ -254,6 +254,20 @@ Since migration 0025, the shop sells the **watch alone** and starts ola Care whe
 
   Consent rows are billing records: account deletion keeps them, as it keeps orders.
 
+### Discount codes (Admin → Discount codes)
+
+- The watch sells at its Stripe price (£119). A **discount code** lowers it at Checkout, e.g. **VIP** → £79.99.
+  Checkout already has `allow_promotion_codes`, so Stripe shows the code field; the site never mentions codes.
+- Each code is a Stripe **coupon** (`amount_off` = watch price − the price with the code, `currency=gbp`,
+  `duration=once`, `applies_to.products` = the watch product, so it can never touch ola Care) plus a **promotion
+  code** with the text the buyer types. `app/discounts.py` creates them; `GET/POST/PATCH /api/billing/discounts`
+  (list for every operator, changes for admins only, audited as `discount.create` / `.activate` / `.deactivate`).
+- Stripe is the source of truth: the list, uses (`times_redeemed`), limits and on/off state are read from Stripe.
+  Switching a code off makes Checkout refuse it; existing orders keep their price.
+- The order keeps `amount_discount` and `discount_code` (from the session's `total_details` and `discounts`),
+  shown in Admin → Orders. `amount_total` and the revenue are what was paid, after the discount.
+- The ola Care trial (30 days from pairing) and the £7.99 monthly price are not affected by any code.
+
 ### 2. Payment → order (webhooks only, never the redirect)
 
 | Event (session with `kind=watch`) | Effect |
@@ -420,7 +434,7 @@ Gross contribution comes **before** hardware, hosting, payment fees, support and
   - `invoice.paid`, `invoice.payment_failed`, `invoice.upcoming` (needs "Upcoming renewal events" on in the Stripe dashboard)
   - `charge.refunded`
   - `charge.dispute.created`, `.updated`, `.closed`, `.funds_withdrawn`, `.funds_reinstated`
-- [ ] Create the **watch price at £79.99** (one-off, tax-inclusive) and the Care price (£7.99/month), both in test mode first.
+- [ ] Create the **watch price at £119** (one-off, tax-inclusive) and the Care price (£7.99/month), both in test mode first.
 - [ ] Have the ola Care consent wording and the subscription terms reviewed (UK subscription-contract rules). The site shows no "was" price; add one only for a price the watch was genuinely sold at.
 - [ ] **Price check, in test mode and again after going live:** the same Care amount (£7.99) on the site, in the customer account and the operator plan settings, in the consent text, on Stripe Checkout and in the trial emails. The amount charged comes from `BUDDYAI_STRIPE_PRICE_CARE_GBP`; `billing_settings.care_price_pence` is display only and changing it never touches an existing subscription.
 - [ ] Stripe Tax and VAT registration. The extra-usage price is VAT-inclusive (`tax_behavior=inclusive`).

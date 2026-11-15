@@ -101,7 +101,8 @@ the watch is paired to the customer's account.
 
 1. **Account:** create it, then complete your business details and bank account.
 2. **Products** (Product catalogue):
-   - **"ola Watch"**: a *one-off* price in GBP (**£79.99**). The launch market is Great Britain, so no EUR price is
+   - **"ola Watch"**: a *one-off* price in GBP (**£119**). Lower prices for chosen buyers are discount codes
+     (Admin → Discount codes, e.g. VIP → £79.99), never a second watch price. The launch market is Great Britain, so no EUR price is
      needed yet (leave the `_EUR` ids empty).
    - **"ola Care"**: a *recurring monthly* price in GBP (£7.99). The server reads its
      amount to write the consent text, and adds the trial (`BUDDYAI_CARE_TRIAL_DAYS`) when the watch is paired.
@@ -109,8 +110,9 @@ the watch is paired to the customer's account.
      `BUDDYAI_STRIPE_PRICE_CARE_GBP/EUR`).
 3. **Tax:** enable Stripe Tax if you are VAT-registered and add the UK registration (the site says the company is not VAT-registered; keep them in step).
    Mark prices as tax-inclusive or exclusive, consistently with the website.
-4. **Shipping:** create shipping rates (e.g. "UK standard", "EU standard") in GBP and EUR and put
-   their `shr_…` ids in `.env`.
+4. **Shipping:** delivery is **free** (owner's decision, 15 Nov 2026): leave `BUDDYAI_STRIPE_SHIPPING_RATES_GBP`
+   empty, so Checkout has no delivery line. To charge for delivery later, create a shipping rate (`shr_…`), put its id
+   there, and change the site's delivery texts (`site/src/config.ts` `shipping`) at the same time.
 5. **Checkout settings:**
    - set your Terms of Service and Privacy Policy URLs (`https://www.<domain>/legal/...`);
      Checkout shows the ola Care terms next to the terms checkbox, so the ToS URL is required;
@@ -139,7 +141,8 @@ the watch is paired to the customer's account.
      saved card as default payment method.
 
    The full manual list is in `docs/SETUP_TEST_CHECKLIST.md`.
-10. Repeat with live keys when everything works.
+10. Repeat with live keys when everything works. Discount codes live in each Stripe mode separately: create
+    them again in **Admin → Discount codes** after switching to the live key (VIP: price with code £79.99).
 
 ### Stripe TEST MODE: local machine and a Coolify test environment
 

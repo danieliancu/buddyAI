@@ -347,6 +347,22 @@ def _account_for_session(db: Session, cs: dict[str, Any]) -> tuple[Account, bool
     return accounts.create(db, addr_email, None, details.get("name") or "", address.get("country")), True
 
 
+def _discount_code(cs: dict[str, Any]) -> str:
+    """The promotion code the buyer typed (e.g. "VIP"), for the operator's order list. The session names the
+    promotion code by id; one Stripe call reads its text. Never fails the order: "" when it cannot be read."""
+    discounts = cs.get("discounts") or []
+    promo = discounts[0].get("promotion_code") if discounts and isinstance(discounts[0], dict) else None
+    if isinstance(promo, dict):
+        return str(promo.get("code") or "")[:40]
+    if not promo:
+        return ""
+    try:
+        return str(stripe.PromotionCode.retrieve(promo, api_key=get_settings().stripe_secret_key)["code"] or "")[:40]
+    except Exception as exc:  # noqa: BLE001 - display only
+        log.warning("promotion code of session %s unreadable: %s", cs.get("id"), stripe_error_summary(exc))
+        return ""
+
+
 def _new_order(cs: dict[str, Any], account_id: int | None, status: str = "paid", flow: str | None = None) -> Order:
     addr_email, details, shipping, address = _session_parties(cs)
     totals = cs.get("total_details") or {}
@@ -359,6 +375,8 @@ def _new_order(cs: dict[str, Any], account_id: int | None, status: str = "paid",
         amount_total=int(cs.get("amount_total") or 0),
         amount_tax=int(totals.get("amount_tax") or 0),
         amount_shipping=int(totals.get("amount_shipping") or 0),
+        amount_discount=int(totals.get("amount_discount") or 0),
+        discount_code=_discount_code(cs) if int(totals.get("amount_discount") or 0) else "",
         shipping_name=shipping.get("name") or details.get("name") or "",
         shipping_address=address,
         country=address.get("country"),

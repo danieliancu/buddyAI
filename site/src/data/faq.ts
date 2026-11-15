@@ -113,7 +113,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
     items: [
       {
         q: "How much does it cost?",
-        a: `${priceLine} The price shown is the total price you pay; delivery costs are shown at checkout.`,
+        a: `${priceLine} The price shown is the total price you pay, delivery included: delivery within Great Britain is free.`,
       },
       {
         q: "Why is there a subscription?",

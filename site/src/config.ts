@@ -15,7 +15,7 @@ export type Currency = "GBP" | "EUR";
 // watch = what checkout charges (the Stripe watch price); watchWas = the regular price shown struck through
 // while the sale runs (set it equal to `watch`, or remove the line, when the sale ends). A "was" price must
 // be a price the watch was genuinely sold at (UK/EU price-reduction rules).
-const PRICE_GBP = { watch: 79.99, watchWas: null as number | null, care: 7.99 };
+const PRICE_GBP = { watch: 119, watchWas: null as number | null, care: 7.99 };
 
 // Review the rate now and then (it is fixed on purpose: Stripe charges fixed euro prices).
 export const GBP_TO_EUR = 1.17;
@@ -58,9 +58,11 @@ export const config = {
   // Returns: only claim free returns when this is true.
   freeReturns: false,
 
-  // Delivery: rates and times come from Stripe at checkout (BUDDYAI_STRIPE_SHIPPING_RATES_*), never from here.
+  // Delivery is free (owner's decision, 15 Nov 2026): no Stripe shipping rate (BUDDYAI_STRIPE_SHIPPING_RATES_GBP
+  // empty), so checkout has no delivery line. If a paid rate is added in Stripe, change these texts with it.
   shipping: {
-    note: "Delivery options, shipping costs and estimated delivery times are shown at checkout before you pay.",
+    free: true,
+    note: "Delivery within Great Britain is free.",
   },
 
   // Cookieless analytics (Plausible). Empty string = analytics off; set the site's domain to enable.

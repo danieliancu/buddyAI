@@ -8,6 +8,7 @@ import {
   Menu,
   MessagesSquare,
   Package,
+  TicketPercent,
   ScrollText,
   Server,
   ShieldCheck,
@@ -33,6 +34,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { to: "/admin/devices", label: "Devices", icon: Watch },
       { to: "/admin/customers", label: "Customers", icon: Users },
       { to: "/admin/orders", label: "Orders", icon: Package },
+      { to: "/admin/discounts", label: "Discount codes", icon: TicketPercent, adminOnly: true },
     ],
   },
   {

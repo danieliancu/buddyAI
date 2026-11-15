@@ -16,6 +16,7 @@ import FirmwarePage from "./pages/FirmwarePage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import OrdersPage from "./pages/OrdersPage";
+import DiscountsPage from "./pages/DiscountsPage";
 import AuditPage from "./pages/AuditPage";
 import SecurityCard from "./components/SecurityCard";
 import { safeNext } from "./pages/my/session";
@@ -129,6 +130,7 @@ export default function OperatorApp() {
                 }
               />
               <Route path="issues" element={<Navigate to="/admin/diagnostics" replace />} />
+              {admin && <Route path="discounts" element={<DiscountsPage />} />}
               {admin && <Route path="firmware" element={<FirmwarePage />} />}
               {admin && <Route path="system" element={<SystemPage />} />}
               {admin && <Route path="audit" element={<AuditPage />} />}

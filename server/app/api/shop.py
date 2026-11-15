@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 
 from datetime import datetime, timezone
 
-from app import accounts, billing, care_activation, care_terms, email, entitlements, plan as plan_mod
+from app import accounts, billing, care_activation, care_terms, discounts, email, entitlements, plan as plan_mod
 from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
@@ -287,6 +287,50 @@ async def update_order(order_id: int, body: OrderUpdate, request: Request, db: S
     if newly_shipped:
         await email.send(email.order_shipped(order.email, order.id, order.carrier, order.tracking_number))
     return _order_out(order)
+
+
+# --- operator: discount codes (Stripe coupons + promotion codes, app/discounts.py) -------------------------------
+
+
+@router.get("/api/billing/discounts", dependencies=[Depends(require_admin)])
+def list_discounts() -> dict:
+    try:
+        return discounts.list_codes()
+    except billing.BillingError as exc:
+        raise _http(exc) from exc
+
+
+class DiscountCreate(BaseModel):
+    code: str = Field(..., min_length=3, max_length=20)
+    final_price_pence: int = Field(..., ge=1)
+    max_redemptions: int | None = Field(None, ge=1)
+    expires_at: datetime | None = None
+
+
+@router.post("/api/billing/discounts")
+def create_discount(body: DiscountCreate, db: Session = Depends(get_session), user: str = Depends(require_admin_role)) -> dict:
+    try:
+        row = discounts.create_code(body.code, body.final_price_pence, body.max_redemptions, body.expires_at)
+    except billing.BillingError as exc:
+        raise _http(exc) from exc
+    accounts.audit(db, user, "discount.create",
+                   detail=f"{row['code']}: watch £{row['final_price_pence'] / 100:.2f} ({row['id']})")
+    return row
+
+
+class DiscountUpdate(BaseModel):
+    active: bool
+
+
+@router.patch("/api/billing/discounts/{promotion_code_id}")
+def update_discount(promotion_code_id: str, body: DiscountUpdate, db: Session = Depends(get_session),
+                    user: str = Depends(require_admin_role)) -> dict:
+    try:
+        row = discounts.set_active(promotion_code_id, body.active)
+    except billing.BillingError as exc:
+        raise _http(exc) from exc
+    accounts.audit(db, user, "discount.activate" if body.active else "discount.deactivate", detail=f"{row['code']} ({row['id']})")
+    return row
 
 
 # --- operator: plan settings + complimentary access -------------------------------------------------------

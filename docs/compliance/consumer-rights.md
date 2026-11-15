@@ -6,7 +6,7 @@ Prepared 12 October 2026 from the site, the web app and `server/app/billing.py`.
 
 | Area | Implementation | Evidence | Status |
 |---|---|---|---|
-| Watch price | £79.99 one-off; the "was" price was removed on 3 November 2026 because there is no evidence of a genuine sale at £99.99 | `site/src/config.ts` | IMPLEMENTED_NOT_VERIFIED in production |
+| Watch price | £119 one-off (from 15 November 2026); no "was" price is shown. Private discount codes (e.g. VIP → £79.99) are applied at checkout only and are not advertised as a reduction | `site/src/config.ts` | IMPLEMENTED_NOT_VERIFIED in production |
 | VAT | business **not VAT-registered**; "including VAT" wording removed | site pages | IMPLEMENTED_NOT_VERIFIED in production |
 | Delivery | costs shown at Stripe checkout; delivery within 30 days | terms-of-sale §2, §4 | IMPLEMENTED_NOT_VERIFIED |
 | Contract formation | on confirmation email | terms-of-sale §3 | IMPLEMENTED_NOT_VERIFIED |

@@ -206,6 +206,10 @@ export interface Order {
   amount_total: number;
   amount_tax: number;
   amount_shipping: number;
+  /** Taken off by a discount code, minor units (amount_total is after it). */
+  amount_discount: number;
+  /** The promotion code typed at Stripe Checkout (e.g. "VIP"), "" if none. */
+  discount_code: string;
   /** Refunded so far, minor units. */
   amount_refunded: number;
   status: OrderStatus;
@@ -1071,6 +1075,39 @@ const accountsApi = {
   revokeComplimentary: (id: number) => del<{ revoked: boolean }>(`/api/accounts/${id}/complimentary`),
 };
 
+// ---------- operator: discount codes (/api/billing/discounts, kept in Stripe) ----------
+
+export interface DiscountCode {
+  /** Stripe promotion code id (promo_…). */
+  id: string;
+  /** What the buyer types at checkout, e.g. "VIP". */
+  code: string;
+  active: boolean;
+  times_redeemed: number;
+  max_redemptions: number | null;
+  expires_at: string | null;
+  created_at: string | null;
+  amount_off_pence: number;
+  percent_off: number | null;
+  currency: string;
+  /** The watch price with this code. */
+  final_price_pence: number;
+  watch_price_pence: number;
+}
+
+export interface DiscountCreate {
+  code: string;
+  final_price_pence: number;
+  max_redemptions?: number | null;
+  expires_at?: string | null;
+}
+
+const discountsApi = {
+  list: () => get<{ watch_price_pence: number; codes: DiscountCode[] }>("/api/billing/discounts"),
+  create: (body: DiscountCreate) => post<DiscountCode>("/api/billing/discounts", body),
+  setActive: (id: string, active: boolean) => patch<DiscountCode>(`/api/billing/discounts/${encodeURIComponent(id)}`, { active }),
+};
+
 // ---------- operator: shop orders (/api/orders) ----------
 
 const ordersApi = {
@@ -1162,7 +1199,7 @@ const meApi = {
 };
 
 /** Operator endpoints at the top level, customer accounts under `api.accounts`, the customer API under `api.me`. */
-export const api = { ...operatorApi, accounts: accountsApi, orders: ordersApi, me: meApi };
+export const api = { ...operatorApi, accounts: accountsApi, orders: ordersApi, discounts: discountsApi, me: meApi };
 
 // ---------- ola Diagnostics (/api/incidents) ----------
 
