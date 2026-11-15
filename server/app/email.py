@@ -217,7 +217,7 @@ def welcome_set_password(to: str, link: str, days_valid: int = 7) -> Email:
 def order_confirmed(to: str, order_id: int, amount_minor: int, currency: str, care_terms: str | None = None) -> Email:
     care = (
         "\n\nola Care - what you agreed to at checkout:\n" + care_terms + "\n"
-        "Nothing has been charged for ola Care. The free trial starts when you pair your watch; we'll email you "
+        "Nothing has been charged for ola Care. The free trial starts only once you have received your watch and paired it; we'll email you "
         "the trial end date then, and again before the first payment."
         if care_terms else ""
     )
@@ -237,7 +237,7 @@ def order_confirmed(to: str, order_id: int, amount_minor: int, currency: str, ca
             ("ola Care, as agreed at checkout: " + care_terms + " " if care_terms else "")
             + "You can cancel the watch within 14 days of delivery for a full refund (your statutory right to cancel).",
             details=[("Order", f"#{order_id}"), ("Paid today", f"{_money(amount_minor, currency)} incl. VAT and shipping")]
-            + ([("ola Care", "Free trial starts when you pair your watch")] if care_terms else []),
+            + ([("ola Care", "Free trial starts once your watch has arrived and is paired")] if care_terms else []),
         ),
     )
 

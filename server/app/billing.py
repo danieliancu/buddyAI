@@ -132,7 +132,8 @@ def create_checkout(db: Session, currency: str, consent: SiteConsent, customer_e
         "cancel_url": f"{site}/#buy",
         "metadata": meta,
     }
-    submit_note = "You pay for the watch today. ola Care is not charged today: its free trial starts when you pair your watch."
+    submit_note = ("You pay for the watch today. ola Care is not charged today: its free trial starts only once you have "
+                   "received your watch and paired it to your ola account.")
     if s.stripe_tos_on:
         params["consent_collection"] = {"terms_of_service": "required"}  # needs the ToS URL in the Stripe dashboard
         params["custom_text"] = {"terms_of_service_acceptance": {"message": terms.text}, "submit": {"message": submit_note}}
@@ -343,6 +344,17 @@ def _account_for_session(db: Session, cs: dict[str, Any]) -> tuple[Account, bool
     addr_email, details, _shipping, address = _session_parties(cs)
     acc = accounts.by_email(db, addr_email) if addr_email else None
     if acc is not None:
+        if acc.email_verified_at is None and acc.password_hash is not None:
+            # Signed up but never proved the address: whoever chose that password may not own the email that just
+            # paid. Drop the password and every session; the payer gets the set-password link (which verifies the
+            # address) and is the only one who can get in.
+            acc.password_hash = None
+            acc.session_version += 1
+            db.add(acc)
+            db.commit()
+            db.refresh(acc)
+            accounts.audit(db, "system", "account.unverified_claimed_by_payment", acc.id,
+                           detail=f"checkout {cs.get('id')}: password cleared, set-password link sent")
         return acc, False
     return accounts.create(db, addr_email, None, details.get("name") or "", address.get("country")), True
 

@@ -6,7 +6,7 @@ the account (there is no phone-specific step).
 
 ## A. Purchase (Stripe test mode)
 
-- [ ] Site buy box: £119, with no struck-through "was" price and no "Sale" label; the ola Care sentence says the trial starts when the watch is paired and nothing is charged for it today.
+- [ ] Site buy box: £119, with no struck-through "was" price and no "Sale" label; the ola Care sentence says the trial starts only once the watch has been received and paired and nothing is charged for it today.
 - [ ] "Buy now" stays disabled until the ola Care terms box is ticked; the box shows the monthly price, trial length, start at pairing and how to cancel.
 - [ ] Stripe Checkout shows: the watch only (one-off), shipping, tax, the same ola Care terms by the Terms of Service checkbox, and the submit note ("ola Care is not charged today").
 - [ ] Discount code: in Admin → Discount codes create **VIP** at £79.99. At Checkout, "Add promotion code" → `VIP`: the watch shows £119 − £39.01 and the total is £79.99 + shipping. Admin → Orders shows "VIP −£39.01" on the order. Switch VIP off: Checkout refuses the code. Pairing still starts a 30-day olá Care trial at £7.99.
@@ -52,7 +52,7 @@ the account (there is no phone-specific step).
 
 ## E. Pairing → ola Care trial
 
-- [ ] Before pairing: the account shows "Free 30-day trial — starts when you pair your watch", and there is no subscription in Stripe.
+- [ ] Before pairing: the account shows "Free 30-day trial — starts once you have received your watch and paired it", and there is no subscription in Stripe.
 - [ ] Enter the 6-digit code. The watch is paired, and:
   - Stripe shows **one** `trialing` subscription on the card's customer, with the saved card as default payment method and metadata `activation_id`;
   - the account shows "Free trial until <date>, then £7.99 a month…";

@@ -96,7 +96,7 @@ export function CareDetails({ plan, onChange }: { plan: MyPlan; onChange: () => 
   if (care.status === "awaiting_pairing") {
     return (
       <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted" data-testid="care-awaiting">
-        Your {care.trial_days}-day free trial starts when your watch is paired — nothing is charged before it ends. Then {price} a
+        Your {care.trial_days}-day free trial starts only once you have received your watch and paired it — nothing is charged before it ends. Then {price} a
         month until you cancel.{" "}
         <Link to="/my/setup" className="font-medium text-accent hover:underline">
           Set up your watch

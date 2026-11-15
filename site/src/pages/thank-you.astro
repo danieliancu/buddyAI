@@ -5,7 +5,7 @@ import { config, prices } from "../config";
 
 // Shown only once the server confirms the payment (Stripe webhook): the full path to a working watch.
 const next = [
-  { icon: "mail" as const, title: "Set your password", text: "Open the email from olá and choose a password for your account (or sign in if you already have one)." },
+  { icon: "mail" as const, title: "Set your password", text: "Open the email from olá and choose a password for your account (or sign in if you already have one). Can't see it? Look in your spam or junk folder and mark it as not spam." },
   { icon: "truck" as const, title: "Wait for the watch", text: "We'll email you the tracking details when it ships." },
   { icon: "wifi" as const, title: "Choose your Wi-Fi on the watch", text: "Turn the watch on, tap your 2.4 GHz home network in the list and type its password on the watch." },
   { icon: "check" as const, title: "Type the code — you're on", text: `The watch shows a 6-digit code: type it in your olá account. Your free ${prices.trialDays}-day olácare trial starts then, not before.` },
@@ -22,7 +22,7 @@ const next = [
     </p>
     <noscript>
       <p class="mt-4 max-w-2xl text-lg text-muted">
-        We'll email you as soon as your payment is confirmed, with a link to set your account password.
+        We'll email you as soon as your payment is confirmed, with a link to set your account password. If it isn't in your inbox, check your spam or junk folder.
       </p>
     </noscript>
 
@@ -45,7 +45,7 @@ const next = [
       <a class="btn btn-ghost" href="/">Back to home</a>
     </div>
     <p class="mt-8 text-sm text-muted">
-      No email after a few minutes? Check your spam folder, or contact
+      No email after a few minutes? Check your spam or junk folder first, or contact
       <a class="link" href={`mailto:${config.supportEmail}`}>{config.supportEmail}</a>. You have a 14-day right to cancel
       after delivery — see <a class="link" href="/legal/returns/">returns &amp; cancellation</a>.
     </p>

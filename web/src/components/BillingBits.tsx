@@ -95,7 +95,7 @@ export function careSetupStatus(care: MyPlan["care_activation"]): { text: string
   if (!care) return null;
   switch (care.status) {
     case "awaiting_pairing":
-      return { text: `Free ${care.trial_days}-day trial — starts when you pair your watch`, tone: "accent", problem: false };
+      return { text: `Free ${care.trial_days}-day trial — starts once you have received your watch and paired it`, tone: "accent", problem: false };
     case "activating":
       return { text: "Starting your free trial…", tone: "accent", problem: false };
     case "failed":

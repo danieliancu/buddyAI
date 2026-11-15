@@ -121,7 +121,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "When does the free period start, and what happens after it?",
-        a: `Your free ${prices.trialDays}-day ${brandHtml("care")} trial starts when you pair your watch with your olá account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
+        a: `Your free ${prices.trialDays}-day ${brandHtml("care")} trial starts only once you have received your watch and paired it with your olá account — not when you buy it. At checkout you only pay for the watch and save your card for ${brandHtml("care")}. We email you when the trial starts and a few days before it ends. After that the subscription renews every month and your saved card is charged, until you cancel.`,
       },
       {
         q: "Is there a usage limit?",

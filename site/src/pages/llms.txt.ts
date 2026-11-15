@@ -29,7 +29,7 @@ export const GET: APIRoute = ({ site }) => {
 
 ## Price
 - olácompanion: ${formatPrice(prices.watch.GBP, "GBP")}, one-off. The price shown is the total price; delivery within Great Britain is free.
-- olácare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} a month after a free ${prices.trialDays}-day trial, which starts when the watch is paired (the card is saved at checkout; nothing is charged for olácare before the trial ends). Cancel anytime from the account ("Manage billing").
+- olácare (the subscription that powers the assistant): ${formatPrice(prices.care.GBP, "GBP")} a month after a free ${prices.trialDays}-day trial, which starts only once the watch has been received and paired (the card is saved at checkout; nothing is charged for olácare before the trial ends). Cancel anytime from the account ("Manage billing").
 - Unlimited AI interactions included with olácare, for all the account's watches; there is no usage limit and no extra usage to buy.
 - 14-day right to cancel; UK statutory rights.
 

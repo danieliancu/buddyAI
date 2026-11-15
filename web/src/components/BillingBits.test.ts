@@ -20,7 +20,7 @@ const care = (status: CareActivation["status"], error: string | null = null): Ca
 
 describe("olá Care status shown to the customer", () => {
   it("before pairing, while starting, and after a failure (never 'active')", () => {
-    expect(carePlanStatus(base({ kind: "none" }, care("awaiting_pairing"))).text).toBe("Free 30-day trial — starts when you pair your watch");
+    expect(carePlanStatus(base({ kind: "none" }, care("awaiting_pairing"))).text).toBe("Free 30-day trial — starts once you have received your watch and paired it");
     expect(carePlanStatus(base({ kind: "none" }, care("activating"))).text).toMatch(/Starting/);
     const failed = carePlanStatus(base({ kind: "none" }, care("failed", "card_error")));
     expect(failed.text).toBe("Subscription setup pending");

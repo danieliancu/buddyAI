@@ -66,8 +66,8 @@ def test_status_publishes_terms_with_price_trial_and_start_rule(client):
     assert st["open"] is True and st["trial_days"] == 30 and st["trial_starts"] == "on_pairing"
     t = st["care_terms"]["gbp"]
     assert t["amount_minor"] == 799 and t["interval"] == "month"
-    assert "£7.99 per month" in t["text"] and "30-day" in t["text"] and "when I pair my watch" in t["text"]
-    assert "unlimited AI interactions" in t["text"] and "1,000" not in t["text"] and t["version"] == "care-2026-13"
+    assert "£7.99 per month" in t["text"] and "30-day" in t["text"] and "once I have received my watch and paired it" in t["text"] and "(not today)" not in t["text"]
+    assert "unlimited AI interactions" in t["text"] and "1,000" not in t["text"] and t["version"] == "care-2026-14"
     assert "Nothing is charged for ola Care today" in t["text"]
 
 
@@ -320,3 +320,49 @@ def test_live_keys_ignore_the_local_switches(monkeypatch):
     monkeypatch.setattr(s, "stripe_require_tos", False)
     monkeypatch.setattr(s, "stripe_secret_key", "sk_live_x")
     assert s.stripe_tax_on and s.stripe_tos_on
+
+
+# --- an account that already exists for the payer's email ------------------------------------------------
+
+def _account_with_password(addr: str, verified: bool) -> int:
+    from app import accounts
+    from app.db.models import utcnow
+
+    with session_scope() as db:
+        acc = accounts.create(db, addr, "a-long-password-1", "", "GB")
+        if verified:
+            acc.email_verified_at = utcnow()
+            db.add(acc)
+            db.commit()
+        return acc.id
+
+
+async def test_unverified_account_loses_its_password_and_the_payer_gets_the_link(client, fake):
+    """Someone signed up with an email they may not own; the owner of that email pays. The stranger's password
+    and sessions go; only the set-password link sent to the payer opens the account."""
+    addr = _addr()
+    acc_id = _account_with_password(addr, verified=False)
+    with session_scope() as db:
+        before = db.get(Account, acc_id).session_version
+    cs_id = start_checkout(client, fake)
+    await _deliver(event("checkout.session.completed", session_obj(cs_id, addr, f"cus_{secrets.token_hex(4)}")))
+    with session_scope() as db:
+        acc = db.get(Account, acc_id)
+        assert acc.password_hash is None and acc.session_version == before + 1
+        assert db.exec(select(Order).where(Order.account_id == acc_id)).one().status == "paid"
+    welcome = [m for m in ConsoleEmailSender.sent if m.to == addr and "set your password" in m.subject]
+    assert len(welcome) == 1
+    assert client.get(f"/api/shop/checkout-status?session_id={cs_id}").json() == {"state": "paid", "needs_password": True}
+    assert client.post("/api/me/login", json={"email": addr, "password": "a-long-password-1"}).status_code != 200
+
+
+async def test_verified_account_keeps_its_password_and_gets_no_link(client, fake):
+    addr = _addr()
+    acc_id = _account_with_password(addr, verified=True)
+    cs_id = start_checkout(client, fake)
+    await _deliver(event("checkout.session.completed", session_obj(cs_id, addr, f"cus_{secrets.token_hex(4)}")))
+    with session_scope() as db:
+        assert db.get(Account, acc_id).password_hash is not None
+    assert not [m for m in ConsoleEmailSender.sent if m.to == addr and "set your password" in m.subject]
+    assert [m for m in ConsoleEmailSender.sent if m.to == addr and m.subject.startswith("Your ola order")]
+    assert client.get(f"/api/shop/checkout-status?session_id={cs_id}").json() == {"state": "paid", "needs_password": False}

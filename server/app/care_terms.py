@@ -21,7 +21,7 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
-CARE_TERMS_VERSION = "care-2026-13"  # 2026-13: unlimited AI interactions (2026-12 stated 1,000 a month)
+CARE_TERMS_VERSION = "care-2026-14"  # 2026-14: the trial starts once the watch has arrived and is paired (2026-13: "(not today)")
 
 _SYMBOL = {"gbp": "£", "eur": "€"}
 _cache: dict[str, tuple[float, "CarePrice"]] = {}
@@ -81,7 +81,7 @@ def render(price: CarePrice, trial_days: int) -> str:
     each = money(price.amount_minor, price.currency)
     return (
         f"I agree that Ola Technologies London Ltd may save my card and use it for ola Care: a free "
-        f"{trial_days}-day trial that starts when I pair my watch to my ola account (not today), then "
+        f"{trial_days}-day trial that starts only once I have received my watch and paired it to my ola account, then "
         f"{each} per {price.interval}, charged automatically every {price.interval} until I cancel. "
         "ola Care includes unlimited AI interactions for my watches. "
         "I can cancel anytime in my ola account; if I cancel before the trial ends I pay nothing for ola Care. "

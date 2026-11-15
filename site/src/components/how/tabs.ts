@@ -32,7 +32,7 @@ export const tabs = (trialDays: number): Tab[] => [
     steps: [
       {
         title: "Order and set your password",
-        text: `Pay with secure Stripe checkout. We create your olá account with your checkout email and send you a link to set its password. Your free ${trialDays}-day olácare trial starts only when you pair the watch.`,
+        text: `Pay with secure Stripe checkout. We create your olá account with your checkout email and send you a link to set its password. Your free ${trialDays}-day olácare trial starts only once you have received the watch and paired it.`,
         run: "off",
       },
       {
