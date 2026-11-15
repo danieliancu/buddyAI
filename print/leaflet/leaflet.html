@@ -53,6 +53,7 @@ svg.i { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-widt
 .qr img { width: 30mm; height: 30mm; display: block; margin: 0 auto 2mm; background: #fff; padding: 2mm; border-radius: 1.5mm; }
 .qr b { display: block; font-size: 8.5pt; }
 .qr span { font-size: 7.5pt; color: var(--muted); }
+.start .small { font-size: 7.8pt; color: var(--muted); margin-top: 2.4mm; }
 
 .boxes { margin-top: 7mm; grid-template-columns: 1fr 1fr; }
 .card { border: 0.3mm solid var(--line); border-radius: 4mm; padding: 4mm 5mm; }
@@ -125,19 +126,18 @@ svg.i { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-widt
 
   <div class="row start">
     <div>
-      <h2>Get started <span class="k">in about 5 minutes</span></h2>
+      <h2>Get started <span class="k">on Wi-Fi, you're on</span></h2>
       <ol class="steps">
-        <li><b>Charge and turn on.</b> Hold the bottom button for about a second. A new watch opens on its Wi-Fi setup screen.</li>
-        <li><b>Open your olá account</b> on your phone at <b>app.olacompanion.com</b> (scan the code) and sign up or sign in.</li>
-        <li><b>Connect the watch to Wi-Fi.</b> Android: tap “Connect to watch” in Chrome and type the password the watch shows. iPhone: scan the code on the watch with the Camera, choose your home Wi-Fi (2.4 GHz) and tap Save.</li>
-        <li><b>Pair.</b> The watch restarts and shows a 6-digit code. Enter it in your account under Add watch within 5 minutes.</li>
-        <li><b>Say hello.</b> Press the top button, or tap the big mic, and just speak.</li>
+        <li><b>On the watch: choose your Wi-Fi.</b> Charge it and hold the bottom button for about a second. The Wi-Fi screen opens: tap your home network (2.4 GHz) and type its password on the watch.</li>
+        <li><b>Type the 6-digit code.</b> The watch shows a code. Sign in at <b>app.olacompanion.com</b> (scan the code) on any phone or computer and type it in. A new code appears by itself every 5 minutes.</li>
+        <li><b>Done — you're on.</b> Press the top button, or tap the big mic, and just speak.</li>
       </ol>
+      <p class="small">Another network later: Settings › Wi-Fi setup on the watch. To start again, hold the top button for 8 seconds and confirm the reset.</p>
     </div>
     <div class="qr">
       <img src="assets/qr-app.svg" alt="QR code: app.olacompanion.com">
       <b>app.olacompanion.com</b>
-      <span>Scan to set up your watch</span>
+      <span>Scan to open your olá account</span>
     </div>
   </div>
 
@@ -154,7 +154,7 @@ svg.i { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-widt
       <h3>What you need</h3>
       <ul>
         <li>2.4 GHz Wi-Fi with internet access</li>
-        <li>A phone or computer for setup</li>
+        <li>A phone or computer to type the code</li>
         <li>olácare subscription after the free 30-day trial</li>
       </ul>
     </div>
@@ -199,7 +199,7 @@ svg.i { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-widt
           <tr><td>Display</td><td>AMOLED touch screen, 410 × 502 px</td></tr>
           <tr><td>Processor</td><td>ESP32-S3 · 8 MB PSRAM · 32 MB flash</td></tr>
           <tr><td>Audio</td><td>2 microphones, built-in speaker</td></tr>
-          <tr><td>Connectivity</td><td>Wi-Fi 2.4 GHz; Bluetooth LE for setup only</td></tr>
+          <tr><td>Connectivity</td><td>Wi-Fi 2.4 GHz</td></tr>
           <tr><td>Battery</td><td>Li-polymer 320 mAh, 3.7 V</td></tr>
           <tr><td>Battery life</td><td><span class="todo">[TO COMPLETE: measured]</span></td></tr>
           <tr><td>Charging</td><td><span class="todo">[TO COMPLETE: connector, time]</span></td></tr>

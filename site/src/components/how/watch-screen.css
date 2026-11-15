@@ -1220,17 +1220,6 @@
   opacity: 0.5;
   color: #fff;
 }
-.wl-phone {
-  margin-top: 14px;
-  height: 56px;
-  border-radius: 28px;
-  background: #252b36;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  cursor: pointer;
-  flex-shrink: 0;
-}
 .wp-field {
   position: absolute;
   left: 35px;
@@ -1315,7 +1304,7 @@
   text-transform: uppercase;
 }
 
-/* ---- message screens: pairing, Wi-Fi setup, power ----------------------------------------------------- */
+/* ---- message screens: pairing, power ----------------------------------------------------------------- */
 .ms {
   position: absolute;
   inset: 0;
@@ -1359,26 +1348,6 @@
   color: var(--a);
   line-height: 1;
 }
-.wi {
-  gap: 8px;
-  padding: 0 24px;
-}
-.wi-qr {
-  width: 168px;
-  height: 168px;
-  background: #fff;
-  padding: 6px;
-}
-.wi-pass {
-  font-size: 28px;
-  letter-spacing: 4px;
-  color: var(--a);
-}
-.wi-hint {
-  opacity: 0.7;
-  font-size: 18px;
-  line-height: 1.25;
-}
 
 /* ---- standby clock ------------------------------------------------------------------------------------- */
 .sb-face {
@@ -1397,22 +1366,4 @@
   .ws-hl {
     animation: none;
   }
-}
-
-/* highlighted Wi-Fi setup details (onboarding steps) */
-.wi-qr.ws-hl,
-.wi-pass.ws-hl,
-.wi-net.ws-hl {
-  border-radius: 8px;
-  outline-offset: 6px;
-}
-.wi-net.ws-hl {
-  outline-offset: 3px;
-}
-
-.wi-net {
-  color: #fff;
-}
-.wi-join[hidden] {
-  display: none;
 }

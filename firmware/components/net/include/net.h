@@ -2,8 +2,7 @@
  * ola - networking
  *
  *  - Wi-Fi station with automatic reconnect and exponential backoff; joins the best saved network in range
- *  - SoftAP "ola-XXXX" + captive portal (DNS hijack + HTTP form) for
- *    SSID / password (+ optional server_url in development builds)
+ *  - nearby networks for the watch's Wi-Fi screen (Wi-Fi is set up on the watch itself)
  *  - SNTP time sync (system clock; the app mirrors it to the RTC)
  *  - optional mDNS discovery of the server (_buddyai._tcp)
  */
@@ -21,8 +20,6 @@ extern "C" {
 typedef enum {
     NET_EVT_STA_CONNECTED,      /* got IP */
     NET_EVT_STA_DISCONNECTED,   /* lost link / IP (reconnect is automatic) */
-    NET_EVT_PORTAL_STARTED,
-    NET_EVT_PORTAL_SAVED,       /* new credentials stored - app should reboot */
     NET_EVT_TIME_SYNCED,        /* SNTP set the system clock */
 } net_event_t;
 
@@ -31,11 +28,9 @@ typedef void (*net_event_cb_t)(net_event_t ev, void *ctx);
 esp_err_t net_init(net_event_cb_t cb, void *ctx);
 
 /* ---- station ---- */
-/* One network (Bluetooth setup tries the credentials it received). */
-esp_err_t net_wifi_connect(const char *ssid, const char *pass);
-/* The saved networks (settings_get_wifi_list): joins the best one in range and, whenever the connection is
- * lost or an attempt fails, scans again and moves to another saved network if that one is gone.
- * ESP_ERR_NOT_FOUND if none is saved. */
+/* Starts the radio and joins the best saved network (settings_get_wifi_list) in range; whenever the connection
+ * is lost or an attempt fails, it scans again and moves to another saved network if that one is gone. With
+ * none saved the radio starts idle: the Wi-Fi screen scans and joins (net_wifi_join). */
 esp_err_t net_wifi_connect_saved(void);
 
 /* A network chosen on the watch's Wi-Fi screen: leaves the current one and joins it now. It is saved
@@ -55,9 +50,6 @@ bool             net_wifi_current_ssid(char out[33]);  /* the network the watch 
 bool      net_wifi_connected(void);
 int       net_wifi_rssi(void);              /* dBm, 0 if not connected */
 int       net_wifi_last_disconnect_reason(void);  /* wifi_err_reason_t of the last lost connection, 0 = none */
-/* wifi_err_reason_t of the last failed connection attempt since net_wifi_connect() (0 = none yet):
- * Bluetooth setup reports "wrong password" / "network not found" from it. */
-int       net_wifi_attempt_reason(void);
 /* Modem sleep while idle; disabled during a conversation turn for latency. */
 void      net_wifi_set_power_save(bool enable);
 /* Screen standby: the radio sleeps longer between beacons (CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL). */
@@ -65,15 +57,7 @@ void      net_wifi_set_standby(bool standby);
 /* Development builds only: leave the network and stay off for `seconds` (a lost Wi-Fi), then reconnect. */
 void      net_wifi_test_drop(int seconds);
 
-/* ---- provisioning portal ---- */
-/* The "ola-XXXX" setup network is WPA2-protected with `ap_pass` (the watch's setup password, 8..63
- * characters, shown on the watch). */
-esp_err_t   net_portal_start(const char *ap_pass);
-void        net_portal_stop(void);
-bool        net_portal_active(void);
-const char *net_portal_ssid(void);          /* "ola-XXXX" */
-
-/* Nearby networks seen by the portal's scan (also offered over Bluetooth setup). */
+/* Nearby networks (the Wi-Fi screen's scan). */
 typedef struct {
     char    ssid[33];
     int8_t  rssi;

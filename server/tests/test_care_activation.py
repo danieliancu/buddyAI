@@ -401,12 +401,11 @@ async def test_onboarding_progress_is_derived_and_resumable(fake, gw):
     _sign_in_from_welcome(c, addr)
     ob = c.get("/api/me/onboarding").json()
     assert ob["eligible"] and ob["order"]["status"] == "paid" and ob["has_password"] and ob["email_verified"]
-    assert ob["platform"] is None and ob["watches"] == 0 and ob["care"]["status"] == "awaiting_pairing" and not ob["complete"]
-    assert c.put("/api/me/onboarding", json={"platform": "android"}).json()["platform"] == "android"
-    assert c.put("/api/me/onboarding", json={"platform": "blackberry"}).status_code == 422
+    assert "platform" not in ob and ob["watches"] == 0 and ob["care"]["status"] == "awaiting_pairing" and not ob["complete"]
+    assert c.put("/api/me/onboarding", json={"platform": "android"}).status_code == 405  # no phone choice any more
     c.post("/api/me/logout")
     c.post("/api/me/login", json={"email": addr, "password": "correct-horse-1"})
-    assert c.get("/api/me/onboarding").json()["platform"] == "android"  # kept across sign-ins
+    assert c.get("/api/me/onboarding").json()["eligible"]  # derived again after a new sign-in
     _pair(c)
     ob = c.get("/api/me/onboarding").json()
     assert ob["watches"] == 1 and ob["care"]["status"] == "active" and ob["complete"] is True

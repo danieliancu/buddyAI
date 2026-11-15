@@ -27,11 +27,11 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "Do I need to install an app?",
-        a: "No. There's no app to download and nothing that has to keep running on your phone. You set the watch up once: connect it to Wi-Fi, then link it to your account by entering a 6-digit code in any web browser. After that you're good to go: the watch works on its own and answers straight from your wrist.",
+        a: "No. There's no app to download and nothing that has to keep running on your phone. You set the watch up once: choose your Wi-Fi on the watch itself, then link it to your account by entering the 6-digit code it shows in any web browser. After that you're good to go: the watch works on its own and answers straight from your wrist.",
       },
       {
         q: "Does it need Wi-Fi?",
-        a: "Yes. olá connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. You set it up from your olá account: on Android, Chrome sends your Wi-Fi to the watch over Bluetooth; on iPhone, you join the watch's own network <em>ola-XXXX</em> with the password shown on the watch (or by scanning its QR code), and a page opens where you pick your Wi-Fi and enter its password. The watch remembers up to 5 networks (home, office, a phone hotspot) and joins the strongest one in range by itself.",
+        a: "Yes. olá connects over 2.4 GHz Wi-Fi with internet access — for example your home or office network, or a phone hotspot. It has no mobile (cellular) connection. Setup is fast — on Wi-Fi, you're on: pick your network from the list on the watch and type its password on the watch's keyboard; the watch then shows a 6-digit code that you type in your olá account. To change network later, open Settings › Wi-Fi setup on the watch. The watch remembers up to 5 networks (home, office, a phone hotspot) and joins the strongest one in range by itself.",
       },
       {
         q: "What works without an internet connection?",
@@ -150,7 +150,7 @@ export const faqGroups: { title: string; items: Faq[] }[] = [
       },
       {
         q: "What happens after I order?",
-        a: `We create your olá account with the email you used at checkout and send you a link to set your password, plus an order confirmation. When your watch ships, we email you tracking details. When it arrives, connect it to Wi-Fi, sign in to <a href="${config.appUrl}">your olá account</a> in any web browser, choose “Add watch” and type the 6-digit code shown on the watch. See <a href="/how-it-works/">how it works</a>.`,
+        a: `We create your olá account with the email you used at checkout and send you a link to set your password, plus an order confirmation. When your watch ships, we email you tracking details. When it arrives, turn it on, choose your Wi-Fi on the watch and type its password. The watch then shows a 6-digit code: sign in to <a href="${config.appUrl}">your olá account</a> in any web browser and type it in. That's it. See <a href="/how-it-works/">how it works</a>.`,
       },
     ],
   },

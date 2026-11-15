@@ -5,7 +5,7 @@ import { MAIL_SVG } from "../components/how/fa";
 
 type View =
   | "watchface" | "chat" | "notes" | "note" | "reminders" | "reminder" | "settings"
-  | "wifi" | "wlan" | "wpass" | "pairing" | "message" | "standby" | "off";
+  | "wlan" | "wpass" | "pairing" | "message" | "standby" | "off";
 type Conv = "idle" | "listening" | "thinking" | "speaking";
 type Hot = "talk" | "power";
 
@@ -32,6 +32,8 @@ const NEARBY = [
   { ssid: "Library Free Wi-Fi", lock: false, sig: 0.7 },
   { ssid: "BT-Hub-7F2A", lock: true, sig: 0.4 },
 ];
+/* The home router among them, chosen in the onboarding steps. */
+const HOME = NEARBY.findIndex((n) => n.ssid === "BT-Hub-7F2A");
 const TIMEOUTS = [10, 15, 30, 60, 120, 300];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -100,6 +102,8 @@ function setup(root: HTMLElement) {
     },
   });
   let s = fresh();
+  /** A new watch (or after a factory reset): no saved networks, not connected. */
+  const newWlan = () => ({ ...fresh().wlan, saved: [] as string[], on: "" });
 
   // ---- cancellable scripts -----------------------------------------------------------------------------
   let token = 0;
@@ -495,10 +499,6 @@ function setup(root: HTMLElement) {
       if (n.lock) row.append(fa(FA.lock, "wl-lock"));
       body.append(row);
     });
-    const phone = el("div", "wl-phone", "Set up with phone");
-    phone.dataset.act = "open:wifi";
-    phone.setAttribute("role", "button");
-    body.append(phone);
   }
   function renderPass() {
     const w = s.wlan;
@@ -612,9 +612,6 @@ function setup(root: HTMLElement) {
     s.power = "on";
     show(to, "none");
   }
-
-  /** The network name line: shown on the simulated Wi-Fi setup screen only for the iPhone step. */
-  const iphoneLine = (on: boolean) => (q("[data-wi-join]").hidden = !on);
 
   // ---- step actions (tabs.ts `run`) ---------------------------------------------------------------------
   const ensureOn = () => {
@@ -931,7 +928,7 @@ function setup(root: HTMLElement) {
       s.aod = true;
       applySettings();
     },
-    // Wi-Fi setup restarts the watch on its setup screen (the saved networks stay)
+    // Settings › Wi-Fi: the networks the watch knows (the one it is on in the card at the top)
     "set:wifi": async () => {
       s.wlan = fresh().wlan;
       await openSettings(1);
@@ -965,36 +962,40 @@ function setup(root: HTMLElement) {
       await wlanJoin(NEARBY[0].ssid);
     },
     "set:page1": async () => openSettings(0),
+    // A new watch (or after a factory reset) starts on its Wi-Fi screen: no saved networks yet.
     "setup:on": async () => {
       setConv("idle");
+      s.wlan = newWlan();
       s.power = "off";
       show("off", "none");
       await wait(700);
       await press("power", 1000);
-      await powerOn("wifi");
+      await powerOn("wlan");
     },
+    // Wi-Fi on the watch itself: tap the home network, type its password on the keyboard, OK.
     "setup:wifi": async () => {
       s.power = "on";
-      iphoneLine(false);
-      show("wifi", "none");
+      s.wlan = newWlan();
+      show("wlan", "none");
+      await wait(800);
+      highlight(`[data-act='wnear:${HOME}']`);
+      await wait(900);
+      clearHighlights();
+      openPass(NEARBY[HOME].ssid);
+      for (const ch of "sunflower24") {
+        await wait(170);
+        s.wlan.typed += ch;
+        renderPass();
+      }
+      await wait(500);
+      highlight(".wp-ok");
+      await wait(700);
+      clearHighlights();
+      await wlanJoin(NEARBY[HOME].ssid);
     },
-    // Android sends the Wi-Fi over Bluetooth with the setup password; an iPhone joins the watch's network
-    "setup:android": async () => {
-      s.power = "on";
-      iphoneLine(false);
-      show("wifi", "none");
-      highlight(".wi-pass");
-    },
-    "setup:iphone": async () => {
-      s.power = "on";
-      iphoneLine(true);
-      show("wifi", "none");
-      highlight(".wi-qr, .wi-net");
-    },
+    // Online: the watch shows its 6-digit pairing code.
     "setup:pair": async () => {
       s.power = "on";
-      show("off", "none");
-      await wait(500);
       show("pairing", "none");
     },
     "setup:done": async () => {
@@ -1015,7 +1016,6 @@ function setup(root: HTMLElement) {
       if (what === "notes") void run(async () => show("notes"));
       else if (what === "reminders") void run(async () => show("reminders"));
       else if (what === "settings") void run(() => openSettings(0));
-      else if (what === "wifi") void run(async () => (iphoneLine(false), show("wifi")));
       else if (what === "wlan") void run(async () => show("wlan"));
     },
     back: (what) => void run(async () => show(what as View)),
@@ -1078,7 +1078,7 @@ function setup(root: HTMLElement) {
       if (s.power === "sleep") void run(async () => wake());
       return;
     }
-    if (s.view === "wifi" || s.view === "pairing") {
+    if (s.view === "pairing") {
       void run(async () => home());
       return;
     }

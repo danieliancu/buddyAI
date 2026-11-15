@@ -312,8 +312,8 @@ async def pair(body: PairBody, request: Request, acc: Account = Depends(verified
 
 
 def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
-    """Setup progress, derived from the server state (only the phone choice is stored), so a refresh, a new
-    sign-in or the link in the welcome email resumes where the customer left off."""
+    """Setup progress, derived from the server state, so a refresh, a new sign-in or the link in the welcome
+    email resumes where the customer left off. (Wi-Fi is set on the watch itself: nothing to store for it.)"""
     order = db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).first()
     watches = [d for d in DeviceRepo(db).list(acc.id) if d.paired_at is not None and d.revoked_at is None]
     care = care_activation.public_state(db, acc.id)
@@ -322,7 +322,6 @@ def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
         "order": None if order is None else {"id": order.id, "status": order.status, "created_at": order.created_at},
         "has_password": acc.password_hash is not None,
         "email_verified": acc.email_verified_at is not None,
-        "platform": acc.setup_platform,
         "watches": len(watches),
         "care": care,
         "complete": bool(watches) and (care is None or care["status"] in ("active", "not_eligible")),
@@ -333,19 +332,6 @@ def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
 def get_onboarding(request: Request, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
     # A watch this account just removed, now online and showing a pairing code: no Wi-Fi step needed.
     return _onboarding(db, acc) | {"waiting_watch": hub_of(request).waiting_watch(acc.id)}
-
-
-class OnboardingBody(BaseModel):
-    platform: Literal["android", "iphone"] | None = None
-
-
-@router.put("/onboarding")
-def put_onboarding(body: OnboardingBody, acc: Account = Depends(current_account), db: Session = Depends(get_session)) -> dict:
-    acc.setup_platform = body.platform
-    db.add(acc)
-    db.commit()
-    db.refresh(acc)
-    return _onboarding(db, acc)
 
 
 class RenameBody(BaseModel):

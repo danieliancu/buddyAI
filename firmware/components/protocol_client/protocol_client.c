@@ -2131,7 +2131,7 @@ static void add_candidate(const char *url)
 #error "release builds must not enable mDNS discovery (see sdkconfig.release)"
 #endif
 
-/* Release builds: only the built-in server. A URL stored by the setup portal or
+/* Release builds: only the built-in server. A URL stored by older firmware's setup portal or
  * remembered from an earlier session is ignored, so nobody can point a customer's
  * watch at another server.
  * Development builds (plan section 11): configured server_url -> last-known -> mDNS. */

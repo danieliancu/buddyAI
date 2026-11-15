@@ -18,16 +18,6 @@ const I = {
   power: g(0xf011), clock: g(0xf017), globe: g(0xf0ac), lock: g(0xf023), shift: g(0xf062), bs: g(0xf55a),
 };
 
-/* A decorative QR code (finder squares + a fixed pattern), like the one the watch shows in Wi-Fi setup. */
-const N = 25;
-const cells: [number, number][] = [];
-let seed = 1234567;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-const finder = (x: number, y: number) =>
-  [[0, 0], [N - 7, 0], [0, N - 7]].some(([fx, fy]) => x >= fx - 1 && x <= fx + 7 && y >= fy - 1 && y <= fy + 7);
-for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (!finder(x, y) && rnd() < 0.48) cells.push([x, y]);
-const finders = [[0, 0], [N - 7, 0], [0, N - 7]];
-
 const marks = Array.from({ length: 12 }, (_, i) => {
   const a = (i * 30 * Math.PI) / 180;
   const len = i % 3 === 0 ? 24 : 14;
@@ -138,7 +128,7 @@ const marks = Array.from({ length: 12 }, (_, i) => {
             <span class="st-pill" role="button" tabindex="0" data-act="lang:other" data-lang-other>Other</span>
           </div>
           <div class="st-card st-row ws-tap" role="button" tabindex="0" data-act="open:wlan">
-            <span class="st-ico fa">{I.wifi}</span><span class="st-name">Wi-Fi setup</span><span class="st-chev fa">{I.right}</span>
+            <span class="st-ico fa">{I.wifi}</span><span class="st-name">Wi-Fi</span><span class="st-chev fa">{I.right}</span>
           </div>
         </div>
 
@@ -170,26 +160,7 @@ const marks = Array.from({ length: 12 }, (_, i) => {
         </div>
       </section>
 
-      <!-- onboarding -->
-      <section class="ws-view" data-view="wifi" aria-label="Wi-Fi setup">
-        <div class="ms wi">
-          <div class="ms-title">Wi-Fi setup</div>
-          <svg class="wi-qr" viewBox={`0 0 ${N} ${N}`} shape-rendering="crispEdges" aria-hidden="true">
-            {finders.map(([x, y]) => (
-              <g>
-                <rect x={x} y={y} width="7" height="7" fill="#000" />
-                <rect x={x + 1} y={y + 1} width="5" height="5" fill="#fff" />
-                <rect x={x + 2} y={y + 2} width="3" height="3" fill="#000" />
-              </g>
-            ))}
-            {cells.map(([x, y]) => <rect x={x} y={y} width="1" height="1" fill="#000" />)}
-          </svg>
-          <!-- only on the iPhone step of the simulation (the real watch does not show it) -->
-          <div class="wi-join" data-wi-join hidden>iPhone: join the Wi-Fi network<br /><span class="wi-net">ola-1A2B</span></div>
-          <div class="wi-pass">K7P4 M9XQ</div>
-          <div class="wi-hint">iPhone: scan the code with the Camera.<br />Android: tap Connect to watch in your ola account.</div>
-        </div>
-      </section>
+      <!-- onboarding: Wi-Fi is chosen on the Wi-Fi screen above, then the watch shows its pairing code -->
       <section class="ws-view" data-view="pairing" aria-label="Pairing">
         <div class="ms">
           <div class="ms-ico fa">{I.lock}</div>

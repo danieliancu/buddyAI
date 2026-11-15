@@ -10,7 +10,6 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_mac.h"
-#include "esp_random.h"
 #include "prov_util.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -26,7 +25,6 @@ static const char *TAG = "settings";
 #define KEY_TOKEN           "dev_token"
 #define KEY_SETTINGS_JSON   "settings"
 #define KEY_SETTINGS_VER    "settings_ver"
-#define KEY_SETUP_PASS      "setup_pass"
 #define KEY_LARGE_TEXT      "large_text"    /* watch only: the Aa toggle (not part of the server settings) */
 
 #define MAX_LISTENERS       6
@@ -591,32 +589,6 @@ esp_err_t settings_set_token(const char *token)
 esp_err_t settings_erase_token(void)
 {
     return nvs_set_string(KEY_TOKEN, NULL);
-}
-
-static uint32_t hw_random(void)
-{
-    return esp_random();
-}
-
-esp_err_t settings_rotate_setup_pass(void)
-{
-    char pass[SETUP_PASS_LEN + 1];
-    setup_pass_generate(hw_random, pass);
-    esp_err_t err = nvs_set_string(KEY_SETUP_PASS, pass);
-    memset(pass, 0, sizeof(pass));
-    return err;
-}
-
-bool settings_get_setup_pass(char out[SETTINGS_SETUP_PASS_MAX])
-{
-    if (nvs_get_string(KEY_SETUP_PASS, out, SETTINGS_SETUP_PASS_MAX) && setup_pass_valid(out)) {
-        return true;
-    }
-    if (settings_rotate_setup_pass() != ESP_OK) {
-        out[0] = '\0';
-        return false;
-    }
-    return nvs_get_string(KEY_SETUP_PASS, out, SETTINGS_SETUP_PASS_MAX) && setup_pass_valid(out);
 }
 
 bool settings_get_large_text(void)

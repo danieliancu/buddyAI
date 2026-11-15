@@ -39,7 +39,6 @@
 #include "ui.h"
 #include "audio.h"
 #include "net.h"
-#include "ble_prov.h"
 #include "protocol_client.h"
 #include "ota.h"
 
@@ -55,9 +54,7 @@ static const char *TAG = "app";
 
 typedef enum {
     APP_EV_NET,             /* arg = net_event_t */
-    APP_EV_START_PORTAL,
     APP_EV_FACTORY_RESET,   /* user confirmed the reset screen */
-    APP_EV_PROV_DONE,       /* Bluetooth setup: joined the new Wi-Fi and saved it */
     APP_EV_BOOT_TAP,        /* BOOT button pressed briefly: start talking */
     APP_EV_WAKE,            /* a touch or a BOOT press woke the watch from standby */
 } app_ev_type_t;
@@ -68,9 +65,8 @@ typedef struct {
 } app_ev_t;
 
 static QueueHandle_t s_app_q;
-static bool s_audio_ready;   /* false in Wi-Fi setup mode (audio not started) */
-static bool s_setup_mode;     /* defined with the setup code below */
-static bool          s_wifi_configured;
+static bool s_audio_ready;
+static bool          s_wifi_configured;     /* a network is saved: "No Wi-Fi" shows if it cannot be reached */
 static bool          s_server_error_shown;
 static bool          s_low_batt_warned;
 static bool          s_reply_started;
@@ -127,7 +123,7 @@ static void ui_standby(bool standby)
  * stops listening / interrupts the reply, as a second tap on the mic does). */
 static void boot_tap(void)
 {
-    if (s_setup_mode || !s_audio_ready) {
+    if (!s_audio_ready) {
         return;
     }
     ESP_LOGI(TAG, "BOOT tap - talk");
@@ -433,11 +429,6 @@ static void ui_settings_change(const cJSON *changes)
     proto_settings_changed(changes);
 }
 
-static void ui_wifi_setup(void)
-{
-    post_app(APP_EV_START_PORTAL, 0);
-}
-
 static void ui_retry(void)
 {
     s_server_error_shown = false;
@@ -506,46 +497,8 @@ static int ui_audio_level(void)
 /* App loop                                                                   */
 /* ------------------------------------------------------------------------- */
 
-/* Wi-Fi setup mode: entered at boot (no Wi-Fi saved, or "Wi-Fi setup" was chosen, which restarts into
- * it). Bluetooth starts first, before the display and audio take internal RAM; audio is not started
- * (setup always ends with a restart). RTC_NOINIT survives a software restart only. */
-#define SETUP_BOOT_MAGIC 0x5E7B0070u
-static RTC_NOINIT_ATTR uint32_t s_setup_boot;
-static bool s_setup_mode;
-
-static void on_ble_prov_done(void)
-{
-    post_app(APP_EV_PROV_DONE, 0);
-}
-
-/* Wi-Fi setup: the "ola-XXXX" network (iPhone, and recovery for Android) and Bluetooth setup (Android,
- * from the ola account) run together, both protected by the setup password shown on the watch. Bluetooth
- * only advertises while the watch is in setup. */
-static void start_portal(void)
-{
-    char pass[SETTINGS_SETUP_PASS_MAX];
-    if (!settings_get_setup_pass(pass)) {
-        ESP_LOGE(TAG, "no setup password - Wi-Fi setup unavailable");
-        return;
-    }
-    /* Bluetooth first: its controller needs a large block of internal RAM, which the setup network's
-     * HTTP server and scan would otherwise fragment. It refuses to start (instead of crashing) if RAM is short. */
-    if (!ble_prov_active() && ble_prov_start(net_portal_ssid(), pass, on_ble_prov_done) != ESP_OK) {
-        ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
-    }
-    if (!net_portal_active()) {
-        proto_network_down();
-        if (net_portal_start(pass) != ESP_OK) {
-            memset(pass, 0, sizeof(pass));
-            return;
-        }
-    }
-    ui_show_wifi_setup(net_portal_ssid(), pass);
-    memset(pass, 0, sizeof(pass));
-}
-
-/* Erase Wi-Fi, server URL, token and settings, then restart into the setup
- * portal. This unpairs the watch locally; the owner removes it in the app. */
+/* Erase Wi-Fi, server URL, token and settings, then restart into the Wi-Fi
+ * screen. This unpairs the watch locally; the owner removes it in the app. */
 static void factory_reset(void)
 {
     ESP_LOGW(TAG, "factory reset confirmed");
@@ -588,23 +541,14 @@ static void handle_net_event(net_event_t ev)
     case NET_EVT_STA_CONNECTED:
         ui_set_hint(ui_text_connecting());
         ui_set_status(s_batt_pct, s_charging, UI_LINK_WIFI);
+        s_wifi_configured = true;   /* the network just joined on the watch is saved now */
         net_sntp_start();
         debug_snap_start();     /* development builds: screen snapshots over Wi-Fi */
-        if (!net_portal_active()) {
-            proto_network_up();
-        }
+        proto_network_up();
         break;
     case NET_EVT_STA_DISCONNECTED:
         proto_network_down();
         ui_set_status(s_batt_pct, s_charging, UI_LINK_NO_WIFI);
-        break;
-    case NET_EVT_PORTAL_STARTED:
-        ESP_LOGI(TAG, "provisioning portal running: %s", net_portal_ssid());
-        break;
-    case NET_EVT_PORTAL_SAVED:
-        ESP_LOGI(TAG, "new configuration saved - restarting");
-        vTaskDelay(pdMS_TO_TICKS(1500));  /* let the HTTP response go out */
-        esp_restart();
         break;
     case NET_EVT_TIME_SYNCED:
         sync_rtc_from_system();
@@ -737,16 +681,6 @@ static void app_loop(void)
         if (xQueueReceive(s_app_q, &ev, pdMS_TO_TICKS(poll_ms)) == pdTRUE) {
             if (ev.type == APP_EV_NET) {
                 handle_net_event((net_event_t)ev.arg);
-            } else if (ev.type == APP_EV_START_PORTAL) {
-                if (s_setup_mode) {
-                    start_portal();
-                } else {
-                    ESP_LOGI(TAG, "restarting into Wi-Fi setup mode");
-                    s_setup_boot = SETUP_BOOT_MAGIC;
-                    proto_network_down();
-                    vTaskDelay(pdMS_TO_TICKS(200));
-                    esp_restart();
-                }
             } else if (ev.type == APP_EV_FACTORY_RESET) {
                 factory_reset();
             } else if (ev.type == APP_EV_BOOT_TAP) {
@@ -754,11 +688,6 @@ static void app_loop(void)
             } else if (ev.type == APP_EV_WAKE) {
                 s_wake_events++;
                 ui_wake();
-            } else if (ev.type == APP_EV_PROV_DONE) {
-                ESP_LOGI(TAG, "Bluetooth setup finished - restarting");
-                vTaskDelay(pdMS_TO_TICKS(4000));   /* the phone reads "connected" first */
-                ble_prov_stop();
-                esp_restart();
             }
         }
 
@@ -781,7 +710,7 @@ static void app_loop(void)
             refresh_status();
         }
         /* Wi-Fi configured but never connected: show the error once. */
-        if (s_wifi_configured && !no_wifi_shown && !net_wifi_connected() && !net_portal_active() &&
+        if (s_wifi_configured && !no_wifi_shown && !net_wifi_connected() &&
             now - boot_ms > WIFI_CONNECT_GRACE_MS && !ui_in_conversation()) {
             no_wifi_shown = true;
             ui_set_hint(ui_text_connecting());
@@ -824,23 +753,8 @@ void app_main(void)
     board_rtc_restore_system_time();
 
     wifi_saved_list_t saved;
-    bool have_wifi = settings_get_wifi_list(&saved) > 0;
+    const bool have_wifi = settings_get_wifi_list(&saved) > 0;
     memset(&saved, 0, sizeof(saved));
-    s_setup_mode = !have_wifi || s_setup_boot == SETUP_BOOT_MAGIC;
-    s_setup_boot = 0;
-    if (s_setup_mode) {
-        ESP_LOGI(TAG, "Wi-Fi setup mode (internal RAM free %u KB)",
-                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-        char setup_pass[SETTINGS_SETUP_PASS_MAX];
-        if (settings_get_setup_pass(setup_pass) &&
-            ble_prov_start(net_portal_ssid(), setup_pass, on_ble_prov_done) != ESP_OK) {
-            ESP_LOGW(TAG, "Bluetooth setup unavailable - the setup network still works");
-        }
-        memset(setup_pass, 0, sizeof(setup_pass));
-        board_display_set_draw_lines(10);
-    } else {
-        ble_prov_release_memory();  /* Bluetooth serves Wi-Fi setup only, which always starts with a restart */
-    }
 
     lv_display_t *disp = board_display_init();
     if (!disp) {
@@ -851,7 +765,6 @@ void app_main(void)
             .on_mic_tap = ui_mic_tap,
             .on_mic_hold = ui_mic_hold,
             .on_settings_change = ui_settings_change,
-            .on_wifi_setup = ui_wifi_setup,
             .on_retry = ui_retry,
             .get_audio_level = ui_audio_level,
             .on_factory_reset = ui_factory_reset,
@@ -873,9 +786,7 @@ void app_main(void)
         }
     }
 
-    if (s_setup_mode) {
-        ESP_LOGI(TAG, "audio not started in Wi-Fi setup mode");
-    } else if (board_audio_init() == ESP_OK) {
+    if (board_audio_init() == ESP_OK) {
         ESP_ERROR_CHECK(audio_init());
         audio_set_volume(st.volume);
         s_audio_ready = true;
@@ -898,13 +809,16 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(proto_init(&pcfg));
 
-    if (!s_setup_mode) {
-        s_wifi_configured = true;
+    /* Wi-Fi is set up on the watch: with no network saved (a new watch, or after a factory reset) the radio
+     * starts idle and the Wi-Fi screen opens. Once a network connects the watch shows its pairing code. */
+    s_wifi_configured = have_wifi;
+    if (have_wifi) {
         ui_set_hint(ui_text_connecting());
-        net_wifi_connect_saved();
-    } else {
-        ESP_LOGI(TAG, "no Wi-Fi credentials - starting provisioning portal");
-        start_portal();
+    }
+    net_wifi_connect_saved();
+    if (!have_wifi && disp) {
+        ESP_LOGI(TAG, "no Wi-Fi saved - opening the Wi-Fi screen");
+        ui_show_wifi_setup();
     }
 
     ESP_LOGI(TAG, "free heap: internal %u KB, PSRAM %u KB",

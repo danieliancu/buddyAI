@@ -98,20 +98,13 @@ esp_err_t settings_add_wifi(const char *ssid, const char *pass, bool verified);
 /* The watch joined this network: verified, moved to the front (flash written only if that changed). */
 esp_err_t settings_wifi_joined(const char *ssid, const char *pass);
 esp_err_t settings_forget_wifi(const char *ssid, const char *pass);
-bool      settings_get_server_url(char *out, size_t len);   /* configured (portal) */
+bool      settings_get_server_url(char *out, size_t len);   /* stored by older firmware (setup portal) */
 esp_err_t settings_set_server_url(const char *url);         /* "" clears */
 bool      settings_get_last_server(char *out, size_t len);  /* last successful */
 esp_err_t settings_set_last_server(const char *url);
 bool      settings_get_token(char *out, size_t len);
 esp_err_t settings_set_token(const char *token);
 esp_err_t settings_erase_token(void);
-
-/* The watch's setup password (8 characters, shown on the setup screen): the WPA2 key of the "ola-XXXX"
- * setup network and the Bluetooth setup (Security 2) password. Created on first use, kept in NVS, never
- * sent anywhere or logged. Rotated after every successful Wi-Fi setup and erased by a factory reset. */
-#define SETTINGS_SETUP_PASS_MAX 9
-bool      settings_get_setup_pass(char out[SETTINGS_SETUP_PASS_MAX]);
-esp_err_t settings_rotate_setup_pass(void);
 
 /* Larger text on the conversation, notes and reminders screens (the "Aa" toggle). Watch only, kept in NVS;
  * default off. */
@@ -120,7 +113,7 @@ esp_err_t settings_set_large_text(bool on);
 
 /* Factory reset: erase Wi-Fi credentials, server URLs, device token and the
  * device-facing settings (the whole "buddyai" NVS namespace). The caller
- * restarts the device afterwards; it then boots into the setup portal. */
+ * restarts the device afterwards; it then boots into the Wi-Fi screen. */
 esp_err_t settings_factory_reset(void);
 
 /* Stable device id derived from the factory MAC, e.g. "buddy-a1b2c3d4e5f6". */

@@ -497,15 +497,12 @@ export interface CareActivation {
   activated_at: string | null;
 }
 
-export type SetupPlatform = "android" | "iphone";
-
-/** GET/PUT /api/me/onboarding: watch setup progress, derived from the server (only the phone is stored). */
+/** GET /api/me/onboarding: watch setup progress, derived from the server. */
 export interface Onboarding {
   eligible: boolean;
   order: { id: number; status: OrderStatus; created_at: string } | null;
   has_password: boolean;
   email_verified: boolean;
-  platform: SetupPlatform | null;
   watches: number;
   care: CareActivation | null;
   complete: boolean;
@@ -1156,7 +1153,6 @@ const meApi = {
   subscription: () => me.get<MySubscription>("/api/me/subscription"),
   plan: () => me.get<MyPlan>("/api/me/plan"),
   onboarding: () => me.get<Onboarding>("/api/me/onboarding"),
-  setPlatform: (platform: SetupPlatform | null) => me.put<Onboarding>("/api/me/onboarding", { platform }),
   /** Retry starting ola Care after a failure (never creates a second subscription). */
   activateCare: () => me.post<{ care_activation: CareActivation | null }>("/api/me/care/activate"),
   /** Stripe Checkout URL for ola Care (existing account). */

@@ -10,11 +10,10 @@ The olácompanion watch connects to the internet (Wi-Fi) and is a consumer conne
 
 | Check | Finding | Evidence | Status |
 |---|---|---|---|
-| Wi-Fi setup network password | random 8 characters (31-symbol alphabet) per device from the hardware RNG, no modulo bias; shown only on the watch screen; replaced after each successful setup; erased by factory reset; setup refuses to start without a valid password (no fixed fallback) | `components/prov_util`, `settings.c` (setup password), `net_portal.c:266,397,408`, `app_main.c:484` | IMPLEMENTED_AND_VERIFIED (code review) |
-| Bluetooth setup (Android) | ESP-IDF protocomm Security 2 (SRP6a + AES-256-GCM), proof of possession = the per-device setup password; pause after 3 failures | `ble_prov.c`, `sdkconfig.defaults:73-75` | IMPLEMENTED (code review) |
+| Wi-Fi setup | done on the watch itself: the user picks a network from the scan list and types its password on the touch keyboard. No setup network (soft-AP / captive portal), no Bluetooth provisioning, so no device setup password exists | `components/net`, `ui_wifi.c` | IMPLEMENTED (firmware change in progress, Nov 2026) — re-review the release build |
 | Hardcoded credentials | none found in `main/` and `components/` | review | IMPLEMENTED_NOT_VERIFIED (no automated scan) |
 | Device identifier as secret | `device_id` (from MAC) is an identifier only; access uses a server-issued token (only its hash is kept server-side); pairing uses a random 6-digit code valid 5 minutes | `protocol_client.c:366,486,941`, `server/app/security.py` | IMPLEMENTED |
-| Unauthenticated management endpoints | captive portal (`/`, `/save`) reachable only on the WPA2 setup network; screen-capture server (`/snap`, port 8080) **dev builds only** (compiled out by `CONFIG_BUDDYAI_RELEASE_BUILD`) | `net_portal.c:429-434`, `main/debug_snap.c` | IMPLEMENTED for release builds; units currently run **dev** firmware → must ship release firmware |
+| Unauthenticated management endpoints | no captive portal (removed with the setup network); screen-capture server (`/snap`, port 8080) **dev builds only** (compiled out by `CONFIG_BUDDYAI_RELEASE_BUILD`) | `main/debug_snap.c` | IMPLEMENTED for release builds; units currently run **dev** firmware → must ship release firmware |
 
 ## Requirement 2 — how to report security issues
 
@@ -44,7 +43,7 @@ For GB, radio equipment is placed on the market under the Radio Equipment Regula
 > Product: olácompanion watch, model [model identifier — for completion], hardware Waveshare ESP32-S3-Touch-AMOLED-2.06 with EEMB LP402535 battery, firmware [version — for completion].
 > Manufacturer: Ola Technologies London Ltd, [registered office address — for completion], company number [for completion].
 > We declare that, in our opinion, we have complied with the applicable security requirements in Schedule 1 to the Regulations:
-> 1. Passwords: the product has no universal default password; each unit generates its own setup password.
+> 1. Passwords: the product has no universal default password; it has no setup network or device password — the user types their own Wi-Fi password on the device.
 > 2. Reporting security issues: report to ola@olacompanion.com — see https://www.olacompanion.com/security/. We aim to acknowledge reports within 5 working days and to keep the reporter informed.
 > 3. Security update period: at least two years from the date of purchase [end-date wording — for confirmation].
 > Signed: [name, function — for completion]   Date: [for completion]   Place: [for completion]

@@ -270,7 +270,7 @@ Since migration 0025, the shop sells the **watch alone** and starts ola Care whe
 
 ### 3. Pairing → trial
 
-"Connected" means only the **server-side pairing** of a watch to the account: the customer or operator pairing endpoint, after `DeviceHub.pair`. Joining Wi-Fi, a Bluetooth session, the WebSocket or a displayed code start nothing.
+"Connected" means only the **server-side pairing** of a watch to the account: the customer or operator pairing endpoint, after `DeviceHub.pair`. Joining Wi-Fi, the WebSocket or a displayed code start nothing.
 
 1. **Claim with a lease.** One conditional `UPDATE` moves the row to `activating` (lease 120 s), from `awaiting_pairing`, `failed`, or an `activating` row whose lease has expired. If no row changes, the call is a no-op. This covers double clicks, concurrent pairing, a second watch and refreshes.
 2. **Stripe first.** `Subscription.list(customer)` runs, and a subscription whose `metadata.activation_id` matches is **adopted**. Nothing is created a second time after a crash, an ambiguous error or a retry outside Stripe's 24 h idempotency window.

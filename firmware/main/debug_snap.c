@@ -93,7 +93,7 @@ void debug_snap_start(void)
     }
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = 8080;
-    cfg.ctrl_port = 32769;      /* the setup portal uses the default */
+    cfg.ctrl_port = 32769;      /* not the default port */
     cfg.stack_size = 6144;
     if (httpd_start(&s_httpd, &cfg) != ESP_OK) {
         ESP_LOGW(TAG, "debug server not started");

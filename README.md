@@ -50,8 +50,8 @@ idf.py -p COM5 flash monitor
 ```
 
 First boot:
-1. The watch opens the Wi-Fi network `ola-XXXX`. Join it from your phone and enter your Wi-Fi details and the server address.
-2. The watch shows a 6-digit code. Enter it in the web app under **My watches → Add watch**.
+1. The watch opens its Wi-Fi screen. Pick your network from the list and type its password on the watch.
+2. The watch shows a 6-digit code. Enter it in the web app at `/my/setup` (or **My watches → Add watch**).
 
 ## Status
 

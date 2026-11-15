@@ -20,14 +20,15 @@ const specs: [string, string][] = [
   ["Languages", `${languageCount} languages + Auto (answers in the language you speak)`],
   ["Battery life", "We'll publish measured figures before shipping"],
   ["Size, weight & water resistance", "We'll publish them before shipping"],
-  ["What you need", `2.4 GHz Wi-Fi with internet access, a web browser for setup (no app to install), an olá account and an olácare subscription (free ${prices.trialDays}-day subscription included)`],
+  ["What you need", `2.4 GHz Wi-Fi with internet access, a web browser on any phone or computer to type the pairing code (no app to install), an olá account and an olácare subscription (free ${prices.trialDays}-day subscription included)`],
 ];
 
 const wifi = {
   how: [
     "It keeps up to 5 Wi-Fi networks, for example home, office and your phone's hotspot",
     "It joins the strongest one in range by itself, and when you leave one it moves to another it knows",
-    "Add a network anytime in Settings › Wi-Fi setup: pick it from the nearby networks and type its password on the watch, or use your phone",
+    "Fast setup: on Wi-Fi, you're on. Pick your network on the watch, type its password, then type the 6-digit code it shows in your olá account",
+    "Add a network anytime in Settings › Wi-Fi setup: pick it from the nearby networks and type its password on the watch",
     "A mistyped password never replaces one that works: the watch keeps the old one until the new one connects",
   ],
   why: [
@@ -73,7 +74,7 @@ const wifi = {
       <h2 id="wifi-title" class="text-xl font-semibold text-fg">What needs Wi-Fi</h2>
       <p class="mt-2 max-w-3xl text-muted">
         <Brand name="watch" /> connects over 2.4 GHz Wi-Fi (home, office or a phone hotspot). It has no mobile connection,
-        and there is no phone app: setup and your account are in a web browser.
+        and there is no phone app: Wi-Fi is set on the watch itself, and your account is in a web browser.
       </p>
       <div class="mt-2"><WifiNeeds /></div>
     </div>

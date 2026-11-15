@@ -67,19 +67,12 @@ export const items: Item[] = [
     title: "Signed software updates",
     text: "Release firmware installs updates only over HTTPS and only if they carry a valid RSA-3072 signature from our signing key. Each download is checked against its SHA-256 hash, and an update that fails to start rolls back to the previous version.",
   },
-  // net_portal.c WIFI_AUTH_WPA2_PSK; prov_util.c 8-character password from esp_random; renewed after setup.
+  // ui_wifi.c: the network list and the password keyboard on the watch; no setup network, no Bluetooth setup.
   {
     group: "firmware",
     status: "firmware",
-    title: "Protected Wi-Fi setup network",
-    text: "During Wi-Fi setup the watch's temporary network is protected with WPA2 and a random 8-character password shown on the watch. A new password is created after each successful setup.",
-  },
-  // ble_prov.c + sdkconfig.defaults: protocomm Security 2 only (SRP6a, AES-256-GCM); pause after 3 failed sessions.
-  {
-    group: "firmware",
-    status: "firmware",
-    title: "Bluetooth setup for Android",
-    text: "Android phones send your Wi-Fi details to the watch over Bluetooth Low Energy using ESP-IDF's Security 2 scheme: the setup password shown on the watch is used for a password-authenticated key exchange (SRP6a), and the details are then encrypted with AES-256-GCM. Bluetooth setup pauses after repeated wrong passwords.",
+    title: "Wi-Fi set up on the watch itself",
+    text: "You choose your Wi-Fi network and type its password on the watch's own keyboard. The password goes straight into the watch: no temporary setup network, no Bluetooth pairing and no phone in between.",
   },
   // audio.c / protocol_client.c: Opus frames sent only during an active listening turn; max_listen_s; no local recording.
   {
@@ -284,7 +277,7 @@ export const specs: Spec[] = [
   { label: "Power and clock", value: "AXP2101 power management, PCF85063 real-time clock", status: "firmware" },
   { label: "Motion sensor", value: "QMI8658 on the board, not used by the firmware", status: "firmware" },
   { label: "Wi-Fi", value: "2.4 GHz", status: "firmware" },
-  { label: "Bluetooth", value: "Bluetooth Low Energy, used only during Wi-Fi setup", status: "firmware" },
+  { label: "Bluetooth", value: "On the chip, not used by the firmware", status: "firmware" },
   { label: "Software", value: "ESP-IDF 5.5.4, LVGL 9.5.0", status: "firmware" },
   // Battery, charging (board_core.c: 150 mA, 4.2 V) and battery life: verified by the founder, 2026-10-12.
   { label: "Battery", value: "Lithium-polymer, 320 mAh (3.7 V nominal)", status: "active" },

@@ -8,7 +8,6 @@
  *    tap one to join it, the bin forgets it (tap it twice);
  *  - Nearby: a scan, strongest first, without the saved ones; a lock marks a password. Tap an open one
  *    to join it; one with a password opens the keyboard screen;
- *  - "Set up with phone": the setup screen with the QR code (g_ui_cb.on_wifi_setup), as before.
  * Joining (net_wifi_join) saves a network only once it connects; a wrong password is not saved and the
  * saved networks take over again. While the screen is open a timer follows the scan and the join.
  */
@@ -306,15 +305,6 @@ static void rescan_cb(lv_event_t *e)
     }
 }
 
-static void phone_cb(lv_event_t *e)
-{
-    memset(&s_saved, 0, sizeof(s_saved));
-    lv_timer_pause(s_poll);
-    if (g_ui_cb.on_wifi_setup) {
-        g_ui_cb.on_wifi_setup();    /* the setup screen with the QR code (the watch restarts into it) */
-    }
-}
-
 static void status_card(void)
 {
     const net_join_state_t j = net_wifi_join_state();
@@ -426,19 +416,6 @@ static void rebuild(void)
         lv_label_set_text(l, ui_str(s_scanning || s_scan_wanted ? STR_WIFI_SCANNING : STR_WIFI_NONE));
     }
 
-    lv_obj_t *b = lv_button_create(s_list);
-    lv_obj_remove_style_all(b);
-    lv_obj_set_size(b, CONTENT_W, 56);
-    lv_obj_set_style_radius(b, 28, 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(PILL_BG), 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(ROW_BG), LV_STATE_PRESSED);
-    lv_obj_set_style_margin_top(b, 14, 0);
-    lv_obj_add_event_cb(b, phone_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t = lv_label_create(b);
-    lv_label_set_text(t, ui_str(STR_WIFI_PHONE));
-    lv_obj_center(t);
-
     lv_obj_update_layout(s_list);
     lv_obj_scroll_to_y(s_list, y, LV_ANIM_OFF);
 }
@@ -491,10 +468,14 @@ static void poll_cb(lv_timer_t *t)
 
 static void close_cb(lv_event_t *e)
 {
+    const bool none_saved = s_saved.count == 0;
     memset(&s_saved, 0, sizeof(s_saved));
     lv_timer_pause(s_poll);
     if (s_from_settings) {
         ui_settings_return();
+    } else if (!net_wifi_connected() && none_saved) {
+        /* first start, closed without a network: say so, with the button that opens this screen again */
+        ui_show_error(UI_ERR_NO_WIFI, NULL);
     } else {
         ui_go_watchface();
     }

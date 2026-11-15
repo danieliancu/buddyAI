@@ -201,13 +201,13 @@ def welcome_set_password(to: str, link: str, days_valid: int = 7) -> Email:
         "Welcome to ola — set your password",
         "Hi,\n\nThank you for your order! We created your ola account with this email address.\n"
         f"Set your password here (valid for {days_valid} days, you can request a new link any time):\n{link}\n\n"
-        "Then, when your watch arrives: sign in, choose your phone (Android or iPhone), connect the watch to "
-        "Wi-Fi and pair it. Your ola Care free trial starts when the watch is paired.{footer}".replace("{footer}", _footer()),
+        "Then, when your watch arrives: choose your Wi-Fi on the watch and type its password; the watch shows a "
+        "6-digit code — sign in and type it to pair the watch. Your ola Care free trial starts when the watch is paired.{footer}".replace("{footer}", _footer()),
         html=designed(
             "Welcome to ola",
             "Thank you for your order! We created your ola account with this email address. Set a password now; "
-            "when your watch arrives, sign in and follow the setup: choose your phone, connect the watch to Wi-Fi "
-            "and pair it. Your ola Care free trial starts when the watch is paired.",
+            "when your watch arrives, choose your Wi-Fi on the watch, then sign in and type the 6-digit code it shows "
+            "to pair it. Your ola Care free trial starts when the watch is paired.",
             "Set my password", link,
             f"The link is valid for {days_valid} days. You can ask for a new one any time from the sign-in page.",
         ),

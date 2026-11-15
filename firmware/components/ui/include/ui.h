@@ -3,7 +3,7 @@
  *
  * Screens: watchface (clock, date, mic button, battery / Wi-Fi), conversation
  * states on the watchface (listening / thinking / speaking + caption), quick
- * settings (swipe left/up), pairing code, Wi-Fi setup, error screens.
+ * settings (swipe left/up), pairing code, Wi-Fi, error screens.
  *
  * Every public function is thread-safe (takes the LVGL port lock).
  * Callbacks in ui_callbacks_t run in the LVGL task - keep them short.
@@ -54,8 +54,6 @@ typedef struct {
     void (*on_mic_hold)(void);
     /* Local settings change (subset of PROTOCOL.md section 5). */
     void (*on_settings_change)(const cJSON *changes);
-    /* User asked for the Wi-Fi / server provisioning portal. */
-    void (*on_wifi_setup)(void);
     void (*on_retry)(void);
     /* Audio level 0..100 used by the listening / speaking animations. */
     int  (*get_audio_level)(void);
@@ -123,9 +121,10 @@ void ui_set_hint(const char *text);        /* small status line, NULL clears */
 void ui_set_status(int battery_pct, bool charging, ui_link_t link);
 
 void ui_show_pairing(const char *code);
-/* Wi-Fi setup screen: setup network "ola-XXXX", its password (also the Bluetooth setup password)
- * and a Wi-Fi QR code for the phone camera. */
-void ui_show_wifi_setup(const char *ap_ssid, const char *setup_pass);
+/* First start (no Wi-Fi saved: a new watch, or after a factory reset): the Wi-Fi screen, where the wearer
+ * picks the home network and types its password. Closing it leads to the "No Wi-Fi" screen, whose button
+ * opens it again. */
+void ui_show_wifi_setup(void);
 void ui_show_error(ui_error_t err, const char *detail);
 void ui_show_ota(int pct);                  /* -1 = failed */
 /* Factory reset: "Reset watch?" confirmation (auto-cancels) and the

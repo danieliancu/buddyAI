@@ -164,9 +164,6 @@ environment variables of a **test** resource, never the production one.
      `stripe listen --forward-to http://127.0.0.1:8765/api/stripe/webhook`. It prints a `whsec_…`
      signing secret: put it in `BUDDYAI_STRIPE_WEBHOOK_SECRET` and restart the server.
   4. Run the site (`npm run dev` in `site/`) and the app (`npm run dev` in `web/`).
-
-  Web Bluetooth needs a secure page. `http://localhost` counts as one on the PC, but a phone needs
-  HTTPS: test Bluetooth setup on a test deployment, or through an HTTPS tunnel to the app.
 - **Coolify test environment**: a separate application with its own domain and database. Set the
   same `BUDDYAI_STRIPE_*` variables with **test** values, and add a test-mode webhook endpoint in
   Stripe pointing at that domain (its own `whsec_…`).

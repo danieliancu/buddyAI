@@ -23,8 +23,8 @@ export const GET: APIRoute = ({ site }) => {
 
 ## Setup and connectivity
 - No phone app: the customer web app (${config.appUrl}) runs in any browser.
-- Wi-Fi setup from the olá account: on Android, Chrome sends the Wi-Fi network and password to the watch over Bluetooth (encrypted, unlocked with a setup password shown on the watch); on iPhone, the watch opens a network called ola-XXXX (protected by the password shown on the watch, with a QR code) and a setup page asks for the Wi-Fi network and password. The watch uses 2.4 GHz Wi-Fi.
-- Pairing: the watch shows a 6-digit code, entered in the web app. Pairing starts the free olácare trial.
+- Fast setup, on the watch itself: on first start the watch opens its Wi-Fi screen; the customer picks the network from the list and types its password on the watch's keyboard. Any phone or computer works the same: it is only used to sign in and type the pairing code. The watch uses 2.4 GHz Wi-Fi; another network can be added later in Settings > Wi-Fi setup.
+- Pairing: once online, the watch shows a 6-digit code (valid 5 minutes, then renewed by itself), entered in the web app. Pairing starts the free olácare trial.
 - Needs Wi-Fi with internet for the assistant and for reminder alerts (sent by the olá servers). Offline, the clock and already loaded notes and reminders stay visible.
 
 ## Price

@@ -101,9 +101,7 @@ typedef enum {
     STR_NO_SERVER_HINT,
     STR_PAIR_TITLE,
     STR_PAIR_BODY,
-    STR_WIFI_TITLE,
-    STR_WIFI_PASS,      /* "Password" (setup network + Bluetooth setup) */
-    STR_WIFI_HINT,      /* how iPhone and Android continue */
+    STR_WIFI_PASS,      /* "Password" (the password field of the Wi-Fi screen) */
     STR_ERR_NO_WIFI_T,
     STR_ERR_NO_WIFI_B,
     STR_ERR_SERVER_T,
@@ -191,7 +189,6 @@ typedef enum {
     STR_WIFI_NOT_FOUND,
     STR_WIFI_SCANNING,
     STR_WIFI_NONE,
-    STR_WIFI_PHONE,
     STR_WIFI_FORGET_CONFIRM,
     STR_WIFI_PASS_SHORT,
     STR__COUNT,

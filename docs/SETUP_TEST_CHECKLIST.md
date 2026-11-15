@@ -1,8 +1,8 @@
 # Manual test checklist: purchase → setup → pairing → ola Care trial
 
 Run on a **test** deployment with **Stripe test mode** (deploy/README.md §6), never with live keys or
-real customer data. Tick each line on a real Android phone, a real iPhone and a real watch with the new
-firmware.
+real customer data. Tick each line on a real watch with the new firmware; any phone or computer works for
+the account (there is no phone-specific step).
 
 ## A. Purchase (Stripe test mode)
 
@@ -34,30 +34,20 @@ firmware.
 
 - [ ] The welcome link sets the password and lands on `/my/setup`. Sign out and sign in again: setup continues where it was.
 - [ ] Logo in the account goes to the website. On the website (signed in): the header shows the first name with a green lock instead of "Sign in"; signed out it shows "Sign in".
-- [ ] "Which phone are you using?" shows Android and iPhone, with logos. "Change phone" works.
+- [ ] The setup page shows the three steps (Wi-Fi on the watch → type the code → done) and the code form straight away: no phone choice, no Bluetooth or QR instructions. "No code on the watch?" opens the help (2.4 GHz, Settings → Wi-Fi setup, 8 s reset).
 - [ ] An account with no paid order: "No watch order found", and pairing is refused.
 
-## C. Android: Chrome, Bluetooth
+## C. Wi-Fi on the watch
 
-- [ ] Watch in Wi-Fi setup: the screen shows `ola-XXXX`, the setup password and a QR code. Nearby BLE scanners (e.g. nRF Connect) see `ola-XXXX` advertising; after a successful setup and restart it is **no longer advertising**.
-- [ ] Android 12+: allow "Nearby devices" when asked. Android ≤ 11: Location must be on.
-- [ ] "Connect to watch" opens Chrome's chooser listing the watch. Picking it asks for the setup password.
-- [ ] Wrong setup password: "does not match", and nothing else happens. After 3 wrong attempts: "Wait 30 seconds".
-- [ ] The network list shows only 2.4 GHz networks, strongest first. "Refresh" works. "My network isn't listed" accepts a hidden SSID.
-- [ ] Wrong Wi-Fi password: "Wrong Wi-Fi password". The watch keeps its previous settings. "Try again" goes back to the form.
-- [ ] A 5 GHz-only network, or a network out of range: "couldn't reach that network" with the 2.4 GHz hint.
-- [ ] Correct password: "Your watch is on …". The watch restarts, joins the Wi-Fi and shows a 6-digit code.
-- [ ] Cancel the chooser: "No watch selected". Deny the Bluetooth permission: "Bluetooth permission needed". Bluetooth turned off: "Bluetooth is off". Walk away mid-setup: "Connection to the watch lost". Every failure shows the `ola-XXXX` recovery steps.
-- [ ] Firefox or Samsung Internet on Android: "This browser can't…", with the recovery steps shown.
-- [ ] Recovery on Android: join `ola-XXXX` with the setup password, and the portal saves the Wi-Fi.
-
-## D. iPhone: Safari, the `ola-XXXX` network
-
-- [ ] The iPhone choice shows only the `ola-XXXX` steps (no Bluetooth button).
-- [ ] Camera → QR code on the watch → "Join". Or Settings → Wi-Fi → `ola-XXXX` → type the password. A wrong password is refused by iOS.
-- [ ] The captive setup page opens by itself (or `http://192.168.4.1`). Pick the home Wi-Fi, enter its password, Save. The watch restarts and shows the code.
-- [ ] Back in Safari, the setup page asks for the code.
-- [ ] After setup, the old setup password no longer joins `ola-XXXX` (a new password is shown the next time).
+- [ ] New watch (or after a factory reset): on first start it opens the Wi-Fi screen by itself.
+- [ ] The list shows nearby 2.4 GHz networks, strongest first, with a lock on protected ones; refresh works. 5 GHz-only networks are not listed.
+- [ ] Tap a protected network: the keyboard opens. Fewer than 8 characters: "At least 8 characters", nothing is sent.
+- [ ] Wrong Wi-Fi password: "Wrong password" on the watch; the network is not saved and the list is offered again.
+- [ ] A network that went out of range (or was switched off) after it was picked: a clear "network not found" message, back to the list.
+- [ ] Correct password: "Connecting…", then the watch goes online and shows a 6-digit code. Leave it 5 minutes: a new code appears by itself.
+- [ ] Settings → Wi-Fi setup: add another network the same way; the saved networks are listed and can be forgotten. A mistyped password never replaces a network that works.
+- [ ] Factory reset (BOOT held 8 s, confirm): the watch forgets its networks and opens the Wi-Fi screen again.
+- [ ] No `ola-XXXX` network and no Bluetooth advertising at any time (check with a phone's Wi-Fi list and a BLE scanner such as nRF Connect).
 
 ## E. Pairing → ola Care trial
 
@@ -75,7 +65,7 @@ firmware.
 
 ## F. Regressions
 
-- [ ] BOOT held 8 s: the reset confirmation appears, and after reset the watch shows a **new** setup password.
+- [ ] BOOT held 8 s: the reset confirmation appears, and after reset the watch opens the Wi-Fi screen.
 - [ ] Holding BOOT at power-on still enters download mode (flashing works).
-- [ ] The setup screen is reachable again from Settings → Wi-Fi setup and from the "No Wi-Fi" error screen.
-- [ ] Voice turns, OTA and reminders work after setup (Bluetooth is off by then).
+- [ ] The Wi-Fi screen is reachable again from Settings → Wi-Fi setup and from the "No Wi-Fi" error screen.
+- [ ] Voice turns, OTA and reminders work after setup.

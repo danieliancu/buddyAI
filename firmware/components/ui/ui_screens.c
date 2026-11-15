@@ -7,7 +7,6 @@
 #include "esp_log.h"
 #include "board.h"
 #include "ui_priv.h"
-#include "prov_util.h"
 
 #define LOCK()      board_display_lock(0)
 #define UNLOCK()    board_display_unlock()
@@ -247,7 +246,7 @@ static void timeout_cb(lv_event_t *e)
 
 static void wifi_btn_cb(lv_event_t *e)
 {
-    ui_wifi_open(true);     /* saved and nearby networks; the phone setup is one button there */
+    ui_wifi_open(true);     /* saved and nearby networks */
 }
 
 static void show_page(int page)
@@ -885,13 +884,6 @@ void ui_screens_init(void)
 /* Public message screens                                                     */
 /* ------------------------------------------------------------------------- */
 
-static void wifi_setup_action(void)
-{
-    if (g_ui_cb.on_wifi_setup) {
-        g_ui_cb.on_wifi_setup();
-    }
-}
-
 static void wifi_screen_action(void)
 {
     ui_wifi_open(false);
@@ -920,69 +912,10 @@ void ui_show_pairing(const char *code)
     UNLOCK();
 }
 
-/* Wi-Fi setup: a Wi-Fi QR code that an iPhone camera joins directly, and the setup network's password (also
- * the Bluetooth setup password on Android). The network name is not shown: the QR code carries it, and the
- * account's iPhone steps say to pick the "ola-" network. The password exists only on this screen. */
-static lv_obj_t *s_wifi_scr, *s_wifi_qr, *s_wifi_pass, *s_wifi_hint;
-
-static void build_wifi_setup(void)
-{
-    s_wifi_scr = lv_obj_create(NULL);
-    lv_obj_add_style(s_wifi_scr, ui_style_screen(), 0);
-    lv_obj_remove_flag(s_wifi_scr, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(s_wifi_scr, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_wifi_scr, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(s_wifi_scr, 8, 0);
-    lv_obj_set_style_pad_hor(s_wifi_scr, 24, 0);
-
-    lv_obj_t *title = lv_label_create(s_wifi_scr);
-    lv_obj_set_style_text_font(title, &buddy_font_28, 0);
-    lv_label_set_text(title, ui_str(STR_WIFI_TITLE));
-
-    s_wifi_qr = lv_qrcode_create(s_wifi_scr);
-    lv_qrcode_set_size(s_wifi_qr, 168);
-    lv_qrcode_set_dark_color(s_wifi_qr, lv_color_black());
-    lv_qrcode_set_light_color(s_wifi_qr, lv_color_white());
-    lv_obj_set_style_border_color(s_wifi_qr, lv_color_white(), 0);
-    lv_obj_set_style_border_width(s_wifi_qr, 6, 0);   /* quiet zone: cameras need it */
-
-    s_wifi_pass = lv_label_create(s_wifi_scr);
-    lv_obj_set_style_text_font(s_wifi_pass, &buddy_font_28, 0);
-    lv_obj_set_style_text_letter_space(s_wifi_pass, 4, 0);
-
-    s_wifi_hint = lv_label_create(s_wifi_scr);
-    lv_obj_set_width(s_wifi_hint, LV_PCT(100));
-    lv_label_set_long_mode(s_wifi_hint, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_align(s_wifi_hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_opa(s_wifi_hint, LV_OPA_70, 0);
-}
-
-void ui_show_wifi_setup(const char *ap_ssid, const char *setup_pass)
+void ui_show_wifi_setup(void)
 {
     LOCK();
-    if (!s_wifi_scr) {
-        build_wifi_setup();
-    }
-    const char *ssid = ap_ssid ? ap_ssid : "ola";
-    char qr[96];
-    if (setup_pass && wifi_qr_payload(ssid, setup_pass, qr, sizeof(qr))) {
-        lv_qrcode_update(s_wifi_qr, qr, strlen(qr));
-        lv_obj_remove_flag(s_wifi_qr, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(s_wifi_qr, LV_OBJ_FLAG_HIDDEN);
-    }
-    memset(qr, 0, sizeof(qr));
-    char line[96];
-    char grouped[12];
-    setup_pass_grouped(setup_pass, grouped, sizeof(grouped));
-    snprintf(line, sizeof(line), "%s  %s", ui_str(STR_WIFI_PASS), grouped[0] ? grouped : "-");
-    lv_label_set_text(s_wifi_pass, line);
-    lv_obj_set_style_text_color(s_wifi_pass, g_ui_theme.accent, 0);
-    lv_label_set_text(s_wifi_hint, ui_str(STR_WIFI_HINT));
-    ui_note_activity();
-    if (lv_screen_active() != s_wifi_scr) {
-        ui_load_screen(s_wifi_scr, true);
-    }
+    ui_wifi_open(false);
     UNLOCK();
 }
 
@@ -1004,7 +937,7 @@ void ui_show_error(ui_error_t err, const char *detail)
         break;
     case UI_ERR_NO_SERVER:
         ui_msg_show(ICON_UNLINK, amber, ui_str(STR_ERR_NO_SERVER_T), ui_str(STR_ERR_NO_SERVER_B), NULL,
-                    ui_str(STR_WIFI_SETUP), wifi_setup_action, true, 0);
+                    ui_str(STR_WIFI_SETUP), wifi_screen_action, true, 0);
         break;
     case UI_ERR_UNPAIRED:
         ui_msg_show(ICON_LOCK, amber, ui_str(STR_ERR_UNPAIRED_T), ui_str(STR_ERR_UNPAIRED_B), NULL,

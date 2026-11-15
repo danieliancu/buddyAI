@@ -33,14 +33,13 @@ static esp_timer_handle_t s_reconnect_timer;
 static uint32_t         s_backoff_ms = BACKOFF_MIN_MS;
 static volatile bool    s_connected;
 static volatile int     s_last_disc_reason;    /* wifi_err_reason_t of the last drop, 0 = none */
-static volatile int     s_attempt_reason;      /* last failed attempt since net_wifi_connect(), 0 = none */
 static bool             s_sta_configured;
 static bool             s_sntp_started;
 
 /* Saved-network mode (net_wifi_connect_saved): each attempt scans and joins the best saved network in
  * range; after a lost connection the same network is tried once more first, without a scan. */
 static bool             s_saved_mode;
-static volatile bool    s_pick_scan;           /* our scan is running (not the portal's) */
+static volatile bool    s_pick_scan;           /* our scan is running (not the Wi-Fi screen's) */
 static bool             s_retry_same;
 static wifi_saved_list_t s_saved;              /* read before each pick */
 static wifi_saved_t     s_cur;                 /* the network being joined, or joined */
@@ -97,7 +96,6 @@ bool net_wifi_connecting(void)
 }
 
 esp_netif_t *g_net_sta_netif;
-esp_netif_t *g_net_ap_netif;
 bool g_net_wifi_started;
 
 void net_emit(net_event_t ev)
@@ -175,12 +173,7 @@ static esp_err_t sta_join(bool drop_current)
     wc.sta.listen_interval = CONFIG_BUDDYAI_STANDBY_LISTEN_INTERVAL;   /* beacons between wake-ups, standby only */
 
     s_sta_configured = true;
-    s_attempt_reason = 0;
-    wifi_mode_t mode = WIFI_MODE_NULL;
-    esp_wifi_get_mode(&mode);
-    if (mode != WIFI_MODE_APSTA) {
-        ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
-    }
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wc);
     memset(&wc, 0, sizeof(wc));
     ESP_RETURN_ON_ERROR(err, TAG, "config");
@@ -339,22 +332,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
             if (was && d) {
                 s_last_disc_reason = d->reason;
             }
-            if (d) {
-                s_attempt_reason = d->reason;
-            }
             if (was) {
                 net_emit(NET_EVT_STA_DISCONNECTED);
             }
-            /* While the portal runs, the AP must stay on a fixed channel;
-             * pause STA retries to keep the phone connection stable. */
-            if (!net_portal_active()) {
-                if (s_join == NET_JOIN_TRYING && !was) {
-                    join_attempt_failed(d ? d->reason : 0);
-                } else if (s_saved_mode) {
-                    saved_attempt_failed(was, d ? d->reason : 0);
-                }
-                schedule_reconnect();
+            if (s_join == NET_JOIN_TRYING && !was) {
+                join_attempt_failed(d ? d->reason : 0);
+            } else if (s_saved_mode) {
+                saved_attempt_failed(was, d ? d->reason : 0);
             }
+            schedule_reconnect();
             break;
         }
         case WIFI_EVENT_SCAN_DONE:
@@ -362,7 +348,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
                 s_pick_scan = false;
                 pick_from_scan();
             } else {
-                net_portal_scan_done();
+                net_scan_done();
             }
             break;
         default:
@@ -398,7 +384,6 @@ esp_err_t net_init(net_event_cb_t cb, void *ctx)
         return err;
     }
     g_net_sta_netif = esp_netif_create_default_wifi_sta();
-    g_net_ap_netif = esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "wifi init");
@@ -421,30 +406,16 @@ esp_err_t net_init(net_event_cb_t cb, void *ctx)
     return ESP_OK;
 }
 
-esp_err_t net_wifi_connect(const char *ssid, const char *pass)
-{
-    s_saved_mode = false;
-    memset(&s_cur, 0, sizeof(s_cur));
-    strlcpy(s_cur.ssid, ssid, sizeof(s_cur.ssid));
-    strlcpy(s_cur.pass, pass ? pass : "", sizeof(s_cur.pass));
-    return sta_join(true);
-}
-
 esp_err_t net_wifi_connect_saved(void)
 {
-    if (settings_get_wifi_list(&s_saved) == 0) {
-        return ESP_ERR_NOT_FOUND;
-    }
+    /* None saved (a new watch, or after a factory reset): the radio still starts, idle, so the Wi-Fi screen
+     * can scan and join the network chosen there. */
+    const int saved = settings_get_wifi_list(&s_saved);
     s_saved_mode = true;
-    s_sta_configured = true;
+    s_sta_configured = saved > 0;
     s_retry_same = false;
-    s_attempt_reason = 0;
-    wifi_mode_t mode = WIFI_MODE_NULL;
-    esp_wifi_get_mode(&mode);
-    if (mode != WIFI_MODE_APSTA) {
-        ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
-    }
-    ESP_LOGI(TAG, "%d saved Wi-Fi network(s)", s_saved.count);
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
+    ESP_LOGI(TAG, "%d saved Wi-Fi network(s)", saved);
     esp_err_t err = ESP_OK;
     if (!g_net_wifi_started) {
         err = esp_wifi_start();         /* STA_START picks the first network */
@@ -467,6 +438,7 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass)
         return ESP_ERR_INVALID_STATE;
     }
     esp_timer_stop(s_reconnect_timer);
+    s_sta_configured = true;
     s_saved_mode = true;
     s_retry_same = false;
     s_backoff_ms = BACKOFF_MIN_MS;
@@ -513,11 +485,6 @@ bool net_wifi_current_ssid(char out[33])
 int net_wifi_last_disconnect_reason(void)
 {
     return s_last_disc_reason;
-}
-
-int net_wifi_attempt_reason(void)
-{
-    return s_attempt_reason;
 }
 
 int net_wifi_rssi(void)

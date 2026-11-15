@@ -60,7 +60,7 @@ class Account(SQLModel, table=True):
     memory_explicit: bool = True  # "remember that..." is stored
     memory_use: bool = True  # memories are recalled in conversations
     memory_learn: bool = True  # facts are learned from conversations (the customer can switch it off)
-    # Watch setup: the phone the customer chose in the onboarding (android | iphone); None = not chosen yet.
+    # Unused since Wi-Fi is set on the watch itself (was: the phone chosen in the onboarding). Column kept, no migration.
     setup_platform: Optional[str] = Field(default=None, max_length=8)
 
 
