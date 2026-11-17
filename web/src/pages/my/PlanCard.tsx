@@ -3,7 +3,8 @@ import { Link, useSearchParams } from "react-router";
 import { ChevronDown, CircleCheck, ExternalLink, Package, PlusCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { api, ApiError, type MyPlan } from "../../api";
 import { fmtDate } from "../../format";
-import { careErrorText, carePlanStatus, fmtCount, fmtDayMonth, MonthlyUsage, OrderStatusBadge, pence } from "../../components/BillingBits";
+import { careErrorText, carePlanStatus, fmtCount, fmtDayMonth, MonthlyUsage, OrderStatusBadge, pence, TrackParcel } from "../../components/BillingBits";
+import { trackingUrl } from "../../tracking";
 import { Button, Card, ErrorBox, cx, useAsync } from "../../components/ui";
 import { useLive } from "../../live";
 
@@ -307,9 +308,14 @@ function Orders({ orders }: { orders: { id: number; status: string; created_at: 
               </span>
             </div>
             {o.tracking_number && (
-              <p className="mt-1 text-xs text-muted">
-                Tracking{o.carrier ? ` (${o.carrier})` : ""}: <span className="font-mono text-fg select-all">{o.tracking_number}</span>
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <TrackParcel carrier={o.carrier} number={o.tracking_number} size="sm" />
+                {trackingUrl(o.carrier, o.tracking_number) && (
+                  <span className="text-xs text-muted">
+                    {o.carrier || "Royal Mail"}: <span className="font-mono select-all">{o.tracking_number}</span>
+                  </span>
+                )}
+              </div>
             )}
           </li>
         ))}

@@ -221,6 +221,16 @@ export interface Order {
   created_at: string;
   shipped_at: string | null;
   delivered_at: string | null;
+  /** Operator lists only: the newest "on its way" email, null if none was ever queued. */
+  ship_email?: ShipEmail | null;
+}
+
+/** Outcome of the dispatch email (server: app/order_emails.py). "retrying": failed so far, tried again for about two days. */
+export interface ShipEmail {
+  state: "sending" | "sent" | "retrying" | "failed";
+  at: string;
+  error: string;
+  attempts: number;
 }
 
 export interface OrderUpdate {
@@ -504,7 +514,7 @@ export interface CareActivation {
 /** GET /api/me/onboarding: watch setup progress, derived from the server. */
 export interface Onboarding {
   eligible: boolean;
-  order: { id: number; status: OrderStatus; created_at: string } | null;
+  order: { id: number; status: OrderStatus; created_at: string; carrier: string; tracking_number: string } | null;
   has_password: boolean;
   email_verified: boolean;
   watches: number;
@@ -1113,6 +1123,8 @@ const discountsApi = {
 const ordersApi = {
   list: (status?: OrderStatus | "") => get<Order[]>(`/api/orders${q({ status })}`),
   update: (id: number, body: OrderUpdate) => patch<Order>(`/api/orders/${id}`, body),
+  /** Send the dispatch email again; the order itself does not change. */
+  resendShipped: (id: number) => post<Order>(`/api/orders/${id}/resend-shipped`),
 };
 
 // ---------- customer API (/api/me) ----------

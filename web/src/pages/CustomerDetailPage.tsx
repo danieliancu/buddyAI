@@ -4,7 +4,7 @@ import { ArrowLeft, Ban, CheckCircle2, ScrollText, Watch } from "lucide-react";
 import { api, ApiError, type AccountCost, type AccountDetail, type Order } from "../api";
 import { fmtAgo, fmtDateTime } from "../format";
 import { fmtDayMonth, OrderStatusBadge, planStatus } from "../components/BillingBits";
-import { fmtMinor, OrderDialog } from "./OrdersPage";
+import { fmtMinor, OrderDialog, RefundedAmount, ShipEmailStatus } from "./OrdersPage";
 import { BatteryInfo, OnlineDot, StateBadge } from "../components/DeviceBits";
 import { Badge, Button, Card, ConfirmDialog, Empty, ErrorBox, Input, PageHeader, Spinner, Table, useAsync } from "../components/ui";
 import { AccountStatusBadge } from "./CustomersPage";
@@ -158,11 +158,17 @@ export default function CustomerDetailPage() {
                     <tr key={o.id}>
                       <td className="tabular">{o.id}</td>
                       <td className="whitespace-nowrap">{fmtDateTime(o.created_at)}</td>
-                      <td className="tabular text-right">{fmtMinor(o.amount_total, o.currency)}</td>
+                      <td className="tabular text-right">
+                        {fmtMinor(o.amount_total, o.currency)}
+                        <RefundedAmount order={o} />
+                      </td>
                       <td>
                         <OrderStatusBadge status={o.status} operator />
                       </td>
-                      <td className="font-mono text-xs">{o.tracking_number || "—"}</td>
+                      <td className="text-xs">
+                        <span className="font-mono">{o.tracking_number || "—"}</span>
+                        <ShipEmailStatus order={o} onChange={() => (acc.reload(), audit.reload())} />
+                      </td>
                       <td className="text-right">
                         {o.status !== "refunded" && (
                           <Button size="sm" onClick={() => setEditingOrder(o)}>

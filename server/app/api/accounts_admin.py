@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from app import accounts, billing, email, entitlements
+from app import accounts, billing, email, entitlements, order_emails
 from app.account_lock import lock_account
 from app.api.common import device_out, hub_of
 from app.db.models import Account, AuditLog, Device, Order
@@ -86,7 +86,7 @@ def account_detail(account_id: int, request: Request, db: Session = Depends(get_
             "period_kind": a.period.kind,
         },
         "cost": _cost_view(db, acc),
-        "orders": [o.model_dump() for o in db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all()],
+        "orders": order_emails.with_state(db, list(db.exec(select(Order).where(Order.account_id == acc.id).order_by(col(Order.id).desc())).all())),
         # ola Care started at pairing: status, attempts, last error code (retry: POST .../care/activate).
         "care_activation": _care_activation(db, acc.id),
     }

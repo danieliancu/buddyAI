@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { ChevronRight, CircleCheck, Circle, MailWarning, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
+import { ChevronRight, CircleCheck, Circle, LifeBuoy, MailWarning, Mic, PackageSearch, Sparkles, Watch, Wifi } from "lucide-react";
 import { api, type CareActivation, type MyPlan, type Onboarding } from "../../../api";
 import { careErrorText, fmtDayMonth, pence } from "../../../components/BillingBits";
 import { Button, Card, ErrorBox, PageHeader, Spinner, buttonCls, cx, useAsync } from "../../../components/ui";
 import PairCodeForm from "../PairCodeForm";
 import { useCustomer } from "../session";
-import { SITE_URL } from "../../../site";
+import { SITE_URL, SUPPORT_EMAIL } from "../../../site";
 
 /**
  * /my/setup: from a paid order to a working watch. Wi-Fi is set on the watch itself (network list + password on
@@ -43,7 +43,7 @@ export default function SetupPage() {
   const paymentPending = ob.order?.status === "payment_pending";
   const paired = ob.watches > 0 && !another;
   const onPaired = (id: string) =>
-    another ? navigate(`/my/watch/${encodeURIComponent(id)}`, { replace: true }) : (onboarding.reload(), plan.reload());
+    another ? navigate(`/my/watch/${encodeURIComponent(id)}?paired=1`, { replace: true }) : (onboarding.reload(), plan.reload());
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -82,6 +82,7 @@ export default function SetupPage() {
           <Section icon={<Sparkles className="size-4" />} title="olá Care free trial" done={false} muted>
             <CareSummary care={ob.care} plan={plan.data} />
           </Section>
+          <Troubleshooting />
         </>
       )}
     </div>
@@ -94,7 +95,7 @@ function ThreeSteps() {
   const steps: [ReactNode, string, string][] = [
     [<Wifi className="size-4" />, "On the watch", "Choose your Wi-Fi network and type its password."],
     [<Watch className="size-4" />, "Type the code", "The watch shows a 6-digit code: type it below."],
-    [<CircleCheck className="size-4" />, "Done", "You're on — tap the watch and start talking."],
+    [<CircleCheck className="size-4" />, "Done", "Tap the microphone and say “Make a note to buy milk.”"],
   ];
   return (
     <Card>
@@ -130,14 +131,55 @@ function ThreeSteps() {
             watch.
           </p>
           <p>
-            <b className="text-fg">A black screen:</b> charge it, then hold the side button until the screen lights up.
-          </p>
-          <p>
-            <b className="text-fg">Start again:</b> hold the top button for 8 seconds and confirm the factory reset — the Wi-Fi screen opens again.
+            <b className="text-fg">Something else:</b> see Troubleshooting at the bottom of this page.
           </p>
         </div>
       )}
     </Card>
+  );
+}
+
+/** Rare problems, out of the way of the normal setup. */
+function Troubleshooting() {
+  return (
+    <details className={cx("group rounded-xl border border-border bg-surface px-4 py-3 text-sm")} data-testid="troubleshooting">
+      <summary className="flex cursor-pointer items-center gap-2 font-medium text-muted">
+        <LifeBuoy className="size-4" /> Troubleshooting
+      </summary>
+      <div className="mt-3 space-y-2 text-muted">
+        <p>
+          <b className="text-fg">The code expired:</b> the watch shows a new code by itself after 5 minutes. Type the new one.
+        </p>
+        <p>
+          <b className="text-fg">A black screen:</b> charge it, then hold the side button until the screen lights up.
+        </p>
+        <p>
+          <b className="text-fg">Start again:</b> hold the top button for 8 seconds and confirm the factory reset — the Wi-Fi screen opens
+          again.
+        </p>
+        <p>
+          <b className="text-fg">Still stuck?</b> Email{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent hover:underline">
+            {SUPPORT_EMAIL}
+          </a>
+          .
+        </p>
+      </div>
+    </details>
+  );
+}
+
+/** What to try first, once the watch is paired. */
+export function FirstNoteHint() {
+  return (
+    <div className="flex items-start gap-3 rounded-xl bg-surface-2 px-4 py-3 text-sm" data-testid="first-note-hint">
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white">
+        <Mic className="size-4" />
+      </span>
+      <p>
+        <b>Try it now:</b> tap the microphone and say “Make a note to buy milk.” Then open Notes on the watch to find it.
+      </p>
+    </div>
   );
 }
 
@@ -265,8 +307,9 @@ function Done({ ob, plan, onPlanChange, onFinish }: { ob: Onboarding; plan: MyPl
   return (
     <div className="space-y-4">
       <Notice tone="ok" icon={<CircleCheck className="size-4" />}>
-        <b>Your watch is paired.</b> Tap the watch and start talking.
+        <b>Your watch is paired.</b>
       </Notice>
+      <FirstNoteHint />
       <Card title="olá Care" icon={<Sparkles />}>
         <div className="space-y-3">
           <CareSummary care={ob.care} plan={plan} />
@@ -288,6 +331,13 @@ function Done({ ob, plan, onPlanChange, onFinish }: { ob: Onboarding; plan: MyPl
 }
 
 function NoOrder() {
+  const { account, signOut } = useCustomer();
+  const navigate = useNavigate();
+  const [paid, setPaid] = useState(false);
+  const switchAccount = async () => {
+    await signOut();
+    navigate("/login");
+  };
   return (
     <div className="mx-auto max-w-lg">
       <Card>
@@ -297,9 +347,34 @@ function NoOrder() {
           <p className="text-sm text-muted">
             Watch setup opens once your order is paid. If you bought a watch with another email address, sign in with that one.
           </p>
-          <a href={`${SITE_URL}/#buy`} className={buttonCls("primary")}>
-            Get an olá watch
-          </a>
+          {!paid ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="primary" onClick={() => setPaid(true)}>
+                I’ve already paid
+              </Button>
+              <a href={`${SITE_URL}/#buy`} className={buttonCls("secondary")}>
+                Get an olá watch
+              </a>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-xl bg-surface-2 px-4 py-3 text-left text-sm" data-testid="already-paid">
+              <p>
+                You’re signed in as <b className="break-all">{account.email}</b>. Your order is linked to the email address on your payment
+                confirmation.
+              </p>
+              <Button variant="primary" className="w-full" onClick={switchAccount}>
+                Sign in with that email
+              </Button>
+              <p className="text-muted">No password yet? Choose “Forgot password?” and we’ll email you a sign-in link.</p>
+              <p className="text-muted">
+                Still can’t find your order? Email{" "}
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent hover:underline">
+                  {SUPPORT_EMAIL}
+                </a>{" "}
+                with your payment confirmation.
+              </p>
+            </div>
+          )}
           <p className="text-xs">
             <Link to="/my" className="text-muted hover:underline">
               Back to my account

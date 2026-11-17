@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 
 from datetime import datetime, timezone
 
-from app import accounts, billing, care_activation, care_terms, discounts, email, entitlements, plan as plan_mod
+from app import accounts, billing, care_activation, care_terms, discounts, entitlements, order_emails, plan as plan_mod
 from app.account_lock import lock_account
 from app.api.me import current_account
 from app.config import get_settings
@@ -246,8 +246,8 @@ def billing_portal(acc: Account = Depends(current_account)) -> dict:
 # --- operator ---------------------------------------------------------------------------------------
 
 
-def _order_out(o: Order) -> dict:
-    return o.model_dump()
+def _order_out(db: Session, o: Order) -> dict:
+    return order_emails.with_state(db, [o])[0]
 
 
 @router.get("/api/orders", dependencies=[Depends(require_admin)])
@@ -255,7 +255,7 @@ def list_orders(status: str | None = None, db: Session = Depends(get_session)) -
     q = select(Order)
     if status:
         q = q.where(Order.status == status)
-    return [_order_out(o) for o in db.exec(q.order_by(col(Order.id).desc()).limit(500)).all()]
+    return order_emails.with_state(db, list(db.exec(q.order_by(col(Order.id).desc()).limit(500)).all()))
 
 
 class OrderUpdate(BaseModel):
@@ -285,8 +285,24 @@ async def update_order(order_id: int, body: OrderUpdate, request: Request, db: S
     db.refresh(order)
     accounts.audit(db, request.session["admin"], f"order.{body.status}", order.account_id, detail=f"order {order.id}")
     if newly_shipped:
-        await email.send(email.order_shipped(order.email, order.id, order.carrier, order.tracking_number))
-    return _order_out(order)
+        await order_emails.send_shipped(db, order)
+    return _order_out(db, order)
+
+
+@router.post("/api/orders/{order_id}/resend-shipped", dependencies=[Depends(require_admin)])
+async def resend_shipped(order_id: int, request: Request, db: Session = Depends(get_session)) -> dict:
+    """Send the dispatch email again with the current carrier and tracking number. The order itself (status,
+    shipped date) does not change."""
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "order not found")
+    if order.shipped_at is None or order.status not in ("shipped", "delivered", "partial_refund"):
+        raise HTTPException(409, "this order has not been shipped")
+    accounts.audit(db, request.session["admin"], "order.ship_email_resent", order.account_id, detail=f"order {order.id}")
+    await order_emails.send_shipped(db, order)
+    db.expire_all()
+    order = db.get(Order, order_id)
+    return _order_out(db, order)
 
 
 # --- operator: discount codes (Stripe coupons + promotion codes, app/discounts.py) -------------------------------

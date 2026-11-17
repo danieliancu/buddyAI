@@ -1,12 +1,12 @@
 import { Link } from "react-router";
 import { useState } from "react";
-import { AlertTriangle, ChevronRight, MessageCircleQuestion, MessagesSquare, Plus, Settings, Watch } from "lucide-react";
-import { api, type Device, type LiveEvent } from "../../api";
+import { AlertTriangle, ChevronRight, MessageCircleQuestion, MessagesSquare, Package, Plus, Settings, Watch } from "lucide-react";
+import { api, type Device, type LiveEvent, type Onboarding } from "../../api";
 import { useLive } from "../../live";
 import { fmtAgo } from "../../format";
 import { BatteryInfo, OnlineDot, StateBadge } from "../../components/DeviceBits";
 import { buttonCls, Card, cardCls, Empty, ErrorBox, IconTile, PageHeader, Spinner, cx, useAsync } from "../../components/ui";
-import { turnRefusedText } from "../../components/BillingBits";
+import { OrderStatusBadge, TrackParcel, turnRefusedText } from "../../components/BillingBits";
 import { useCustomer } from "./session";
 
 /** Apply a live event to a device list (status, battery, state). */
@@ -38,12 +38,16 @@ export default function MyWatchesPage() {
   const { account } = useCustomer();
   const devices = useAsync(api.me.devices.list, []);
   const usage = useAsync(api.me.usage, []);
+  const onboarding = useAsync(api.me.onboarding, []);
   const [refused, setRefused] = useState<Record<string, string>>({});
 
   useLive((e) => {
     if (e.type === "turn_refused") setRefused((m) => ({ ...m, [e.device_id]: e.code }));
     else if (e.type === "turn_end") setRefused((m) => (e.device_id in m ? { ...m, [e.device_id]: "" } : m));
-    if (e.type === "device_paired") devices.reload();
+    if (e.type === "device_paired") {
+      devices.reload();
+      onboarding.reload();
+    }
     else devices.setData((l) => (l ? applyEvent(l, e) : l));
     if (e.type === "turn_end") usage.reload();
   });
@@ -87,9 +91,11 @@ export default function MyWatchesPage() {
       {devices.loading && !devices.data ? (
         <Spinner />
       ) : list.length === 0 ? (
+        <>
+        {onboarding.data?.order && <OrderCard order={onboarding.data.order} />}
         <Card>
           <Empty icon={<Watch className="size-8" />} title="Set up your first watch">
-            Choose your phone, connect the watch to Wi-Fi and pair it. It takes about five minutes.
+            Connect your watch to Wi-Fi. When the six-digit code appears on your watch, enter it here.
             <div className="mt-4">
               <Link to="/my/setup" className={buttonCls("primary")}>
                 <Plus className="size-4" /> Set up my watch
@@ -97,6 +103,7 @@ export default function MyWatchesPage() {
             </div>
           </Empty>
         </Card>
+        </>
       ) : (
         <ul className="space-y-3">
           {list.map((d) => (
@@ -105,6 +112,40 @@ export default function MyWatchesPage() {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** The watch order, from payment until the first watch is paired. */
+function OrderCard({ order: o }: { order: NonNullable<Onboarding["order"]> }) {
+  const sent = o.status === "shipped" || (o.status === "partial_refund" && !!o.tracking_number);
+  let text: string;
+  if (o.status === "paid" || (o.status === "partial_refund" && !sent)) {
+    text = "We're preparing your watch. You can pair it as soon as it arrives.";
+  } else if (sent) {
+    text = "Your watch is on its way. You can pair it as soon as it arrives.";
+  } else if (o.status === "delivered") {
+    text = "Your watch has arrived. Turn it on and connect it to Wi-Fi.";
+  } else {
+    return null; // cancelled, refunded, payment problems: shown on the setup page and in My account
+  }
+  return (
+    <div className={cx(cardCls, "mb-4 p-(--card-pad)")} data-testid="order-card">
+      <div className="flex flex-wrap items-center gap-3">
+        <IconTile>
+          <Package className="size-5" />
+        </IconTile>
+        <p className="font-semibold">Order #{o.id}</p>
+        <span className="ml-auto">
+          <OrderStatusBadge status={o.status} />
+        </span>
+      </div>
+      <p className="mt-3 text-sm text-muted">{text}</p>
+      {(sent || o.status === "delivered") && o.tracking_number && (
+        <div className="mt-3">
+          <TrackParcel carrier={o.carrier} number={o.tracking_number} />
+        </div>
       )}
     </div>
   );

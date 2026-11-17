@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { ArrowLeft, Bot, Captions, Check, ChevronRight, Palette, Plus, RefreshCw, RotateCcw, Save, X } from "lucide-react";
 import {
   api,
@@ -21,6 +21,7 @@ import WatchPreview from "../components/WatchPreview";
 import { LanguagePicker, VoiceSampleButton } from "../components/LanguageBits";
 import { primeLanguages } from "../languages";
 import WatchHeader from "./my/WatchHeader";
+import { FirstNoteHint } from "./my/setup/SetupPage";
 import { Button, Card, ErrorBox, Field, PageHeader, Select, Slider, Spinner, Textarea, Toggle, cx } from "../components/ui";
 
 const COMMON_TIMEZONES = [
@@ -161,6 +162,9 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
   const customer = mode === "customer";
   const src = SOURCES[mode];
   const { id = "" } = useParams();
+  // Just paired from "Add watch": the first thing to try (the first watch shows it on the setup page).
+  const [params] = useSearchParams();
+  const justPaired = customer && params.get("paired") === "1";
   const [device, setDevice] = useState<Device | null>(null);
   const [options, setOptions] = useState<Options | null>(null);
   const [personas, setPersonas] = useState<(Persona | MyPersona)[]>([]);
@@ -299,7 +303,14 @@ export default function DeviceSettingsPage({ mode = "admin" }: { mode?: "admin" 
   return (
     <>
       {customer ? (
-        <WatchHeader id={id} device={device} active="settings" note={savedNote || undefined} onRenamed={(name) => setDevice((d) => d && { ...d, name })} />
+        <>
+          <WatchHeader id={id} device={device} active="settings" note={savedNote || undefined} onRenamed={(name) => setDevice((d) => d && { ...d, name })} />
+          {justPaired && (
+            <div className="mb-4">
+              <FirstNoteHint />
+            </div>
+          )}
+        </>
       ) : (
         <>
           <BackLink customer={false} />

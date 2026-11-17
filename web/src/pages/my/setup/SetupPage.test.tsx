@@ -34,7 +34,7 @@ function care(status: CareActivation["status"], extra: Partial<CareActivation> =
 function onboarding(extra: Partial<Onboarding> = {}): Onboarding {
   return {
     eligible: true,
-    order: { id: 12, status: "paid", created_at: "2026-10-01T10:00:00Z" },
+    order: { id: 12, status: "paid", created_at: "2026-10-01T10:00:00Z", carrier: "", tracking_number: "" },
     has_password: true,
     email_verified: true,
     watches: 0,
@@ -92,7 +92,22 @@ describe("Wi-Fi on the watch, then the code", () => {
     const help = screen.getByTestId("setup-help");
     expect(help.textContent).toMatch(/2\.4 GHz/);
     expect(help.textContent).toMatch(/Settings → Wi-Fi setup/);
-    expect(help.textContent).toMatch(/8 seconds/);
+    expect(help.textContent).toMatch(/Troubleshooting/);
+    // the factory reset lives in Troubleshooting, out of the normal setup
+    const trouble = screen.getByTestId("troubleshooting");
+    expect(trouble.textContent).toMatch(/8 seconds.*factory reset/s);
+    expect(trouble.textContent).toMatch(/new code by itself/);
+    expect(trouble.textContent).toMatch(/ola@olacompanion\.com/);
+  });
+
+  it("an expired code: the watch shows a new one, type it", async () => {
+    me.onboarding.mockResolvedValue(onboarding());
+    const { ApiError } = await import("../../../api");
+    me.devices.pair.mockRejectedValue(new ApiError(404, "code not found or expired — check the code on your watch"));
+    renderSetup();
+    fireEvent.change(await screen.findByLabelText("Code shown on the watch"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair watch" }));
+    expect(await screen.findByText(/This code has expired\. Your watch shows a new one by itself/)).toBeTruthy();
   });
 
   it("a watch this account just removed is announced and goes straight to the code", async () => {
@@ -113,7 +128,7 @@ describe("order, account and olá Care states", () => {
   });
 
   it("payment still processing: no setup yet", async () => {
-    me.onboarding.mockResolvedValue(onboarding({ order: { id: 1, status: "payment_pending", created_at: "" } }));
+    me.onboarding.mockResolvedValue(onboarding({ order: { id: 1, status: "payment_pending", created_at: "", carrier: "", tracking_number: "" } }));
     renderSetup();
     expect(await screen.findByText(/still confirming the payment/)).toBeTruthy();
     expect(screen.queryByLabelText("Code shown on the watch")).toBeNull();
@@ -164,4 +179,24 @@ it("Add watch (?another=1) runs the setup again even when the account already ha
   );
   expect(await screen.findByTestId("setup-steps")).toBeTruthy(); // not the "already paired" screen
   expect(screen.getByLabelText("Code shown on the watch")).toBeTruthy();
+});
+
+describe("no order found, and the first thing to try", () => {
+  it("“I’ve already paid”: sign in with the payment email, or contact support", async () => {
+    me.onboarding.mockResolvedValue(onboarding({ eligible: false, order: null }));
+    renderSetup();
+    fireEvent.click(await screen.findByRole("button", { name: "I’ve already paid" }));
+    const box = screen.getByTestId("already-paid");
+    expect(box.textContent).toMatch(/signed in as jane@example\.com/);
+    expect(box.textContent).toMatch(/email address on your payment confirmation/);
+    expect(box.textContent).toMatch(/Forgot password\?/);
+    expect(screen.getByRole("button", { name: "Sign in with that email" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ola@olacompanion.com" }).getAttribute("href")).toBe("mailto:ola@olacompanion.com");
+  });
+
+  it("paired: points at the microphone with an example", async () => {
+    me.onboarding.mockResolvedValue(onboarding({ watches: 1, care: care("active") }));
+    renderSetup();
+    expect((await screen.findByTestId("first-note-hint")).textContent).toMatch(/tap the microphone and say “Make a note to buy milk\.”/);
+  });
 });

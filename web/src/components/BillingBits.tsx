@@ -1,6 +1,8 @@
 import type { MyPlan, OrderStatus, SubscriptionInfo, TurnRefusedCode } from "../api";
 import { parseDate } from "../format";
-import { Badge, cx } from "./ui";
+import { Truck } from "lucide-react";
+import { trackingUrl } from "../tracking";
+import { Badge, buttonCls, cx } from "./ui";
 
 type Tone = "neutral" | "ok" | "warn" | "danger" | "accent";
 
@@ -151,6 +153,24 @@ const ORDER_STATUS: Record<string, { label: string; tone: Tone }> = {
 export function OrderStatusBadge({ status, operator }: { status: OrderStatus; operator?: boolean }) {
   const s = ORDER_STATUS[status] ?? { label: status, tone: "neutral" as Tone };
   return <Badge tone={s.tone}>{operator && status === "paid" ? "Paid" : s.label}</Badge>;
+}
+
+/** "Track my parcel" for a shipped order: a link to the carrier's page, or the number as text when we have no link. */
+export function TrackParcel({ carrier, number, size = "md" }: { carrier: string; number: string; size?: "sm" | "md" }) {
+  if (!number) return null;
+  const url = trackingUrl(carrier, number);
+  if (!url) {
+    return (
+      <span className="text-sm text-muted">
+        Tracking{carrier ? ` (${carrier})` : ""}: <span className="font-mono text-fg select-all">{number}</span>
+      </span>
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className={buttonCls("secondary", size === "sm" ? "sm" : "md")}>
+      <Truck className="size-4" /> Track my parcel
+    </a>
+  );
 }
 
 /** Why the watch refused a question (live event `turn_refused`). */

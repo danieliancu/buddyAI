@@ -392,6 +392,67 @@ async def test_partly_refunded_shipped_order_does_not_email_shipped_twice():
     assert _order_status(order_id) == ("shipped", 500) and _mails(addr, "on its way") == []
 
 
+# --- dispatch email: outcome visible, Resend -----------------------------------------------------------------
+
+
+class _Admin:
+    session = {"admin": "tester"}
+
+
+async def test_shipped_email_outcome_is_shown_and_can_be_resent(monkeypatch):
+    from app.api.shop import OrderUpdate, list_orders, resend_shipped, update_order
+
+    acc_id, addr, _cus = _account()
+    order_id, _pi = _order(acc_id, addr)
+    monkeypatch.setattr(email, "get_sender", lambda: FailingSender())
+    with session_scope() as db:
+        out = await update_order(order_id, OrderUpdate(status="shipped", carrier="Royal Mail", tracking_number="AB1GB"), _Admin(), db)
+    assert out["status"] == "shipped" and out["ship_email"]["state"] == "retrying" and out["ship_email"]["error"] == "OSError"
+    with session_scope() as db:
+        shipped_at = db.get(Order, order_id).shipped_at
+
+    monkeypatch.undo()
+    with session_scope() as db:
+        out = await resend_shipped(order_id, _Admin(), db)
+    assert out["ship_email"]["state"] == "sent"
+    mail = _mails(addr, "on its way")
+    assert len(mail) == 1 and "AB1GB" in mail[0].text
+    with session_scope() as db:
+        o = db.get(Order, order_id)
+        assert o.status == "shipped" and o.shipped_at == shipped_at  # the parcel itself is untouched
+        listed = {r["id"]: r for r in list_orders(None, db)}
+    assert listed[order_id]["ship_email"]["state"] == "sent"
+    assert len(_audit("order.ship_email_resent", acc_id)) == 1
+
+
+async def test_resend_refused_before_the_order_ships():
+    from fastapi import HTTPException
+
+    from app.api.shop import resend_shipped
+
+    acc_id, addr, _cus = _account()
+    order_id, _pi = _order(acc_id, addr)
+    with session_scope() as db:
+        with pytest.raises(HTTPException) as exc:
+            await resend_shipped(order_id, _Admin(), db)
+    assert exc.value.status_code == 409 and _mails(addr) == []
+
+
+async def test_onboarding_shows_the_customer_carrier_and_tracking():
+    from app.api.me import _onboarding
+
+    acc_id, addr, _cus = _account()
+    order_id, _pi = _order(acc_id, addr)
+    with session_scope() as db:
+        o = db.get(Order, order_id)
+        o.status, o.carrier, o.tracking_number, o.shipped_at = "shipped", "Royal Mail", "AB1GB", utcnow()
+        db.add(o)
+        db.commit()
+        acc = db.get(Account, acc_id)
+        order = _onboarding(db, acc)["order"]
+    assert order["id"] == order_id and order["carrier"] == "Royal Mail" and order["tracking_number"] == "AB1GB"
+
+
 # --- disputes -------------------------------------------------------------------------------------------------
 
 

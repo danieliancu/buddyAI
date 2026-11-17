@@ -1,13 +1,63 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { Info, Package, Truck } from "lucide-react";
-import { api, type Order, type OrderStatus, type OrderUpdate } from "../api";
+import { AlertTriangle, Info, Package, RotateCw, Truck } from "lucide-react";
+import { api, type Order, type OrderStatus, type OrderUpdate, type ShipEmail } from "../api";
 import { fmtDateTime, fmtMoney } from "../format";
 import { OrderStatusBadge } from "../components/BillingBits";
-import { Button, Card, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Select, Spinner, Table, useAsync } from "../components/ui";
+import { Badge, Button, Card, Dialog, Empty, ErrorBox, Field, Input, PageHeader, Select, Spinner, Table, useAsync } from "../components/ui";
 
 /** Amount in minor units (pence / cents) → "£149.00". */
 export const fmtMinor = (amount: number, currency: string) => fmtMoney(amount / 100, currency.toUpperCase());
+
+/** What Stripe confirmed as refunded, full or partial: "£20.00 refunded of £119.00". */
+export function RefundedAmount({ order: o }: { order: Order }) {
+  if (o.amount_refunded <= 0) return null;
+  return (
+    <span className="block text-xs text-warn" data-testid={`refunded-${o.id}`}>
+      {fmtMinor(o.amount_refunded, o.currency)} refunded of {fmtMinor(o.amount_total, o.currency)}
+    </span>
+  );
+}
+
+const SHIP_EMAIL: Record<ShipEmail["state"], { label: string; tone: "ok" | "warn" | "danger" | "neutral" }> = {
+  sent: { label: "Email sent", tone: "ok" },
+  sending: { label: "Email sending", tone: "neutral" },
+  retrying: { label: "Email not sent yet — retrying", tone: "warn" },
+  failed: { label: "Email failed", tone: "danger" },
+};
+
+/** Whether the "on its way" email reached the customer, with Resend when it did not. Resend never changes the order. */
+export function ShipEmailStatus({ order: o, onChange }: { order: Order; onChange: (o: Order) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const e = o.ship_email;
+  if (!e) return null;
+  const s = SHIP_EMAIL[e.state] ?? SHIP_EMAIL.sending;
+  const resend = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await api.orders.resendShipped(o.id));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2" data-testid={`ship-email-${o.id}`}>
+      <span title={e.state === "sent" ? fmtDateTime(e.at) : e.error ? `${e.error}, ${e.attempts} attempt(s)` : undefined}>
+        <Badge tone={s.tone}>{s.label}</Badge>
+      </span>
+      {(e.state === "retrying" || e.state === "failed") && (
+        <Button size="sm" icon={<RotateCw className="size-3.5" />} loading={busy} onClick={resend}>
+          Resend
+        </Button>
+      )}
+      {error != null && <ErrorBox error={error} />}
+    </div>
+  );
+}
 
 export default function OrdersPage() {
   const [status, setStatus] = useState<OrderStatus | "">("");
@@ -83,7 +133,7 @@ export default function OrdersPage() {
                         {o.discount_code || "Discount"} −{fmtMinor(o.amount_discount, o.currency)}
                       </span>
                     )}
-                    {o.amount_refunded > 0 && <span className="block text-xs text-muted">{fmtMinor(o.amount_refunded, o.currency)} refunded</span>}
+                    <RefundedAmount order={o} />
                   </td>
                   <td>
                     <OrderStatusBadge status={o.status} operator />
@@ -97,6 +147,7 @@ export default function OrdersPage() {
                     ) : (
                       <span className="text-muted">—</span>
                     )}
+                    <ShipEmailStatus order={o} onChange={(n) => orders.setData((l) => l?.map((x) => (x.id === n.id ? n : x)) ?? l)} />
                   </td>
                   <td className="text-right">
                     {o.status === "paid" ? (
@@ -159,6 +210,7 @@ export function OrderDialog({ order, onClose, onSaved }: { order: Order | null; 
   };
 
   const firstShip = order?.status === "paid" && status === "shipped";
+  const cancelling = status === "cancelled" && order?.status !== "cancelled";
 
   return (
     <Dialog
@@ -171,7 +223,7 @@ export function OrderDialog({ order, onClose, onSaved }: { order: Order | null; 
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="order-form" loading={busy}>
-            {firstShip ? "Mark shipped" : "Save"}
+            {firstShip ? "Mark shipped" : cancelling ? "Cancel order" : "Save"}
           </Button>
         </>
       }
@@ -197,6 +249,16 @@ export function OrderDialog({ order, onClose, onSaved }: { order: Order | null; 
           </Field>
         </div>
         {firstShip && <p className="text-xs text-muted">The customer receives an email with the tracking number.</p>}
+        {cancelling && (
+          <div className="flex items-start gap-2 rounded-lg bg-warn-bg px-3 py-2 text-sm text-warn" role="status" data-testid="cancel-refund-note">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p>
+              Cancelling does not refund the customer. Make the refund separately in the Stripe dashboard; once Stripe confirms it, the
+              amount actually refunded (full or partial) shows on this order.
+            </p>
+          </div>
+        )}
+        {order && order.amount_refunded > 0 && <RefundedAmount order={order} />}
         <ErrorBox error={error} />
       </form>
     </Dialog>

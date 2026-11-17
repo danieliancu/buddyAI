@@ -31,6 +31,8 @@ export default function PairCodeForm({
               : "Please confirm your email address first.",
           ),
         );
+      else if (err instanceof ApiError && err.status === 404)
+        setError(new Error("This code has expired. Your watch shows a new one by itself — enter the new code."));
       else setError(err);
       setBusy(false);
     }

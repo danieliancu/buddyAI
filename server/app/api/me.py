@@ -319,7 +319,8 @@ def _onboarding(db: Session, acc: Account) -> dict[str, Any]:
     care = care_activation.public_state(db, acc.id)
     return {
         "eligible": care_activation.can_set_up_watch(db, acc),
-        "order": None if order is None else {"id": order.id, "status": order.status, "created_at": order.created_at},
+        "order": None if order is None else {"id": order.id, "status": order.status, "created_at": order.created_at,
+                                             "carrier": order.carrier, "tracking_number": order.tracking_number},
         "has_password": acc.password_hash is not None,
         "email_verified": acc.email_verified_at is not None,
         "watches": len(watches),
